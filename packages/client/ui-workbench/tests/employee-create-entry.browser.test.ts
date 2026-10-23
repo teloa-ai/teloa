@@ -34,7 +34,7 @@ test('员工Markdown创建保留原稿、自动带入业务，仅核对后写入
  await page.evaluate(()=>(window as any).employeeCreate.fail=false);await drawer.getByRole('button',{name:'继续',exact:true}).click();await drawer.waitFor({state:'hidden'})
  const prepared=await page.evaluate(()=>(window as any).employeeCreate.prepared);assert.equal(prepared.length,2);assert.equal(prepared[1].scope,'research');assert.ok(prepared[1].text.includes(markdown));assert.match(prepared[1].text,/研究业务.*research/);assert.match(prepared[1].text,/员工正文的 scopes/)
  assert.deepEqual(await page.evaluate(()=>(window as any).employeeCreate.created),[],'准备不创建、不执行')
- await opener.click();await description.waitFor();assert.equal(await description.inputValue(),'')
+ await opener.click();await description.waitFor();assert.equal(await description.inputValue(),markdown,'成功预备后保留说明供恢复')
  for(const width of [1440,430]){await page.setViewportSize({width,height:900});const bounds=await drawer.evaluate((node:HTMLElement)=>({client:node.clientWidth,scroll:node.scrollWidth}));assert.ok(bounds.scroll<=bounds.client);if(process.env.TELOA_TEST_CAPTURE_DIR)await drawer.screenshot({path:process.env.TELOA_TEST_CAPTURE_DIR+'/employee-create-'+width+'.png'})}
  await drawer.locator('summary').filter({hasText:'资料研究员'}).click();await drawer.getByRole('button',{name:'确认',exact:true}).click();await page.waitForFunction(()=>(window as any).employeeCreate.created.length===1)
  await page.waitForFunction(()=>document.querySelector<HTMLButtonElement>('dialog button[aria-label="关闭"]')?.disabled===true);await page.keyboard.press('Escape');assert.equal(await drawer.isVisible(),true)

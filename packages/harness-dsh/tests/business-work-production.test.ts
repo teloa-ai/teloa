@@ -131,7 +131,21 @@ test('负责人生产装配：真实RPC、原生审批、单连接池和任务�
  const initial=await call<{version:number;roleId:null}>('business-responsibility/read',{scope});assert.equal(initial.version,0);assert.equal(initial.roleId,null)
  assert.equal((await raw('business-responsibility/read',{scope:'forbidden'})).ok,false)
  assert.equal((await tool(f.sessionId,'teloa_business_responsibility_read')).isError,true)
- const role=await call<{id:string;version:number}>('roles/create',{requestId:randomUUID(),fields:{name:'客户负责人',kind:'employee',scopes:[scope],duty:'核对客户',dataScope:'只读',executionScope:'代拟',skills:[],knowledge:[],responsibility:{triggers:[],autonomousActions:[],confirmationPoints:[],escalationRules:[],deliveryChecks:[]}}})
+ let role=await call<{id:string;version:number}>('roles/create',{requestId:randomUUID(),fields:{name:'客户负责人',kind:'employee',scopes:[scope],duty:'核对客户',dataScope:'只读',executionScope:'代拟',skills:[],knowledge:[],responsibility:{triggers:[],autonomousActions:[],confirmationPoints:[],escalationRules:[],deliveryChecks:[]}}})
+ // task-18 回归夹具：新空工具闸要求员工运行在准备前有真实执行工具；按宿主候选（优先 web）授权后恢复在岗，不放宽产品闸。
+ {
+  const reload=async()=>((await call<Array<{id:string;version:number;state:string}>>('roles/list',{})).find(item=>item.id===role.id)!)
+  const paused=await reload()
+  await call('roles/lifecycle',{roleId:paused.id,expectedVersion:paused.version,action:'pause',reason:'配置执行工具'})
+  const afterPause=await reload()
+  const available=await call<{rules:{name:string}[]}>('role-tools/candidates',{roleId:afterPause.id})
+  const rule=available.rules.find(item=>item.name==='web_search')??available.rules.find(item=>item.name==='web_fetch')??available.rules.find(item=>item.name!=='subagent_task')
+  assert.ok(rule,'宿主必须提供至少一项真实工具候选')
+  await call('role-tools/change',{roleId:afterPause.id,expectedRoleVersion:afterPause.version,action:'save',rules:[{name:rule.name,anyArguments:true,allowed:[]}]})
+  const changed=await reload()
+  await call('roles/lifecycle',{roleId:changed.id,expectedVersion:changed.version,action:'resume',reason:'继续任务'})
+  const resumed=await reload();role={id:resumed.id,version:resumed.version}
+ }
  const ordinary=await call<{sessionId:string}>('conversations/create',{requestId:randomUUID(),title:'本人业务工作'})
  await call('work-context/set',{requestId:randomUUID(),sessionId:ordinary.sessionId,scopeId:scope,roleId:role.id,expectedVersion:0});await userTurn(ordinary.sessionId)
  const readTool=await tool(ordinary.sessionId,'teloa_business_responsibility_read');assert.equal(readTool.isError,false,JSON.stringify(readTool))

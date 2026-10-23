@@ -82,6 +82,7 @@ type CorePageMessageRow=readonly [string,string,string,string]|readonly [string,
 
 export const CORE_PAGE_MESSAGE_ROWS:readonly CorePageMessageRow[] = [
   ...MARKET_APPS_MESSAGE_ROWS,
+  ['error.roleKnowledgeUnavailable','员工资料范围包含不可用资料，请编辑员工资料后重试。','員工資料範圍包含不可用資料，請編輯員工資料後重試。','The employee’s material scope contains unavailable items. Edit the employee’s materials and try again.'],
   ['p6.planSource.conversation.label','会话中创建','對話中建立','Created in a conversation'],
   ['p6.planSource.conversation.summary','来自原会话中的工作安排。','來自原對話中的工作安排。','Created from an assignment in the original conversation.'],
   ['p6.planSource.method.label','成果方法','成果方法','From a work result'],

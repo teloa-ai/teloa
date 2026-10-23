@@ -139,6 +139,25 @@ test('岗位知识读取仅接受启用资料ID并核对本人、岗位与目标
  await service.withdraw(actor,{resourceId:resource.id,expectedVersion:1})
  await assert.rejects(service.executionKnowledge(actor,['general'],[resource.id]),{code:'teloa/resource-withdrawn'})
 })
+test('岗位知识引用已不存在的资料时给出可定位的员工资料错误，而不是通用不存在',async()=>{
+ const {actor,input,service}=await fixture()
+ const draft=await service.create(actor,input),resource=await service.apply(actor,{draftId:draft.id,expectedVersion:draft.version})
+ const missing=randomUUID()
+ const expectActionable=(error:any)=>{
+  assert.equal(error?.code,'teloa/invalid-input')
+  assert.deepEqual(error?.details,{reason:'role-knowledge-unavailable',resourceIds:[missing]})
+  assert.match(String(error?.message),/员工资料范围/)
+  return true
+ }
+ await service.executionKnowledge(actor,['general'],[resource.id])
+ await assert.rejects(service.executionKnowledge(actor,['general'],[missing]),expectActionable)
+ await assert.rejects(service.executionKnowledge(actor,['general'],[resource.id,missing]),expectActionable)
+ const db=await pool.connect()
+ try{
+  await db.query('begin')
+  await assert.rejects(service.executionKnowledgeRoleReferencesInTransaction(db,actor,['general'],[missing]),expectActionable)
+ }finally{await db.query('rollback');db.release()}
+})
 test('岗位知识来源变化不静默读取新版，取消和重复声明被拒绝',async()=>{
  const {actor,input,service,file}=await fixture()
  const draft=await service.create(actor,input),resource=await service.apply(actor,{draftId:draft.id,expectedVersion:draft.version})

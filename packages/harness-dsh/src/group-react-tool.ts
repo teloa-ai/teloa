@@ -67,13 +67,31 @@ async function authorize(ctx:Context,ports:GroupReactToolPorts,exec:ReactExecuti
  * 自授权只解决「在群运行里可见」，能不能用完全由本文件的 `authorize()` 判。
  */
 export function registerGroupReactTool(ctx:Context,ports:GroupReactToolPorts):void{
+ // GRP-08：同一次运行对同一条消息的同一表情只落一次；不同表情也按运行去重表限流，
+ // 避免模型工具循环把一条消息刷成整排表情（生产实测同一条本人消息被同一员工加了 6 类表情）。
+ const reacted=new Map<string,Set<string>>()
+ const maxTrackedRuns=500
+ function firstReaction(context:GroupReactRunContext,messageId:string,emoji:GroupReactionEmoji):boolean{
+  let seen=reacted.get(context.runId)
+  if(!seen){
+   seen=new Set()
+   reacted.set(context.runId,seen)
+   if(reacted.size>maxTrackedRuns){const oldest=reacted.keys().next().value;if(oldest!==undefined)reacted.delete(oldest)}
+  }
+  const key=messageId+'\0'+emoji
+  if(seen.has(key))return false
+  seen.add(key)
+  return true
+ }
  ctx.tools.register(defineTool({
   name:groupReactToolName,
-  description:`给本次运行所在话题里的一条群消息加一个表情，用来快速表态（收到、同意、有疑问等），不发消息、不推进任何任务。只能用这十二个固定表情之一：${groupReactionEmojis.join(' ')}。跨话题的消息加不了；同一条消息上重复加同一个表情不会重复计数；不能取消别人的表情。`,
+  description:`给本次运行所在话题里的一条群消息加一个表情，用来快速表态（收到、同意、有疑问等），不发消息、不推进任何任务。只能用这十二个固定表情之一：${groupReactionEmojis.join(' ')}。跨话题的消息加不了；同一次运行里同一条消息的同一表情只会加一次（重复调用返回 duplicate，不重复计数）；不能取消别人的表情。`,
   parameters:{messageId:{type:'string',required:true},emoji:{type:'string',required:true}},
   output:{schema:{type:'string'},render:(_args,value)=>[{type:'text',text:value}]},
   execute:async(args,exec)=>{
    const {context,messageId,emoji}=await authorize(ctx,ports,exec,args)
+   // 重复的表态请求是无副作用的空操作：模型可继续回正文，不因工具去重中断本轮。
+   if(!firstReaction(context,messageId,emoji))return JSON.stringify({messageId,emoji,duplicate:true})
    await ports.react(context,messageId,emoji,exec.signal)
    return JSON.stringify({messageId,emoji})
   },

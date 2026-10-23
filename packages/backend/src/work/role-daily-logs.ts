@@ -1,6 +1,6 @@
 import {createHash} from 'node:crypto'
 import type {Pool,PoolClient} from 'pg'
-import {WorkError,artifactContent,isRoleDailyLog,isRoleDailyLogSummary,isRoleMemory,readScheduleTrigger,roleDailyLogDiscardInput,roleDailyLogGetInput,roleDailyLogListInput,roleDefinition,savedArtifactSource,type RoleDailyLog,type RoleDailyLogEvidence,type RoleDailyLogPruneHint,type RoleDailyLogSummary,type RoleMemory,type ScheduleTrigger} from '@teloa/contract'
+import {WorkError,artifactContent,isRecord,isRoleDailyLog,isRoleDailyLogSummary,isRoleMemory,readScheduleTrigger,roleDailyLogDiscardInput,roleDailyLogGetInput,roleDailyLogListInput,roleDefinition,savedArtifactSource,type RoleDailyLog,type RoleDailyLogEvidence,type RoleDailyLogPruneHint,type RoleDailyLogSummary,type RoleMemory,type ScheduleTrigger} from '@teloa/contract'
 import {planSource} from './plans.ts'
 import type {PlanSource} from './plans.ts'
 import type {RoleMemoryService} from './role-memory.ts'
@@ -8,7 +8,7 @@ import {PlanOccurrenceService,readStoredPlanOccurrence} from './plan-occurrences
 
 export type RoleDailyLogActor={ownerId:string;kind:'human'}|{ownerId:string;kind:'agent';roleId:string}
 export type RoleDayEvidence={
- day:string;roleId:string;roleVersion:number;scopeIds:string[]
+ day:string;timezone:ScheduleTrigger['timezone'];roleId:string;roleVersion:number;scopeIds:string[]
  runs:RoleDailyLogEvidence[];artifacts:RoleDailyLogEvidence[];approvals:RoleDailyLogEvidence[];revisions:RoleDailyLogEvidence[];groupMessages:RoleDailyLogEvidence[]
 }
 export type RoleDailyDigestSubmission={
@@ -38,6 +38,20 @@ const scope=(value:unknown):value is string=>typeof value==='string'&&/^[a-zA-Z0
 const isDay=(value:unknown):value is string=>typeof value==='string'&&/^\d{4}-\d{2}-\d{2}$/.test(value)&&new Date(value+'T00:00:00.000Z').toISOString().slice(0,10)===value
 const invalid=()=>new WorkError('teloa/invalid-input','每日日志请求包含未知字段或格式不正确。')
 const corrupt=()=>new WorkError('teloa/storage-corrupt','每日日志记录损坏，已停止读取。')
+/**
+ * 运行证据必须让模型分辨完成/中止/失败与未完成：终态只取自 `teloa_task_runs.state` 与
+ * `evidence.reason`，不把“有运行”当成“已完成”。非 ended 一律标未完成。
+ */
+function runTerminalLabel(state:unknown,evidence:unknown):string{
+ if(state!=='ended')return '未完成'
+ const reason=isRecord(evidence)&&evidence.state==='ended'?evidence.reason:undefined
+ if(reason==='completed')return '完成'
+ if(reason==='aborted')return '中止'
+ if(reason==='error')return '失败'
+ if(reason==='stopped')return '已停止'
+ return typeof reason==='string'&&reason.trim()?`结束：${reason.trim().slice(0,20)}`:'结束'
+}
+
 const exact=(value:unknown,keys:readonly string[]):Record<string,unknown>=>{
  if(!value||typeof value!=='object'||Array.isArray(value)||Object.keys(value).some(key=>!keys.includes(key)))throw invalid()
  return value as Record<string,unknown>
@@ -217,12 +231,12 @@ export class RoleDailyLogService{
   if(!(from instanceof Date)||!(to instanceof Date))throw corrupt()
   const read=async<T>(work:()=>Promise<T>):Promise<T>=>{try{return await work()}catch(error){if(error instanceof WorkError)throw error;throw corrupt()}}
 
-  const runRows=await read(async()=>(await this.pool.query(`select r.id,t.definition->>'title' as title,t.definition->>'scope' as scope
+  const runRows=await read(async()=>(await this.pool.query(`select r.id,r.state,r.evidence,t.definition->>'title' as title,t.definition->>'scope' as scope
    from teloa_task_runs r join teloa_tasks t on t.id=r.task_id
    where r.owner_id=$1 and r.role_id=$2 and r.created_at>=$3 and r.created_at<$4 order by r.created_at,r.id`,[ownerId,identity.roleId,from,to])).rows)
   const runs:ScopedEvidence[]=runRows.map(row=>{
    if(!uuid(row.id)||typeof row.title!=='string'||!row.title.trim()||!scope(row.scope))throw corrupt()
-   return {item:{kind:'run' as const,id:row.id as string,version:1,title:label('运行：'+row.title)},scope:row.scope}
+   return {item:{kind:'run' as const,id:row.id as string,version:1,title:label('运行（'+runTerminalLabel(row.state,row.evidence)+'）：'+row.title)},scope:row.scope}
   })
   const runIds=runs.map(entry=>entry.item.id)
 
@@ -278,7 +292,7 @@ export class RoleDailyLogService{
   const kept=all.slice(0,roleDailyLogEvidenceLimit),keys=new Set(kept.map(entry=>entry.item.kind+'\0'+entry.item.id))
   const pick=(list:ScopedEvidence[])=>list.filter(entry=>keys.has(entry.item.kind+'\0'+entry.item.id)).map(entry=>entry.item)
   const scopeIds=[...new Set(kept.flatMap(entry=>entry.scope?[entry.scope]:[]))].sort().slice(0,30)
-  return {day:identity.day,roleId:identity.roleId,roleVersion:identity.roleVersion,scopeIds,runs:pick(runs),artifacts:pick(artifacts),approvals:pick(approvals),revisions:pick(revisions),groupMessages:pick(groupMessages)}
+  return {day:identity.day,timezone,roleId:identity.roleId,roleVersion:identity.roleVersion,scopeIds,runs:pick(runs),artifacts:pick(artifacts),approvals:pick(approvals),revisions:pick(revisions),groupMessages:pick(groupMessages)}
  }
 
  /** 一个请求身份落一条日志；候选与剪枝建议先全部核对，任一不成立整次拒绝，库里零残留。 */

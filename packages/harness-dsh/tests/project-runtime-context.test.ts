@@ -1,6 +1,7 @@
 import test,{type TestContext} from 'node:test'
 import assert from 'node:assert/strict'
-import {createAssistantMessage,createSystemMessage,createUserMessage,type GenerateOptions} from '@deepseek-ai/dsh-llm'
+import {createAssistantMessage,createSystemMessage,createUserMessage,ToolCallId,type GenerateOptions,type StreamChunk} from '@deepseek-ai/dsh-llm'
+import {createHash} from 'node:crypto'
 import {Session,SessionId} from '@deepseek-ai/dsh-session'
 import {patchedHotLlmPackage,HotAdapter,textAnswer,toolAnswer,drain,nativeHotCausalityFixture,hotGate} from './fixtures/native-hot-causality.ts'
 import {Context} from '@deepseek-ai/cordis'
@@ -402,3 +403,32 @@ test('真实JSONL冷恢复重核项目许可并重建provider代次，待办仅�
  assert.equal(restored.agent.session.snapshotEvents().filter(event=>event.type==='user/message'&&event.data.id===pending.id).length,1)
  await restored.dispose()
 })
+
+test('项目会话中模型改写项目目标/标题被校验层拦下，普通字段修改仍可执行',async t=>{
+ const f=await nativeHotCausalityFixture(t),p=projectPorts(),goal='项目目标：只交付社区版 Web 工作台。'
+ const hashGoal=(text:string)=>createHash('sha256').update(text).digest('hex')
+ const runtime=registerProjectRuntimeContext(f.ctx,{...p.ports,prepare:async input=>{const prepared=await p.ports.prepare(input);if(!prepared)return null;return {...prepared,sources:[{kind:'project' as const,id:'project-one',version:1,title:'项目甲',hash:hashGoal(goal)},...prepared.sources]}}})
+ t.after(()=>runtime.close())
+ let executions=0
+ f.ctx.tools.register(defineTool({name:'teloa_projects_change',description:'项目定义修改夹具',parameters:{projectId:{type:'string',required:true},expectedVersion:{type:'integer',required:true},fields:{type:'object',required:true,additionalProperties:true}},output:{schema:{type:'string'},render:(_args,value)=>[{type:'text' as const,text:value}]},execute:async()=>{executions++;return 'saved'}}))
+ f.adapter.scripts.push(projectChangeAnswer({projectId:'project-one',expectedVersion:1,fields:{title:'项目甲',goal:goal+'\n\n## 决策\n- 内部代号：PX-204',dueDate:null,state:'planning',links:[],references:[]}}),textAnswer)
+ await sendText(f,'决定：本项目内部代号为 PX-204','project-goal-memory')
+ assert.equal(executions,0,'项目目标改写必须在工具校验层被拦下')
+ assert.equal(f.events().filter(event=>event.type==='turn/end').at(-1)?.data.reason.kind,'completed','工具被拦不等于整轮失败')
+ const request=JSON.stringify(f.adapter.requests.at(-1))
+ assert.match(request,/项目定义/,'模型必须收到可执行的原因')
+ assert.match(request,/not a memory store/,'提示层同时声明项目定义不是记忆载体')
+ f.adapter.scripts.push(projectChangeAnswer({projectId:'project-one',expectedVersion:2,fields:{title:'项目甲',goal,dueDate:null,state:'archived',links:[],references:[]}}),textAnswer)
+ await sendText(f,'把这个项目归档','project-state-change')
+ assert.equal(executions,1,'未改写目标/标题的普通字段修改不应被拦')
+})
+
+function projectChangeAnswer(args:unknown):readonly StreamChunk[]{
+ const text=JSON.stringify(args),id=ToolCallId('project-change-'+Math.random().toString(36).slice(2))
+ return [
+  {type:'block-start',index:0,blockType:'tool-call'},
+  {type:'tool-call-delta',index:0,id,name:'teloa_projects_change',argumentsDelta:text},
+  {type:'block-end',index:0,block:{type:'tool-call',id,name:'teloa_projects_change',arguments:text}},
+  {type:'finish',reason:{kind:'tool-calls'}},
+ ]
+}

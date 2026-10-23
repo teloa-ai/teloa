@@ -83,6 +83,7 @@ export function WorkNavigation({beforeNavigate,marketApps=false,assistantName='T
     <div className={css.navHeader}><WorkbenchNavigationBrand product={application.product} colorScheme={colorScheme} onClose={actions.closeNavigation}/>
     <div className={css.quickActions}><div ref={newWorkGroup} className={css.newWorkGroup}>
       <button ref={newWorkTrigger} type="button" className={css.newWork} aria-label={t('navigation.new')} title={t(creating?'navigation.creating':'navigation.new')} aria-haspopup="menu" aria-expanded={newWorkMenuOpen} aria-controls="teloa-new-work-menu" disabled={creating} onClick={()=>{setAssistantMenuOpen(false);setNewWorkMenuOpen(value=>!value)}}><Plus size={17} aria-hidden/></button>
+      {newWorkMenuOpen&&<div className={css.newWorkBackdrop} aria-hidden="true" onClick={closeNewWorkMenu}/>}
       {newWorkMenuOpen&&<div ref={newWorkMenu} id="teloa-new-work-menu" className={css.newWorkMenu} role="menu" aria-label={t('navigation.moreCreate')} onKeyDown={event=>{
         if(!['ArrowDown','ArrowUp','Home','End'].includes(event.key))return
         event.preventDefault()

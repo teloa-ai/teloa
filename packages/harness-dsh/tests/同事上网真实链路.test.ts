@@ -232,6 +232,13 @@ async function grantWeb(role:Role,rules:Rule[]=[webRule('web_fetch'),webRule('we
  return lifecycle(await reload(paused.id),'resume')
 }
 
+/** 回归夹具（task-18）：新空执行工具闸只要求至少一项执行工具；补一项非上网的整工具授权，保持“未授权上网仍被拒”的原断言。 */
+async function grantRunOnly(role:Role):Promise<Role>{
+ const paused=await lifecycle(role,'pause')
+ await call('role-tools/change',{roleId:paused.id,expectedRoleVersion:paused.version,action:'save',rules:[{name:'subagent_task',anyArguments:true,allowed:[]}]})
+ return lifecycle(await reload(paused.id),'resume')
+}
+
 /** 一键准备：真实 handler 自己建运行专用会话、关联任务并冻结快照。 */
 async function prepareRun(role:Role,title:string):Promise<Run>{
  const task=await call('tasks/create',{requestId:randomUUID(),fields:{title,goal:'核对公开资料',scope:'general'},assignee:{roleId:role.id,expectedVersion:role.version}}) as {id:string;version:number}
@@ -327,7 +334,7 @@ test('★ 第 7 步：同一运行里真的搜一次，落 kind=search 的第二
 
 test('第 8 步：未勾上网的在岗同事被逐字拒，且一行记录都不增',{timeout:180000},async()=>{
  if(!['accepted','active'].includes(authorizedRun.state))authorizedRun=await startRun(authorizedRun)
- const other=await hireColleague('上网未授权')
+ const other=await grantRunOnly(await hireColleague('上网未授权'))
  unauthorizedRun=await startRun(await prepareRun(other,'未授权同事的同一目标'))
  assert.ok(!unauthorizedRun.allowedTools.includes('web_fetch'))
  const before=await allWebRows(),bodies=fetchBodies+searchBodies
@@ -434,7 +441,7 @@ test('第 12 步：绑定业务对象来源的会话仍 fail-closed，逐字不�
  const data=await call('business-data/query',{scope:'SOC',limit:1}) as {items:Record<string,unknown>[]}
  const item=data.items[0]
  assert.ok(item,'业务数据来源必须已就绪')
- const analyst=await call('roles/create',{requestId:randomUUID(),fields:{name:'告警分析',kind:'employee',scopes:['SOC'],duty:'核对告警',dataScope:'SOC 告警',executionScope:'只读',skills:[],knowledge:[],responsibility:testRoleResponsibility,runtimeConfig:{agentPresetId:'teloa-standard'}}}) as Role
+ const analyst=await grantRunOnly(await call('roles/create',{requestId:randomUUID(),fields:{name:'告警分析',kind:'employee',scopes:['SOC'],duty:'核对告警',dataScope:'SOC 告警',executionScope:'只读',skills:[],knowledge:[],responsibility:testRoleResponsibility,runtimeConfig:{agentPresetId:'teloa-standard'}}}) as Role)
  const created=await call('business-tasks/create',{requestId:randomUUID(),reference:{scope:item.scope,type:item.type,id:item.id,version:item.version,snapshotHash:item.snapshotHash},goal:'核对异常外联',assignee:{roleId:analyst.id,expectedVersion:analyst.version}}) as {task:{id:string;version:number}}
  const run=await startRun(await call('task-runs/prepare',{requestId:randomUUID(),taskId:created.task.id,expectedTaskVersion:created.task.version}) as Run)
  const before=await allWebRows(),bodies=fetchBodies+searchBodies

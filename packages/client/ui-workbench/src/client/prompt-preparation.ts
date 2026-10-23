@@ -2,21 +2,63 @@ import { restoreRecoveredText } from './resource-recovery.ts'
 import type { HomeResourceSelection } from './home-resource-selection.ts'
 import { encodeResourceReference } from '@teloa/contract'
 import type { InputState } from '@deepseek-ai/dsh-client-ui-conversation/client'
+export type PreparationStorage={read:()=>string|null;write:(value:string)=>void;clear:()=>void}
+/** 打开的会话重开（刷新/关闭后回来）仍要看到「已准备未发送」的可恢复入口，因此待发送记录落本地存储。 */
+export const preparationStorageKey='teloa.prompt-preparation/v1'
+const preparationSchema='teloa.prompt-preparation/v1'
+const preparationRetentionMs=3*24*60*60*1000
+const preparationLimit=10
+const browserPreparationStorage=():PreparationStorage|undefined=>{
+ try{
+  const storage=globalThis.localStorage
+  if(!storage)return undefined
+  return {read:()=>storage.getItem(preparationStorageKey),write:value=>storage.setItem(preparationStorageKey,value),clear:()=>storage.removeItem(preparationStorageKey)}
+ }catch{return undefined}
+}
+/** 恢复只认仍然待发送/待核对的行；带入完成、放弃或超过保留期的记录不再出现在会话里。 */
+function restorePreparation(storage:PreparationStorage|undefined):PreparedPrompt[]{
+ if(!storage)return []
+ try{
+  const raw=storage.read()
+  if(!raw)return []
+  if(raw.length>500_000)throw Error()
+  const saved=JSON.parse(raw) as {schema?:unknown;savedAt?:unknown;rows?:unknown}
+  if(saved.schema!==preparationSchema||typeof saved.savedAt!=='string'||!Array.isArray(saved.rows))throw Error()
+  const savedAt=new Date(saved.savedAt).getTime(),now=Date.now()
+  if(!Number.isFinite(savedAt)||now-savedAt>preparationRetentionMs||now-savedAt<0)throw Error()
+  const rows=(saved.rows as unknown[]).filter((value):value is PreparedPrompt=>value!==null&&typeof value==='object'&&'id' in value&&(value as {status?:unknown}).status!=='inserted'&&(value as {status?:unknown}).status!=='dismissed').filter(value=>{
+   const row=value as Record<string,unknown>
+   return typeof row.id==='string'&&!!row.id&&typeof row.sourceId==='string'&&typeof row.sessionId==='string'&&typeof row.title==='string'&&typeof row.text==='string'&&Number.isSafeInteger(row.sourceVersion)&&(row.status==='pending'||row.status==='stale')&&(row.sourceKind===undefined||row.sourceKind==='home'||row.sourceKind==='task')&&(!row.resources||Array.isArray(row.resources))&&(!row.skills||Array.isArray(row.skills))
+  }).slice(-preparationLimit)
+  return rows
+ }catch{storage.clear();return []}
+}
 export type HomeSkillSelection={name:string;source:string;provider:string}
 export type PreparedSkillCandidate=HomeSkillSelection&{userInvocable:boolean}
 export type PreparedInputSnapshot=Pick<InputState,'draft'|'draftRev'|'phase'|'attachmentIds'>&{running:boolean}
 export type PreparedInputPort={read:()=>PreparedInputSnapshot;text:(text:string,revision:number)=>Promise<PreparedInputSnapshot>;reference:(resource:HomeResourceSelection,revision:number)=>Promise<PreparedInputSnapshot>}
 export type PreparedPrompt={id:string;sourceId:string;sourceKind?:'home'|'task';taskSnapshot?:string;sourceVersion:number;sessionId:string;title:string;text:string;resources?:HomeResourceSelection[];skills?:HomeSkillSelection[];transfer?:{textInserted:boolean;resourceIds:string[]};status:'pending'|'inserted'|'stale'|'dismissed'}
 export class PromptPreparation{
-  private rows:PreparedPrompt[]=[]
+  private rows:PreparedPrompt[]
   private listeners=new Set<()=>void>()
+  private readonly storage:PreparationStorage|undefined
+  constructor(storage:PreparationStorage|undefined=browserPreparationStorage()){this.storage=storage;this.rows=restorePreparation(storage)}
   private transferring=new Set<string>()
   // 自动带入只属于 prepare 的这次意图；跨卡片重挂载也不重复失败或回填已处理的草稿。
   private automaticInsert=new Map<string,'manual'|'attempted'>()
   private insertionFailures=new Map<string,{error:unknown}>()
   getSnapshot=()=>this.rows
   subscribe=(listener:()=>void)=>{this.listeners.add(listener);return()=>{this.listeners.delete(listener)}}
-  private publish(rows:PreparedPrompt[]){this.rows=rows;for(const listener of this.listeners)listener()}
+  private publish(rows:PreparedPrompt[]){this.rows=rows;this.persist();for(const listener of this.listeners)listener()}
+  /** 只持久化还能恢复的记录；带入进度也保存，重开后仍知道哪些内容已带过、避免重复带入。 */
+  private persist(){
+   if(!this.storage)return
+   try{
+    const rows=this.rows.filter(row=>row.status==='pending'||row.status==='stale').slice(-preparationLimit)
+    if(!rows.length){this.storage.clear();return}
+    this.storage.write(JSON.stringify({schema:preparationSchema,savedAt:new Date().toISOString(),rows}))
+   }catch{/* 本地存储不可用或已满时保留内存态，不阻塞准备流程。 */}
+  }
   claimAutomaticInsert(id:string,sessionId:string,input:PreparedInputSnapshot,ready=true){
     const row=this.rows.find(value=>value.id===id)
     if(!row||row.sessionId!==sessionId||row.status!=='pending'||row.transfer||this.automaticInsert.has(id)||this.transferring.has(id))return false

@@ -2,7 +2,7 @@ import {useContext,useEffect,useRef,useState,type ReactNode} from 'react'
 import {WorkError,type BusinessDefinitionPreview,type PageCreateDraftDirectory,type PageCreateDraftPreview,type PageCreateEntity} from '@teloa/contract'
 import type {MessageKey} from './i18n/messages.js'
 import type {PageCreateApi} from './page-create-api.js'
-import {createPlanPreview,isPlanPreviewConsequence,createReadableFields,createConfirmGuard,createConsequenceKey,createDraftRows,createFailureKey,createNextKey,createOptions,createPlaceholderKey,createSentencePrompt} from './page-create-presentation.js'
+import {createPlanPreview,isPlanPreviewConsequence,createReadableFields,createConfirmGuard,createConsequenceKey,createDraftRows,createFailureKey,createNextKey,createOptions,createPlaceholderKey,createSentencePrompt,readCreateSentenceDraft,writeCreateSentenceDraft,type CreateSentenceDraft} from './page-create-presentation.js'
 import {useI18n} from './i18n/provider.js'
 import {useDismissible} from './use-dismissible.js'
 import css from './CreateEntry.module.css'
@@ -82,13 +82,17 @@ function CreateEntryContent({entity,scope,api,empty,openForm,openMarket,prepare,
  const [directory,setDirectory]=useState<PageCreateDraftDirectory>()
  const [failure,setFailure]=useState<'create.readFailed'|'create.conflict'|'create.forbidden'>()
  const [reload,setReload]=useState(0)
- const [sentenceOpen,setSentenceOpen]=useState(false)
- const readSentence=()=>{try{const saved=sentenceDraft?.storage.getItem(sentenceDraft.key);return saved&&saved.length<=2000?saved:''}catch{return ''}}
- const [sentence,setSentence]=useState(readSentence)
+ // 句稿记录按入口持久化：预备成功也保留原说明（prepared=true），重开入口能恢复并标明「已备好未发送」。
+ const readSentenceDraft=():CreateSentenceDraft=>{try{return readCreateSentenceDraft(sentenceDraft?.storage.getItem(sentenceDraft.key))}catch{return {text:'',prepared:false}}}
+ const initialDraft=readSentenceDraft()
+ // 恢复出的句稿默认展开，用户一进入口就能看到原说明或被标明「已备好未发送」的草稿。
+ const [sentenceOpen,setSentenceOpen]=useState(initialDraft.text!=='')
+ const [sentence,setSentence]=useState(initialDraft.text)
  const latestSentence=useRef(sentence);latestSentence.current=sentence
- const writeSentence=(value:string)=>{setSentence(value);try{if(sentenceDraft){if(value)sentenceDraft.storage.setItem(sentenceDraft.key,value);else sentenceDraft.storage.removeItem(sentenceDraft.key)}}catch{/* 存储不可用时仍保留本入口内存原稿。 */}}
- useEffect(()=>{setSentence(readSentence())},[sentenceDraft?.key,sentenceDraft?.storage])
- const [prepared,setPrepared]=useState(false)
+ const writeSentenceDraft=(draft:CreateSentenceDraft)=>{setSentence(draft.text);setPrepared(draft.prepared);try{if(sentenceDraft){const raw=writeCreateSentenceDraft(draft);if(raw)sentenceDraft.storage.setItem(sentenceDraft.key,raw);else sentenceDraft.storage.removeItem(sentenceDraft.key)}}catch{/* 存储不可用时仍保留本入口内存原稿。 */}}
+ const writeSentence=(value:string)=>writeSentenceDraft({text:value,prepared:false})
+ useEffect(()=>{const saved=readSentenceDraft();setSentence(saved.text);setPrepared(saved.prepared)},[sentenceDraft?.key,sentenceDraft?.storage])
+ const [prepared,setPrepared]=useState(initialDraft.prepared)
  const [preparing,setPreparing]=useState(false)
  const [openDraft,setOpenDraft]=useState<string>()
  const [preview,setPreview]=useState<PageCreateDraftPreview>()
@@ -283,8 +287,7 @@ function CreateEntryContent({entity,scope,api,empty,openForm,openMarket,prepare,
     try{
      await prepare(createSentencePrompt(entity,scope,sentence,t))
      if(!currentEntry())return
-     setPrepared(true)
-     if(latestSentence.current===submittedSentence){writeSentence('');setSentenceOpen(false);onPrepared?.()}
+     if(latestSentence.current===submittedSentence){writeSentenceDraft({text:submittedSentence,prepared:true});setSentenceOpen(false);onPrepared?.()}
     }catch(error){if(error!==null&&typeof error==='object'&&'code' in error&&error.code==='teloa/cancelled')return;if(currentEntry())setFailure(createFailureKey(error))}
     finally{current.busy=false;if(currentEntry())setPreparing(false)}
    }}>
@@ -294,7 +297,7 @@ function CreateEntryContent({entity,scope,api,empty,openForm,openMarket,prepare,
     <button type="submit" disabled={!sentence.trim()||preparing}>{t(submitLabelKey??'create.sentence.submit')}</button>
    </form>}
   </div>
-  {prepared&&<p role="status" className={css.notice}>{t('create.sentence.prepared')}</p>}
+  {prepared&&<p role="status" className={css.notice}>{t('create.sentence.prepared')}<button type="button" className={css.clearDraft} onClick={()=>writeSentenceDraft({text:'',prepared:false})}>{t('recovery.discard')}</button></p>}
   {!focusDraft&&<div className={css.draftsHeader}><h3 className={css.draftsTitle}>{t('create.drafts.title')}</h3>
    <ToolbarIconButton label={t('create.retry')} icon={RefreshCw} disabled={busy} onClick={()=>setReload(value=>value+1)}/>
   </div>}

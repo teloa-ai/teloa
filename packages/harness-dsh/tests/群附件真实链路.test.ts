@@ -207,6 +207,20 @@ test('群附件从上传到看图与同事贴回：真库、真端点、真附�
   }
   throw new Error(`${endpoint} 本应被拒绝却成功了`)
  }
+
+ // 回归夹具（task-18）：新的空执行工具闸要求员工运行至少一项真实执行工具；按宿主候选授权后恢复在岗，不放宽产品闸。
+ type GrantableRole={id:string;version:number}
+ const reloadRole=async(roleId:string):Promise<GrantableRole>=>{const rows=await rpcCall('roles/list',{}) as GrantableRole[];const found=rows.find(item=>item.id===roleId);assert.ok(found,'岗位必须仍在目录');return found}
+ const moveRole=async(role:GrantableRole,action:'pause'|'resume'):Promise<GrantableRole>=>{await rpcCall('roles/lifecycle',{roleId:role.id,expectedVersion:role.version,action,reason:'回归夹具：配置执行工具'});return reloadRole(role.id)}
+ const grantExecutionTools=async(role:GrantableRole):Promise<GrantableRole>=>{
+  const paused=await moveRole(role,'pause')
+  const page=await rpcCall('role-tools/candidates',{roleId:paused.id}) as {rules:{name:string}[]}
+  // 群场景必须授权 web/业务真实执行工具；不把 subagent_task 当成群运行能力。
+  const rule=page.rules.find(item=>item.name==='web_search')??page.rules.find(item=>item.name==='web_fetch')??page.rules.find(item=>item.name!=='subagent_task')
+  assert.ok(rule,'群场景必须能授权到 web/业务真实工具候选')
+  await rpcCall('role-tools/change',{roleId:paused.id,expectedRoleVersion:paused.version,action:'save',rules:[{name:rule.name,anyArguments:true,allowed:[]}]})
+  return moveRole(await reloadRole(paused.id),'resume')
+ }
  const countOf=async(table:string):Promise<number>=>Number((await pool.query(`select count(*)::int as count from ${table} where owner_id=$1`,[owner])).rows[0].count)
  const counts=async()=>({snapshots:await countOf('teloa_artifact_snapshots'),versions:await countOf('teloa_artifact_versions'),attachments:await countOf('teloa_attachments'),messages:await countOf('teloa_group_messages')})
 
@@ -214,7 +228,8 @@ test('群附件从上传到看图与同事贴回：真库、真端点、真附�
  const role=await rpcCall('roles/create',{requestId:randomUUID(),fields:{name:'SOC 研判员',kind:'employee',scopes:['SOC'],duty:'研判固定告警资料',dataScope:'固定资料',executionScope:'代拟',skills:[],knowledge:[],responsibility:testRoleResponsibility,runtimeConfig:{agentPresetId:'soc-analyst'}}}) as {id:string;version:number;state:string}
  // 置在岗这一步是**直写 SQL**，不是走端点：岗位上岗另有一条与本期无关的流程，这里只要一个在岗同事做前置。
  await pool.query("update teloa_roles set state='active' where owner_id=$1 and id=$2",[owner,role.id])
- const activeRole={id:role.id,version:role.version}
+ const grantedRole=await grantExecutionTools(role as GrantableRole)
+ const activeRole={id:grantedRole.id,version:grantedRole.version}
  const rules={historyVisibleToNewMembers:true,draftsVisibleInGroup:true,mentionAllAllowed:true}
  const groupA=await rpcCall('groups/create',{requestId:randomUUID(),expectedVersion:0,fields:{name:'SOC 研判群',scope:'SOC',announcement:'仅使用已固定资料。',rules,memberRoleIds:[activeRole.id]}}) as {id:string;version:number}
  const groupB=await rpcCall('groups/create',{requestId:randomUUID(),expectedVersion:0,fields:{name:'第二研判群',scope:'SOC',announcement:'跨群引用验收。',rules,memberRoleIds:[activeRole.id]}}) as {id:string;version:number}

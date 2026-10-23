@@ -162,7 +162,7 @@ export class PlanCoordinator{
      if(this.needsBaseline.has(plan.id))continue
      const result=await attempt({phase:'claim',planId:plan.id},()=>this.ports.occurrences.claim(this.owner,{planId:plan.id,now}))
      if(!result.ok)continue
-     if(result.value.skip)await publish({phase:'skip',planId:plan.id},'skipped',result.value.skip.reason==='previous-pending'?'teloa/plan-pending-overlap':'teloa/plan-task-overlap')
+     if(result.value.skip)await publish({phase:'skip',planId:plan.id},'skipped',result.value.skip.reason==='digest-exists'?'teloa/digest-exists':result.value.skip.reason==='previous-pending'?'teloa/plan-pending-overlap':'teloa/plan-task-overlap')
      if(result.value.dispatch&&result.value.occurrence){await dispatch(result.value.occurrence);claimed=true}
     }
     // 前一遍已处理（含失败）的 claim/run 本轮不再调用，避免刚提交后重复 reconcile。

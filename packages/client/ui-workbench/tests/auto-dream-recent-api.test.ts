@@ -8,17 +8,28 @@ const role=(patch:Partial<DigitalRole>):DigitalRole=>({id:'11111111-1111-4111-81
 const summary=(day:string,state:'kept'|'discarded'='kept',kind:'daily-digest'|'habit-digest'='daily-digest'):RoleDailyLogSummary=>({id:'22222222-2222-4222-8222-2222222222'+day.slice(8),kind,day,state,title:'小结 '+day,createdAt:now})
 const employee=role({}),twin=role({id:'33333333-3333-4333-8333-333333333333',name:'分身',kind:'twin'}),paused=role({id:'44444444-4444-4444-8444-444444444444',name:'已暂停',state:'paused'})
 
-test('只取在岗岗位，每位恰调一次 dailyLogs，7 个方格按日期升序、kept 才实心',async()=>{
+test('只取在岗岗位，每位恰调一次 dailyLogs，7 个方格按日历日升序、kept 才实心',async()=>{
  const calls:string[]=[]
- const api=createAutoDreamRecentApi({roles:async()=>[employee,twin,paused],dailyLogs:async id=>{calls.push(id);return id===employee.id?[summary('2026-09-21'),summary('2026-09-20','discarded'),summary('2026-09-15')]:[summary('2026-09-21','kept','habit-digest')]}})
+ const api=createAutoDreamRecentApi({roles:async()=>[employee,twin,paused],dailyLogs:async id=>{calls.push(id);return id===employee.id?[summary('2026-09-22'),summary('2026-09-21'),summary('2026-09-20','discarded'),summary('2026-09-15')]:[summary('2026-09-21','kept','habit-digest')]}})
  const rows=await api.load({trigger:sg,planRoleIds:[employee.id],now})
  assert.deepEqual(calls,[employee.id,twin.id])
  assert.equal(rows.length,2)
- assert.deepEqual(rows[0]!.days.map(d=>d.day),['2026-09-15','2026-09-16','2026-09-17','2026-09-18','2026-09-19','2026-09-20','2026-09-21'])
- assert.deepEqual(rows[0]!.days.map(d=>d.kept),[true,false,false,false,false,false,true])
+ assert.deepEqual(rows[0]!.days.map(d=>d.day),['2026-09-16','2026-09-17','2026-09-18','2026-09-19','2026-09-20','2026-09-21','2026-09-22'])
+ assert.deepEqual(rows[0]!.days.map(d=>d.kept),[false,false,false,false,false,true,true])
  assert.equal(rows[0]!.today,'generated');assert.equal(rows[0]!.hasPlan,true);assert.equal(rows[0]!.kind,'employee')
+ // 分身的观察日仍是 2026-09-21（本地 00:00 早于 23:30），与员工日历日不同。
  assert.equal(rows[1]!.today,'habit');assert.equal(rows[1]!.hasPlan,true,'分身不需要计划，恒 true')
 })
+
+test('23:30 前的立即运行小结落在日历当天，窗口末尾与今天状态都不再是昨天',async()=>{
+ const beforeTrigger='2026-09-21T14:00:00.000Z' // 新加坡 21 日 22:00 < 23:30
+ const api=createAutoDreamRecentApi({roles:async()=>[employee],dailyLogs:async()=>[summary('2026-09-21')]})
+ const [row]=await api.load({trigger:sg,planRoleIds:[employee.id],now:beforeTrigger})
+ assert.deepEqual(row!.days.map(d=>d.day),['2026-09-15','2026-09-16','2026-09-17','2026-09-18','2026-09-19','2026-09-20','2026-09-21'])
+ assert.equal(row!.days.at(-1)!.kept,true,'当天立即运行生成的小结必须出现在窗口最后一天')
+ assert.equal(row!.today,'generated','当天已有小结时应显示今天已生成')
+})
+
 test('在岗同事无计划 → hasPlan=false；当日无日志 → today=none',async()=>{
  const api=createAutoDreamRecentApi({roles:async()=>[employee],dailyLogs:async()=>[summary('2026-09-19')]})
  const [row]=await api.load({trigger:sg,planRoleIds:[],now})

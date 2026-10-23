@@ -2,7 +2,7 @@ import {WorkError,type GroupTaskCreateInput,type GroupDispatchItem} from '@teloa
 import type {GroupRoutingOutboxService} from '@teloa/backend'
 
 export type GroupRoutingOutboxPorts={
- outbox:Pick<GroupRoutingOutboxService,'pending'|'claim'|'assertDispatch'|'taskInput'|'receipt'|'reserveSubmission'|'settle'>&Partial<Pick<GroupRoutingOutboxService,'releaseStages'>>
+ outbox:Pick<GroupRoutingOutboxService,'pending'|'claim'|'assertDispatch'|'taskInput'|'receipt'|'reserveSubmission'|'settle'>&Partial<Pick<GroupRoutingOutboxService,'releaseStages'|'activeRolesInRoot'>>
  createTask:(owner:string,input:GroupTaskCreateInput,signal:AbortSignal)=>Promise<{taskId:string}>
  prepare:(owner:string,input:{requestId:string;taskId:string;expectedTaskVersion:number},signal:AbortSignal)=>Promise<{runId:string}>
  /** 复用 TaskRunDriver.start 的持久 claim；禁止适配成直接 prompt。 */

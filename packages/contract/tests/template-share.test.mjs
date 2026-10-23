@@ -221,3 +221,32 @@ test('an employee declares the apps it depends on through role-connection to a p
  assert.equal(share.readTemplateSharePackageV2(p).subject,'employee')
  assert.throws(()=>share.readTemplateSharePackageV2(editV2(structuredClone(p),m=>{m.relations=[{kind:'role-skill',from:'lead',to:'helper'}]})),/relationship/,'应用只经 role-connection 关联')
 })
+
+test('work-template resources must be JSON declarations and errors name the offending resource',()=>{
+ const p=team();editV2(p,m=>{m.resources.push(res('flow','work-template','work-templates/flow.md'))});setFile(p,'work-templates/flow.md','# Flow\n')
+ assert.throws(()=>readAny(p),/work-template resource flow must use a JSON declaration file \(\.json\): work-templates\/flow\.md/)
+})
+test('missing package fields are named instead of a generic invalid-template error',()=>{
+ const p=app();delete p.title
+ assert.throws(()=>readAny(p),/Missing: title/)
+})
+
+test('全量模板校验错误点名资源 id、路径与缺失字段，供 页内新建 按原因修正',()=>{
+ const missingFile=employee();dropFile(missingFile,'roles/lead.json')
+ assert.throws(()=>readAny(missingFile),/resource file is missing: lead \(roles\/lead\.json\)/)
+ const wrongType=editV2(employee(),m=>{m.resources[0].kind='bot'})
+ assert.throws(()=>readAny(wrongType),/resource lead has an unsupported type: bot/)
+ const reused=editV2(employee(),m=>{m.resources[1].source.path='roles/lead.json'})
+ assert.throws(()=>readAny(reused),/resource file is reused: roles\/lead\.json \(resource review\)/)
+ const plainText=editV2(employee(),m=>{m.resources[1].source.path='skills/review/data.json'})
+ assert.throws(()=>readAny(setFile(plainText,'skills/review/data.json','{}')),/skill resource review must be plain text \(\.md\/\.txt\): skills\/review\/data\.json/)
+ const relation=editV2(employee(),m=>{m.relations=[{kind:'role-skill',from:'lead',to:'absent'}]})
+ assert.throws(()=>readAny(relation),/relationship is incomplete or invalid: role-skill lead -> absent/)
+ const identity=editV2(employee(),m=>{m.id='other-id'})
+ assert.throws(()=>readAny(identity),/identity or version differ: other-id@1\.0\.0 vs research-team@1\.0\.0/)
+ const missingField=app();delete missingField.title
+ assert.throws(()=>readAny(missingField),/Missing: title/)
+ // v1 同一条：资源文件缺失也要点名资源与路径。
+ const v1=changeManifest(sample(),v=>{v.resources[0].source.path='missing.json'})
+ assert.throws(()=>readTemplateSharePackage(v1),/resource file is missing: employee \(missing\.json\)/)
+})

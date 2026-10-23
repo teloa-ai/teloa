@@ -6,8 +6,15 @@ const SEMVER = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/
 const kinds = ['role','skill','knowledge','work-template','plan']
 const targets = {'role-knowledge':'knowledge','role-skill':'skill','role-work':['work-template','plan']}
 const fail = message => { throw new Error(message) }
+/** 校验详情只用于指出出错字段/资源，不携带正文：字符串截断、非字符串转 JSON 文本。 */
+const detail = (value, max = 120) => {
+ const text = typeof value === 'string' ? value : (() => { try { return JSON.stringify(value) } catch { return String(value) } })()
+ return (text ?? String(value)).slice(0, max)
+}
 function object(value, keys, required = keys) {
- if (!value || typeof value !== 'object' || Array.isArray(value) || Object.keys(value).some(k=>!keys.includes(k)) || required.some(k=>!Object.hasOwn(value,k))) fail('Template contains missing or unsupported fields.')
+ if (!value || typeof value !== 'object' || Array.isArray(value)) fail('Template contains missing or unsupported fields.')
+ const missing=required.filter(k=>!Object.hasOwn(value,k)),unsupported=Object.keys(value).filter(k=>!keys.includes(k))
+ if (missing.length||unsupported.length) fail('Template contains missing or unsupported fields.'+(missing.length?' Missing: '+missing.join(', ')+'.':'')+(unsupported.length?' Unsupported: '+unsupported.join(', ')+'.':''))
  return value
 }
 function text(value,max,empty=false) {
@@ -16,12 +23,12 @@ function text(value,max,empty=false) {
 }
 function path(value) {
  text(value,300)
- if(value.startsWith('/')||value.split('/').some(v=>!v||v.startsWith('.'))||/[\\:?%#\x00-\x1f\x7f]/.test(value)||!(/\.(md|txt|json)$/i.test(value)||/^(?:.*\/)?(?:LICENSE|README)$/.test(value)))fail('Template file path is unsafe or executable.')
+ if(value.startsWith('/')||value.split('/').some(v=>!v||v.startsWith('.'))||/[\\:?%#\x00-\x1f\x7f]/.test(value)||!(/\.(md|txt|json)$/i.test(value)||/^(?:.*\/)?(?:LICENSE|README)$/.test(value)))fail('Template file path is unsafe or executable: '+detail(value)+'.')
  return value
 }
 function list(value,max) {if(!Array.isArray(value)||value.length>max)fail('Template list is invalid or too long.');return value}
-function localId(value) {text(value,120);if(!/^[a-zA-Z0-9][a-zA-Z0-9-]*$/.test(value))fail('Template resource identifier is invalid.');return value}
-function version(value) {text(value,80);if(!SEMVER.test(value))fail('Template version must be exact.');return value}
+function localId(value) {text(value,120);if(!/^[a-zA-Z0-9][a-zA-Z0-9-]*$/.test(value))fail('Template resource identifier is invalid: '+detail(value)+'.');return value}
+function version(value) {text(value,80);if(!SEMVER.test(value))fail('Template version must be exact: '+detail(value)+'.');return value}
 function json(value) {try{return JSON.parse(value)}catch{fail('Template JSON is invalid.')}}
 function unique(values) {if(new Set(values).size!==values.length)fail('Template list repeats.');return values}
 
@@ -76,7 +83,7 @@ function relations(value,max,byId,allowedTargets) {
  const seen=new Set()
  for(const raw of list(value,max)){
   const r=object(raw,['kind','from','to']),from=byId.get(r.from),to=byId.get(r.to),allowed=allowedTargets[r.kind]
-  if(!from||!to||from.kind!=='role'||!allowed||(Array.isArray(allowed)?!allowed.includes(to.kind):allowed!==to.kind))fail('Template relationship is incomplete or invalid.')
+  if(!from||!to||from.kind!=='role'||!allowed||(Array.isArray(allowed)?!allowed.includes(to.kind):allowed!==to.kind))fail('Template relationship is incomplete or invalid: '+detail(r.kind)+' '+detail(r.from)+' -> '+detail(r.to)+'.')
   const key=JSON.stringify(r);if(seen.has(key))fail('Template relationship repeats.');seen.add(key)
  }
 }
@@ -85,15 +92,15 @@ function entrypoints(value,max,byId) {
 }
 function manifest(value,pkg,files) {
  const m=object(value,['format','id','version','title','description','domain','scope','resources','relations','entrypoints'])
- if(m.format!=='teloa.business-package/v2'||m.id!==pkg.id||m.version!==pkg.version)fail('Template and manifest identity or version differ.')
+ if(m.format!=='teloa.business-package/v2'||m.id!==pkg.id||m.version!==pkg.version)fail('Template and manifest identity or version differ: '+detail(m.id)+'@'+detail(m.version)+' vs '+detail(pkg.id)+'@'+detail(pkg.version)+'.')
  text(m.title,120);text(m.description,2000);text(m.domain,80)
  if(typeof m.scope!=='string'||!/^[a-zA-Z0-9_-]{1,64}$/.test(m.scope))fail('Template scope is invalid.')
  const rows=list(m.resources,100).map(raw=>{
   const r=object(raw,['id','kind','title','version','required','source']);localId(r.id);text(r.title,120);version(r.version)
-  if(!kinds.includes(r.kind)||typeof r.required!=='boolean')fail('Template resource type is unsupported.')
+  if(!kinds.includes(r.kind)||typeof r.required!=='boolean')fail('Template resource '+detail(r.id)+' has an unsupported type: '+detail(r.kind)+'.')
   const source=object(r.source,['kind','path']);if(source.kind!=='local')fail('Template resources must be self-contained.')
-  path(source.path);if(!files.has(source.path)||source.path==='teloa.json')fail('Template resource file is missing.')
-  if(['role','plan','work-template'].includes(r.kind)&&!source.path.endsWith('.json'))fail('Template declaration must be JSON.')
+  path(source.path);if(!files.has(source.path)||source.path==='teloa.json')fail('Template resource file is missing: '+detail(r.id)+' ('+detail(source.path)+').')
+  if(['role','plan','work-template'].includes(r.kind)&&!source.path.endsWith('.json'))fail('Template '+r.kind+' resource '+r.id+' must use a JSON declaration file (.json): '+source.path+'.')
   if(['skill','knowledge'].includes(r.kind)&&!(/\.(md|txt)$/i.test(source.path)))fail('Template resource must be plain text.')
   return r
  })
@@ -120,7 +127,7 @@ export function readTemplateSharePackage(value) {
  const c=object(row.compatibility,['manifestFormat','capabilities']),capabilities=list(c.capabilities,2)
  if(c.manifestFormat!=='teloa.business-package/v2'||!capabilities.includes('people')||capabilities.some(v=>!['people','automation'].includes(v))||new Set(capabilities).size!==capabilities.length)fail('Template requires an unsupported capability.')
  const files=list(row.files,100).map(raw=>{const f=object(raw,['path','text']);path(f.path);text(f.text,262144);if(encoder.encode(f.text).byteLength>262144)fail('Template file exceeds 256 KiB.');return {path:f.path,text:f.text}})
- const byPath=new Map(files.map(f=>[f.path,f.text]));if(byPath.size!==files.length||!byPath.has('teloa.json'))fail('Template files repeat or teloa.json is missing.')
+ const byPath=new Map(files.map(f=>[f.path,f.text]));if(byPath.size!==files.length||!byPath.has('teloa.json'))fail('Template files repeat or teloa.json is missing: '+detail(files.length-byPath.size)+' repeated file(s).')
  const pkg={format:row.format,id:row.id,version:row.version,title:row.title,description:row.description,requirements,compatibility:{manifestFormat:c.manifestFormat,capabilities:[...capabilities]},files}
  screen([pkg.title,pkg.description,...requirements,...files.map(f=>f.text)])
  manifest(json(byPath.get('teloa.json')),pkg,byPath)
@@ -202,7 +209,7 @@ function httpsLink(value) {
 }
 function manifestV2(value,pkg,files) {
  const m=object(value,['format','id','version','title','description','domain','scope','resources','relations','entrypoints'],['format','id','version','title','description','domain','resources','relations','entrypoints'])
- if(m.format!==pkg.compatibility.manifestFormat||m.id!==pkg.id||m.version!==pkg.version)fail('Template and manifest identity or version differ.')
+ if(m.format!==pkg.compatibility.manifestFormat||m.id!==pkg.id||m.version!==pkg.version)fail('Template and manifest identity or version differ: '+detail(m.id)+'@'+detail(m.version)+' vs '+detail(pkg.id)+'@'+detail(pkg.version)+'.')
  text(m.title,120);text(m.description,2000);text(m.domain,80)
  // 与业务包容器一致：缺省 scope 时取 domain。
  const scope=m.scope===undefined?m.domain:m.scope
@@ -211,8 +218,8 @@ function manifestV2(value,pkg,files) {
  const rows=list(m.resources,500).map(raw=>{
   const r=object(raw,['id','kind','title','version','required','source',...(m.format==='teloa.business-package/v2'?[]:['modelDependencies'])],['id','kind','title','version','required','source'])
   localId(r.id);text(r.title,120);version(r.version)
-  if(!V2_KINDS.includes(r.kind)||typeof r.required!=='boolean')fail('Template resource type is unsupported.')
-  if(r.kind==='business-configuration'&&m.format!=='teloa.business-package/v4')fail('Template business configuration requires teloa.business-package/v4.')
+  if(!V2_KINDS.includes(r.kind)||typeof r.required!=='boolean')fail('Template resource '+detail(r.id)+' has an unsupported type: '+detail(r.kind)+'.')
+  if(r.kind==='business-configuration'&&m.format!=='teloa.business-package/v4')fail('Template resource '+detail(r.id)+' requires manifest format teloa.business-package/v4 for business configuration.')
   if(Object.hasOwn(r,'modelDependencies')){if(!['skill','work-template'].includes(r.kind))fail('Template model dependencies are invalid.');modelDependencies(r.modelDependencies)}
   if(r.source?.kind==='public'){
    const source=object(r.source,['kind','id','version']);localId(source.id)
@@ -220,17 +227,17 @@ function manifestV2(value,pkg,files) {
    return r
   }
   const source=object(r.source,['kind','path']);if(source.kind!=='local')fail('Template resources must be self-contained or pinned public references.')
-  path(source.path);if(used.has(source.path))fail('Template resource file is missing or reused.');used.add(source.path)
-  if(TEXT_KINDS.includes(r.kind)?!/\.(md|txt)$/i.test(source.path):!source.path.endsWith('.json'))fail(TEXT_KINDS.includes(r.kind)?'Template resource must be plain text.':'Template declaration must be JSON.')
+  path(source.path);if(used.has(source.path))fail('Template resource file is reused: '+detail(source.path)+' (resource '+detail(r.id)+').');used.add(source.path)
+  if(TEXT_KINDS.includes(r.kind)?!/\.(md|txt)$/i.test(source.path):!source.path.endsWith('.json'))fail(TEXT_KINDS.includes(r.kind)?'Template '+r.kind+' resource '+r.id+' must be plain text (.md/.txt): '+source.path+'.':'Template '+r.kind+' resource '+r.id+' must use a JSON declaration file (.json): '+source.path+'.')
   // 与业务包容器一致：非必需资源可以只声明（例如待接收方配置的连接），必需资源必须随包提供。
-  if(!files.has(source.path)){if(r.required)fail('Template resource file is missing.');return r}
+  if(!files.has(source.path)){if(r.required)fail('Template resource file is missing: '+detail(r.id)+' ('+detail(source.path)+').');return r}
   if(r.kind==='role')employeeRole(files.get(source.path),true)
   else if(!TEXT_KINDS.includes(r.kind))declarationBody(r,files.get(source.path),scope)
   return r
  })
  const byId=new Map(rows.map(r=>[r.id,r]));if(!rows.length||byId.size!==rows.length)fail('Template resource identities repeat or are empty.')
  const provided=r=>r.source.kind==='local'&&files.has(r.source.path)
- const roles=rows.filter(r=>r.kind==='role');if(roles.some(r=>!provided(r)))fail('Template employees must be included.')
+ const roles=rows.filter(r=>r.kind==='role');if(roles.some(r=>!provided(r)))fail('Template employees must be included: '+detail(roles.filter(r=>!provided(r)).map(r=>r.id).join(', '))+'.')
  const included=r=>provided(r)||r.source.kind==='public'
  const only=kind=>rows.length===1&&rows[0].kind===kind&&included(rows[0])
  const shaped={employee:roles.length===1,team:roles.length>=2,app:!roles.length&&rows.some(r=>['skill','mcp','plugin'].includes(r.kind)&&included(r)),skill:only('skill'),mcp:only('mcp')}[pkg.subject]
@@ -242,7 +249,7 @@ function manifestV2(value,pkg,files) {
  // 扩展名按不区分大小写判断，避免 .JSON 绕过声明（v1 保持原规则）。
  for(const name of files.keys())if(name.toLowerCase().endsWith('.json')&&!declaredJson.has(name))fail('Template contains an undeclared JSON file.')
  for(const r of rows)if(CAPABILITY_OF[r.kind]&&!pkg.compatibility.capabilities.includes(CAPABILITY_OF[r.kind]))fail('Template resources require an undeclared capability: add '+CAPABILITY_OF[r.kind]+' to compatibility.capabilities for '+r.kind+' resources.')
- for(const s of pkg.provenance.sources)for(const id of s.resourceIds)if(!byId.has(id)||!provided(byId.get(id)))fail('Template provenance must describe included resources.')
+ for(const s of pkg.provenance.sources)for(const id of s.resourceIds)if(!byId.has(id)||!provided(byId.get(id)))fail('Template provenance must describe included resources: '+detail(id)+'.')
  return m
 }
 function serializeV2(pkg) {
@@ -274,8 +281,8 @@ export function readTemplateSharePackageV2(value) {
  if(!MANIFEST_FORMATS.includes(c.manifestFormat)||capabilities.some(v=>!CAPABILITIES.includes(v)))fail('Template requires an unsupported capability.')
  // 500 项资源 + teloa.json + 20 份来源原件。
  const files=list(row.files,521).map(raw=>{const f=object(raw,['path','text']);path(f.path);text(f.text,V2_FILE_BYTES);if(encoder.encode(f.text).byteLength>V2_FILE_BYTES)fail('Template file exceeds 2 MiB.');return {path:f.path,text:f.text}})
- const byPath=new Map(files.map(f=>[f.path,f.text]));if(byPath.size!==files.length||!byPath.has('teloa.json'))fail('Template files repeat or teloa.json is missing.')
- for(const name of sourceFiles){if(!byPath.has(name))fail('Template source file is missing.');json(byPath.get(name))}
+ const byPath=new Map(files.map(f=>[f.path,f.text]));if(byPath.size!==files.length||!byPath.has('teloa.json'))fail('Template files repeat or teloa.json is missing: '+detail(files.length-byPath.size)+' repeated file(s).')
+ for(const name of sourceFiles){if(!byPath.has(name))fail('Template source file is missing: '+detail(name)+'.');json(byPath.get(name))}
  const pkg={format:row.format,subject:row.subject,id:row.id,version:row.version,title:row.title,description:row.description,requirements,license,trust:{publisher:trust.publisher},provenance:{sources,...(modifications===undefined?{}:{modifications})},sourceFiles,...(team?{team}:{}),compatibility:{manifestFormat:c.manifestFormat,capabilities:[...capabilities]},files}
  screen([pkg.title,pkg.description,...requirements,license,trust.publisher,...sources.flatMap(s=>[s.title,s.url??'',s.version??'',s.license]),modifications??'',...files.map(f=>f.text)])
  manifestV2(json(byPath.get('teloa.json')),pkg,byPath)

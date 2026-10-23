@@ -9,20 +9,28 @@ import {ArrowUpRight} from 'lucide-react'
 import light from './light-actions.module.css'
 import {taskCompletionVisible} from './task-timeline-events.ts'
 export type TaskCompletionPort={list:(id:string)=>Promise<Artifact[]>;read:(id:string)=>Promise<TaskCompletionRecord|null>;complete:(task:PreviewTask,ref:ArtifactRef,note:string)=>Promise<void>}
+export type CompletionOption={key:string;id:string;version:number;title:string}
+/** GRP-02：结项候选只认当前任务版本来源的成果，或明确由本轮任务版本生产的成果。列表与自动选中共用同一判据。 */
+export function completionOptions(rows:readonly Artifact[],task:Pick<PreviewTask,'id'|'version'|'updatedAt'>):CompletionOption[]{
+ return rows.flatMap(row=>row.versions.filter(v=>v.source.ref.kind==='task'&&v.source.ref.id===task.id&&v.source.version===`${task.version} · ${task.updatedAt}`||row.produced?.some(p=>p.taskId===task.id&&p.taskVersion===task.version&&p.version===v.number)).map(v=>({key:row.id+':'+v.number,id:row.id,version:v.number,title:v.title})))
+}
 export function TaskCompletion({task,api,open,face,onRecord}:{task:PreviewTask;api:TaskCompletionPort;open:(ref:ArtifactRef)=>void;face?:'timeline';onRecord?:(record:TaskCompletionRecord|null)=>void}){
  const {locale,t,dateTime}=useI18n()
  const [retry,setRetry]=useState(0)
- const [rows,setRows]=useState<Artifact[]>([]),[record,setRecord]=useState<TaskCompletionRecord|null>(null),[selected,setSelected]=useState(''),[note,setNote]=useState(''),[busy,setBusy]=useState(false),[error,setError]=useState('')
+ const [rows,setRows]=useState<Artifact[]>([]),[record,setRecord]=useState<TaskCompletionRecord|null>(null),[selected,setSelected]=useState(''),[note,setNote]=useState(''),[busy,setBusy]=useState(false),[error,setError]=useState(''),lastLoad=useRef<{taskId:string;api:unknown}|null>(null)
  useEffect(()=>{let active=true;setRecord(null);setRows([]);setSelected('');setError('');if(task.state==='completed'){void api.read(task.id).then(value=>{if(active){if(!value||value.taskVersion!==task.version){setError(t('taskCompletion.versionMismatch'));return}setRecord(value)}}).catch(cause=>{if(active)setError(localizeWorkError(locale,cause))})}return()=>{active=false}},[task.id,task.version,task.state,retry,locale,t,api])
  const onRecordRef=useRef(onRecord);onRecordRef.current=onRecord
+ const applyRows=(loaded:Artifact[],active:()=>boolean)=>{if(!active())return;setRows(loaded);setSelected(completionOptions(loaded,task)[0]?.key??'')}
  useEffect(()=>{onRecordRef.current?.(record)},[record])
+ // 文本运行成果由服务端在首次读取任务成果时按需定版：结项面打开即读取并自动选中当前任务版本的成果。
+ useEffect(()=>{if(task.state!=='waiting')return;let active=true;void api.list(task.id).then(loaded=>{if(!active)return;const previous=lastLoad.current;lastLoad.current={taskId:task.id,api};setRows(loaded);const options=completionOptions(loaded,task);if(!previous||previous.taskId!==task.id)setSelected(options[0]?.key??'');else if(previous.api!==api)setSelected('');else setSelected(current=>options.some(option=>option.key===current)?current:options[0]?.key??'')}).catch(cause=>{if(active)setError(localizeWorkError(locale,cause))});return()=>{active=false}},[task.id,task.version,task.state,locale,api])
  if(!taskCompletionVisible(task))return null
- const options=rows.flatMap(row=>row.versions.filter(v=>v.source.ref.kind==='task'&&v.source.ref.id===task.id&&v.source.version===`${task.version} · ${task.updatedAt}`||row.produced?.some(p=>p.taskId===task.id&&p.taskVersion===task.version&&p.version===v.number)).map(v=>({key:row.id+':'+v.number,id:row.id,version:v.number,title:v.title})))
+ const options=completionOptions(rows,task)
  const choice=options.find(row=>row.key===selected)
  return <section className={css.block} aria-label={t('taskCompletion.aria')} title={face==='timeline'&&task.state!=='completed'?t('taskCompletion.description'):undefined}>{face!=='timeline'&&<h3>{t(task.state==='completed'?'taskCompletion.record':'taskCompletion.confirm')}</h3>}{error&&<p role="alert">{error}</p>}
  {task.state==='completed'?record?<><p>{record.note}</p><p className={css.muted}>{t('taskCompletion.completedMeta',{at:dateTime(record.completedAt),version:record.artifactVersion})}</p><button type="button" className={light.link} onClick={()=>open({id:record.artifactId,version:record.artifactVersion})}>{t('taskCompletion.view')}<ArrowUpRight size={13} aria-hidden/></button></>:error?<button type="button" onClick={()=>setRetry(value=>value+1)}>{t('taskCompletion.retry')}</button>:<p>{t('taskCompletion.loading')}</p>:<>
  {face!=='timeline'&&<p>{t('taskCompletion.description')}</p>}
- <button type="button" disabled={busy} onClick={async()=>{setBusy(true);setError('');try{setRows(await api.list(task.id));setSelected('')}catch(cause){setError(localizeWorkError(locale,cause))}finally{setBusy(false)}}}>{t('taskCompletion.load')}</button>
+ <button type="button" disabled={busy} onClick={async()=>{setBusy(true);setError('');try{const loaded=await api.list(task.id);setRows(loaded);setSelected(completionOptions(loaded,task)[0]?.key??'')}catch(cause){setError(localizeWorkError(locale,cause))}finally{setBusy(false)}}}>{t('taskCompletion.load')}</button>
  <form className={css.form} onSubmit={async event=>{event.preventDefault();if(!choice||busy)return;setBusy(true);setError('');try{await api.complete(task,{id:choice.id,version:choice.version},note)}catch(cause){setError(localizeWorkError(locale,cause))}finally{setBusy(false)}}}><label>{t('taskCompletion.versionLabel')}<select disabled={busy} value={selected} onChange={event=>setSelected(event.target.value)}><option value="">{t('taskCompletion.versionPlaceholder')}</option>{options.map(row=><option key={row.key} value={row.key}>{row.title} · v{row.version}</option>)}</select></label>{choice&&<button type="button" onClick={()=>open({id:choice.id,version:choice.version})}>{t('taskCompletion.review')}</button>}<label>{t('taskCompletion.note')}<textarea required maxLength={4000} rows={3} disabled={busy} value={note} onChange={event=>setNote(event.target.value)}/></label><button type="submit" disabled={busy||!choice||!note.trim()}>{t('taskCompletion.submit')}</button></form>
  </>}
  </section>

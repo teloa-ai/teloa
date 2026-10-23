@@ -1,6 +1,7 @@
 import {initializeArtifactRevisionRequests,isArtifactRevisionProducer} from './artifact-revision-requests.ts'
 import {readStoredTaskRun,type TaskRun} from './task-runs.ts'
 import {workRequestChildId} from './conversation-work-task-protection.ts'
+import {createHash} from 'node:crypto'
 import {isDeepStrictEqual} from 'node:util'
 import type {WorkAccessLease} from './work-access.ts'
 import type {Pool,PoolClient} from 'pg'
@@ -8,6 +9,7 @@ import {artifactInput,artifactContent,savedArtifactSource,artifactFileTotalBytes
 import {BusinessScopeService} from './business-scopes.ts'
 import {ArtifactMessageStore,initializeArtifactMessages} from './artifact-messages.ts'
 import {ArtifactSnapshotStore} from './artifact-snapshots.ts'
+import {taskArtifactSource} from './artifact-task-source.ts'
 const uuid=(value:unknown):value is string=>typeof value==='string'&&/^[a-f0-9]{8}-[a-f0-9]{4}-[1-5][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i.test(value)
 const sourceKey=(source:SavedArtifactSource)=>JSON.stringify([source.kind,source.id,source.scope,source.objectType??''])
 const ownerInput=(owner:string)=>{if(typeof owner!=='string'||!owner.trim()||owner.length>128)throw new WorkError('teloa/forbidden','需要有效的本人身份。')}
@@ -175,6 +177,40 @@ export class ArtifactService{
   return result
   }catch(error){await client.query('rollback');throw error}finally{client.release()}
  }
+ /**
+  * GRP-02：把「以文本完成」的角色运行结果保存为当前任务版本的正式成果版本。
+  * 只在结项面读取任务成果时按需生成（`listTask` 入口），不需要新增宿主装配：
+  * 只认真实结束且 reason=completed 的角色运行；失败/取消/空文本/非角色运行一律不生成；
+  * 成果来源取任务来源（含任务版本与更新时间），因此结项下拉的「当前任务版本」过滤可直接命中；
+  * 正文摘要 sha256、来源会话、运行、任务版本写进版本说明，供本人核对；
+  * requestId 由运行身份确定性派生，重复读取/并发读取不产生重复版本。
+  */
+ async materializeTextRunResult(owner:string,taskId:string,runId?:string):Promise<SavedArtifactVersion|null>{
+  ownerInput(owner)
+  if(!uuid(taskId)||runId!==undefined&&!uuid(runId))throw new WorkError('teloa/invalid-input','任务或运行身份不正确。')
+  const client=await this.pool.connect()
+  try{
+   await client.query('begin')
+   const taskRow=(await client.query('select * from teloa_tasks where owner_id=$1 and id=$2 for share',[owner,taskId])).rows[0]
+   if(!taskRow)throw new WorkError('teloa/forbidden','任务不存在或不属于本人。')
+   if(taskRow.state!=='waiting'){await client.query('commit');return null}
+   const params:unknown[]=runId===undefined?[owner,taskId]:[owner,taskId,runId]
+   const run=(await client.query("select id,task_id,role_id,session_id,state,evidence,stop_requested_at from teloa_task_runs where owner_id=$1 and task_id=$2 and role_id is not null and state='ended' and evidence->>'state'='ended' and evidence->>'reason'='completed' and stop_requested_at is null"+(runId===undefined?'':' and id=$3')+' order by created_at desc limit 1',params)).rows[0]
+   if(!run)throw new WorkError('teloa/conflict','本轮没有可保存为成果的已完成角色运行。')
+   if(taskRow.assignee_role_id!==run.role_id){await client.query('commit');return null}
+   const message=(await client.query('select text,id from teloa_group_messages where owner_id=$1 and run_id=$2 and author_id<>\'self\' order by created_at desc,id desc limit 1',[owner,run.id])).rows[0]
+   const text=typeof message?.text==='string'?message.text.trim():''
+   if(!text){await client.query('commit');return null}
+   const source=await taskArtifactSource(client,owner,taskId,true)
+   const digest=createHash('sha256').update(text).digest('hex')
+   const definition=taskRow.definition&&typeof taskRow.definition==='object'?taskRow.definition as Record<string,unknown>:{}
+   const title=typeof definition.title==='string'?definition.title:'本轮结果'
+   const content=artifactContent({title,sections:[{id:'run-result',title:'本轮结果正文',text:text.slice(0,16000)}],snapshotIds:[],note:`本轮运行最终文本 · 来源运行 ${run.id} · 会话 ${run.session_id} · 任务 v${taskRow.version} · 正文摘要 sha256 ${digest}`})
+   const saved=await this.createInTransaction(client,owner,{requestId:workRequestChildId(run.id,'run-result-artifact'),source,content})
+   await client.query('commit')
+   return saved
+  }catch(error){await client.query('rollback');throw error}finally{client.release()}
+ }
  async listSource(owner:string,source:SavedArtifactSource):Promise<SavedArtifactVersion[]>{
   ownerInput(owner);const key=sourceKey(savedArtifactSource(source))
   const rows=await this.pool.query('select v.*,h.source_key from teloa_artifacts h left join teloa_artifact_versions v on v.owner_id=h.owner_id and v.artifact_id=h.id and v.number=h.current_version where h.owner_id=$1 and h.source_key=$2 order by v.created_at desc,h.id',[owner,key])
@@ -183,6 +219,8 @@ export class ArtifactService{
  /** 原归属保持；后续任务只通过持久生产回执取得指定版本。 */
  async listTask(owner:string,source:SavedArtifactSource):Promise<(SavedArtifactVersion&{producer?:{taskId:string;taskVersion:number;runId:string}})[]>{
   if(source.kind!=='task')throw new WorkError('teloa/invalid-input','需要任务来源。')
+  // GRP-02：结项面读取任务成果时，把已完成角色运行的最终文本按需定版；失败不阻断目录读取（本人仍能看到已有成果）。
+  {try{await this.materializeTextRunResult(owner,source.id)}catch{/* 生成失败不阻断只读目录；结项面仍给出可操作说明。 */}}
   const own=await this.listSource(owner,source)
   const produced=await this.pool.query('select * from teloa_artifact_revision_producers where owner_id=$1 and task_id=$2 order by artifact_id,number',[owner,source.id])
   const rows:(SavedArtifactVersion&{producer?:{taskId:string;taskVersion:number;runId:string}})[]=[...own]

@@ -1,7 +1,7 @@
 import {createHash} from 'node:crypto'
 import type {Context} from '@deepseek-ai/cordis'
 import {defineTool,type PreToolDecision} from '@deepseek-ai/dsh-tools'
-import {WorkError,isRoleDailyLog,roleDailyLogDiscardInput,roleDailyLogGetInput,roleDailyLogListInput} from '@teloa/contract'
+import {WorkError,isRecord,isRoleDailyLog,roleDailyLogDiscardInput,roleDailyLogGetInput,roleDailyLogListInput} from '@teloa/contract'
 import {resolveSessionLineage,type LineageSession} from './subagent-lineage.ts'
 import type {DigitalRole} from '@teloa/contract'
 import type {RoleDailyLogActor,RoleDayEvidence,RoleDigestRunIdentity} from '@teloa/backend'
@@ -80,6 +80,31 @@ async function classifyDigestRun(ports:RoleDailyDigestToolPorts,root:LineageSess
  return identity?{kind:'digest',identity}:{kind:'other'}
 }
 
+const digestSubmitFormat='{title, markdown, candidates:[{title,markdown,scopeIds}], pruneHints:[{memoryId,reason}]}'
+/**
+ * 提交参数的问题必须在工具闸这里用中文点名，而不是让框架的英文 schema 校验（
+ * `invalid arguments: missing required property "pruneHints"`）直接交给模型去猜。
+ * 只做能定位到字段与合法值的形状检查；服务端候选/撤回上限仍由 RoleDailyLogService 判。
+ */
+function digestSubmitArgumentHelp(value:unknown):string|undefined{
+ if(!isRecord(value))return `每日小结参数不合法：需要对象 ${digestSubmitFormat}。没有建议撤回时 candidates 与 pruneHints 都传空数组 []。`
+ const problems:string[]=[]
+ if(typeof value.title!=='string'||!value.title.trim())problems.push('缺少 title（字符串）')
+ if(typeof value.markdown!=='string'||!value.markdown.trim())problems.push('缺少 markdown（字符串）')
+ const candidates=value.candidates
+ if(!Array.isArray(candidates))problems.push('缺少 candidates（0–3 条数组，每条 {title, markdown, scopeIds}）')
+ else for(const [index,candidate] of candidates.entries()){
+  const ids=isRecord(candidate)&&Array.isArray(candidate.scopeIds)?candidate.scopeIds:undefined
+  if(!isRecord(candidate)||typeof candidate.title!=='string'||!candidate.title.trim()||typeof candidate.markdown!=='string'||!candidate.markdown.trim()||!ids?.length||ids.some(id=>typeof id!=='string'||!id.trim())){problems.push(`candidates[${index}] 需要 {title, markdown, scopeIds（非空字符串数组）}`);break}
+ }
+ const pruneHints=value.pruneHints
+ if(!Array.isArray(pruneHints))problems.push('缺少 pruneHints（0–3 条数组，每条 {memoryId, reason}；没有建议撤回时传空数组 []）')
+ else for(const [index,hint] of pruneHints.entries()){
+  if(!isRecord(hint)||typeof hint.memoryId!=='string'||!hint.memoryId.trim()||typeof hint.reason!=='string'||!hint.reason.trim()){problems.push(`pruneHints[${index}] 需要 {memoryId, reason}`);break}
+ }
+ return problems.length?`每日小结参数不合法：${problems.join('；')}。合法格式 ${digestSubmitFormat}；candidates 与 pruneHints 都必须提供，最多各 3 条，没有建议撤回时传空数组 []。`:undefined
+}
+
 /**
  * 两个工具走自授权集，因此每次运行都可见；它们自身必须 fail-closed：
  * 当前 Run 所属任务的计划来源不是 {kind:'system-digest'} 时一律 {kind:'deny'}，理由固定中文。
@@ -109,7 +134,7 @@ export function registerRoleDailyDigestTools(ctx:Context,ports:RoleDailyDigestTo
  }
  ctx.tools.register(defineTool({
   name:roleDayEvidenceToolName,
-  description:'读取当天与当前执行员工有关的五类证据：运行、成果版本、审批结果、本人修订、群回帖。日期与员工由当前运行固定，不接受参数。读不出任一类时整次失败，不返回空清单。',
+  description:'读取当天与当前执行员工有关的五类证据：运行、成果版本、审批结果、本人修订、群回帖。日期与员工由当前运行固定，不接受参数；返回值带 day 与 timezone（计划时区），运行证据标题标注完成/中止/失败/未完成，小结日期必须按该时区标注。读不出任一类时整次失败，不返回空清单。',
   parameters:{},
   output:{schema:{type:'string'},render:(_args,value)=>[{type:'text',text:value}]},
   execute:async(args,exec)=>{
@@ -146,6 +171,11 @@ export function registerRoleDailyDigestTools(ctx:Context,ports:RoleDailyDigestTo
   // 连 Run 都确认不到时只拒两个小结工具：那不可能是小结运行，其余工具照旧交既有岗位授权闸作答。
   if(verdict.kind==='unknown')return digestTool||verdict.stage==='digest'?deny(digestUnknownReason):next()
   if(verdict.kind==='other')return digestTool?deny(digestOnlyReason):next()
+  // 真正的小结运行里，提交参数问题先用中文点名（含缺省 pruneHints 的合法空数组写法）。
+  if(exec.name===roleDailyDigestSubmitToolName){
+   const help=digestSubmitArgumentHelp(exec.arguments)
+   if(help)return deny(help)
+  }
   return digestTool?next():deny(digestScopeReason)
  })
  // 记忆按会话而不是按调用：清理跟着会话结束走，同一次运行里的多次工具调用共用一次判定。

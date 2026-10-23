@@ -103,6 +103,7 @@ const BASE_MESSAGE_KEYS = [
   'settings.configurationHelp',
   'settings.document.open',
   'settings.document.opening',
+  'settings.document.unavailable',
   'profile.title',
   'profile.description',
   'profile.displayName',

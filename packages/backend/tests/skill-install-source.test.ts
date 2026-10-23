@@ -76,7 +76,7 @@ for(const first of ['atomic','industry-public'] as const)test(`公共 Skill 首�
  const required=await importScheme('required-voice',[dependency]),plain=await importScheme('plain-brief')
  let probes=0,published=0
  const source=new SkillInstallSource(market,loads,async()=>{probes++;return 'disabled'})
- const files:SkillInstallationFilesPort={inspect:async()=>({name:'brief',description:'写简报',modelInvocable:true,userInvocable:true,bodyHash:createHash('sha256').update('正文').digest('hex')}),publish:async()=>{published++},verify:async()=>{}}
+ const files:SkillInstallationFilesPort={inspect:async()=>({name:'brief',description:'写简报',modelInvocable:true,userInvocable:true,bodyHash:createHash('sha256').update('正文').digest('hex')}),publish:async()=>{published++},verify:async()=>{},remove:async()=>{}}
  const service=new SkillInstallationService(pool,identity,source,files)
  const atomicInput:SkillInstallSourceInput={kind:'atomic',contentId:atomic.content.id},requiredInput:SkillInstallSourceInput={kind:'industry',loadId:required.id,itemInstanceId:required.items[0]!.instanceId},plainInput:SkillInstallSourceInput={kind:'industry',loadId:plain.id,itemInstanceId:plain.items[0]!.instanceId}
  const install=async(input:SkillInstallSourceInput)=>{
@@ -106,7 +106,7 @@ test('包内 Skill 未准备模型也能安装；普通调用按其固定清单�
  const saved=await market.import({ownerId:owner,kind:'human'},{kind:'industry-template',requestId:randomUUID(),source:{kind:'upload',name:'本地语音简报'},manifestPath:'teloa.json',files:[file('teloa.json',JSON.stringify(value)),file('skills/brief/SKILL.md','---\nname: brief\ndescription: 写简报\n---\n正文')],references:[]}),loaded=await load(owner,market,saved.content)
  let probes=0,phase:IndustryModelPhase='disabled'
  const source=new SkillInstallSource(market,loaded.loads,async fixed=>{assert.deepEqual(fixed,dependency);probes++;return phase}),input:SkillInstallSourceInput={kind:'industry',loadId:loaded.record.id,itemInstanceId:loaded.item.instanceId}
- const files:SkillInstallationFilesPort={inspect:async()=>({name:'brief',description:'写简报',modelInvocable:true,userInvocable:true,bodyHash:createHash('sha256').update('正文').digest('hex')}),publish:async()=>{},verify:async()=>{}}
+ const files:SkillInstallationFilesPort={inspect:async()=>({name:'brief',description:'写简报',modelInvocable:true,userInvocable:true,bodyHash:createHash('sha256').update('正文').digest('hex')}),publish:async()=>{},verify:async()=>{},remove:async()=>{}}
  const service=new SkillInstallationService(pool,identity,source,files),preview=await service.preview(owner,{source:input})
  const installed=await service.install(owner,{requestId:randomUUID(),source:input,expectedBundleHash:preview.bundleHash,expectedTrustHash:preview.trustHash})
  assert.equal(installed.installation.state,'installed')

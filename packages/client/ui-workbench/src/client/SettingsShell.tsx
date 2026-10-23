@@ -106,5 +106,5 @@ export function SettingsDocumentAction({describe,openDocument,loopback}:{describ
   const pending=useRef(false)
   useEffect(()=>{void describe.ensure().catch(error=>setError(localizeWorkError(locale,error)))},[describe,locale])
   if(!loopback||!state.view?.hasDocument)return null
-  return <div className={css.documentAction}>{error&&<span role="alert">{error}</span>}<button type="button" disabled={busy} onClick={()=>{if(pending.current)return;pending.current=true;setBusy(true);setError(undefined);void openDocument().catch(error=>setError(localizeWorkError(locale,error))).finally(()=>{pending.current=false;setBusy(false)})}}><FileCode2 size={15} aria-hidden/><span>{t(busy?'settings.document.opening':'settings.document.open')}</span></button></div>
+  return <div className={css.documentAction}>{error&&<span role="alert">{error}</span>}<button type="button" disabled={busy} onClick={()=>{if(pending.current)return;pending.current=true;setBusy(true);setError(undefined);void openDocument().catch(()=>setError(t('settings.document.unavailable'))).finally(()=>{pending.current=false;setBusy(false)})}}><FileCode2 size={15} aria-hidden/><span>{t(busy?'settings.document.opening':'settings.document.open')}</span></button></div>
 }

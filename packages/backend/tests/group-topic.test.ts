@@ -17,7 +17,7 @@ import {initializeRoles,RoleService} from '../src/work/roles.ts'
 import {initializeTasks,TaskService} from '../src/work/tasks.ts'
 import {initializeTaskRuns,TaskRunService} from '../src/work/task-runs.ts'
 import {readRunGroupContext,type RunGroupContext} from '../src/work/task-run-group-context.ts'
-import {groupTopicNotice,readRunGroupTopic,readGroupConversationTopic} from '../src/work/group-topic.ts'
+import {groupTopicNotice,readRunGroupTopic,readGroupConversationTopic,groupTopicTextMaxChars,groupRoutingTopicTextMaxChars} from '../src/work/group-topic.ts'
 import {testRoleResponsibility} from './role-test-fixture.ts'
 import {initializeGroupWorkInputs} from '../src/work/group-work-inputs.ts'
 const openGroupRules={historyVisibleToNewMembers:true,draftsVisibleInGroup:true,mentionAllAllowed:true}
@@ -93,11 +93,30 @@ test('至多二十条、升序、每项恰五键、notice 逐字',async()=>{
  assert.equal(topic!.messages.at(-1)!.text,'补充第 24 条。')
 })
 
-test('正文截一千字符',async()=>{
+test('GRP-03 执行上下文不再静默截断：1500 字原样保留，超预算时带显式截断提示',async()=>{
  const f=await fixture()
  await f.groups.send(f.owner,{requestId:randomUUID(),groupId:f.group.id,expectedVersion:f.group.version,rootId:f.root.id,text:'长'.repeat(1500)})
+ const medium=await topicOf(f.owner,f.context)
+ assert.equal(medium!.messages.at(-1)!.text,'长'.repeat(1500),'执行侧上游长正文应完整保留，供后序交叉核对')
+ const long='超'.repeat(5000)
+ await f.groups.send(f.owner,{requestId:randomUUID(),groupId:f.group.id,expectedVersion:f.group.version,rootId:f.root.id,text:long})
  const topic=await topicOf(f.owner,f.context)
- assert.equal(topic!.messages.at(-1)!.text.length,1000)
+ const last=topic!.messages.at(-1)!
+ assert.ok(last.text.length<=groupTopicTextMaxChars,'截断后连同提示仍须守住同一预算')
+ assert.match(last.text,/正文被截断：全文 5000 字符/)
+ assert.match(last.text,/完整正文请在原群消息中核对/)
+})
+
+test('GRP-03 路由选人面用更小预算，但截断同样显式提示',async()=>{
+ const f=await fixture()
+ const long=await f.groups.send(f.owner,{requestId:randomUUID(),groupId:f.group.id,expectedVersion:f.group.version,rootId:f.root.id,text:'核'.repeat(1600)})
+ const db=await pool.connect()
+ try{
+  const routingView=await readGroupConversationTopic(db,f.owner,{groupId:f.group.id,messageId:long.id,replyToMessageId:null,mode:'main',roleId:null,textMaxChars:groupRoutingTopicTextMaxChars})
+  const last=routingView!.messages.at(-1)!
+  assert.ok(last.text.length<=groupRoutingTopicTextMaxChars)
+  assert.match(last.text,/正文被截断：全文 1600 字符/)
+ }finally{db.release()}
 })
 
 test('同事消息的 authorKind 是 role、authorId 是 roleId',async()=>{

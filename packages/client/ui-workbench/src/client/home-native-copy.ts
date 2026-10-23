@@ -5,7 +5,7 @@ const copy={
  scope:['业务','Business'],owner:['指定员工','Assigned employee'],assistant:['主助手','Main assistant'],
  reading:['正在核对业务上下文…','Checking work context…'],saving:['正在保存业务上下文…','Saving work context…'],
  failed:['业务上下文尚未核对，请重试后发送。','Work context is unconfirmed. Retry before sending.'],
- retry:['重试','Retry'],preparing:['正在准备输入…','Preparing the composer…'],
+ retry:['重试','Retry'],reload:['重新加载工作台','Reload workspace'],reloadHelp:['连接恢复后重新加载即可继续。','Reload once the connection is back to continue.'],preparing:['正在准备输入…','Preparing the composer…'],
  restoreFailed:['暂时无法恢复工作台','Unable to restore your workspace'],
  restoreHelp:['请重试，继续刚才的工作。','Try again to continue where you left off.'],
  locationTitle:['选择工作位置','Choose a work location'],
@@ -14,6 +14,7 @@ const copy={
  bound:['业务选择用于定位本次工作，不会扩大读取权限。','The business selection defines this work’s context without granting additional access.'],
  attachments:['刷新前的本地附件未持久保存，请重新添加。','Local attachments from before this reload were not persisted. Add them again.'],
  unknown:['上次发送结果尚未确认。请先核对会话记录，避免重复执行。','The previous submission is unconfirmed. Check the conversation before sending again.'],
+ offlineSend:['网络不可用，消息可能尚未发送或结果未确认；草稿已保留，恢复网络后重试。','Network unavailable. The message may not be sent or unconfirmed; your draft is kept. Retry after reconnecting.'],
  inspect:['核对已接收消息','Check accepted messages'],
  missing:['所选员工已不可用','The selected employee is unavailable'],
 } as const

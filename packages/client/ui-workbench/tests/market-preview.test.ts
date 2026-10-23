@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
-import { parseMarketManifest, githubSource, emptyMarket, sandboxMarket, importManifest, itemFromManifest, saveMarketIntent, updateMarketIntent, filterMarket, createTeamTemplate, marketTrustPreview, localizedMarketItemMetadata } from '../src/client/market-preview.ts'
+import { parseMarketManifest, marketJsonSyntaxFailure, githubSource, emptyMarket, sandboxMarket, importManifest, itemFromManifest, saveMarketIntent, updateMarketIntent, filterMarket, createTeamTemplate, marketTrustPreview, localizedMarketItemMetadata } from '../src/client/market-preview.ts'
 import { validateIndustryManifest } from '../src/client/industry-manifest.ts'
 import { PromptPreparation } from '../src/client/prompt-preparation.ts'
 
@@ -156,4 +156,30 @@ test('官方目录审核说明：存储原文进 trustHash 不改，展示时把
  const machine=marketTrustPreview({...base,trust:trust('从 GitHub a/b 机器固定收录（a.b@1.0.0）；来源 anthropics，许可 MIT；Teloa 官方目录脚本核验摘要，未逐行审核。')}).review
  assert.equal(machine,'已审查 · 从 GitHub a/b 自动收录（a.b@1.0.0）；来源 anthropics，许可 MIT；Teloa 官方目录脚本核验校验值，未逐行审核。')
  for(const text of [upstream,machine])assert.doesNotMatch(text,/上游|固定收录|摘要/)
+})
+
+// BIZ-005：粘贴/上传的清单不是合法 JSON 时，错误要能指到哪一段（line/column + 极短片段），
+// 不再落回「操作未完成，请稍后重试」；片段必须掩码引号内正文与较长标识，不能把凭据带进界面。
+test('非法 JSON 定位到具体行列并给出掩码后的短片段',()=>{
+ assert.equal(marketJsonSyntaxFailure('{"a":1}'),undefined)
+ const paste=marketJsonSyntaxFailure('{ invalid template json ')
+ assert.deepEqual(paste,{line:1,column:3,snippet:'{ invalid template'})
+ const multiline=marketJsonSyntaxFailure('{\n  "a": 1,\n  "b": }\n')
+ assert.equal(multiline?.line,3)
+ assert.ok(multiline&&multiline.column>1)
+ assert.ok(multiline.snippet.includes('…'))
+ assert.ok(/^[^"]*$/.test(multiline.snippet.replace(/"/g,''))||multiline.snippet.includes('…'))
+ assert.ok(multiline.snippet.length<=42)
+ const secret=marketJsonSyntaxFailure('{"token":"fake-token-value","broken": }')
+ assert.ok(secret)
+ assert.doesNotMatch(secret.snippet,/fake-token-value/)
+ assert.match(secret.snippet,/…/)
+})
+test('清单解析失败抛可定位的 JSON 语法错误，旧界面的关键字兜底仍然成立',async()=>{
+ await assert.rejects(()=>parseMarketManifest('{bad'),error=>error instanceof Error&&error.name==='MarketJsonSyntaxError'&&error.message.includes('JSON')&&error.message.includes('第 1 行'))
+ const error=await parseMarketManifest('{\n  "format": "teloa.work-template/v1",\n  "id": }\n').catch(value=>value)
+ assert.equal(error?.name,'MarketJsonSyntaxError')
+ assert.equal(error.failure.line,3)
+ assert.ok(error.failure.column>1)
+ assert.ok(error.failure.snippet.length>0&&error.failure.snippet.length<=42)
 })

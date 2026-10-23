@@ -12,6 +12,7 @@ import {initializeTasks} from '../src/work/tasks.ts'
 import {initializeTaskRuns} from '../src/work/task-runs.ts'
 import {initializePlans} from '../src/work/plans.ts'
 import {initializePlanOccurrences} from '../src/work/plan-occurrences.ts'
+import {initializeResources} from '../src/capabilities/schema.ts'
 import {insertRoleRun} from './role-work-test-fixture.ts'
 let container:StartedPostgreSqlContainer,pool:Pool
 // 改岗位定义与恢复在岗都会在同一笔事务里按新岗位版本续签群授权（`collaboration.ts` 的 `renewRoleGrants`），
@@ -22,6 +23,7 @@ before(async()=>{
  container=await new PostgreSqlContainer('postgres:17-alpine').start()
  pool=new Pool({connectionString:container.getConnectionUri()});await initializeRoles(pool);await initializeCollaboration(pool);await initializeGroupAgentGrants(pool)
  await initializeTasks(pool);await initializeTaskRuns(pool);await initializePlans(pool);await initializePlanOccurrences(pool)
+ await initializeResources(pool)
 })
 after(async()=>{await pool?.end();await container?.stop()})
 const responsibility={triggers:['收到需要核对的线索'],autonomousActions:['整理证据并给出建议'],confirmationPoints:['采取外部动作前交回本人'],escalationRules:['证据冲突时说明阻塞'],deliveryChecks:['结论包含来源和置信度']}
@@ -67,6 +69,31 @@ test('结构化职责与运行配置经过规范化后随岗位持久化',async(
  assert.deepEqual(role.responsibility,{...responsibility,triggers:['收到需要核对的线索']})
  assert.deepEqual(role.runtimeConfig,{agentPresetId:'security-analyst'})
  assert.deepEqual((await service.list(owner,{}))[0],role)
+})
+test('员工资料范围拒绝不存在的资料ID并指明不可用资料，不写入岗位',async()=>{
+ const {owner,service}=fixture(),missing=randomUUID()
+ await assert.rejects(service.create(owner,{requestId:randomUUID(),fields:{...fields,knowledge:[missing]}}),(error:any)=>{
+  assert.equal(error?.code,'teloa/invalid-input')
+  assert.deepEqual(error?.details,{reason:'role-knowledge-unavailable',resourceIds:[missing]})
+  assert.match(String(error?.message),/员工资料范围/)
+  return true
+ })
+ assert.equal((await service.list(owner,{})).length,0)
+})
+test('员工资料范围允许引用本人已存在资料，编辑时拒绝不存在的资料ID',async()=>{
+ const {owner,service}=fixture(),resourceId=randomUUID(),missing=randomUUID()
+ await pool.query("insert into teloa_resources(id,owner_id,revision,status,spec,created_at,updated_at) values($1,$2,1,'active',$3,now(),now())",[resourceId,owner,JSON.stringify({title:'岗位资料',sourceId:'local_material_'+randomUUID(),sourceVersion:'a'.repeat(64),scopeIds:['SOC']})])
+ const role=await service.create(owner,{requestId:randomUUID(),fields:{...fields,knowledge:[resourceId]}})
+ assert.deepEqual(role.knowledge,[resourceId])
+ await pool.query("update teloa_roles set state='paused' where id=$1",[role.id])
+ const expectedProfile={name:fields.name}
+ await assert.rejects(service.edit(owner,{roleId:role.id,expectedVersion:1,expectedProfile,fields:{...fields,knowledge:[resourceId,missing]}}),(error:any)=>{
+  assert.equal(error?.code,'teloa/invalid-input')
+  assert.deepEqual(error?.details,{reason:'role-knowledge-unavailable',resourceIds:[missing]})
+  assert.match(String(error?.message),/员工资料范围/)
+  return true
+ })
+ assert.deepEqual((await service.get(owner,role.id))!.knowledge,[resourceId],'失败的编辑不改变岗位资料范围')
 })
 test('员工小松鼠头像随创建、恢复读取及编辑回执持久化',async()=>{
  const {owner,service}=fixture(),created=await service.create(owner,{requestId:randomUUID(),fields:{...fields,avatarKey:'researcher'}})

@@ -276,13 +276,13 @@ Teloa 是用于组建、管理和运行 AI 员工团队的 **AI-Native Team Stud
 
 </details>
 
-社区版 **0.2.6** 修复 AI 员工、AI 团队、应用与 SKILL 的自然语言创建和分享，包括原草稿确认、方法实际可用性、连续导入与群内交付。四类创建、使用、分享与接收均已用真实 MiniMax 验证。SDK 继续兼容 `@teloa/sdk@0.2.4`。
+社区版 **0.2.7** 新增已安装技能的真实硬卸载：工作台与自然语言均可操作，带宿主二次确认，并保护当前选择、加载包引用与历史运行证据。同时收口任务/群执行闸、项目与员工记忆、AutoDream、创建草稿恢复、已添加市场资源管理和目录焦点等生产问题。相关流程均已用真实 MiniMax 与真实 PostgreSQL 验证。SDK 继续兼容 `@teloa/sdk@0.2.4`。
 
 ## 快速开始
 
 需要自备模型服务与 API 密钥，模型调用费用由对应服务商收取；社区版软件许可不包含推理额度。
 
-当前社区版正式版本为 **0.2.6**。[GitHub Release](https://github.com/teloa-ai/teloa/releases/tag/v0.2.6)、[npm](https://www.npmjs.com/package/@teloa/cli/v/0.2.6) 与 [Docker Hub](https://hub.docker.com/r/teloa/teloa) 均已发布；原生包已在 macOS ARM64 验证，镜像已在 Linux ARM64 验证。下方仍保留源码构建方式。
+当前社区版正式版本为 **0.2.7**。[GitHub Release](https://github.com/teloa-ai/teloa/releases/tag/v0.2.7)、[npm](https://www.npmjs.com/package/@teloa/cli/v/0.2.7) 与 [Docker Hub](https://hub.docker.com/r/teloa/teloa) 均已发布；原生包已在 macOS ARM64 验证，镜像已在 Linux ARM64 验证。下方仍保留源码构建方式。
 
 ### 本次更新重点
 
@@ -309,27 +309,27 @@ Teloa 是用于组建、管理和运行 AI 员工团队的 **AI-Native Team Stud
 ```sh
 mkdir teloa-command
 cd teloa-command
-npm install --ignore-scripts https://github.com/teloa-ai/teloa/releases/download/v0.2.6/teloa-cli-0.2.6.tgz
+npm install --ignore-scripts https://github.com/teloa-ai/teloa/releases/download/v0.2.7/teloa-cli-0.2.7.tgz
 ./node_modules/.bin/teloa up
 ./node_modules/.bin/teloa doctor
 ./node_modules/.bin/teloa status
 ```
 
-Teloa 与 DSH 在电脑上原生运行。启动后打开 Web 界面，在设置中配置模型；默认 Web 端口为 3100。新安装端口被占用时，使用 `./node_modules/.bin/teloa up --port 3101`。发行页同时列出安装包的 SHA-256 校验值。升级已有安装（例如 0.2.0-alpha.7）并保留其数据与身份：把 0.2.6 安装包装入新的命令目录，在该目录运行 `teloa stop`，再运行 `teloa upgrade --to 0.2.6`（自定义安装继续传入原 `--home`）。升级会在切换前自动备份。启停操作见[安装指南](https://docs.teloa.ai/start/quickstart)，备份见[备份与升级](https://docs.teloa.ai/deploy/backup)。也可从 npm 安装同版：`npm install --ignore-scripts @teloa/cli@0.2.6`。
+Teloa 与 DSH 在电脑上原生运行。启动后打开 Web 界面，在设置中配置模型；默认 Web 端口为 3100。新安装端口被占用时，使用 `./node_modules/.bin/teloa up --port 3101`。发行页同时列出安装包的 SHA-256 校验值。升级已有安装（例如 0.2.0-alpha.7）并保留其数据与身份：把 0.2.7 安装包装入新的命令目录，在该目录运行 `teloa stop`，再运行 `teloa upgrade --to 0.2.7`（自定义安装继续传入原 `--home`）。升级会在切换前自动备份。启停操作见[安装指南](https://docs.teloa.ai/start/quickstart)，备份见[备份与升级](https://docs.teloa.ai/deploy/backup)。也可从 npm 安装同版：`npm install --ignore-scripts @teloa/cli@0.2.7`。
 
 <details>
-<summary><strong>Docker Hub + Compose（0.2.6）</strong></summary>
+<summary><strong>Docker Hub + Compose（0.2.7）</strong></summary>
 
 ### Docker Hub + Compose
 
 先安装带 Compose 的 Docker，并启动 Docker 引擎。正式镜像及以下配置已验 **Linux ARM64**；**amd64 尚未验证**。Teloa、DSH 与 PostgreSQL 均在容器内运行，本机不需要安装 Node.js 或 pnpm。
 
-将本版本配置下载到新目录。初始化与应用均使用 `teloa/teloa:0.2.6`，沿用持久数据卷与自动生成的数据库口令。
+将本版本配置下载到新目录。初始化与应用均使用 `teloa/teloa:0.2.7`，沿用持久数据卷与自动生成的数据库口令。
 
 ```sh
 mkdir teloa-community
 cd teloa-community
-curl --fail --location https://docs.teloa.ai/downloads/0.2.6/compose.yaml --output compose.yaml
+curl --fail --location https://docs.teloa.ai/downloads/0.2.7/compose.yaml --output compose.yaml
 docker compose pull
 docker compose up -d --no-build
 docker compose ps

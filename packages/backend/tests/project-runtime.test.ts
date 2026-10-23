@@ -129,3 +129,30 @@ test('真实PG：个人单向读取、岗位全状态换代、原消息不能转
  const current=await cold.prepare(owner,{sessionId:'same-message',messageId:'new-task',query:'请明确开展另一项目任务'});assert.ok(current);assert.equal(current.binding.projectId,other.id)
  assert.equal((await personal.get(owner)).version,2,'项目输入和提炼不写个人真源')
 })
+test('真实PG：项目定义被回合内工具改写后同轮输入仍有效，下一轮读取新定义且不强制换代',{timeout:60000},async t=>{
+ const container=await new PostgreSqlContainer('postgres:17-alpine').start(),pool=new Pool({connectionString:container.getConnectionUri()});t.after(async()=>{await pool.end();await container.stop()})
+ await initializeBusinessSpaces(pool);await initializeProjects(pool);await initializeProjectContext(pool);await initializeProjectRuntime(pool)
+ const owner=randomUUID(),identity={id:randomUUID,now:()=>new Date().toISOString()},projects=new ProjectService(pool,identity)
+ const fields={scope:'general',title:'项目定义',goal:'初始目标：验证项目记忆。',dueDate:null,state:'planning',links:[],references:[]}
+ const project=await projects.create(owner,{requestId:randomUUID(),fields})
+ const runtime=new ProjectRuntimeService(pool,identity,{inspect:async(_owner,sessionId)=>({sessionId,title:'项目会话',scope:'general',submitted:false,running:false,kind:'ordinary' as const})})
+ t.after(()=>runtime.dispose())
+ await runtime.bind(owner,{requestId:randomUUID(),sessionId:'definition-turn',projectId:project.id,expectedVersion:0,memoryMode:'enabled'})
+ const prepared=await runtime.prepare(owner,{sessionId:'definition-turn',messageId:'decision-message',query:'决定：本项目内部代号为 PX-204'})
+ assert.ok(prepared);assert.match(prepared.text,/初始目标/)
+ await runtime.recordUsed(owner,{manifestId:prepared.manifestId,promptHash:'a'.repeat(64),generation:prepared.binding.generation})
+ await runtime.ackGeneration(owner,{sessionId:'definition-turn',generation:prepared.binding.generation})
+ // 模型在回合内加载 teloa_projects_change 并把决策写进项目目标，等同项目定义版本前进。
+ const edited=await projects.edit(owner,{projectId:project.id,expectedVersion:project.version,fields:{...fields,goal:'初始目标：验证项目记忆。\n\n## 决策\n- 内部代号：PX-204'}})
+ assert.equal(edited.version,project.version+1)
+ // 正常工具调用不能让已受理的本轮输入失效：不抛 stale、不换代。
+ assert.doesNotThrow(()=>runtime.assertPreparedCurrentSync(owner,prepared))
+ await runtime.assertCurrent(owner,{sessionId:'definition-turn',projectId:prepared.binding.projectId,bindingVersion:prepared.binding.version,generation:prepared.binding.generation,contextVersion:prepared.binding.contextVersion,settingsVersion:prepared.binding.settingsVersion})
+ // 原回合继续执行后续步骤：再次落使用记录与逐步核对都不应因定义正文变化失效。
+ await runtime.recordUsed(owner,{manifestId:prepared.manifestId,promptHash:'b'.repeat(64),generation:prepared.binding.generation,stage:'dispatched'})
+ await runtime.assertCurrent(owner,{sessionId:'definition-turn',projectId:prepared.binding.projectId,bindingVersion:prepared.binding.version,generation:prepared.binding.generation,contextVersion:prepared.binding.contextVersion,settingsVersion:prepared.binding.settingsVersion})
+ const next=await runtime.prepare(owner,{sessionId:'definition-turn',messageId:'next-message',query:'按当前项目背景继续'})
+ assert.ok(next);assert.match(next.text,/PX-204/)
+ assert.equal(next.binding.generation,prepared.binding.generation,'项目定义变化不应清空同轮已受理背景')
+ assert.equal(next.reset,false)
+})

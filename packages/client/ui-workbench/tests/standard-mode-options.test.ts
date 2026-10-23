@@ -16,6 +16,7 @@ test('可选代码模式沿原选择器显示简繁英名称和说明，本人�
   assert.ok(standardModeDescription(option,locale))
  }
  assert.match(presetDisplayName(persistent,'zh-TW'),/保留變數/);assert.match(standardModeDescription(python,'zh-TW')!,/檔案權限/)
+ assert.match(standardModeDescription({...persistent,name:'ptc-persistent'},'zh-Hans')!,/保留变量/,'自定义预设名称是 id 时官方英文说明仍要按界面语言显示')
  assert.equal(presetDisplayName({...persistent,name:'本人的模式'},'en'),'本人的模式')
  assert.equal(standardModeDescription({...python,description:'本人说明'},'en'),'本人说明')
 })

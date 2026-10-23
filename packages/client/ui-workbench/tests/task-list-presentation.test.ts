@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import type {PreviewTask} from '../src/client/task-preview.ts'
-import {groupTaskRows,nextListIndex,pinRank,sortTaskRows,taskObjectLabel,type TaskRowAttention} from '../src/client/task-list-presentation.ts'
+import {groupTaskRows,groupWorkTaskStateLabel,nextListIndex,pinRank,sortTaskRows,taskObjectLabel,type TaskRowAttention} from '../src/client/task-list-presentation.ts'
 import {translateMessage} from '../lib/types/client/i18n/messages.js'
 
 const task=(id:string,patch:Partial<PreviewTask>={}):PreviewTask=>({id,title:id,goal:'',scope:'general',object:'obj',version:1,state:'ready',need:null,request:'',authorId:'me',assigneeId:'me',assigneeHistory:[],createdAt:'2026-09-20T00:00:00.000Z',updatedAt:'2026-09-20T00:00:00.000Z',result:'',evidence:[],history:[],supplements:[],approvalRequired:false,risk:{key:'security.risk.low'},execution:'not_started',...patch} as PreviewTask)
@@ -42,7 +42,7 @@ test('sortTaskRows 先按置顶权重，同权重按 updatedAt 降序，再按 i
 })
 
 test('groupTaskRows 把群内回应任务折成一组，只看正式时整组不返回',()=>{
-  const routed=(id:string)=>({task:task(id,{source:{groupId:'g',messageId:'m',rootId:'r',text:'',trigger:'routed'}})})
+  const routed=(id:string)=>({task:task(id,{source:{groupId:'g',messageId:'m',rootId:'r',text:'',trigger:'routed',executionMode:'reply'}})})
   const manual=(id:string)=>({task:task(id,{source:{groupId:'g',messageId:'m',rootId:'r',text:'',trigger:'manual'}})})
   const rows=[{task:task('f1')},routed('r1'),manual('f2'),routed('r2')]
   const all=groupTaskRows(rows,'all')
@@ -51,6 +51,12 @@ test('groupTaskRows 把群内回应任务折成一组，只看正式时整组不
   const formal=groupTaskRows(rows,'formal')
   assert.deepEqual(formal.formal.map(row=>row.task.id),['f1','f2'])
   assert.deepEqual(formal.routed,[])
+})
+
+test('自主接手与未知用途不会被当成群内回应折叠或从正式列表隐藏',()=>{
+ const work={task:task('handoff',{source:{groupId:'g',messageId:'m',rootId:'r',text:'独立调查',trigger:'routed',executionMode:'work'}})}
+ const unknown={task:task('unknown',{source:{groupId:'g',messageId:'m',rootId:'r',text:'旧来源',trigger:'routed'}})}
+ assert.deepEqual(groupTaskRows([work,unknown],'formal'),{formal:[work,unknown],routed:[]})
 })
 
 test('nextListIndex 处理 ↑↓/Home/End，其它键返回 undefined',()=>{
@@ -62,4 +68,11 @@ test('nextListIndex 处理 ↑↓/Home/End，其它键返回 undefined',()=>{
   assert.equal(nextListIndex('Home',2,3),0)
   assert.equal(nextListIndex('Enter',0,3),undefined)
   assert.equal(nextListIndex('Escape',0,3),undefined)
+})
+
+test('群 work 任务执行结束待核对时使用消息阶段词，普通等待仍用任务状态词',()=>{
+ const t=(key:string)=>key
+ assert.equal(groupWorkTaskStateLabel({state:'waiting',source:{executionMode:'work'}} as never,t),'group.status.phase.awaiting-review')
+ assert.equal(groupWorkTaskStateLabel({state:'waiting',source:{executionMode:'reply'}} as never,t),'status.waiting')
+ assert.equal(groupWorkTaskStateLabel({state:'paused'},t),'status.paused')
 })

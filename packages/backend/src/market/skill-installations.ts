@@ -10,7 +10,12 @@ export type NativeSkillMetadata={name:string;description:string;modelInvocable:b
 export type SkillInstallationPlan={skills:{id:string;version:string;path:'SKILL.md'}[];plugins:MarketSourceTrust['plugins'];connections:MarketSourceTrust['externalCapabilities'];permissions:MarketSourceTrust['permissions']}
 export type SkillInstallPreview={source:SkillInstallSourceIdentity;bundleHash:string;native:NativeSkillMetadata;files:{path:string;hash:string;size:number}[];trust?:MarketSourceTrust;trustHash?:string;installationPlan?:SkillInstallationPlan}
 export type SkillInstallation={id:string;ownerId:string;source:SkillInstallSourceIdentity;bundleHash:string;native:NativeSkillMetadata;trust?:MarketSourceTrust;trustHash?:string;state:'preparing'|'installed';version:number;createdAt:string;updatedAt:string}
-export type SkillInstallationFilesPort={inspect:(bundle:SkillInstallSourceBundle)=>Promise<NativeSkillMetadata>;publish:(id:string,bundle:SkillInstallSourceBundle,native:NativeSkillMetadata)=>Promise<void>;verify:(id:string,bundle:SkillInstallSourceBundle,native:NativeSkillMetadata)=>Promise<void>}
+export type SkillInstallationFilesPort={inspect:(bundle:SkillInstallSourceBundle)=>Promise<NativeSkillMetadata>;publish:(id:string,bundle:SkillInstallSourceBundle,native:NativeSkillMetadata)=>Promise<void>;verify:(id:string,bundle:SkillInstallSourceBundle,native:NativeSkillMetadata)=>Promise<void>;remove:(id:string)=>Promise<void>}
+/** 硬卸载输入：必须二次确认；版本与包摘要匹配当前安装，避免误删另一份版本。 */
+export type SkillUninstallRequest={requestId:string;installationId:string;expectedVersion:number;expectedBundleHash:string;confirm:true}
+export type SkillUninstallBlocker='selected'|'industry-usage'|'run-history'
+/** 硬卸载回执：只含本人可读的安装身份与时间，不暴露原生路径。 */
+export type SkillUninstallReceipt={requestId:string;installationId:string;nativeName:string;bundleHash:string;removedAt:string}
 type Reader={read:(owner:string,input:SkillInstallSourceInput)=>Promise<SkillInstallSourceBundle>}
 
 const uuid=(v:unknown):v is string=>typeof v==='string'&&/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(v),hex=(v:unknown):v is string=>typeof v==='string'&&/^[a-f0-9]{64}$/.test(v),text=(v:unknown,n:number):v is string=>typeof v==='string'&&!!v.trim()&&v.length<=n,positive=(v:unknown):v is number=>Number.isSafeInteger(v)&&Number(v)>0&&Number(v)<=2147483647
@@ -38,7 +43,7 @@ function usageHash(ownerId:string,loadId:string,itemInstanceId:string,installati
 /** initialAvailability 缺省为 enabled（兼容既有调用）；disabled 写入请求指纹，同一请求身份不能改投另一初始启停。 */
 function request(v:unknown){const row=exact(v,['requestId','source','expectedBundleHash','expectedTrustHash','initialAvailability']);if(!uuid(row.requestId)||!hex(row.expectedBundleHash)||row.expectedTrustHash!==undefined&&!hex(row.expectedTrustHash)||row.initialAvailability!==undefined&&row.initialAvailability!=='enabled'&&row.initialAvailability!=='disabled')throw invalid();const fixed=input(row.source),initialAvailability:SkillAvailabilityValue=row.initialAvailability==='disabled'?'disabled':'enabled';return {requestId:row.requestId.toLowerCase(),source:fixed,expectedBundleHash:row.expectedBundleHash,expectedTrustHash:row.expectedTrustHash as string|undefined,initialAvailability,spec:{source:fixed,expectedBundleHash:row.expectedBundleHash,...(row.expectedTrustHash?{expectedTrustHash:row.expectedTrustHash}:{}),...(initialAvailability==='disabled'?{initialAvailability}:{})}}}
 
-export async function initializeSkillInstallations(pool:Pool){await pool.query(`create table if not exists teloa_skill_installations(id uuid primary key,owner_id text not null,source jsonb not null check(jsonb_typeof(source)='object'),source_key text not null check(source_key ~ '^[a-f0-9]{64}$'),bundle_hash text not null check(bundle_hash ~ '^[a-f0-9]{64}$'),record_hash text not null check(record_hash ~ '^[a-f0-9]{64}$'),native jsonb not null check(jsonb_typeof(native)='object'),native_name text not null,state text not null check(state in ('preparing','installed')),version integer not null check(version>0),created_at timestamptz not null,updated_at timestamptz not null,trust jsonb,trust_hash text,unique(owner_id,source_key),unique(owner_id,native_name));create table if not exists teloa_skill_install_requests(owner_id text not null,request_id uuid not null,request_spec jsonb not null check(jsonb_typeof(request_spec)='object'),resolved_source jsonb not null check(jsonb_typeof(resolved_source)='object'),installation_id uuid not null references teloa_skill_installations(id),primary key(owner_id,request_id));create table if not exists teloa_skill_install_usages(owner_id text not null,load_id uuid not null,item_instance_id uuid not null,installation_id uuid not null references teloa_skill_installations(id),usage_hash text not null check(usage_hash ~ '^[a-f0-9]{64}$'),primary key(owner_id,load_id,item_instance_id))`);await pool.query('alter table teloa_skill_installations add column if not exists trust jsonb; alter table teloa_skill_installations add column if not exists trust_hash text');await initializeSkillSelections(pool);await initializeSkillAvailabilities(pool)}
+export async function initializeSkillInstallations(pool:Pool){await pool.query(`create table if not exists teloa_skill_installations(id uuid primary key,owner_id text not null,source jsonb not null check(jsonb_typeof(source)='object'),source_key text not null check(source_key ~ '^[a-f0-9]{64}$'),bundle_hash text not null check(bundle_hash ~ '^[a-f0-9]{64}$'),record_hash text not null check(record_hash ~ '^[a-f0-9]{64}$'),native jsonb not null check(jsonb_typeof(native)='object'),native_name text not null,state text not null check(state in ('preparing','installed')),version integer not null check(version>0),created_at timestamptz not null,updated_at timestamptz not null,trust jsonb,trust_hash text,unique(owner_id,source_key),unique(owner_id,native_name));create table if not exists teloa_skill_install_requests(owner_id text not null,request_id uuid not null,request_spec jsonb not null check(jsonb_typeof(request_spec)='object'),resolved_source jsonb not null check(jsonb_typeof(resolved_source)='object'),installation_id uuid not null references teloa_skill_installations(id),primary key(owner_id,request_id));create table if not exists teloa_skill_install_usages(owner_id text not null,load_id uuid not null,item_instance_id uuid not null,installation_id uuid not null references teloa_skill_installations(id),usage_hash text not null check(usage_hash ~ '^[a-f0-9]{64}$'),primary key(owner_id,load_id,item_instance_id))`);await pool.query('alter table teloa_skill_installations add column if not exists trust jsonb; alter table teloa_skill_installations add column if not exists trust_hash text');await pool.query(`create table if not exists teloa_skill_uninstall_requests(owner_id text not null,request_id uuid not null,installation_id uuid not null,request_spec jsonb not null check(jsonb_typeof(request_spec)='object'),result jsonb not null check(jsonb_typeof(result)='object'),created_at timestamptz not null,primary key(owner_id,request_id))`);await initializeSkillSelections(pool);await initializeSkillAvailabilities(pool)}
 
 export function readStoredSkillInstallation(row:Record<string,unknown>,ownerId:string):SkillInstallation{if(row.owner_id!==ownerId||!uuid(row.id)||!hex(row.source_key)||!hex(row.bundle_hash)||!hex(row.record_hash)||!['preparing','installed'].includes(String(row.state))||!positive(row.version))throw corrupt();const fixed=source(row.source),metadata=native(row.native,true);let trust:MarketSourceTrust|undefined,trustHash:string|undefined;if(row.trust!==null&&row.trust!==undefined||row.trust_hash!==null&&row.trust_hash!==undefined){if(!isRecord(row.trust)||!hex(row.trust_hash))throw corrupt();try{trust=normalizeMarketSourceTrust(row.trust)}catch{throw corrupt()}trustHash=row.trust_hash;if(marketTrustHash(trust)!==trustHash)throw corrupt()}const currentKey=sourceKey(fixed,trustHash),legacyKey=sourceKey(fixed);if(row.source_key!==currentKey&&(trustHash===undefined||row.source_key!==legacyKey)||recordHash(row.id,ownerId,fixed,row.bundle_hash as string,metadata,trust,trustHash)!==row.record_hash||metadata.name!==row.native_name)throw corrupt();return {id:row.id,ownerId,source:fixed,bundleHash:row.bundle_hash,native:metadata,...(trust&&trustHash?{trust,trustHash}:{}),state:row.state as SkillInstallation['state'],version:row.version,createdAt:stamp(row.created_at),updatedAt:stamp(row.updated_at)}}
 export async function readInstalledSkillInstallation(db:PoolClient,ownerId:string,installationId:string):Promise<SkillInstallation>{
@@ -64,6 +69,25 @@ export async function readEnabledIndustrySkillUsage(db:PoolClient,ownerId:string
   throw error
  }
 }
+
+const uninstallBlockerMessages:Record<SkillUninstallBlocker,string>={selected:'该技能还有其他版本，请先切换到要保留的版本再卸载。','industry-usage':'该技能仍被加载包引用，请先卸载加载包。','run-history':'该技能已被历史运行引用，保留运行证据，只可停用。'}
+const uninstallBlockerOrder:readonly SkillUninstallBlocker[]=['selected','industry-usage','run-history']
+function uninstallInput(value:unknown):SkillUninstallRequest{
+ const row=exact(value,['requestId','installationId','expectedVersion','expectedBundleHash','confirm'])
+ if(!uuid(row.requestId)||!uuid(row.installationId)||!positive(row.expectedVersion)||!hex(row.expectedBundleHash)||row.confirm!==true)throw invalid()
+ return {requestId:(row.requestId as string).toLowerCase(),installationId:(row.installationId as string).toLowerCase(),expectedVersion:row.expectedVersion as number,expectedBundleHash:row.expectedBundleHash as string,confirm:true}
+}
+function uninstallSpec(input:SkillUninstallRequest):Record<string,unknown>{return {installationId:input.installationId,expectedVersion:input.expectedVersion,expectedBundleHash:input.expectedBundleHash,confirm:true}}
+function uninstallInUse(blockers:readonly SkillUninstallBlocker[]):WorkError{return new WorkError('teloa/conflict',blockers.map(blocker=>uninstallBlockerMessages[blocker]).join(' '),{reason:'skill-in-use',blockers:[...blockers]})}
+function readUninstallReceipt(row:Record<string,unknown>,ownerId:string,requestId:string):{requestSpec:unknown;result:SkillUninstallReceipt}{
+ if(row.owner_id!==ownerId||row.request_id!==requestId||!uuid(row.installation_id)||!isRecord(row.request_spec)||!isRecord(row.result))throw corrupt()
+ const result=row.result
+ if(Object.keys(result).length!==5||!('requestId' in result)||!('installationId' in result)||!('nativeName' in result)||!('bundleHash' in result)||!('removedAt' in result))throw corrupt()
+ if(result.requestId!==requestId||result.installationId!==row.installation_id||typeof result.nativeName!=='string'||!result.nativeName||!hex(result.bundleHash)||typeof result.removedAt!=='string'||!Number.isFinite(Date.parse(result.removedAt))||new Date(result.removedAt).toISOString()!==result.removedAt)throw corrupt()
+ return {requestSpec:row.request_spec,result:{requestId:result.requestId as string,installationId:result.installationId as string,nativeName:result.nativeName as string,bundleHash:result.bundleHash as string,removedAt:result.removedAt as string}}
+}
+/** 只检查真实存在的表：历史运行引用表在部分环境尚未初始化时不能把卸载变成不可用。 */
+async function tablePresent(db:PoolClient,name:string):Promise<boolean>{return (await db.query('select to_regclass($1) is not null present',[name])).rows[0]?.present===true}
 
 /** 卸载行业模板时解除该加载的全部 Skill 使用关系：安装记录本身与其它加载的使用方都不受影响。 */
 export async function deleteIndustryUsages(db:PoolClient,ownerId:string,loadId:string):Promise<number>{
@@ -118,4 +142,76 @@ export class SkillInstallationService{
  }
  async get(ownerId:string,v:unknown){const row=exact(v,['installationId']);if(!uuid(row.installationId)||!text(ownerId,128))throw invalid();return this.tx(db=>this.find(db,ownerId,row.installationId as string))}
  async list(ownerId:string,v:unknown):Promise<{items:SkillInstallation[];usages:{loadId:string;itemInstanceId:string;installationId:string}[]}>{exact(v,[]);if(!text(ownerId,128))throw new WorkError('teloa/forbidden','需要有效的本人身份。');return this.tx(async db=>{const rows=(await db.query('select * from teloa_skill_installations where owner_id=$1 order by created_at,id',[ownerId])).rows,items=rows.map(row=>readStoredSkillInstallation(row,ownerId)),ids=new Set(items.map(x=>x.id)),usageRows=(await db.query('select * from teloa_skill_install_usages where owner_id=$1 order by load_id,item_instance_id',[ownerId])).rows,usages=usageRows.map(row=>{if(!uuid(row.load_id)||!uuid(row.item_instance_id)||!uuid(row.installation_id)||!hex(row.usage_hash)||row.usage_hash!==usageHash(ownerId,row.load_id,row.item_instance_id,row.installation_id)||!ids.has(row.installation_id))throw corrupt();return {loadId:row.load_id,itemInstanceId:row.item_instance_id,installationId:row.installation_id}});return {items,usages}})}
+ /**
+  * 硬卸载：先锁校验当前选中/加载使用/历史运行引用，再删原生文件，第二次锁校验后按依赖顺序删除记录与安装行并写幂等回执。
+  * 文件已删而事务失败时不写回执，同一 requestId 重试会再次做幂等的文件删除并继续完成；服务异常不伪装成功。
+  */
+ async uninstall(ownerId:string,v:unknown):Promise<SkillUninstallReceipt>{
+  if(!text(ownerId,128))throw new WorkError('teloa/forbidden','需要有效的本人身份。')
+  const input=uninstallInput(v),spec=uninstallSpec(input),key=stable(['skill-uninstall',ownerId,input.installationId])
+  return this.serial(ownerId+':uninstall:'+input.installationId,async()=>{
+   let db:PoolClient;try{db=await this.pool.connect()}catch{throw new WorkError('teloa/storage-unavailable','技能卸载存储当前不可用。')}
+   let locked=false
+   try{
+    const prior=await this.readUninstall(db,ownerId,input.requestId)
+    if(prior){if(stable(prior.requestSpec)!==stable(spec))throw new WorkError('teloa/conflict','同一技能卸载请求不能更换安装、版本或包摘要。');return prior.result}
+    try{await db.query('select pg_advisory_lock(hashtextextended($1,0))',[key])}catch{throw new WorkError('teloa/storage-unavailable','技能卸载锁获取失败。')}
+    locked=true
+    // 第一段：锁内再次核对幂等回执、安装身份及阻塞项；不删任何记录。
+    const prepared=await this.txOn(db,async tx=>{
+     const again=await this.readUninstall(tx,ownerId,input.requestId)
+     if(again){if(stable(again.requestSpec)!==stable(spec))throw new WorkError('teloa/conflict','同一技能卸载请求不能更换安装、版本或包摘要。');return {receipt:again.result} as const}
+     const installation=await this.find(tx,ownerId,input.installationId)
+     this.assertUninstallTarget(installation,input)
+     const blockers=await this.uninstallBlockers(tx,ownerId,installation)
+     if(blockers.length)throw uninstallInUse(blockers)
+     return {installation,removedAt:this.identity.now()} as const
+    })
+    if('receipt' in prepared)return prepared.receipt
+    // 文件删除是独立、可重放的副作用：目录不存在视为已成功，数据库失败后允许重新执行本请求。
+    try{await this.files.remove(prepared.installation.id)}catch(error){if(error instanceof WorkError)throw error;throw new WorkError('teloa/storage-unavailable','技能原生文件未能删除，请稍后重试。')}
+    // 第二段：锁内重新核对（期间可能新增依赖），再按外键依赖顺序删除记录与安装行，最后写回执。
+    return await this.txOn(db,async tx=>{
+     const installation=await this.find(tx,ownerId,input.installationId)
+     this.assertUninstallTarget(installation,input)
+     const blockers=await this.uninstallBlockers(tx,ownerId,installation)
+     if(blockers.length)throw uninstallInUse(blockers)
+     await tx.query('delete from teloa_skill_selection_requests where owner_id=$1 and (current_installation_id=$2 or target_installation_id=$2)',[ownerId,installation.id])
+     await tx.query('delete from teloa_skill_install_maintenance_requests where owner_id=$1 and installation_id=$2',[ownerId,installation.id])
+     await tx.query('delete from teloa_skill_install_availability where owner_id=$1 and installation_id=$2',[ownerId,installation.id])
+     await tx.query('delete from teloa_skill_install_requests where owner_id=$1 and installation_id=$2',[ownerId,installation.id])
+     // 唯一版本的当前选择行随安装一并删除（外键先于安装行）；之后同名新安装会重新固定初始选择。
+     await tx.query('delete from teloa_skill_selections where owner_id=$1 and installation_id=$2',[ownerId,installation.id])
+     const removed=await tx.query('delete from teloa_skill_installations where owner_id=$1 and id=$2 returning id',[ownerId,installation.id])
+     if(removed.rowCount!==1)throw corrupt()
+     const result:SkillUninstallReceipt={requestId:input.requestId,installationId:installation.id,nativeName:installation.native.name,bundleHash:installation.bundleHash,removedAt:prepared.removedAt}
+     await tx.query('insert into teloa_skill_uninstall_requests(owner_id,request_id,installation_id,request_spec,result,created_at) values($1,$2,$3,$4,$5,$6)',[ownerId,input.requestId,installation.id,JSON.stringify(spec),JSON.stringify(result),prepared.removedAt])
+     return result
+    })
+   }finally{
+    if(locked)await db.query('select pg_advisory_unlock(hashtextextended($1,0))',[key]).catch(()=>{/* 连接关闭时锁自动释放；解锁失败不能吞掉原结果。 */})
+    db.release()
+   }
+  })
+ }
+ private assertUninstallTarget(installation:SkillInstallation,input:SkillUninstallRequest){
+  if(installation.version!==input.expectedVersion||installation.bundleHash!==input.expectedBundleHash)throw new WorkError('teloa/version-conflict','技能安装已变化，请刷新后重试。')
+  if(installation.state!=='installed')throw new WorkError('teloa/conflict','技能安装尚未完成，不能卸载；请先完成安装或继续核对。')
+ }
+ private async readUninstall(db:PoolClient,ownerId:string,requestId:string){const row=(await db.query('select * from teloa_skill_uninstall_requests where owner_id=$1 and request_id=$2',[ownerId,requestId])).rows[0];return row?readUninstallReceipt(row,ownerId,requestId):undefined}
+ private async uninstallBlockers(db:PoolClient,ownerId:string,installation:SkillInstallation):Promise<SkillUninstallBlocker[]>{
+  const installationId=installation.id,nativeName=installation.native.name
+  const found=new Set<SkillUninstallBlocker>()
+  // 当前选中的唯一版本不阻塞硬卸载：否则单版本技能永远卸不掉。只有还存在同 native 名的其它版本时，
+  // 才要求本人先切换要保留的版本；卸载成功会连带删除指向本安装的选择行。
+  const selected=((await db.query('select 1 from teloa_skill_selections where owner_id=$1 and installation_id=$2 limit 1',[ownerId,installationId])).rowCount??0)>0
+  if(selected&&((await db.query('select 1 from teloa_skill_installations where owner_id=$1 and native_name=$2 and id<>$3 limit 1',[ownerId,nativeName,installationId])).rowCount??0)>0)found.add('selected')
+  if((await db.query('select 1 from teloa_skill_install_usages where owner_id=$1 and installation_id=$2 limit 1',[ownerId,installationId])).rowCount)found.add('industry-usage')
+  if(await tablePresent(db,'teloa_task_run_skill_refs')&&(await db.query('select 1 from teloa_task_run_skill_refs where owner_id=$1 and installation_id=$2 limit 1',[ownerId,installationId])).rowCount)found.add('run-history')
+  return uninstallBlockerOrder.filter(blocker=>found.has(blocker))
+ }
+ private async txOn<T>(db:PoolClient,fn:(db:PoolClient)=>Promise<T>):Promise<T>{
+  try{await db.query('begin');const value=await fn(db);await db.query('commit');return value}catch(error){await db.query('rollback').catch(()=>{});if(error instanceof WorkError)throw error;throw new WorkError('teloa/storage-unavailable','技能卸载存储操作未完成。')}
+ }
 }
+

@@ -82,6 +82,7 @@ export const jaMessages = {
   'settings.configurationHelp': '設定ガイド',
   'settings.document.open': '設定ファイルを開く',
   'settings.document.opening': '開いています…',
+  'settings.document.unavailable': '設定ファイルを直接開けませんでした。Teloa を実行しているコンピューターの設定ディレクトリを確認するか、後でもう一度お試しください。',
   'profile.title': '個人プロフィール',
   'profile.description': 'この名前は現在の端末に表示されます。データはこの端末にのみ保存されます。',
   'profile.displayName': '表示名',

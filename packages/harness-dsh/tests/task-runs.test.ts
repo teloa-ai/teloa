@@ -18,7 +18,7 @@ test('公开一键与完整准备不能为已持久父交办预约会话或建�
 
 test('公开启动不能领取已持久父交办 Run 或调用原生发送',async()=>{
  const runId='42345678-1234-4234-8234-123456789012',identity={sessionId:'work-one',requestId:'12345678-1234-4234-8234-123456789012',roleId:'32345678-1234-4234-8234-123456789012'},calls:string[]=[]
- const run={id:runId,sessionId:'task-run-one',nativeRequestId:runId,state:'prepared'}
+ const run={id:runId,sessionId:'task-run-one',nativeRequestId:runId,state:'prepared',allowedTools:['read']}
  const service={conversationParent:async()=>identity,get:async()=>run,executionScope:async()=>({taskId:'task',taskVersion:1,sessionId:'task-run-one',linkVersion:1,scope:'SOC'}),claim:async()=>{calls.push('claim');return {run,dispatch:true}}} as unknown as TaskRunService
  const handler=createTaskRunHandler('owner',async()=>service,{check:async()=>{},send:async()=>{calls.push('send')},stop:async()=>{},events:async()=>[]})
  await assert.rejects(handler('task-runs/start',{runId},new AbortController().signal),{code:'teloa/conflict'})
@@ -26,7 +26,7 @@ test('公开启动不能领取已持久父交办 Run 或调用原生发送',asyn
 })
 test('仅宿主传入固定父身份可继续原 prepare→claim→send 路径',async()=>{
  const taskId='22345678-1234-4234-8234-123456789012',runId='42345678-1234-4234-8234-123456789012',identity={sessionId:'work-one',requestId:'12345678-1234-4234-8234-123456789012',roleId:'32345678-1234-4234-8234-123456789012'},calls:string[]=[]
- const run={id:runId,taskId,sessionId:'task-run-one',nativeRequestId:runId,state:'prepared'},target={taskId,taskVersion:1,sessionId:run.sessionId,linkVersion:1,scope:'SOC'}
+ const run={id:runId,taskId,sessionId:'task-run-one',nativeRequestId:runId,state:'prepared',allowedTools:['read']},target={taskId,taskVersion:1,sessionId:run.sessionId,linkVersion:1,scope:'SOC'}
  const service={conversationParent:async()=>identity,prepare:async()=>{calls.push('prepare');return run},get:async()=>run,executionScope:async()=>target,claim:async()=>{calls.push('claim');return {run,dispatch:true,target}},record:async()=>({...run,state:'accepted'})} as unknown as TaskRunService
  const handler=createTaskRunHandler('owner',async()=>service,{check:async()=>{},send:async()=>{calls.push('send')},stop:async()=>{},events:async()=>[]}),signal=new AbortController().signal
  const input={requestId:runId,taskId,expectedTaskVersion:1,roleId:identity.roleId,expectedRoleVersion:1,sessionId:run.sessionId,expectedLinkVersion:1}

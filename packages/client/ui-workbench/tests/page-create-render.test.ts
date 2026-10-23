@@ -277,3 +277,49 @@ test('原会话准备失败保留原稿与预览，不用新建会话代替',asy
  const api=mockApi({origin:async()=>({draftId:'draft-1',bodyHash:'a'.repeat(64),sessionId:'original'}),directory:async()=>directory(),preview:async()=>preview(),settle:async()=>{throw Error('不得落定')}})
  const app=mount({api},async()=>{throw Error('unavailable')});await app.flush();app.open();await app.flush();const edit=elements(app.render()).find(node=>node.type==='button'&&node.props['aria-label']==='在会话中修改')!;await edit.props.onClick();await app.flush();assert.ok(app.html().includes('原创建会话暂不可用或草稿已变化'));assert.ok(app.html().includes('核对账单'));assert.equal(app.button('确认').props.disabled,false)
 })
+
+// BIZ-004：创建说明预备后未发送就关闭时，重开入口要恢复原说明并标明「已备好未发送」，
+// 而不是只剩一个空会话；损坏/旧格式记录不能阻塞新输入（旧纯文本兼容见 page-create-sentence-draft.test.ts）。
+test('重开创建入口恢复未发送的创建说明，并标明已备好未发送',async()=>{
+ const key='teloa.role-creation-input/v1/general',data=new Map<string,string>()
+ const storage={getItem:(name:string)=>data.get(name)??null,setItem:(name:string,value:string)=>{data.set(name,value)},removeItem:(name:string)=>{data.delete(name)}}
+ data.set(key,JSON.stringify({schema:'teloa.create-sentence-draft/v1',text:'帮我建一名资料研究员',prepared:true}))
+ const app=mount({entity:'role',scope:'general',directSentence:true,sentenceDraft:{key,storage}})
+ const html=app.html()
+ assert.match(html,/帮我建一名资料研究员/,'重开入口必须恢复原说明')
+ assert.match(html,/这句话已备好，请在会话中发送/,'必须标明已预备未发送')
+ assert.match(html,/recovery\.discard/,'已备好未发送要有清除草稿动作')
+})
+
+test('预备成功后创建说明保留为已备好未发送，重开入口仍可恢复',async()=>{
+ const key='teloa.role-creation-input/v1/general',data=new Map<string,string>()
+ const storage={getItem:(name:string)=>data.get(name)??null,setItem:(name:string,value:string)=>{data.set(name,value)},removeItem:(name:string)=>{data.delete(name)}}
+ const app=mount({entity:'role',scope:'general',directSentence:true,sentenceDraft:{key,storage},prepare:async()=>{}})
+ const textarea=elements(app.render()).find(node=>node.type==='textarea')!
+ textarea.props.onChange({target:{value:'帮我建一名资料研究员'}})
+ app.render()
+ const form=elements(app.render()).find(node=>node.type==='form')!
+ await form.props.onSubmit({preventDefault(){}})
+ await app.flush()
+ const saved=data.get(key)
+ assert.ok(saved,'预备成功后必须保留句稿记录')
+ assert.deepEqual(JSON.parse(saved),{schema:'teloa.create-sentence-draft/v1',text:'帮我建一名资料研究员',prepared:true})
+ assert.match(app.html(),/这句话已备好，请在会话中发送/)
+ // 重新挂载（模拟关闭再打开入口）仍恢复原说明
+ const reopened=mount({entity:'role',scope:'general',directSentence:true,sentenceDraft:{key,storage}})
+ assert.match(reopened.html(),/帮我建一名资料研究员/)
+ assert.match(reopened.html(),/这句话已备好，请在会话中发送/)
+})
+
+test('清除已备好未发送的草稿后入口恢复为空',async()=>{
+ const key='teloa.role-creation-input/v1/general',data=new Map<string,string>()
+ const storage={getItem:(name:string)=>data.get(name)??null,setItem:(name:string,value:string)=>{data.set(name,value)},removeItem:(name:string)=>{data.delete(name)}}
+ data.set(key,JSON.stringify({schema:'teloa.create-sentence-draft/v1',text:'旧说明',prepared:true}))
+ const app=mount({entity:'role',scope:'general',directSentence:true,sentenceDraft:{key,storage}})
+ const clear=elements(app.render()).find(node=>node.type==='button'&&content(node)==='recovery.discard')!
+ clear.props.onClick()
+ app.render()
+ assert.equal(data.has(key),false)
+ assert.doesNotMatch(app.html(),/这句话已备好，请在会话中发送/)
+ assert.doesNotMatch(app.html(),/旧说明/)
+})

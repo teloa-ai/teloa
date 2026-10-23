@@ -73,6 +73,19 @@ export class ManagedSkillFiles{
   }
   try{await visit(target,'');if(files.size||!sameNative(await this.parse(target),native))throw corrupt()}catch(error){if(missing(error))throw corrupt();throw error}
  }
+ /** 硬卸载的原生文件删除：只删受管根下该安装 UUID 的目录；目录不存在视为已成功，符号链接/非目录一律拒绝。 */
+ async remove(id:string):Promise<void>{
+  const path=this.path(id),target=dirname(path)
+  if(dirname(target)!==this.root)throw invalid()
+  let rootInfo
+  try{rootInfo=await lstat(this.root)}catch(error){if(missing(error)){this.invalidate(path);return}throw error}
+  if(!rootInfo.isDirectory()||rootInfo.isSymbolicLink())throw corrupt()
+  let info
+  try{info=await lstat(target)}catch(error){if(missing(error)){this.invalidate(path);return}throw error}
+  if(!info.isDirectory()||info.isSymbolicLink())throw corrupt()
+  await rm(target,{recursive:true,force:true})
+  this.invalidate(path)
+ }
  async publish(id:string,bundle:SkillInstallSourceBundle,native:Native):Promise<void>{
   const path=this.path(id),target=dirname(path);checked(bundle);await directory(this.root)
   try{await lstat(target);await this.verify(id,bundle,native);this.invalidate(path);return}catch(error){if(!missing(error))throw error}

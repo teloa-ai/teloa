@@ -171,7 +171,7 @@ test('真实job已启动但关联尚未落库时，重启的owner-only记录不�
 test('提交未知在当前官方Agent已空闲且后台收口时落定，旧世代只读核验不推翻持久终态',async t=>{
  const {ctx,agent}=await runtime(),links=linkStore(),background=createTaskRunBackground(ctx,links)
  t.after(async()=>{background.dispose();await ctx.fiber.dispose()})
- let run={id:'run',taskId:'task',sessionId:agent.session.id,nativeRequestId:'native',state:'prepared',stopRequestedAt:null} as unknown as TaskRun,sends=0
+ let run={id:'run',taskId:'task',sessionId:agent.session.id,nativeRequestId:'native',state:'prepared',stopRequestedAt:null,allowedTools:['bash']} as unknown as TaskRun,sends=0
  const target={taskId:'task',taskVersion:1,sessionId:agent.session.id,linkVersion:1,scope:'general'}
  const service={get:async()=>run,executionScope:async()=>target,claim:async()=>{run={...run,state:'submitting'};return {run,dispatch:true as const,target}},requestStop:async()=>run,record:async(_owner:string,input:unknown)=>{const evidence=(input as {evidence:NonNullable<TaskRun['evidence']>}).evidence;run={...run,state:evidence.state,evidence};return run}}
  const driver=new TaskRunDriver(service,{check:async()=>{},stop:async()=>{},backgroundState:background.state,events:async()=>readSessionEvents(agent.session),send:async()=>{

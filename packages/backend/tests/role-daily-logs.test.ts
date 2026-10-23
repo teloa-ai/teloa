@@ -77,6 +77,13 @@ async function run(owner:string,taskId:string,roleId:string,roleVersion:number,c
  return id
 }
 
+async function endedRun(owner:string,taskId:string,roleId:string,roleVersion:number,reason:'completed'|'aborted'|'error',createdAt=inDay){
+ const id=randomUUID()
+ await pool.query(`insert into teloa_task_runs(id,owner_id,request_id,request_spec,task_id,role_id,task_version,role_version,link_version,session_id,native_request_id,state,evidence,input_text,created_at)
+  values($1,$2,$3,'{}'::jsonb,$4,$5,1,$6,1,$7,$8,'ended',$9,'{}',$10)`,[id,owner,randomUUID(),taskId,roleId,roleVersion,'session-'+id,randomUUID(),JSON.stringify({state:'ended',turn:1,messageSeq:2,endSeq:2,reason}),createdAt])
+ return id
+}
+
 async function artifact(owner:string,source:Record<string,unknown>,title:string,createdAt=inDay,number=1,artifactId=randomUUID()){
  if(number===1)await pool.query('insert into teloa_artifacts(id,owner_id,request_id,request_spec,source_key,current_version) values($1,$2,$3,\'{}\'::jsonb,$4,$5)',[artifactId,owner,randomUUID(),artifactId,number])
  else await pool.query('update teloa_artifacts set current_version=$2 where id=$1',[artifactId,number])
@@ -157,11 +164,27 @@ test('五类证据各取一条并汇总范围；五类全空不产出',async()=>
  const message=await groupMessage(f.owner,f.roleId,f.task.id,f.runId)
  const evidence=await f.service.dayEvidence(f.owner,who)
  assert.equal(evidence.day,day);assert.deepEqual(evidence.scopeIds,['SOC'])
- assert.deepEqual(evidence.runs.map(item=>item.title).sort(),['运行：'+decided.task.title,'运行：季度复盘'].sort())
+ assert.equal(evidence.timezone,'Asia/Singapore')
+ assert.deepEqual(evidence.runs.map(item=>item.title).sort(),['运行（未完成）：'+decided.task.title,'运行（未完成）：季度复盘'].sort())
  assert.deepEqual(evidence.artifacts.map(item=>[item.id,item.version]),[[produced,1],[revised,1]].sort((a,b)=>String(a[0]).localeCompare(String(b[0]))))
  assert.deepEqual(evidence.approvals,[{kind:'approval',id:decided.approval.id,version:1,title:'允许：隔离 prod-03'}])
  assert.deepEqual(evidence.revisions,[{kind:'revision',id:revised,version:2,title:'处置报告'}])
  assert.deepEqual(evidence.groupMessages,[{kind:'group-message',id:message.id,version:1,title:'群回帖 · 话题 '+message.rootId.slice(0,8)}])
+})
+
+test('运行证据带真实终态：完成/中止/失败与未完成逐条可分辨，事件时区随证据返回',async()=>{
+ const f=await world(),who=(await f.service.digestRun(f.owner,{runId:f.runId}))!
+ const completed=await endedRun(f.owner,f.task.id,f.roleId,f.roleVersion,'completed')
+ const aborted=await endedRun(f.owner,f.task.id,f.roleId,f.roleVersion,'aborted')
+ const errored=await endedRun(f.owner,f.task.id,f.roleId,f.roleVersion,'error')
+ const evidence=await f.service.dayEvidence(f.owner,who)
+ const titles=new Map(evidence.runs.map(item=>[item.id,item.title]))
+ assert.equal(titles.get(completed),'运行（完成）：季度复盘')
+ assert.equal(titles.get(aborted),'运行（中止）：季度复盘')
+ assert.equal(titles.get(errored),'运行（失败）：季度复盘')
+ // world() 里原有运行仍是 accepted：必须明确为未完成，不能和完成一样。
+ assert.equal(titles.get(f.runId),'运行（未完成）：季度复盘')
+ assert.equal(evidence.timezone,'Asia/Singapore')
 })
 
 test('任一类读口失败整次小结失败，不回落成空数组',async()=>{
@@ -376,7 +399,7 @@ test('跨岗位引用同一份日志被拒；证据切到 60 条后范围只含�
  await run(f.owner,cutId,f.roleId,f.roleVersion,'2026-09-13T05:00:00.000Z')
  const evidence=await f.service.dayEvidence(f.owner,who)
  assert.equal(evidence.runs.length,60);assert.deepEqual(evidence.scopeIds,['SOC'])
- assert.equal(evidence.runs.some(item=>item.title==='运行：越界核对'),false)
+ assert.equal(evidence.runs.some(item=>item.title.includes('越界核对')),false)
  const created=await f.service.submitDigest(f.owner,who,randomUUID(),submission(['SOC'],0))
  assert.equal(created.log.evidence.length,60);assert.deepEqual(created.log.scopeIds,['SOC'])
  assert.deepEqual(created.log.evidence,evidence.runs)

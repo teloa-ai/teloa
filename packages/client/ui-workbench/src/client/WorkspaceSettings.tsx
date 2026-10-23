@@ -24,6 +24,7 @@ export function WorkspaceSettings({management}:{management:WorkspaceManagement})
       <label>{t('workspaceSettings.addExisting')}<input aria-label={t('workspaceSettings.pathAria')} placeholder="/path/to/project" value={state.path} onChange={event=>management.setPath(event.target.value)} disabled={busy}/></label>
       <button type="submit" disabled={busy||!state.path.trim()}>{state.pending?.kind==='create'?t('workspaceSettings.adding'):t('workspaceSettings.add')}</button>
     </form>
+    <p className={css.hint} role="note">{t('workspaceSettings.webPickerHint')}</p>
     {state.ready&&state.rows.length===0&&<p>{t('workspaceSettings.empty')}</p>}
     {missingEdit&&state.editing&&<div className={css.editor}>
       <p role="status">{t('workspaceSettings.removedDraft')}</p>

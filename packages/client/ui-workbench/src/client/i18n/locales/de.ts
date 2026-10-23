@@ -82,6 +82,7 @@ export const deMessages = {
   'settings.configurationHelp': 'Konfigurationsanleitung',
   'settings.document.open': 'Konfigurationsdatei öffnen',
   'settings.document.opening': 'Wird geöffnet…',
+  'settings.document.unavailable': 'Die Konfigurationsdatei konnte nicht direkt geöffnet werden. Prüfen Sie das Konfigurationsverzeichnis auf dem Computer, auf dem Teloa läuft, oder versuchen Sie es später erneut.',
   'profile.title': 'Persönliches Profil',
   'profile.description': 'Diese Identität wird auf dem aktuellen Gerät angezeigt. Die Daten bleiben auf diesem Gerät.',
   'profile.displayName': 'Anzeigename',

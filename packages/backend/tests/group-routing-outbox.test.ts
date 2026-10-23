@@ -40,6 +40,17 @@ async function fixture(names=['甲同事','乙同事']){
  const record=()=>decisions.withTopicLock(owner,group.id,message.id,async db=>{await decisions.record(db,owner,{groupId:group.id,messageId:message.id,decision});return outbox.recordRecipients(db,owner,{groupId:group.id,messageId:message.id,decision,decisionVersion:1})})
  return {owner,recipients,group,message,decision,decisions,outbox,record,groups,grants}
 }
+test('GRP-04 activeRolesInRoot：只把同话题内非终态占用的岗位算作已占用，重试/重入不受影响',async()=>{
+ const x=await fixture(['甲同事','乙同事'])
+ await x.record()
+ const follow=await x.groups.send(x.owner,{requestId:randomUUID(),groupId:x.group.id,expectedVersion:x.group.version,rootId:x.message.id,text:'请接手继续核对。'})
+ const busy=await x.outbox.activeRolesInRoot(x.owner,{groupId:x.group.id,messageId:follow.id})
+ assert.deepEqual([...busy].sort(),x.recipients.map((role:{id:string})=>role.id).sort(),'同话题内 pending 派工视为已占用')
+ assert.deepEqual(await x.outbox.activeRolesInRoot(x.owner,{groupId:x.group.id,messageId:x.message.id}),[],'同一触发消息自己的行不算占用，重试/重入由原判据处理')
+ await f.pool.query("update teloa_group_routing_outbox set state='settled' where owner_id=$1 and group_id=$2 and message_id=$3 and role_id=$4",[x.owner,x.group.id,x.message.id,x.recipients[0]!.id])
+ assert.deepEqual(await x.outbox.activeRolesInRoot(x.owner,{groupId:x.group.id,messageId:follow.id}),[x.recipients[1]!.id],'终态岗位不再阻断员工回帖的新派工')
+})
+
 async function prepared(x:Awaited<ReturnType<typeof fixture>>,item:any){
  const task=(await new GroupTaskService(f.pool,identity,new TaskService(f.pool,identity)).create(x.owner,await x.outbox.taskInput(x.owner,{itemId:item.id}))).task
  const sessionId=randomUUID(),conversationId=randomUUID(),inspect=async()=>({id:conversationId,ownerId:x.owner,sessionId,status:'ready'})

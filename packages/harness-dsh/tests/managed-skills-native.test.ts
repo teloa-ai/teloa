@@ -198,7 +198,7 @@ test('启动快照含 disabled 与 preparing 时立即占位，未知目录不�
   assert.equal(await ctx.skills.get('unknown-method',{cwd:root}),undefined)
 })
 
-test('刷新未知时保留占位，快照双版本均不可倒退或遗漏已有安装',async t=>{
+test('刷新未知时保留占位，快照版本不可倒退，硬卸载允许整体移除安装',async t=>{
   const {root,ctx}=await setup(t)
   await skill(root,installationId)
   const manager=registerManagedSkills(ctx,root,{initial:snapshot()}),removeFallback=fallback(ctx)
@@ -208,7 +208,9 @@ test('刷新未知时保留占位，快照双版本均不可倒退或遗漏已�
   assert.equal(await ctx.skills.get('fixed-method',{cwd:root}),undefined)
   assert.throws(()=>manager.replaceAvailability(snapshot({installationVersion:1})),{code:'teloa/storage-corrupt'})
   assert.throws(()=>manager.replaceAvailability(snapshot({availabilityVersion:0})),{code:'teloa/storage-corrupt'})
-  assert.throws(()=>manager.replaceAvailability([]),{code:'teloa/storage-corrupt'})
+  // 硬卸载会连同原生目录移除安装；快照允许该安装整体消失，但其它版本变化仍只许前进。
+  manager.replaceAvailability([])
+  assert.notEqual((await ctx.skills.get('fixed-method',{cwd:root}))?.provider,'teloa-market')
   manager.replaceAvailability(snapshot({installationVersion:3,availabilityVersion:2}))
   assert.equal((await ctx.skills.get('fixed-method',{cwd:root}))?.provider,'teloa-market')
 })

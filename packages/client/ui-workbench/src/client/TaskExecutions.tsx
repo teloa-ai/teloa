@@ -32,6 +32,10 @@ const stepTones:Readonly<Record<string,StatusPillTone>>={
  'subagent.run.state.reserved':'neutral','subagent.run.state.started':'info','subagent.run.state.ended':'muted','subagent.run.state.abandoned':'muted',
 }
 const terminal=(state:RunView['state'])=>['ended','withdrawn','configuration_failed'].includes(state)
+/** 员工运行没有岗位执行工具时，启动会被宿主拒绝；这里提前说明，避免用户点一次才知道。 */
+const noExecutionTools=(row:RunView)=>row.state==='prepared'&&row.executor?.kind!=='owner'&&(row.toolRules??[]).length===0
+/** 服务端 prepare 期空工具拒绝的可操作原因；只用于选择提示，其他 teloa/conflict 仍走通用错误。 */
+const isRoleRunToolGateError=(error:unknown):boolean=>error!==null&&typeof error==='object'&&'code' in error&&(error as {code?:unknown}).code==='teloa/conflict'&&'details' in error&&(error as {details?:{reason?:unknown}}).details?.reason==='role-run-no-execution-tools'
 const configurationStages={'model-resolve':'taskExecution.stage.resolve','preset-resolve':'taskExecution.stage.resolve','session-create':'taskExecution.stage.create','session-receipt':'taskExecution.stage.receipt','session-inspect':'taskExecution.stage.inspect'} as const
 
 function TaskRunFlowDetails({run,api}:{run:RunView;api:TaskRunApi}){
@@ -78,7 +82,7 @@ function TaskExecutionsPanel({taskId,taskVersion,taskState,assigned,api,controls
  const {locale,t,dateTime}=useI18n()
  const publishPreparation=useContext(TaskRunPreparationContext),mounted=useRef(true)
  useEffect(()=>{mounted.current=true;return()=>{mounted.current=false}},[])
- const [rows,setRows]=useState<RunView[]>([]),[busy,setBusy]=useState(false),[error,setError]=useState<string>(),[notice,setNotice]=useState<string>(),lock=useRef(false)
+ const [rows,setRows]=useState<RunView[]>([]),[busy,setBusy]=useState(false),[error,setError]=useState<string>(),[notice,setNotice]=useState<string>(),[toolGateBlocked,setToolGateBlocked]=useState(false),lock=useRef(false)
  const [loaded,setLoaded]=useState(false),[origin,setOrigin]=useState<TaskRunOrigin>(),[originError,setOriginError]=useState(false)
  const [controlRevision,setControlRevision]=useState(0),[controlSnapshot,setControlSnapshot]=useState<{rows:RunView[];views:Record<string,RunControl>}>({rows:[],views:{}})
  const refreshControl=useCallback(()=>setControlRevision(value=>value+1),[])
@@ -105,7 +109,7 @@ function TaskExecutionsPanel({taskId,taskVersion,taskState,assigned,api,controls
  useEffect(()=>{const signature=rows.map(row=>row.id+':'+row.state).join('|');if(signature!==lastProgress.current){lastProgress.current=signature;changed()}},[rows,changed])
  // 重读中或失败时撤回已确认状态；父级保留最后快照，不能把初始空数组当成从未执行。
  useEffect(()=>{onRunsRef.current?.(rows,loaded&&!busy&&!error)},[rows,loaded,busy,error])
- const act=async(work:()=>Promise<void>)=>{if(lock.current||!mounted.current)return;lock.current=true;setBusy(true);setError(undefined);setNotice(undefined);try{await work()}catch(e){if(mounted.current){if(requiresOriginalTaskRequest(e)){setError(taskRunOriginCopy(locale,'boundary'));await refreshOrigin()}else setError(localizeWorkError(locale,e))}}finally{lock.current=false;if(mounted.current)setBusy(false)}}
+ const act=async(work:()=>Promise<void>)=>{if(lock.current||!mounted.current)return;lock.current=true;setBusy(true);setError(undefined);setNotice(undefined);setToolGateBlocked(false);try{await work()}catch(e){if(mounted.current){if(requiresOriginalTaskRequest(e)){setError(taskRunOriginCopy(locale,'boundary'));await refreshOrigin()}else setError(localizeWorkError(locale,e))}}finally{lock.current=false;if(mounted.current)setBusy(false)}}
  const resumeRun=(row:RunView,expected:Extract<RunControl,{kind:'paused'}>)=>void act(async()=>{
   if(!controls||verifiedOrigin?.source!==null||controls.pending()||controls.recoveryMessage())throw Error(t('planWork.unknown'))
   const fresh=await readRunControl(controls,row)
@@ -118,7 +122,7 @@ function TaskExecutionsPanel({taskId,taskVersion,taskState,assigned,api,controls
  const prepareDisabled=busy||!canPrepare||!!api.pending()||!!api.recoveryMessage()
  const showPrepare=!parentSource&&(canPrepare||!rows.length||!!api.pending()||!!api.recoveryMessage())
  const prepareRef=useRef<()=>void>(()=>{})
- prepareRef.current=()=>{if(!prepareDisabled)void act(async()=>{const prepared=await api.prepare(taskId,taskVersion);if(!mounted.current)return;acceptRows([prepared,...rows.filter(row=>row.id!==prepared.id)]);acceptRows(await api.list(taskId))})}
+ prepareRef.current=()=>{if(!prepareDisabled)void act(async()=>{try{const prepared=await api.prepare(taskId,taskVersion);if(!mounted.current)return;acceptRows([prepared,...rows.filter(row=>row.id!==prepared.id)]);acceptRows(await api.list(taskId))}catch(error){if(isRoleRunToolGateError(error)){if(mounted.current)setToolGateBlocked(true);return}throw error}})}
  const prepare=useCallback(()=>prepareRef.current(),[])
  const preparedRow=rows.find(row=>row.state==='prepared'&&row.lineage),preparedControl=preparedRow?controlFor(preparedRow):undefined
  const recoveryPending=!!(preparedRow&&pendingRecoveryFor(preparedRow)),controlUnavailable=!!controls&&(!!controls.pending()||!!controls.recoveryMessage())
@@ -136,7 +140,7 @@ function TaskExecutionsPanel({taskId,taskVersion,taskState,assigned,api,controls
   {originError&&<p role="alert">{taskRunOriginCopy(locale,'unavailable')}</p>}
   {api.recoveryMessage()&&<p role="alert">{localizeWorkError(locale,api.recoveryMessage())} {t('recovery.nextStep')}</p>}
   {api.pending()&&api.pending()?.taskId!==taskId&&<p>{t('taskExecution.otherPending')}</p>}
-  {notice&&<p role="status">{notice}</p>}{error&&<p role="alert">{error}</p>}{busy&&<small role="status">{t('taskExecution.loading')}</small>}
+  {notice&&<p role="status">{notice}</p>}{error&&<p role="alert">{error}</p>}{toolGateBlocked&&<p role="alert">{t('taskExecution.noTools')}{t('roleDelegation.noTools')}{t('taskExecution.withdrawThenPrepare')}</p>}{busy&&<small role="status">{t('taskExecution.loading')}</small>}
   {!busy&&!error&&!rows.length&&<p className={css.muted}>{t('taskExecution.empty')}</p>}
   {face!=='timeline'&&rows.length>0&&<p className={css.muted}>{t('taskExecution.boundary')}</p>}
   {rows.map(row=>{const stopWait=taskRunStopWaitSeconds(row,now),workControl=controlFor(row);return <div className={detail.run} key={row.id} data-teloa-run-id={row.id}>
@@ -144,6 +148,7 @@ function TaskExecutionsPanel({taskId,taskVersion,taskState,assigned,api,controls
    <TaskRunModels run={row}/>
    {row.deliveryCheck?.state==='review-required'&&<p role="alert">{t('error.deliveryReviewRequired')}</p>}
    {row.deliveryCheck?.state==='unknown'&&<p className={css.muted} role="status">{t('taskCompletion.verificationWaiting.title')}</p>}
+   {noExecutionTools(row)&&<p role="status">{t('taskExecution.noTools')}{t('roleDelegation.noTools')}{t('taskExecution.withdrawThenPrepare')}</p>}
    {row.state!=='configuration_failed'&&<div className={detail.actions}>{taskRunControls(row.state).includes('open')&&<button type="button" disabled={busy} onClick={()=>void act(()=>open(row.sessionId))}>{t('taskExecution.open')}<ArrowUpRight size={14}/></button>}{taskRunControls(row.state).includes('start')&&verifiedOrigin?.source===null&&(!workControl||workControl.kind==='active')&&!controlUnavailable&&<button type="button" disabled={busy} onClick={()=>void act(async()=>{try{const saved=await api.start(row);setRows(current=>current.map(item=>item.id===saved.id?saved:item))}catch(e){acceptRows(await api.list(taskId));throw e}})}>{t('taskExecution.start')}</button>}{workControl?.kind==='paused'&&verifiedOrigin?.source===null&&!controlUnavailable&&<button type="button" data-teloa-focus="resume" disabled={busy} onClick={()=>resumeRun(row,workControl)}>{t('planWork.runRecovery.resumeStart')}</button>}{workControl&&workControl.kind!=='active'&&workControl.kind!=='paused'&&<button type="button" disabled={busy||workControl.kind==='loading'} onClick={refreshControl}>{t('planWork.runRecovery.check')}</button>}{pendingRecoveryFor(row)&&<button type="button" disabled={busy} onClick={()=>recoverControl(row)}>{t('planWork.recover')}</button>}{taskRunControls(row.state).includes('withdraw')&&<button type="button" disabled={busy} onClick={()=>void act(async()=>{const saved=await api.withdraw(row);setRows(current=>current.map(item=>item.id===saved.id?saved:item))})}>{t('taskExecution.withdraw')}</button>}{taskRunControls(row.state).includes('stop')&&<button type="button" disabled={busy||stopWait!==undefined} onClick={()=>void act(async()=>{const saved=await api.stop(row);setNotice(saved.state==='ended'?undefined:t('taskExecution.stopPending'));setRows(current=>current.map(item=>item.id===saved.id?saved:item))})}>{t('taskExecution.stop')}</button>}{taskRunControls(row.state).includes('reconcile')&&<button type="button" disabled={busy} onClick={()=>void act(async()=>{const saved=await api.reconcile(row);if(saved.state==='ended')setNotice(undefined);setRows(current=>current.map(item=>item.id===saved.id?saved:item))})}>{t('taskExecution.reconcile')}</button>}</div>}
     {workControl&&workControl.kind!=='active'&&<p role="status">{t(workControl.kind==='paused'?'planWork.runRecovery.boundary':workControl.kind==='blocked'?workControl.hint:'planWork.runRecovery.loading')}</p>}
     {workControl?.kind==='blocked'&&workControl.error&&<p role="alert">{workControl.error}</p>}

@@ -441,14 +441,25 @@ export function WorkbenchFrame({assistantActivity,assistantChat,groupWorkLinks,e
   const homeManagement=useSyncExternalStore(management.subscribe,management.getSnapshot)
   const [homeSessionId,setHomeSessionId]=useState<string>(),[homeInputError,setHomeInputError]=useState<'restore'|'location'>(),[homeRetry,setHomeRetry]=useState(0)
   useEffect(()=>{
-    if(state.view!=='home'||!homeManagement.ready)return
+    if(state.view!=='home')return
+    if(!homeManagement.ready){
+      // 连接层未就绪时准备器不会启动；同样要有到点恢复态，不能让首页永久显示“正在准备”。
+      const timer=setTimeout(()=>setHomeInputError('restore'),12000)
+      return()=>clearTimeout(timer)
+    }
     if(businessBuilder&&current&&builderState.checkedSessionId!==current)return
     if(businessBuilder&&builderState.error)return
     // 业务会话不是首页待用稿；回工作台沿原准备器恢复本人首页，保留业务草案归属。
     const controller=new AbortController()
+    // 数据面整体不可用时，准备器可能永远等不到 ready；到点必须给出可重试的恢复态，不能把“正在准备”当成终态。
+    const timeout=setTimeout(()=>{
+      if(controller.signal.aborted)return
+      setHomeInputError('restore')
+      controller.abort()
+    },12000)
     setHomeSessionId(undefined);setHomeInputError(undefined)
-    void prepareHomeSession(controller.signal).then(id=>{if(!controller.signal.aborted)setHomeSessionId(id)}).catch(cause=>{if(!controller.signal.aborted)setHomeInputError(cause&&typeof cause==='object'&&cause.code==='teloa/home-location-required'?'location':'restore')})
-    return()=>controller.abort()
+    void prepareHomeSession(controller.signal).then(id=>{if(!controller.signal.aborted)setHomeSessionId(id)}).catch(cause=>{if(!controller.signal.aborted)setHomeInputError(cause&&typeof cause==='object'&&cause.code==='teloa/home-location-required'?'location':'restore')}).finally(()=>clearTimeout(timeout))
+    return()=>{clearTimeout(timeout);controller.abort()}
   },[state.view,homeRetry,prepareHomeSession,homeManagement.ready,businessBuilder,current,builderState.checkedSessionId,builderState.sessionKind,builderState.error,builderVisible])
 
   const title=useSessions(value=>current?value.byId[current]?.displayTitle:undefined)
@@ -2556,10 +2567,10 @@ export function WorkbenchFrame({assistantActivity,assistantChat,groupWorkLinks,e
           </section>}
           <AssistantConversationTitleContext.Provider key="native-conversation" value={assistantCurrent&&current?{sessionId:current,name:assistantName}:undefined}><div className={clsx(css.nativeConversation,(!nativeMainVisible||nativePanelVisible)&&css.hidden)} aria-label={t('frame.nativeConversationAria')}>{renderSlot('teloa.conversation',{
             content:renderSlot('main',{}, {entryKey:'conversation'}),
+            openTaskForm:(goal,scope)=>{if(!current)return;setHomeTaskGroupId(null);setHomeTaskSourceSession(current);setHomeTaskDrafts(drafts=>drafts[current]?drafts:{...drafts,[current]:{title:'',goal,scope,skills:[],groupId:null}});setHomeCreation('task')},
             home:state.view==='home',ready:state.view!=='home'||homeSessionId!==undefined&&homeSessionId===current,
             engaged:sessionId=>{if(latestState.current.view==='home'&&mainSession.getSnapshot()===sessionId)actions.openMessages('native')},
-            notice:state.view==='home'&&(homeSessionId===undefined||homeSessionId!==current)?<HomeNativePreparationNotice locale={locale} error={homeInputError} retry={()=>setHomeRetry(value=>value+1)} chooseLocation={()=>requestCreation({},true)}/>:undefined,
-            openTaskForm:(goal,scope)=>{if(!current)return;setHomeTaskGroupId(null);setHomeTaskSourceSession(current);setHomeTaskDrafts(drafts=>drafts[current]?drafts:{...drafts,[current]:{title:'',goal,scope,skills:[],groupId:null}});setHomeCreation('task')},
+            notice:state.view==='home'&&(homeSessionId===undefined||homeSessionId!==current)?<HomeNativePreparationNotice locale={locale} error={homeInputError} retry={()=>setHomeRetry(value=>value+1)} reload={()=>window.location.reload()} ready={homeManagement.ready} resetKey={homeRetry} chooseLocation={()=>requestCreation({},true)}/>:undefined,
             overview:<WorkHome assistantName={assistantName} current={current} workTasks={tasks.tasks} colleagues={tasks.roles} conversationLinks={activeObjectLinks} attention={actions.openAttention} attentionStatus={attentionStatus} planStatus={planStatus} management={management} plans={()=>actions.openPlans()} visible={state.view==='home'} work={work} useSessions={useSessions} open={()=>actions.navigate('messages')} openTask={actions.openTask} openTasks={()=>actions.navigate('tasks')}/>,
           })}</div></AssistantConversationTitleContext.Provider>
           {builderState.sessionKind==='daily'&&(state.view==='home'||conversationVisible)&&dailyStatus}

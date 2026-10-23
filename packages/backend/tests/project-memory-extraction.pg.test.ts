@@ -295,3 +295,14 @@ test('失效策略或已撤回来源不能由本人重试复活，改绑候选�
  await candidate.changePolicy({bindingVersion:2})
  assert.deepEqual(await candidate.service.listCandidates(candidate.owner,{projectId:candidate.event.projectId}),[])
 })
+test('纯提问/检索来源不生成候选也不写条目，事件仍按完成落库',async()=>{
+ const f=await fixture(),question='本项目采用哪个技术方案？如果项目记忆里没有方案记录，请明确说没有依据。'
+ const event={...f.event,eventId:randomUUID(),sourceId:'message:question:'+randomUUID(),evidence:[{id:'decision',kind:'decision' as const,text:question}]}
+ f.setGenerate(async()=>[{kind:'memory' as const,topic:'项目技术方案',markdown:question,evidence:[{evidenceId:'decision',quote:question}]}])
+ await f.service.enqueue(f.owner,event)
+ const result=await f.service.drain(f.owner)
+ assert.equal(result.completed,1)
+ assert.deepEqual(await f.service.listCandidates(f.owner,{projectId:f.event.projectId}),[])
+ assert.equal((await f.entries()).length,0)
+ assert.equal((await pool.query('select status from teloa_project_extraction_events where owner_id=$1 and event_id=$2',[f.owner,event.eventId])).rows[0].status,'completed')
+})

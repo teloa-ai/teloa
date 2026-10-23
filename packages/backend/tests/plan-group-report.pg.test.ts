@@ -29,7 +29,10 @@ before(async()=>{
 after(async()=>{await pool?.end();await stopTestContainer(container)})
 const knowledgeText="原计划已授予的资料。",knowledge={id:randomUUID(),version:1,title:"原计划资料",sourceId:randomUUID(),sourceVersion:createHash("sha256").update(knowledgeText).digest("hex"),scopeIds:["general"],text:knowledgeText}
 async function fixture(canPost=true,knowledgeIds:string[]=[]){
- const owner=randomUUID(),role=await new RoleService(pool,identity).create(owner,{requestId:randomUUID(),fields:{name:'定时汇报员工',kind:'employee',scopes:['general'],duty:'核对原资料并汇报',dataScope:'本人已授权资料',executionScope:'只读核对',skills:[],knowledge:knowledgeIds,responsibility:testRoleResponsibility,runtimeConfig:{agentPresetId:'teloa-standard'}}})
+ const owner=randomUUID()
+ // 回归夹具（task-18）：保存员工资料前会核对资料存在；为原计划资料补真实 active/general 行，仍走原计划资料路径。
+ for(const id of knowledgeIds)await pool.query("insert into teloa_resources(id,owner_id,revision,status,spec,created_at,updated_at) values($1,$2,1,'active',$3,now(),now())",[id,owner,JSON.stringify({title:knowledge.title,sourceId:knowledge.sourceId,sourceVersion:knowledge.sourceVersion,scopeIds:['general']})])
+ const role=await new RoleService(pool,identity).create(owner,{requestId:randomUUID(),fields:{name:'定时汇报员工',kind:'employee',scopes:['general'],duty:'核对原资料并汇报',dataScope:'本人已授权资料',executionScope:'只读核对',skills:[],knowledge:knowledgeIds,responsibility:testRoleResponsibility,runtimeConfig:{agentPresetId:'teloa-standard'}}})
  const groups=new CollaborationService(pool,identity),group=await groups.create(owner,{requestId:randomUUID(),expectedVersion:0,fields:{name:'定时汇报群',scope:'general',announcement:'',rules:{historyVisibleToNewMembers:true,draftsVisibleInGroup:true,mentionAllAllowed:true},memberRoleIds:[role.id]}})
  const grants=new GroupAgentGrantService(pool,identity.now);await grants.change(owner,{requestId:randomUUID(),groupId:group.id,roleId:role.id,expectedGroupVersion:group.version,expectedRoleVersion:role.version,action:'save',resources:[],canPost,canAutoRun:true})
  const plans=new PlanService(pool,identity),fields={title:'每日原资料核对',goal:'核对原资料并保留依据。',scope:'general',dataScope:'本人明确授权资料',delivery:'核对结果和依据',roleId:role.id,expectedRoleVersion:role.version,groupId:group.id,trigger:{kind:'schedule',cadence:'daily',weekday:1,time:'09:00',timezone:'Asia/Singapore'},notificationPolicy:'attention'}

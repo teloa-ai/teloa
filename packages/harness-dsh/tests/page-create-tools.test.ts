@@ -32,6 +32,13 @@ test('跨本人普通会话按名称发现已存草案，返回固定身份与�
  const description=e.ctx.tools.schemas(e.agent).find(row=>row.name==='teloa_create_drafts')!.description??''
  assert.match(description,/teloa_create_preview/);assert.match(description,/未命中.*不能.*从未保存/)
 })
+test('修订分享模板的工具说明要求完整正文并把 capabilities 放在 compatibility 下',async t=>{
+ const e=await setup();t.after(()=>e.ctx.fiber.dispose())
+ const description=e.ctx.tools.schemas(e.agent).find(row=>row.name==='teloa_create_revise')!.description??''
+ assert.match(description,/必须提交完整 template/)
+ assert.match(description,/compatibility\.capabilities/)
+ assert.match(description,/不能只传变更字段/)
+})
 test('草案目录跨本人/业务混入拒绝，失败与任务身份不伪装成空目录',async t=>{
  for(const cause of ['owner','scope','offline','task','subagent']){
   let reads=0
@@ -251,6 +258,25 @@ test('员工与团队模板各有完整强类型示例，原生工具编码角�
  assert.equal(e.calls.length,2)
 })
 
+test('模板校验失败的工具错误点名资源 id/路径/缺失字段，不写入草案不改来源',async t=>{
+ const e=await setup({skillCreator:null});t.after(()=>e.ctx.fiber.dispose())
+ const wrongFormat=typedEmployeeTemplate()
+ wrongFormat.manifest.resources.push({id:'flow',kind:'work-template',title:'流程',version:wrongFormat.version,required:true,source:{kind:'local',path:'work-templates/flow.md'}})
+ wrongFormat.files.push({path:'work-templates/flow.md',text:'# 流程'})
+ const wrong=await e.call('teloa_create_draft',{entity:'share',template:wrongFormat})
+ assert.equal(wrong.isError,true)
+ assert.match(JSON.stringify(wrong.content),/work-template resource flow must use a JSON declaration file \(\.json\): work-templates\/flow\.md/)
+ const missingFile=typedEmployeeTemplate()
+ missingFile.manifest.resources.push({id:'missing-skill',kind:'skill',title:'缺失技能',version:missingFile.version,required:true,source:{kind:'local',path:'skills/missing/SKILL.md'}})
+ const missing=await e.call('teloa_create_draft',{entity:'share',template:missingFile})
+ assert.equal(missing.isError,true)
+ assert.match(JSON.stringify(missing.content),/resource file is missing: missing-skill \(skills\/missing\/SKILL\.md\)/)
+ const {title:_title,...pkg}=typedEmployeeTemplate()
+ const legacy=await e.call('teloa_create_draft',{entity:'share',body:JSON.stringify({package:{...pkg,manifest:undefined,files:[{path:'teloa.json',text:JSON.stringify(pkg.manifest)},...pkg.files.filter(file=>'json'in file?false:true)]}})})
+ assert.equal(legacy.isError,true)
+ assert.match(JSON.stringify(legacy.content),/Missing: title/)
+ assert.equal(e.calls.length,0)
+})
 test('应用模板漏顶层version时指出字段位置，不误报同名冲突或写入草稿',async t=>{
  const e=await setup({skillCreator:null});t.after(()=>e.ctx.fiber.dispose())
  const {version,...template}=typedMeetingAppTemplate()

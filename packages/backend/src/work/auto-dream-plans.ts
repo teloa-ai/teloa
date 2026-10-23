@@ -8,7 +8,7 @@ import {BusinessScopeService} from './business-scopes.ts'
 export const AUTO_DREAM_DEFAULT_TRIGGER:ScheduleTrigger={kind:'schedule',cadence:'daily',weekday:1,time:'23:30',timezone:'Asia/Singapore'}
 export const AUTO_DREAM_PLAN_TITLE='Auto Dream · 每日小结'
 export const AUTO_DREAM_PLAN_GOAL='只读当天与你自己有关的五类证据（运行、成果、审批、本人修订、群回帖），写一份私有工作日志；至多提出 3 条记忆候选与 3 条建议撤回。不创建、不推进、不结项任何业务任务，仅由服务端在本轮证据核验后保存小结成果，不发起审批，不往群里发言。'
-export const AUTO_DREAM_PLAN_DATA_SCOPE='当天、本岗位的运行、成果版本、审批结果、本人修订与群回帖。不读其它岗位、不读其它日期、不读原生会话日志。'
+export const AUTO_DREAM_PLAN_DATA_SCOPE='当天、本岗位的运行、成果版本、审批结果、本人修订与群回帖。不读其它岗位、不读其它日期、不读原生会话日志。日期与时区按计划时区理解；运行证据已标注完成、中止、失败或未完成，写小结时不得把未完成当完成，也不得把正文里没给出的时区写成 UTC。'
 export const AUTO_DREAM_PLAN_DELIVERY='一份私有只读的工作日志，至多 3 条记忆候选与 3 条建议撤回。记忆经来源与范围校验后自动保存并生效，可由本人查看和撤回。'
 
 const shape=(parts:readonly string[]):string=>{

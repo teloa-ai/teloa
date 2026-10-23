@@ -58,7 +58,10 @@ test('当前版本错误保留，任务版本更新后旧取消错误消失且�
  await page.getByText('Retained unsubmitted input · This page only',{exact:true}).click();assert.equal(await page.getByText('Keep my unsent task draft',{exact:true}).isVisible(),true)
 })
 test('同一任务停止操作成功后清除当前取消错误',async t=>{
- const page=await mount(t);await cancel(page);await page.getByRole('alert').waitFor();await page.getByRole('button',{name:'More actions',exact:true}).click();await page.getByRole('menuitem',{name:'Pause task',exact:true}).click();await page.waitForFunction(()=>!document.querySelector('[role="alert"]'));assert.deepEqual(await page.evaluate(()=>window.taskCurrentStateFixture.calls),['cancel','pause'])
+ const page=await mount(t);await cancel(page);await page.getByRole('alert').waitFor();
+ // 任务级暂停只对本人/非执行型任务开放；交给员工的运行型任务由运行控制推进，这里切成本人任务验证原语义。
+ await page.evaluate(()=>window.taskCurrentStateFixture.directory(true,false,undefined,true,true))
+ await page.getByRole('button',{name:'More actions',exact:true}).click();await page.getByRole('menuitem',{name:'Pause task',exact:true}).click();await page.waitForFunction(()=>!document.querySelector('[role="alert"]'));assert.deepEqual(await page.evaluate(()=>window.taskCurrentStateFixture.calls),['cancel','pause'])
 })
 test('真实运行停止必须等终态才清先停止提示，任务版本不变也清除且保留草稿',async t=>{
  const page=await mount(t,'runs');await page.getByRole('button',{name:'View run',exact:true}).click();await page.getByRole('button',{name:'Stop',exact:true}).waitFor()

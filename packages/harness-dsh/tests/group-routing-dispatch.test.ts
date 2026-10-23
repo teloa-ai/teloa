@@ -119,10 +119,10 @@ async function fixture(){
  return {owner,roles,groups,role,a,b,group,root,self}
 }
 
-type Recorded={createTask:GroupTaskCreateInput[];prepare:{requestId:string;taskId:string;expectedTaskVersion:number}[];start:string[];sendSystem:{requestId:string;text:string}[];lockedDuring:{prompt:boolean[];createTask:boolean[]}}
+type Recorded={createTask:GroupTaskCreateInput[];prepare:{requestId:string;taskId:string;expectedTaskVersion:number}[];start:string[];sendSystem:{requestId:string;text:string}[];lockedDuring:{prompt:boolean[];createTask:boolean[]};recipients?:unknown[]}
 
 /** 段 A/段 C 的锁由真服务持有；这里只在回调进出时记一个计数，因此 `held>0` 恰好就是「此刻在锁内」。 */
-function makePorts(owner:string,options:{candidates?:GroupRoutingCandidate[]|(()=>Promise<GroupRoutingCandidate[]>);createTaskFails?:Error;startState?:string}){
+function makePorts(owner:string,options:{candidates?:GroupRoutingCandidate[]|(()=>Promise<GroupRoutingCandidate[]>);createTaskFails?:Error;startState?:string;busyRoles?:string[]}){
  const recorded:Recorded={createTask:[],prepare:[],start:[],sendSystem:[],lockedDuring:{prompt:[],createTask:[]}}
  const groups=new CollaborationService(pool,identity)
  let held=0
@@ -157,6 +157,12 @@ function makePorts(owner:string,options:{candidates?:GroupRoutingCandidate[]|(()
    return {id:message.id}
   },
   applyReaction:(db,actor,params)=>reactions.applyRole(db,actor,{...params,runId:null}),
+ }
+ // GRP-04 的宿主投递面：真实装配走 outbox 服务；这里只桩「同话题仍被占用的岗位」与逐接收者快照。
+ if(options.busyRoles){
+  const recipients:unknown[]=[],busy=[...options.busyRoles]
+  recorded.recipients=recipients
+  ;(ports as unknown as {delivery:unknown}).delivery={outbox:{activeRolesInRoot:async()=>busy,recordRecipients:async(_db:unknown,_owner:string,input:unknown)=>{recipients.push(input);return[]},pending:async()=>[],releaseStages:async()=>0},createTask:ports.createTask,prepare:ports.prepare,start:ports.start,readRun:async()=>({state:'accepted'}),reconcile:async()=>({state:'accepted'}),report:()=>{}}
  }
  return {ports,recorded,promptLockProbe:()=>{recorded.lockedDuring.prompt.push(held>0)},owner}
 }
@@ -324,6 +330,19 @@ test('模型有回但解析不过：写 parse-failed，不建任务',async()=>{
  await dispatchGroupRouting(ctx,f.owner,message.id,ports,signal())
  assert.equal((await readDecision(f.owner,message.id))?.kind,'parse-failed')
  assert.equal(recorded.createTask.length,0)
+})
+
+test('GRP-04 员工回帖触发的新派工跳过同一话题仍被占用的岗位，不建重复任务',async()=>{
+ const f=await fixture(),messageId=await colleagueMessage(f.owner,f.group.id,f.root.id,f.a.id,'请@物流补充调查。')
+ const {ports,recorded}=makePorts(f.owner,{candidates:[candidateOf(f.b.id,f.b.version,'物流')],busyRoles:[f.b.id]})
+ const {ctx}=modelHarness({answer:output([f.b.id])})
+ await dispatchGroupRouting(ctx,f.owner,messageId,ports,signal())
+ const decision=await readDecision(f.owner,messageId)
+ assert.deepEqual(decision?.respond,[],'同话题内仍在占用中的岗位不能被员工回帖重复派工')
+ assert.equal(recorded.createTask.length,0)
+ const receipts=(recorded.recipients??[]) as {decision:{respond:string[]}}[]
+ assert.equal(receipts.length,1)
+ assert.deepEqual(receipts[0]!.decision.respond,[])
 })
 
 test('第六跳：不调模型、写 relay-stopped、发一条系统消息、stopMessageId 指向它、requestId 带轮次',async()=>{

@@ -317,7 +317,7 @@ export function readPageCreateBody(entity:PageCreateEntity,value:unknown,readers
   const row=exact(value,['package'],'模板草案必须是一份静态分享包。')
   // 只透传分享包读取器的固定英文原因（不含正文或取值），其他异常仍只给笼统说明，便于模型按原因修正。
   try{return {package:readTemplateShare(row.package)}}catch(error){
-   const reason=error instanceof Error&&error.constructor===Error&&/^Template [\x20-\x7e]{1,200}$/.test(error.message)?'原因：'+error.message:''
+   const reason=error instanceof Error&&error.constructor===Error&&/^Template [\x20-\x7e]{1,400}$/.test(error.message)?'原因：'+error.message:''
    throw bad('模板草案包含无效资源、私有身份或不支持的字段。'+reason)
   }
  }

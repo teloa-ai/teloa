@@ -82,6 +82,7 @@ export const frMessages = {
   'settings.configurationHelp': 'Guide de configuration',
   'settings.document.open': 'Ouvrir le fichier de configuration',
   'settings.document.opening': 'Ouverture…',
+  'settings.document.unavailable': 'Impossible d’ouvrir directement le fichier de configuration. Vérifiez le répertoire de configuration sur la machine exécutant Teloa ou réessayez plus tard.',
   'profile.title': 'Profil personnel',
   'profile.description': 'Cette identité s’affiche sur l’appareil actuel. Les données restent sur cet appareil.',
   'profile.displayName': 'Nom affiché',

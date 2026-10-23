@@ -176,6 +176,9 @@ import {KnowledgeSaveReceiptCard} from './KnowledgeSaveReceiptCard.js'
 import { ResourceRecovery } from './ResourceRecovery.js'
 import { PromptPreparation } from './prompt-preparation.js'
 import { PreparedPromptCard } from './PreparedPromptCard.js'
+import { createShareAcceptance, readPublicCatalogSkill } from './template-share-accept.js'
+import { isSharePackageV2 } from './share-package-plan.js'
+import { findIndustryTeam } from './industry-team.js'
 import { createNativeArtifactApi } from './native-artifact-api.js'
 import {createArtifactApi} from './artifact-api.js'
 import {createSnapshotStore} from '@deepseek-ai/dsh-client-store'
@@ -302,7 +305,7 @@ export async function apply(ctx: Context): Promise<void> {
     return ()=>{off();dispose()}
   },'teloa: 本人显示资料与原宿主同步')
   const securityActionApi=createSecurityActionApi(async(endpoint,payload,signal)=>{const result=await callWithReceipt(endpoint,payload,signal);if(!result.ok)throw Object.assign(Error(result.error.message),{rejected:true,code:result.error.code});return result.value},Object.fromEntries(securityActionCommands.map(command=>{const key='teloa.security-action.'+command+'/v1';return [command,journal(key)]})),'local:teloa-owner')
-  const taskRunApi=createTaskRunApi(async(endpoint,payload)=>{const result=await callWithReceipt(endpoint,payload);if(!result.ok)throw Object.assign(Error(result.error.message),{rejected:true,code:result.error.code});return result.value},journal('teloa.task-run-prepare/v1'),journal('teloa.flow-command/v1'))
+  const taskRunApi=createTaskRunApi(async(endpoint,payload)=>{const result=await callWithReceipt(endpoint,payload);if(!result.ok)throw Object.assign(Error(result.error.message),{rejected:true,code:result.error.code,details:result.error.details});return result.value},journal('teloa.task-run-prepare/v1'),journal('teloa.flow-command/v1'))
   const taskRunChat=new TaskRunChatPresentationDirectory(taskRunApi.chatPresentation)
   ctx.effect(()=>{
     const off=[connection.state.subscribe(taskRunChat.invalidate),connection.generation.subscribe(taskRunChat.invalidate)]
@@ -316,7 +319,10 @@ export async function apply(ctx: Context): Promise<void> {
   // 表情 toggle 自带 requestId 幂等重放（同 web-access-api 先例），接恢复记录三件套；路由决策纯只读，不接。
   const groupWorkLinks=createGroupWorkLinkApi(async(endpoint,payload)=>{const result=await callWithReceipt(endpoint,payload);if(!result.ok)throw Object.assign(Error(result.error.message),{rejected:true,code:result.error.code});return result.value},journal('teloa.group-work-links/v1'))
   const groupReactionApi=createGroupReactionApi(async(endpoint,payload)=>{const result=await callWithReceipt(endpoint,payload);if(!result.ok)throw Object.assign(Error(result.error.message),{rejected:true,code:result.error.code});return result.value},journal('teloa.group-reaction/v1'))
-  const groupRoutingApi=createGroupRoutingApi(async(endpoint,payload)=>{const result=await callWithReceipt(endpoint,payload);if(!result.ok)throw Object.assign(Error(result.error.message),{rejected:true,code:result.error.code});return result.value})
+  const groupRoutingApi=createGroupRoutingApi(async(endpoint,payload)=>{const result=await callWithReceipt(endpoint,payload);if(!result.ok)throw Object.assign(Error(result.error.message),{rejected:true,code:result.error.code});return result.value},{
+  // GRP-05：群消息行的停止入口复用既有 taskRunApi.stop（先按原 taskId 读回真实 Run，不再从群状态猜执行身份）。
+  stop:async({taskId,runId})=>{const run=(await taskRunApi.list(taskId)).find(item=>item.id===runId);if(!run)throw Error('原执行已变化，请刷新后重新核对。');await taskRunApi.stop(run)},
+ })
   // 台账只读：没有请求体要留底，因此不接恢复记录三件套。
   const businessLedgerApi=createBusinessLedgerApi(call)
   // 看板与同步：读侧只读；刷新与立即同步自带 requestId、宿主按它幂等，同样不接恢复记录三件套。
@@ -996,6 +1002,28 @@ export async function apply(ctx: Context): Promise<void> {
       const events=child.sessions.binding(sessionId)?.eventSource,empty={entries:[]}
       return {directory:conversationPlans,api:planApi,roleName:async(id:string)=>(await roleApi.list()).find(role=>role.id===id)?.name??'',events:{subscribe:(listener:()=>void)=>events?.subscribe(listener)??(()=>{}),getSnapshot:()=>events?.getSnapshot()??empty}}
     }},ConversationPlanTurnCards))
+    // BIZ-008：会话卡片的分享草案应用复用真实 template-share acceptance（同一份 v2 接收链路），不 New 假接口。
+    let objectShareAcceptance: ReturnType<typeof createShareAcceptance> | undefined
+    const shareAcceptanceForObjectCards = () => objectShareAcceptance ??= createShareAcceptance(navigationStorage, {
+      createRole: async (fields, requestId) => (await roleApi.create(fields, requestId)).id,
+      industry: {
+        publicSkill: input => readPublicCatalogSkill(marketCatalogApi, marketContentApi, input),
+        target: async () => { const space = await businessSpaceApi.current(); return { kind: 'existing', spaceId: space.id, expectedVersion: space.version } },
+        importContent: (item, requestId) => marketContentApi.importIndustry(item, requestId),
+        load: request => industryLoadApi.create(request),
+        getLoad: loadId => industryLoadApi.get(loadId),
+        installSkill: async (source, requestId) => {
+          const pending = skillInstallApi.pending()
+          if (pending && pending.requestId !== requestId) return { state: 'pending' as const }
+          const input = { kind: 'industry' as const, ...source }
+          const saved = pending ? await skillInstallApi.recover() : await (async () => { const preview = await skillInstallApi.preview(input); return skillInstallApi.install({ requestId, source: input, expectedBundleHash: preview.bundleHash, ...(preview.trustHash ? { expectedTrustHash: preview.trustHash } : {}) }) })()
+          return saved.state === 'installed' ? { state: 'installed' as const, installationId: saved.id, nativeName: saved.native.name } : { state: 'pending' as const }
+        },
+        prepare: async loadId => { const readiness = await industryLoadApi.readiness(loadId); if (!readiness.counts.auto) return readiness; const receipt = await industryLoadApi.prepare(loadId, readiness.digest, { activate: false }); return receipt.readiness ?? industryLoadApi.readiness(loadId) },
+        roles: async loadId => (await industryRoleApi.list()).map(row => ({ loadId: row.loadId, itemInstanceId: row.itemInstanceId, state: row.state, ...(row.role ? { roleId: row.role.id } : {}) })),
+        team: async seed => { const saved = await findIndustryTeam(groupApi, seed); return saved ? { groupId: saved.group.id } : undefined },
+      },
+    })
     const objectCardPorts={readProject:async(id:string)=>(await projectApi.get(id)).project,readTask:async(id:string)=>(await taskApi.list()).find(task=>task.id===id),openProject:(project:import('@teloa/contract').WorkProject)=>requireActions().openBusiness({scope:project.scope,section:'projects',id:project.id}),openTask:(id:string)=>requireActions().openTask(id),readCapability:async(receipt:import('./conversation-object-receipts.js').ConversationObjectReceipt)=>{
       if(receipt.kind==='extension'){
        const locale=requireI18n().getSnapshot().locale,copy=(cn:string,tw:string,en:string)=>locale.startsWith('zh')?(/zh-(TW|HK|Hant)/.test(locale)?tw:cn):en
@@ -1018,7 +1046,7 @@ export async function apply(ctx: Context): Promise<void> {
        return {kind:'industry',installation,load,availability,selection:selected.value}
       }
       const result=await callWithReceipt('skill-edits/get',{installationId});if(!result.ok)throw Object.assign(Error(result.error.message),{code:result.error.code});return result.value
-     },openIndustrySkill:(target:{loadId:string;itemInstanceId:string;scope:string})=>requireActions().openIndustryResources(target),openResource:(id:string)=>requireActions().openResource(id),openResources:(draftId?:string)=>requireActions().openResources(draftId),readRole:async(id:string)=>(await roleApi.list()).find(role=>role.id===id),readGroup:async(id:string)=>(await groupApi.get(id)).group,drafts:pageCreateApi,openPlanDraft:planDraftApi.openDraft,openRoleDraft:planDraftApi.openDraft,mcp:createManagedMcpConnectionApi(marketCatalogCall),openRole:(id:string)=>requireActions().previewRole(id),openGroup:(id:string)=>requireActions().openGroupTopic(id,''),openCapabilities:()=>requireActions().openCapabilityCatalog()}
+     },openIndustrySkill:(target:{loadId:string;itemInstanceId:string;scope:string})=>requireActions().openIndustryResources(target),openResource:(id:string)=>requireActions().openResource(id),openResources:(draftId?:string)=>requireActions().openResources(draftId),readRole:async(id:string)=>(await roleApi.list()).find(role=>role.id===id),readGroup:async(id:string)=>(await groupApi.get(id)).group,drafts:pageCreateApi,openPlanDraft:planDraftApi.openDraft,openRoleDraft:planDraftApi.openDraft,mcp:createManagedMcpConnectionApi(marketCatalogCall),openRole:(id:string)=>requireActions().previewRole(id),openGroup:(id:string)=>requireActions().openGroupTopic(id,''),openCapabilities:()=>requireActions().openCapabilityCatalog(),settleShareDraft:async(draft:import('@teloa/contract').PageCreateDraft)=>{await pageCreateApi.settle({requestId:crypto.randomUUID(),draftId:draft.id,expectedBodyHash:draft.bodyHash,outcome:'discarded'})},acceptShareDraft:async(pkg:import('./share-package-plan.js').SharePackage,choice:{scope:string;skills:readonly string[]})=>{if(!isSharePackageV2(pkg))throw Error('当前只支持 v2 分享包的应用；请从接收模板入口打开。');const result=await shareAcceptanceForObjectCards().accept(pkg,{scope:choice.scope,skills:[...choice.skills]});return {roleIds:result.roleIds,...(result.loadId?{loadId:result.loadId}:{}),...(result.groupId?{groupId:result.groupId}:{}),...(result.coordinatorRoleId?{coordinatorRoleId:result.coordinatorRoleId}:{})}}}
     for(const key of conversationObjectToolNames)child.slots.inject('tool.call.toolview',()=>child.slots.register({name:'tool.call.toolview',key,inject:sessionId=>{
       const events=child.sessions.binding(sessionId)?.eventSource,empty={entries:[]}
       return {...objectCardPorts,sessionId,events:{subscribe:(listener:()=>void)=>events?.subscribe(listener)??(()=>{}),getSnapshot:()=>events?.getSnapshot()??empty}}

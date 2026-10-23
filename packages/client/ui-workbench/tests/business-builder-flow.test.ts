@@ -530,3 +530,19 @@ test('同原请求确定零写拒绝只读回执与同revision预览后恢复编
   else{assert.equal(flow.pendingSetupSave()!.input.requestId,requestId,kind);assert.equal(flow.getSnapshot().phase,'unknown',kind);assert.equal(flow.getSnapshot().setupUnknown,true,kind)}
  }
 })
+
+test('保存成功后刷新搭建目录并从「继续搭建」移除已应用草案',async()=>{
+ const f=fixture(),flow=f.make()
+ await flow.start({});await flow.preview();await flow.refreshDirectory()
+ assert.equal(flow.getSnapshot().directory!.items.length,1)
+ const listCalls=()=>f.calls.filter(call=>call==='business-conversations/list').length
+ f.setRoute(async(endpoint,value)=>{
+  const result=await f.baseCall(endpoint,value)
+  if(endpoint==='business-configuration/apply'){const draft=[...f.drafts.values()][0]!;f.drafts.set(draft.id,{...draft,status:'applied'})}
+  return result
+ })
+ await flow.save()
+ assert.equal(flow.getSnapshot().phase,'saved')
+ assert.equal(flow.getSnapshot().directory!.items.some(item=>item.draft?.status==='applied'),false,'保存成功后目录必须刷新并移除已应用草案')
+ assert.ok(listCalls()>=2,'保存成功后应重新读取搭建目录')
+})

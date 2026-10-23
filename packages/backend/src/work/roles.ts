@@ -4,6 +4,7 @@ import { WorkError,roleInput,roleDefinition,roleWriteDefinition,readRoleProfile,
 import { ensureAutoDreamPlan,type AutoDreamPorts } from './auto-dream-plans.ts'
 import { renewRoleGrants } from './collaboration.ts'
 import {workAccess} from './work-access.ts'
+import {assertRoleKnowledgeReferences} from '../capabilities/resources.ts'
 import {assertRoleDelegationsInactive,roleWorkOutstanding} from './role-delegations.ts'
 import {invalidateRoleWorkEligibility} from './twin-execution-consents.ts'
 
@@ -128,6 +129,8 @@ export class RoleService{
     const role=readStoredRole(existing);await client.query('commit');return {role,existing:true}
    }
    const definition=roleWriteDefinition(row.fields),now=this.identity.now()
+   // 资料范围先核对本人资源存在：写出引用不到资料的岗位会让之后每次任务准备都固定失败。
+   await assertRoleKnowledgeReferences(client,owner,definition.knowledge)
    // 唯一默认分身初始化不授予使用权；人类招聘、模板建岗均按 people 核对。
    const admission=systemTwin?undefined:await workAccess.authorize({kind:'capability',capability:'people',ownerId:owner,sessionId:null,objectId:row.requestId as string,operation:'create'})
    admission?.assertCurrent()
@@ -203,6 +206,8 @@ export class RoleService{
    if(!isDeepStrictEqual(currentExecution,nextExecution))throw new WorkError('teloa/conflict','请先暂停员工并核对关联工作。')
   }
   if(role.kind==='employee')await assertEmployeeWorkIdle(client,owner,role)
+  // 与创建同一核对：不能把引用不到资料的资料范围保存进岗位。
+  await assertRoleKnowledgeReferences(client,owner,definition.knowledge)
   // 旧调用方若没有资料基线，只允许保留当前姓名头像；不能以不变的执行版本覆盖并发身份修改。
   const currentProfile=readRoleProfile({name:role.name,...(role.avatarKey?{avatarKey:role.avatarKey}:{})})
   const profileBaseline=expectedProfile??readRoleProfile({name:definition.name,...(definition.avatarKey?{avatarKey:definition.avatarKey}:{})})

@@ -82,6 +82,7 @@ export const zhCNMessages = {
   'settings.configurationHelp': '配置指南',
   'settings.document.open': '打开配置文件',
   'settings.document.opening': '正在打开…',
+  'settings.document.unavailable': '暂时无法直接打开配置文件。请在运行 Teloa 的电脑上查看配置目录，或稍后重试。',
   'profile.title': '个人资料',
   'profile.description': '此身份显示在当前设备中。数据只保存在这台设备。',
   'profile.displayName': '显示名称',

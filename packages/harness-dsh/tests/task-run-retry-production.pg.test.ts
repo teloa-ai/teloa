@@ -60,6 +60,9 @@ test('完整生产装配+PG：结束自动task v3的原冷Run显式重试，不�
  const parent=await call<{sessionId:string}>('conversations/create',{requestId:randomUUID(),title:'合成 SOC 原交办'})
  const role=await new RoleService(pool,identity).create(owner,{requestId:randomUUID(),fields:{name:'固定同事',kind:'employee',scopes:['general'],duty:'核对',dataScope:'原资料',executionScope:'代拟',skills:[],knowledge:[],responsibility:testRoleResponsibility}})
  await pool.query("update teloa_roles set state='active',version=3 where owner_id=$1 and id=$2",[owner,role.id])
+ // task-18 回归夹具：新空工具闸要求员工运行在准备前有真实执行工具；补一条与角色版本 3 对齐的 web_search 整工具授权（不改产品语义）。
+ const grantRules=[{name:'web_search',anyArguments:true,allowed:[]}]
+ await pool.query("insert into teloa_role_tool_grants(role_id,base_version,role_version,state,rules,request_spec,created_at) values($1,2,3,'active',$2,$3,now())",[role.id,JSON.stringify(grantRules),JSON.stringify({action:'save',rules:grantRules})])
  const requests=new ConversationWorkService(pool,identity.now,async()=>({ownerId:owner,sessionId:parent.sessionId,status:'ready',submitted:false}))
  // 会话交办必须携带可核对的原始人类消息：经真实 Controller 受理后，按其原生身份固定来源。
  const origin=handles.get(parent.sessionId);assert.ok(origin,'父会话由完整生产 Controller 创建');model.parent=parent.sessionId

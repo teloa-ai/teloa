@@ -59,13 +59,14 @@ export async function shareIndustryItem(pkg:SharePackageV2,choice:{scope:string;
  const item=await readIndustryDirectory(converted.files.map(f=>{const bytes=encoder.encode(f.text);return {path:f.path,size:bytes.length,read:async()=>bytes}}),'teloa.json',converted.title)
  return {...item,author:converted.publisher,license:converted.license,trust:{publisher:converted.publisher,repository:null,license:{status:'declared',value:converted.license},signature:{status:'unverified',signer:null},compatibility:{teloa:'未声明',dsh:'未声明'},plugins:[],externalCapabilities:[],permissions:[],review:{conclusion:'needs-review',summary:'本地上传来源尚未完成签名与兼容审查'}}}
 }
-export type SharePackageIssue='credential'|'local-path'|'too-large'|'capability'|'invalid'
+export type SharePackageIssue='credential'|'local-path'|'too-large'|'capability'|'invalid'|'incomplete'
 const shareIssueText:Readonly<Record<SharePackageIssue,string>>={
  credential:'模板含疑似密钥或账号信息，请删去后重新生成；账号在导入后「设置连接」时填写。',
  'local-path':'模板含本机文件路径，请删去后重新生成。',
  'too-large':'模板文件过大，请精简内容后重新生成。',
  capability:'模板里列出的能力与实际内容对不上，请在原会话里让 AI 重新生成。',
  invalid:'模板内容不完整或含不支持的字段，请在原会话里让 AI 重新生成后再导入。',
+ incomplete:'模板缺少资源正文，无法加载；请导入完整模板包（ZIP、目录或分享包）后再试。',
 }
 /** 分享包校验失败的可读原因；issue 供界面按语言显示，message 供目录发现列表直接显示。 */
 export class SharePackageImportError extends Error{

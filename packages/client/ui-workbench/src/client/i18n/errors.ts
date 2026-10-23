@@ -62,6 +62,8 @@ export const isTaskWorkOutstandingError=(error:unknown):boolean=>codeOf(error)==
 /** 服务端 message 仅供日志；用户提示只由稳定 code 和当前产品词典决定。 */
 export function localizeWorkError(locale: string, error: unknown): string {
   if (codeOf(error) === 'teloa/invalid-input' && detailsFieldOf(error,'reason') === 'secret-in-message') return translateMessage(locale, 'error.secretInMessage')
+  // 员工资料范围含不可用资料：只按稳定原因给出可操作提示，不回显内部资料 ID。
+  if (codeOf(error) === 'teloa/invalid-input' && detailsFieldOf(error,'reason') === 'role-knowledge-unavailable') return translateMessage(locale, 'error.roleKnowledgeUnavailable')
   // 请求错误带 details；会话本轮失败只有原生 code（teloa/budget-exhausted/<reason>/<scope>）。
   const exhausted=codeOf(error)==='teloa/budget-exhausted'?{reason:detailsFieldOf(error,'reason'),scope:detailsFieldOf(error,'scope')}:readWorkBudgetExhaustedCode(codeOf(error))
   if(exhausted){

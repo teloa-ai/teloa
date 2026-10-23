@@ -9,6 +9,7 @@ import {useBusinessScopes} from './business-scope-context.js'
 import {useI18n} from './i18n/provider.js'
 import {localizeWorkError} from './i18n/errors.js'
 import {isCompletedGroupReply} from './group-task-source-presentation.js'
+import {groupWorkTaskStateLabel} from './task-list-presentation.js'
 export {isCompletedGroupReply} from './group-task-source-presentation.js'
 import css from './CollaborationPage.module.css'
 import picker from './GroupLinkedWork.module.css'
@@ -90,7 +91,7 @@ export function GroupLinkedWork({profileName,group,api,tasks,taskDirectory=tasks
    {item.kind==='task'&&owner(taskDirectory.find(task=>task.id===item.id))}
    {item.kind==='business'&&<small className={css.hint}>{item.id}</small>}
    {projectLinks.some(project=>groupWorkLinkKey(project)===groupWorkLinkKey(item))&&<small className={css.hint}>{copy('在项目中关联','在專案中關聯','Linked from project')}</small>}
-  </article>)}{(shown('task')?implicit:[]).map(task=><article key={task.id} className={css.workRow}><div className={css.workMeta}><span>{category('task')} · {scopes[task.scope]??task.scope}</span><span>{stateLabel(task.state)}</span></div><button type="button" className={css.objectName} aria-label={task.title+' · '+assignee(task)} onClick={()=>open({kind:'task',scope:task.scope,id:task.id,title:task.title,state:task.state,available:true,objectVersion:task.version??1})}>{task.title}</button>{owner(task)}</article>)}</div>
+  </article>)}{(shown('task')?implicit:[]).map(task=><article key={task.id} className={css.workRow}><div className={css.workMeta}><span>{category('task')} · {scopes[task.scope]??task.scope}</span><span>{groupWorkTaskStateLabel(task,t)}</span></div><button type="button" className={css.objectName} aria-label={task.title+' · '+assignee(task)} onClick={()=>open({kind:'task',scope:task.scope,id:task.id,title:task.title,state:task.state,available:true,objectVersion:task.version??1})}>{task.title}</button>{owner(task)}</article>)}</div>
   {detail&&displayLinks.length+implicit.length===0&&<p className={css.hint}>{copy('关联案件、项目或任务，围绕同一件事协作。','關聯案件、專案或工作，圍繞同一件事協作。','Link cases, projects or tasks to collaborate around the same work.')}</p>}
   {editing&&<ContextDrawer title={copy('关联工作','關聯工作','Link work')} close={()=>setEditing(false)}><div className={picker.picker}>
    {detail&&formBase&&(detail.version!==formBase.version||detail.groupVersion!==formBase.groupVersion)&&<p role="status" className={picker.notice}><span>{copy('原关联已更新，当前选择已保留。','原關聯已更新，目前選取已保留。','The original links changed. Your selection is preserved.')}</span><button type="button" disabled={busy||!!pending} onClick={()=>{setSelection(detail.items);setFormBase(detail)}}>{copy('载入最新关联','載入最新關聯','Load latest links')}</button></p>}

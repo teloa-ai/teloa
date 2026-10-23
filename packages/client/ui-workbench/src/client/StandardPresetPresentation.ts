@@ -17,8 +17,8 @@ type NativeSectionFace={hooks:{agentPresetSection:HostObservable<PresetSection>;
 type NativeSectionProps=OwnerOf<'settings.section'>&InjectFace<NativeSectionFace&{t:Translate}>
 
 function translatedOption<T extends StandardPresetOption>(option:T,active:string):T{
-  if(!isOwnedStandardMode(option))return option
-  const name=standardModeName(active)
+  // 官方内置模式（含 ptc-persistent/ptc-python）的说明也要本地化；只改名/说明，不写回会话配置。
+  const name=isOwnedStandardMode(option)?standardModeName(active):undefined
   const description=standardModeDescription(option,active)
   return {...option,...(name?{name}:{}),...(description===undefined?{}:{description})}
 }

@@ -294,9 +294,22 @@ test('群内直接回应从路由到接力停下与表情：真库、真端点�
  const routingPrompts=()=>prompts.filter(entry=>isRoutingSession(entry.sessionId))
 
  // ════════════════════ 夹具：六位同事 ════════════════════
- const hire=async(name:string,scope:string):Promise<Role>=>await call('roles/create',{requestId:randomUUID(),fields:{
+ // 回归夹具（task-18）：新的空执行工具闸要求群工作运行时员工至少有一项真实执行工具；按宿主候选授权后恢复在岗，不放宽产品闸。
+ const reloadRole=async(roleId:string):Promise<Role>=>{const rows=await call('roles/list',{}) as Role[];const found=rows.find(item=>item.id===roleId);assert.ok(found,'岗位必须仍在目录');return found}
+ const moveRole=async(role:Role,action:'pause'|'resume'):Promise<Role>=>{await call('roles/lifecycle',{roleId:role.id,expectedVersion:role.version,action,reason:'回归夹具：配置执行工具'});return reloadRole(role.id)}
+ const grantExecutionTools=async(role:Role):Promise<Role>=>{
+  const paused=await moveRole(role,'pause')
+  const page=await call('role-tools/candidates',{roleId:paused.id}) as {rules:{name:string}[]}
+  // 群场景必须授权 web/业务真实执行工具；不把 subagent_task 当成群运行能力。
+  const rule=page.rules.find(item=>item.name==='web_search')??page.rules.find(item=>item.name==='web_fetch')??page.rules.find(item=>item.name!=='subagent_task')
+  assert.ok(rule,'群场景必须能授权到 web/业务真实工具候选')
+  await call('role-tools/change',{roleId:paused.id,expectedRoleVersion:paused.version,action:'save',rules:[{name:rule.name,anyArguments:true,allowed:[]}]})
+  return moveRole(await reloadRole(paused.id),'resume')
+ }
+ const createRole=async(name:string,scope:string):Promise<Role>=>await call('roles/create',{requestId:randomUUID(),fields:{
   name,kind:'employee' as const,scopes:[scope],duty:`${name}的岗位使命`,dataScope:'群内消息',executionScope:'只做回答与说明',skills:[],knowledge:[],responsibility:testRoleResponsibility,runtimeConfig:{agentPresetId:teloaAgentPresetId},
  }}) as Role
+ const hire=async(name:string,scope:string):Promise<Role>=>grantExecutionTools(await createRole(name,scope))
  const roleA=await hire('售后一号','SOC')
  const roleB=await hire('物流二号','SOC')
  const roleNoAuto=await hire('不自动三号','SOC')
@@ -966,9 +979,9 @@ test('群内直接回应从路由到接力停下与表情：真库、真端点�
  const knowledgeSource=sourceRefs[0]!
  const knowledgeDraft=await call('resources/create',{requestId:randomUUID(),title:'SOC 范围的岗位资料',sourceId:knowledgeSource.id,sourceVersion:knowledgeSource.version,scopeIds:['SOC']}) as {id:string;version:number}
  const scopedResource=await call('resources/apply',{draftId:knowledgeDraft.id,expectedVersion:knowledgeDraft.version}) as {id:string;version:number;scopeIds:string[]}
- const scopedRole=await call('roles/create',{requestId:randomUUID(),fields:{
+ const scopedRole=await grantExecutionTools(await call('roles/create',{requestId:randomUUID(),fields:{
   name:'通用群里的SOC同事',kind:'employee' as const,scopes:['SOC'],duty:'在通用群里按自己的资料回答',dataScope:'群内消息',executionScope:'只做回答与说明',skills:[],knowledge:[scopedResource.id],responsibility:testRoleResponsibility,runtimeConfig:{agentPresetId:teloaAgentPresetId},
- }}) as Role
+ }}) as Role)
  const generalGroup=await call('groups/create',{requestId:randomUUID(),expectedVersion:0,fields:{name:'通用工作群',scope:'general',announcement:'验收通用范围任务读岗位知识。',rules,memberRoleIds:[scopedRole.id]}}) as Group
  const groupMaterial=await call('groups/resources/save',{requestId:randomUUID(),groupId:generalGroup.id,resourceId:randomUUID(),expectedVersion:0,title:'本群明确分享的资料',markdown:'# 本群资料\n\n只有显式授权之后才可读取。'}) as {id:string;version:number}
  const groupReferences=[{kind:'group-resource',id:groupMaterial.id,version:groupMaterial.version}]

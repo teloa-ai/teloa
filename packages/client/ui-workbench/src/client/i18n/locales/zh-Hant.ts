@@ -82,6 +82,7 @@ export const zhHantMessages = {
   'settings.configurationHelp': '設定指南',
   'settings.document.open': '開啟設定檔',
   'settings.document.opening': '正在開啟…',
+  'settings.document.unavailable': '暫時無法直接開啟設定檔。請在執行 Teloa 的電腦上查看設定目錄，或稍後再試。',
   'profile.title': '個人檔案',
   'profile.description': '此身分顯示在目前裝置中。資料只會保存在這台裝置。',
   'profile.displayName': '顯示名稱',

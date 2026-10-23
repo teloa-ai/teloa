@@ -82,6 +82,7 @@ export const ptMessages = {
   'settings.configurationHelp': 'Guia de configuração',
   'settings.document.open': 'Abrir ficheiro de configuração',
   'settings.document.opening': 'A abrir…',
+  'settings.document.unavailable': 'Não foi possível abrir diretamente o ficheiro de configuração. Verifique a pasta de configuração no computador que executa o Teloa ou tente novamente mais tarde.',
   'profile.title': 'Perfil pessoal',
   'profile.description': 'Esta identidade é apresentada no dispositivo atual. Os dados permanecem neste dispositivo.',
   'profile.displayName': 'Nome de apresentação',

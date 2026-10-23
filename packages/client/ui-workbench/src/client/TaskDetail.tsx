@@ -112,6 +112,8 @@ export function TaskDetail(props:TaskDetailProps):JSX.Element{
   const supplementKeys={pending:'task.detail.supplement.pending',accepted:'task.detail.supplement.accepted',rejected:'task.detail.supplement.rejected'} as const
   const operationKeys={pending:'task.detail.operation.pending',approved:'task.detail.operation.approved',rejected:'task.detail.operation.rejected',changes:'task.detail.operation.changes',stale:'task.detail.operation.stale',executing:'task.detail.operation.executing',unknown:'task.detail.operation.unknown',partial:'task.detail.operation.partial',verified:'task.detail.operation.verified'} as const
   const actionKeys={start:'task.detail.action.start',pause:'task.detail.action.pause',resume:'task.detail.action.resume',cancel:'task.detail.action.cancel'} as const
+  // 交给员工或本人生成式执行的任务，暂停/继续属于运行控制，不能伪装成任务台账状态；否则必然被服务端拒绝。
+  const runManagedTask=task.storage==='persistent'&&(task.assigneeId!=='self'||task.executor?.kind==='owner')
   const demo=task.storage==='persistent'?'':t('task.detail.demoSuffix')
   const openTaskArtifact=(ref:Parameters<OpenArtifacts>[1])=>openArtifacts({kind:'task',id:task.id},ref)
   // 菜单选中后页头会把焦点交还给 ··· 触发按钮，锚点定位放到下一帧才不会被抢回。
@@ -129,7 +131,7 @@ export function TaskDetail(props:TaskDetailProps):JSX.Element{
   const menuItems:ObjectMenuItem[]=[
     ...(!closed&&canEditTaskGoal(task)?[{id:'edit',label:t('task.detail.editGoal'),onSelect:openGoalEditor}]:[]),
     // 本人任务与沙盒仍从菜单开始；交给同事的持久任务由运行面准备与启动。
-    ...(['start','pause','resume','cancel'] as const).filter(action=>action==='start'?(task.storage!=='persistent'||task.assigneeId==='self'&&task.executor?.kind!=='owner')&&task.state==='ready'&&!needs.length&&!task.approvalRequired:action==='pause'?task.state==='running':action==='resume'?task.state==='paused':!closed).map(action=>({id:action,label:t(actionKeys[action],{demo}),disabled:operating||(action==='start'||action==='resume')&&responsible?.state==='paused',onSelect:()=>void progress({type:'progress',taskId:task.id,action,now:new Date().toISOString()})})),
+    ...(['start','pause','resume','cancel'] as const).filter(action=>action==='start'?(task.storage!=='persistent'||task.assigneeId==='self'&&task.executor?.kind!=='owner')&&task.state==='ready'&&!needs.length&&!task.approvalRequired:action==='pause'?!runManagedTask&&task.state==='running':action==='resume'?!runManagedTask&&task.state==='paused':!closed).map(action=>({id:action,label:t(actionKeys[action],{demo}),disabled:operating||(action==='start'||action==='resume')&&responsible?.state==='paused',onSelect:()=>void progress({type:'progress',taskId:task.id,action,now:new Date().toISOString()})})),
     ...(props.repeatTask?[{id:'repeat',label:t('task.detail.repeat'),onSelect:()=>props.repeatTask?.(task)}]:[]),
     ...(!closed?[{id:'handoff',label:t('task.detail.expandHandoff'),onSelect:()=>jump(pendingHandoff||task.storage!=='persistent'&&taskNeeds(task).includes('handoff')?'handoff':'owner')}]:[]),
     {id:'evidence',label:t('task.menu.evidence'),onSelect:()=>jump('evidence')},
@@ -154,7 +156,16 @@ export function TaskDetail(props:TaskDetailProps):JSX.Element{
     if(task.storage!=='persistent')primary=undefined
     else if(primary.action.focus==='prepare'&&runPrepared)primary={label:t('task.status.action.viewRun'),action:{kind:'anchor',anchor:'run'}}
   }
+  // 交给员工/本人执行的任务，暂停/继续只能走运行控制；compact 状态卡不能把台账级 continue 再暴露成必失败按钮。
+  if(runManagedTask&&primary?.action.kind==='progress'&&(primary.action.action==='pause'||primary.action.action==='resume'))primary=runs.length?{label:t('task.status.action.viewRun'),action:{kind:'anchor',anchor:'run'}}:undefined
+  const secondary=runManagedTask&&model.secondary?.action.kind==='progress'&&(model.secondary.action.action==='pause'||model.secondary.action.action==='resume')?undefined:model.secondary
   const executionsNode=<TaskRunPreparationContext.Provider value={setPreparation}>{executions(acceptRuns)}</TaskRunPreparationContext.Provider>
+  // 「完成任务」的下拉只列当前任务版本的成果；纯文字交付没有成果版本时下拉为空、按钮永久禁用。
+  // 这里先把入口说清楚：先去成果面板把本轮文字结果保存成当前版本的成果，再回到结项面板选择版本。
+  const completionArtifactCandidates=completion?artifacts.flatMap(row=>row.versions.filter(v=>(v.source.ref.kind==='task'&&v.source.ref.id===task.id&&v.source.version===`${task.version} · ${task.updatedAt}`)||row.produced?.some(p=>p.taskId===task.id&&p.taskVersion===task.version&&p.version===v.number))):[]
+  const completionNeedsArtifact=!!completion&&taskCompletionVisible(task)&&task.state==='waiting'&&runsLoaded&&workSettled&&completionArtifactCandidates.length===0
+  // 空工具目录的运行不能交给模型空转：启动已被宿主拒绝，这里给出可操作的员工工具授权入口。
+  const missingToolRun=runsLoaded?runs.find(row=>row.state==='prepared'&&row.executor?.kind!=='owner'&&(row.toolRules??[]).length===0):undefined
   const sandboxHandoff=task.storage!=='persistent'&&taskNeeds(task).includes('handoff')?<section className={css.handoffPanel} data-teloa-handoff-section aria-label={t('task.detail.handoffWork')}><header><div><span className={css.sectionEyebrow}>{t('task.detail.taskAttention')}</span><h3>{t('task.detail.arrangeSuccessor')}</h3></div><StatusPill tone="warn">{t('task.detail.handoffPending')}</StatusPill></header><p>{task.handoff?.reason||task.request}</p><p className={css.muted}>{t('task.detail.handoffDescription')}</p>{candidates.length?<><button type="button" aria-expanded={handoffExpanded} onClick={()=>setHandoffExpanded(value=>!value)}>{t(handoffExpanded?'task.detail.collapseHandoff':'task.detail.expandHandoff')}</button>{shouldShowHandoffForm(true,handoffExpanded)&&<form className={css.form} aria-label={t('task.detail.handoffForm')} onSubmit={event=>{event.preventDefault();act({type:'handoff',taskId:task.id,assigneeId:assignee,note:handoffNote,now:new Date().toISOString()})}}><label>{t('task.detail.successorRole')}<select disabled={closed} value={assignee} onChange={event=>patch({assignee:event.target.value})}><option value="">{t('task.detail.successorPlaceholder')}</option>{candidates.map(role=><option key={role.id} value={role.id}>{role.name}</option>)}</select></label><label>{t('task.detail.handoffNote')}<textarea required maxLength={4000} rows={3} disabled={closed} value={handoffNote} onChange={event=>patch({handoffNote:event.target.value})}/></label><button type="submit" disabled={inputBlocked||!handoffNote.trim()||!candidates.some(role=>role.id===assignee)}>{t('task.detail.confirmDemoHandoff')}</button></form>}</>:<><p>{t('task.detail.noSuccessor')}</p><button type="button" onClick={team}>{t('task.detail.configureSuccessor')}</button></>}</section>:null
   const faces:TaskTimelineFaces={
     executions:executionsNode,
@@ -189,6 +200,15 @@ export function TaskDetail(props:TaskDetailProps):JSX.Element{
         {error&&<div className={css.error} role="alert">{error}<button type="button" onClick={()=>setError(undefined)} aria-label={t('task.detail.closeError')}><X size={15}/></button></div>}
         <TaskInputNotice draft={draft} task={task} roles={roles} roleDirectory={roleDirectory} review={review}/>
         {responsible?.state==='paused'&&<p className={css.muted}>{t('task.detail.pausedRole')}</p>}
+        {missingToolRun&&<section className={detailCss.section} role="alert" data-teloa-anchor="run-tools-missing">
+          <p>{t('taskExecution.configTitle')}：{t('taskExecution.noTools')}</p>
+          <p>{t('roleDelegation.noTools')}{t('taskExecution.withdrawThenPrepare')}</p>
+          {responsible&&<button type="button" className={light.link} onClick={()=>openRole(responsible.id)}>{t('market.industry.planForm.openRole',{title:ownerName})}</button>}
+        </section>}
+        {completionNeedsArtifact&&<section className={detailCss.section} role="status" data-teloa-anchor="completion">
+          <p>{t('taskCompletion.confirm')}：{t('taskCompletion.description')}</p>
+          <button type="button" className={light.link} onClick={()=>openArtifacts({kind:'task',id:task.id})}>{t('artifact.panel.text.041')}</button>
+        </section>}
         {task.state==='running'&&task.storage!=='persistent'&&!needs.length&&!task.approvalRequired&&<form className={css.form} onSubmit={event=>{event.preventDefault();act({type:'progress',taskId:task.id,action:'complete',result,now:new Date().toISOString()})}}><label>{t('task.detail.result')}<textarea required rows={3} maxLength={4000} value={result} onChange={event=>patch({result:event.target.value})}/></label><button type="submit" disabled={inputBlocked||!result.trim()}>{t('task.detail.completeResult')}</button></form>}
   </>
   return <article data-teloa-pane="detail" tabIndex={-1} ref={root} className={css.detail} aria-label={t('task.detail.aria')} onKeyDown={event=>closeDirectoryDetailOnEscape(event,back)}>
@@ -196,7 +216,7 @@ export function TaskDetail(props:TaskDetailProps):JSX.Element{
     <div className={detailCss.layout}><div className={detailCss.columns}>
     <div className={clsx(css.goalLine,detailCss.slotGoal)}><span className={css.sectionEyebrow}>{t('task.detail.goal')}</span><DetailText markdown text={taskGoalText(task,t)} expandLabel={density('goalExpand')} collapseLabel={density('goalCollapse')}/></div>
     {quietStatus?<div className={clsx(detailCss.quietStatus,detailCss.slotStatus)}>{statusChildren}</div>:<div className={clsx(detailCss.statusPanel,detailCss.slotStatus)}>
-      <StatusBox ariaLabel={t('task.status.aria')} tone={currentPreparation?.control?.tone??model.tone} sentence={currentPreparation?.control?.sentence??model.sentence} hint={currentPreparation?.control?.hint??model.hint} hintLabel={t('task.status.hint')} {...(currentPreparation?.control?{primary:{label:currentPreparation.control.actionLabel,disabled:currentPreparation.control.disabled,onSelect:()=>{focusObjectAnchor(root.current,'run','resume');currentPreparation.control?.act()}}}:primary?{primary:statusAction(primary)}:{})} {...(model.secondary?{secondary:statusAction(model.secondary)}:{})}>
+      <StatusBox ariaLabel={t('task.status.aria')} tone={currentPreparation?.control?.tone??model.tone} sentence={currentPreparation?.control?.sentence??model.sentence} hint={currentPreparation?.control?.hint??model.hint} hintLabel={t('task.status.hint')} {...(currentPreparation?.control?{primary:{label:currentPreparation.control.actionLabel,disabled:currentPreparation.control.disabled,onSelect:()=>{focusObjectAnchor(root.current,'run','resume');currentPreparation.control?.act()}}}:primary?{primary:statusAction(primary)}:{})} {...(secondary?{secondary:statusAction(secondary)}:{})}>
         {statusChildren}
       </StatusBox>
     </div>}

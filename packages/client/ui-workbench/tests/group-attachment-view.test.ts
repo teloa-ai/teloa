@@ -1,3 +1,4 @@
+import * as taskListPresentation from '../src/client/task-list-presentation.ts'
 import {groupResultFixtureModule} from './group-result-fixture.ts'
 import {applicationCapabilityModule} from './application-capability-fixture.ts'
 import * as knowledgeMarkdown from '../src/client/knowledge-markdown-core.ts'
@@ -219,6 +220,9 @@ function mount(initial:Props,stubs:{openDialog?:(node:unknown,focus:unknown)=>vo
   if(id==='./industry-team-materials.js')return industryTeamMaterials
   if(id==='./group-work-resources.js')return groupWorkResources
   if(id==='./IndustryTeamMaterials.js')return {IndustryTeamMaterials:()=>{throw Error('未接模板资料端口的消息夹具不应渲染模板资料组件')}}
+  // task-18 回归夹具：SavedCollaborationPage 新增 group-routing-api 值依赖（群运行停止目标）；这些旧消息夹具不测停止分发，给空实现。
+  if(id.endsWith('group-routing-api.js'))return {groupRunStopTargets:()=>[]}
+  if(id.endsWith('task-list-presentation.js'))return taskListPresentation
   throw Error('未声明的组件依赖：'+id)
  }
  const code=ts.transpileModule(readFileSync(new URL('../src/client/SavedCollaborationPage.tsx',import.meta.url),'utf8'),{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.React}}).outputText

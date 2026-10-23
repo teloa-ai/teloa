@@ -16,7 +16,7 @@ let container:StartedPostgreSqlContainer,pool:Pool
 const enc=new TextEncoder(),hash=(value:string|Uint8Array)=>createHash('sha256').update(value).digest('hex'),identity={id:randomUUID,now:()=>new Date('2026-09-12T18:00:00.000Z').toISOString()}
 const file=(path:string,text:string)=>({path,bytes:enc.encode(text)})
 
-class Files implements SkillInstallationFilesPort{
+class Files implements SkillInstallationFilesPort{async remove(){}
  readonly verified:string[]=[]
  readonly metadata=new Map<string,NativeSkillMetadata>()
  failVerify=false

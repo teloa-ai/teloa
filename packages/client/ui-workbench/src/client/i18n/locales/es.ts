@@ -82,6 +82,7 @@ export const esMessages = {
   'settings.configurationHelp': 'Guía de configuración',
   'settings.document.open': 'Abrir documento',
   'settings.document.opening': 'Abriendo…',
+  'settings.document.unavailable': 'No se pudo abrir directamente el archivo de configuración. Revisa el directorio de configuración en el equipo que ejecuta Teloa o inténtalo más tarde.',
   'profile.title': 'Perfil personal',
   'profile.description': 'Esta identidad se muestra en el dispositivo actual. Los datos permanecen en este dispositivo.',
   'profile.displayName': 'Nombre visible',

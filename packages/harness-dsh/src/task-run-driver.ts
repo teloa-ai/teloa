@@ -8,6 +8,31 @@ import {isTextOnlyTaskRun} from './task-run-background.ts'
 import {deliveryReviewSource,deliveryReviewToolName} from './task-delivery-review.ts'
 import type {GoalObservationContext} from '@teloa/contract'
 
+export const roleRunNoExecutionToolsReason='role-run-no-execution-tools'
+/**
+ * 员工运行真正能“做事”的工具。
+ * `allowedTools` 只来自岗位工具授权：群表情/提及、记忆提议、小结提交这些自授权辅助工具从不写进这里
+ * （授权校验拒绝它们），所以清单为空就等于没有任何执行能力。只用于启动前判定；工具守卫仍是最终闸。
+ */
+export function roleRunExecutionTools(run:Pick<TaskRun,'allowedTools'>):string[]{
+ return [...(run.allowedTools??[])]
+}
+/**
+ * 哪些运行必须带执行工具：本人运行由宿主自己装配工具；群交流回应（v2 来源 executionMode=reply）
+ * 按设计冻结空工具集，只写正文，不能因为空清单被误判为空转。其余员工运行（含群 work 与普通员工任务）
+ * 没有执行工具就无法完成交付，模型只会反复试探不存在的工具并耗尽工作额度。
+ */
+export function roleRunRequiresExecutionTools(run:Pick<TaskRun,'executor'|'groupContext'>):boolean{
+ if(run.executor?.kind==='owner')return false
+ if(run.groupContext&&run.groupContext.ownerRequest===undefined)return false
+ return true
+}
+/** 启动前的空工具闸：缺执行工具时停在本方准入处并给出可操作提示，不能把空目录交给模型。 */
+export function assertRoleRunToolsRunnable(run:Pick<TaskRun,'executor'|'groupContext'|'allowedTools'>):void{
+ if(!roleRunRequiresExecutionTools(run)||roleRunExecutionTools(run).length)return
+ throw new WorkError('teloa/conflict','这名员工还没有可用的执行工具，已阻止启动。请先在员工详情打开工具授权，为该员工保存要用的工具，再撤回本次准备并重新准备执行。',{reason:roleRunNoExecutionToolsReason})
+}
+
 /** 恢复例外只认固定单轮纯文本或本 Run 正式复核；其他工具、后台续轮与子级均拒绝。 */
 function completedTextRun(run:TaskRun,events:readonly SessionEvent[],observed:TaskRunObservation):boolean{
  if(observed.state!=='ended'||observed.reason!=='completed')return false
@@ -94,8 +119,8 @@ export type TaskRunPorts={
  publishGroupResult?:(run:TaskRun,text:string)=>Promise<void>
 }
 export class TaskRunDriver{
- readonly service:Pick<TaskRunService,'get'|'executionScope'|'claim'|'record'|'requestStop'>;readonly ports:TaskRunPorts
- constructor(service:Pick<TaskRunService,'get'|'executionScope'|'claim'|'record'|'requestStop'>,ports:TaskRunPorts){this.service=service;this.ports=ports}
+ readonly service:Pick<TaskRunService,'get'|'executionScope'|'claim'|'record'|'requestStop'> & {isSystemDigestRun?:(owner:string,input:unknown)=>Promise<boolean>};readonly ports:TaskRunPorts
+ constructor(service:Pick<TaskRunService,'get'|'executionScope'|'claim'|'record'|'requestStop'> & {isSystemDigestRun?:(owner:string,input:unknown)=>Promise<boolean>},ports:TaskRunPorts){this.service=service;this.ports=ports}
  start(owner:string,input:unknown,signal:AbortSignal):Promise<TaskRun>{
   const operation=()=>this.startStable(owner,input,signal)
   return this.ports.stableStart?this.ports.stableStart(operation):operation()
@@ -104,6 +129,11 @@ export class TaskRunDriver{
   signal.throwIfAborted()
   const current=await this.service.get(owner,input)
   if(current.state!=='prepared')return current
+  // AutoDream 每日小结只用自授权证据/提交工具：按谱系里的计划身份只读核实来源后豁免空执行工具闸；
+  // 找不到来源、旧装配或读失败一律按普通运行处理（继续拦截）。
+  const planId=current.lineage?.definition?.planId
+  const systemDigest=typeof planId==='string'?await this.service.isSystemDigestRun?.(owner,{planId})??false:false
+  if(!systemDigest)assertRoleRunToolsRunnable(current)
   if(current.lineage&&await this.ports.controlState?.(current)!=='active')throw new WorkError('teloa/forbidden','原工作已暂停或停止，请先核对恢复。')
   const target=await this.service.executionScope(owner,input)
   await this.ports.check(current,signal,target)

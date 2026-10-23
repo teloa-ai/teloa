@@ -36,3 +36,28 @@ test('发布前再核对原生正文和策略，解析故障不进入发现根',
  const root=await realpath(await mkdtemp(join(tmpdir(),'teloa-skill-files-')));t.after(()=>rm(root,{recursive:true,force:true}));const fs=new ManagedSkillFiles(join(root,'skills'),async()=>({...native,modelInvocable:false}),()=>{})
  await assert.rejects(fs.publish(id,bundle(),native),{code:'teloa/storage-corrupt'});await assert.rejects(readFile(fs.path(id)),{code:'ENOENT'})
 })
+
+test('硬卸载删除受管安装目录并通知失效；目录不存在视为已成功，可重放',async t=>{
+ const root=await realpath(await mkdtemp(join(tmpdir(),'teloa-skill-files-')));t.after(()=>rm(root,{recursive:true,force:true}));const invalidated:string[]=[]
+ const fs=new ManagedSkillFiles(join(root,'skills'),async()=>native,path=>invalidated.push(path))
+ await fs.publish(id,bundle(),native)
+ invalidated.length=0
+ await fs.remove(id)
+ assert.deepEqual(invalidated, [fs.path(id)],'删除后必须让原生发现失效')
+ await assert.rejects(readFile(fs.path(id)),{code:'ENOENT'})
+ await fs.remove(id)
+ const unknown='22345678-1234-4234-8234-123456789012'
+ await fs.remove(unknown)
+ assert.deepEqual(invalidated,[fs.path(id),fs.path(id),fs.path(unknown)])
+})
+
+test('硬卸载只删受管 UUID 目录：非法身份和符号链接目录显式拒绝',async t=>{
+ const root=await realpath(await mkdtemp(join(tmpdir(),'teloa-skill-files-')));t.after(()=>rm(root,{recursive:true,force:true}));const fs=new ManagedSkillFiles(join(root,'skills'),async()=>native,()=>{})
+ await assert.rejects(fs.remove('../../outside'),{code:'teloa/invalid-input'})
+ await assert.rejects(fs.remove('not-a-uuid'),{code:'teloa/invalid-input'})
+ await mkdir(join(root,'outside'),{recursive:true});await writeFile(join(root,'outside','keep.txt'),'保留')
+ await mkdir(join(root,'skills'),{recursive:true});const linked='22345678-1234-4234-8234-123456789012'
+ await symlink(join(root,'outside'),join(root,'skills',linked))
+ await assert.rejects(fs.remove(linked),{code:'teloa/storage-corrupt'})
+ assert.equal(await readFile(join(root,'outside','keep.txt'),'utf8'),'保留')
+})

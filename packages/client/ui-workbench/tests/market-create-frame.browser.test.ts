@@ -49,7 +49,17 @@ async function mount(t:any,startup:Record<string,unknown>={}){
  const creator=page.getByRole('dialog',{name:'创建技能',exact:true}),input=creator.getByRole('textbox'),workspace=page.getByRole('dialog',{name:'新建工作会话',exact:true})
  await input.fill('原技能需求');return {page,creator,input,workspace}
 }
-const saved=(page:any)=>page.evaluate(()=>sessionStorage.getItem('teloa.market-creation-input/v1/skill'))
+const saved=(page:any)=>page.evaluate(()=>{
+ const raw=sessionStorage.getItem('teloa.market-creation-input/v1/skill')
+ if(!raw)return null
+ // 新版本按 `{schema,text,prepared}` 记录句稿；旧纯文本仍兼容。两种都还原成正文供断言。
+ try{const value=JSON.parse(raw);return typeof value?.text==='string'?value.text:raw}catch{return raw}
+})
+const savedDraft=(page:any)=>page.evaluate(()=>{
+ const raw=sessionStorage.getItem('teloa.market-creation-input/v1/skill')
+ if(!raw)return {text:null,prepared:false}
+ try{const value=JSON.parse(raw);return {text:typeof value?.text==='string'?value.text:raw,prepared:value?.prepared===true}}catch{return {text:raw,prepared:false}}
+})
 
 test('真实Frame技能创建取消旧启动恢复，打开自行撤销导航也不丢草稿',async t=>{
  const {page,creator,input}=await mount(t,{holdCreate:true,oneWorkspace:true,nativeOpenView:'messages',abortNativeNavigationOnOpen:true})
@@ -67,7 +77,8 @@ test('真实Frame技能创建取消旧启动恢复，打开自行撤销导航也
  assert.equal(facts.current,facts.conversation.sessionId)
  assert.equal(facts.prompt.sessionId,facts.conversation.sessionId)
  assert.ok(facts.prompt.text.includes(description),'原始Markdown只带入本次创建的会话')
- assert.equal(await saved(page),null)
+ assert.equal(await saved(page),description,'成功预备后保留说明，供重开恢复已备好未发送')
+ assert.equal((await savedDraft(page)).prepared,true)
  assert.deepEqual(facts.sent,[])
 })
 
@@ -88,7 +99,7 @@ test('真实Frame创建失败保留市场原稿，实际成功才清除并准备
  const success=await mount(t,{businessPreparation:true})
  await success.creator.getByRole('button',{name:'继续',exact:true}).click();await success.workspace.waitFor();await success.workspace.getByRole('combobox').selectOption('other');await success.workspace.getByRole('button',{name:'创建会话',exact:true}).click()
  await success.page.waitForFunction(()=>(window as any).frameFixture.creationPrompts.length===1)
- await success.creator.waitFor({state:'hidden'});assert.equal(await saved(success.page),null)
+ await success.creator.waitFor({state:'hidden'});assert.equal(await saved(success.page),'原技能需求','成功预备后保留说明供恢复');assert.equal((await savedDraft(success.page)).prepared,true)
  const facts=await success.page.evaluate(()=>{const f=(window as any).frameFixture;return {creates:f.creates,prompt:f.creationPrompts[0].text,workspace:f.rows()[0].requestedWorkspaceId,sent:f.sent}})
  assert.equal(facts.creates,1);assert.match(facts.prompt,/原技能需求/);assert.equal(facts.workspace,'other');assert.match(facts.prompt,/sales/);assert.deepEqual(facts.sent,[])
 })
@@ -114,11 +125,11 @@ test('真实Frame创建失败后在原选择窗重试成功，沿原request清�
  await creator.getByRole('button',{name:'继续',exact:true}).click();await workspace.getByRole('alert').waitFor()
  await page.evaluate(()=>(window as any).frameFixture.failCreate=false);await workspace.locator('button[type=submit]').click()
  await page.waitForFunction(()=>(window as any).frameFixture.creationPrompts.length===1);await workspace.waitFor({state:'hidden'})
- assert.equal(await saved(page),null,'原请求重试prepared成功才清稿')
+ assert.equal(await saved(page),'原技能需求','原请求重试成功后保留说明并标记已预备');assert.equal((await savedDraft(page)).prepared,true)
  await creator.waitFor({state:'hidden'})
  const facts=await page.evaluate(()=>{const f=(window as any).frameFixture;return {requests:f.creationRequests,creates:f.creates,prompts:f.creationPrompts.length,sent:f.sent}})
  assert.equal(facts.requests.length,2);assert.equal(facts.requests[0],facts.requests[1]);assert.equal(facts.creates,1);assert.equal(facts.prompts,1);assert.deepEqual(facts.sent,[])
- await page.getByRole('button',{name:'创建技能',exact:true}).click();assert.equal(await creator.getByRole('textbox').inputValue(),'');assert.equal(await creator.getByRole('alert').count(),0)
+ await page.getByRole('button',{name:'创建技能',exact:true}).click();assert.equal(await creator.getByRole('textbox').inputValue(),'原技能需求','成功预备后重开恢复说明，不静默丢弃');assert.equal(await creator.getByRole('alert').count(),0)
 })
 
 for(const kind of ['resources','dashboard'] as const)test('真实Frame旧业务'+kind+'准备取消不产生未处理拒绝，创建失败保留原工作区错误',async t=>{

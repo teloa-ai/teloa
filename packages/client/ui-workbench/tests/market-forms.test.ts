@@ -1,7 +1,9 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
+import {readFileSync} from 'node:fs'
 import {mount,nodes,type MarketNode as Node} from './market-component-harness.ts'
 import {translateMessage} from '../lib/types/client/i18n/messages.js'
+import {MARKET_FORM_MESSAGE_ROWS} from '../src/client/i18n/locales/market-forms.ts'
 
 // T4（design specification）：市场导入「导入」与保存模板「保存为任务模板」
 // 两个弹层照原型（UI design）收口文案与结构。
@@ -114,4 +116,31 @@ test('市场导入与保存模板对话框不出现 market.forms.* 词条键（�
   ...Object.values(node.props).filter((value:unknown)=>typeof value==='string') as string[],
  ]).filter(value=>value.includes('market.forms.'))
  assert.deepEqual(leaked,[])
+})
+
+// BIZ-005：粘贴非法 JSON 时给出行列与极短片段，替代通用「操作未完成，请稍后重试」。
+// 运行时 messages 来自构建产物；这里直接核对源词条，避免测试依赖旧 lib 构建。
+test('非法 JSON 导入词条含来源、行列与片段占位，不再只给通用失败',()=>{
+ const row=MARKET_FORM_MESSAGE_ROWS.find(value=>value[0]==='market.forms.jsonSyntaxError')
+ assert.ok(row,'缺少非法 JSON 词条')
+ const [key,zh,zhHant,en]=row
+ assert.equal(key,'market.forms.jsonSyntaxError')
+ assert.match(zh,/第 \{line\} 行第 \{column\} 列/)
+ assert.match(zh,/\{where\}/)
+ assert.match(zh,/\{snippet\}/)
+ assert.match(zhHant,/第 \{line\} 行第 \{column\} 列/)
+ assert.match(en,/line \{line\}, column \{column\}/)
+ assert.match(en,/\{snippet\}/)
+ assert.doesNotMatch(zh,/操作未完成/)
+})
+
+
+// BIZ-005 接线守卫：导入失败时按 JSON 语法错误渲染「来源 + 行列 + 片段」，不能再落到通用失败文案。
+test('市场导入把非法 JSON 语法错误接到带位置的提示，不再只给通用失败',()=>{
+ const source=readFileSync(new URL('../src/client/MarketForms.tsx',import.meta.url),'utf8')
+ assert.match(source,/error instanceof MarketJsonSyntaxError/)
+ assert.match(source,/market\.forms\.jsonSyntaxError/)
+ assert.match(source,/line:String\(error\.failure\.line\)/)
+ assert.match(source,/column:String\(error\.failure\.column\)/)
+ assert.match(source,/snippet:error\.failure\.snippet/)
 })

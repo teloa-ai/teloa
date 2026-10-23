@@ -17,7 +17,7 @@ export type ProjectRuntimePorts={
  maxContextChars?:number
 }
 export type ProjectRuntimePrepared={binding:ProjectConversationMembership&{contextVersion:number;settingsVersion:number};manifestId:string;text:string;sources:ProjectContextUseSource[];reset:boolean;providerSessionId:string}
-type SourceState={mandatory?:string;optional?:Record<string,string>}
+type SourceState={mandatory?:string;definition?:string;optional?:Record<string,string>}
 type MembershipRow={owner_id:string;session_id:string;project_id:string|null;version:number;memory_mode:ProjectMemoryMode;generation:number;title:string;fingerprint:string;source_state:SourceState;inherited_sources:ProjectContextUseSource[]|null;context_version:number;settings_version:number;reset_pending:boolean}
 const hash=(text:string)=>createHash('sha256').update(text).digest('hex')
 const stale=()=>new WorkError('teloa/version-conflict','项目上下文已更新，请按当前可用背景继续。')
@@ -181,10 +181,20 @@ export class ProjectRuntimeService{
     for(const entry of optional.sort((a,b)=>b.score-a.score||a.id.localeCompare(b.id))){const key=entry.hash;if(entry.score<=0){omitted.push({reason:'可选记忆与当前问题不相关'});continue}if(selected.has(key))continue;const source={kind:entry.kind,id:entry.id,version:entry.version,title:entry.title,hash:entry.hash};if(render([...texts,{source,markdown:entry.markdown}]).length>budget){omitted.push({reason:'可选记忆超过本轮输入预算'});continue}selected.add(key);add(entry.kind,entry.id,entry.version,entry.title,entry.markdown,entry.hash)}
    }else omitted.push({reason:'本会话不读写长期记忆'})
    const contextVersion=data?.version??0,settingsVersion=settings?.version??0
-   const sourceState:SourceState={mandatory:hash(JSON.stringify({projectId:row.project_id,goal:project?.definition.goal??null,brief:data?.brief??'',rules:data?.entries.filter(e=>e.kind==='rule'&&e.state==='active').map(e=>[e.id,e.version,e.hash]),requiredStates:requiredStates.sort(),memoryMode:row.memory_mode,actor:{scope:actor.scope,roleId:actor.roleId??null,scopes:[...(actor.scopes??[])].sort(),goal:actor.goal??null}})),optional:Object.fromEntries(Object.entries(optionalStates).sort(([a],[b])=>a.localeCompare(b)))}
+   // 项目定义（标题/目标）只是本轮注入背景的事实正文，不是记忆授权；模型在回合内经项目工具改写它时只更新指纹，不清空已受理输入。
+   const sourceState:SourceState={mandatory:hash(JSON.stringify({projectId:row.project_id,brief:data?.brief??'',rules:data?.entries.filter(e=>e.kind==='rule'&&e.state==='active').map(e=>[e.id,e.version,e.hash]),requiredStates:requiredStates.sort(),memoryMode:row.memory_mode,actor:{scope:actor.scope,roleId:actor.roleId??null,scopes:[...(actor.scopes??[])].sort(),goal:actor.goal??null}})),definition:hash(JSON.stringify({title:project?.definition.title??null,goal:project?.definition.goal??null})),optional:Object.fromEntries(Object.entries(optionalStates).sort(([a],[b])=>a.localeCompare(b)))}
    const fingerprint=hash(JSON.stringify({sourceState,contextVersion,settingsVersion,resourceStates:resourceStates.sort()}))
    let generation=row.generation,reset=row.reset_pending
-   if(row.fingerprint!==fingerprint){const clean=!!row.fingerprint&&(row.source_state?.mandatory!==sourceState.mandatory||Object.entries(row.source_state?.optional??{}).some(([key,value])=>sourceState.optional?.[key]!==value));if(clean)generation++;reset=reset||clean||!row.fingerprint;await db.query('update teloa_project_conversation_memberships set fingerprint=$3,generation=$4,context_version=$5,settings_version=$6,reset_pending=$7,source_state=$8 where owner_id=$1 and session_id=$2',[owner,row.session_id,fingerprint,generation,contextVersion,settingsVersion,reset,sourceState]);invalidate(this.pool,owner,row.session_id)}
+   if(row.fingerprint!==fingerprint){
+    // 只有本人授权来源/策略真正变化（换源、撤权、必读资料版本、执行者）才换代；定义正文变化保持同代次。
+    const previousOptional=row.source_state?.optional??{},mandatoryChanged=!!row.fingerprint&&row.source_state?.mandatory!==sourceState.mandatory
+    const optionalChanged=Object.keys(previousOptional).length!==Object.keys(sourceState.optional??{}).length||Object.entries(previousOptional).some(([key,value])=>sourceState.optional?.[key]!==value)
+    const clean=mandatoryChanged||Object.entries(previousOptional).some(([key,value])=>sourceState.optional?.[key]!==value)
+    if(clean)generation++;reset=reset||clean||!row.fingerprint
+    await db.query('update teloa_project_conversation_memberships set fingerprint=$3,generation=$4,context_version=$5,settings_version=$6,reset_pending=$7,source_state=$8 where owner_id=$1 and session_id=$2',[owner,row.session_id,fingerprint,generation,contextVersion,settingsVersion,reset,sourceState])
+    // 定义正文变化不让已受理 prepared 令牌失效；其余指纹变化沿用原会话失效语义。
+    if(mandatoryChanged||optionalChanged||!row.fingerprint||reset!==row.reset_pending)invalidate(this.pool,owner,row.session_id)
+   }
    // 客户端 rpcId 永远不能占用内部检查/提炼命名空间。
    const requestKey=input.purpose==='check'?'context-check':input.purpose==='extraction'?'project-memory:'+(input.requestId??input.messageId):'input:'+(input.requestId??input.messageId)
    // 同代次历史回复、工具和摘要仍可能携带此前背景；来源清单保留完整依赖。

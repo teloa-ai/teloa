@@ -78,7 +78,7 @@ class Reader{
  constructor(owner:string){this.owner=owner}
  async read(owner:string,input:SkillInstallSourceInput){if(owner!==this.owner)throw new WorkError('teloa/forbidden','本人不匹配');const found=this.values.get(JSON.stringify(input));if(!found)throw new WorkError('teloa/source-unavailable','来源不存在');return structuredClone(found)}
 }
-class Files implements SkillInstallationFilesPort{
+class Files implements SkillInstallationFilesPort{async remove(){}
  readonly metadata=new Map<string,NativeSkillMetadata>()
  async inspect(bundle:SkillInstallSourceBundle){const found=this.metadata.get(bundle.bundleHash);if(!found)throw new WorkError('teloa/source-unavailable','元数据不存在');return found}
  async publish(){}async verify(){}

@@ -47,3 +47,5 @@
 .actions .confirm{border-color:var(--teloa-accent)}
 .entry button:focus-visible,.entry textarea:focus-visible,.entry summary:focus-visible{outline:2px solid var(--teloa-focus);outline-offset:3px}
 @media(max-width:760px){.fields>div{flex-direction:column;gap:3px}.fields dt{flex:none}}
+/* 「已备好未发送」旁边只放一个轻量清除动作，沿用提示行的小字号与既有边框令牌。 */
+.notice .clearDraft{margin-left:10px;padding:2px 8px;border:1px solid var(--teloa-border);border-radius:var(--teloa-design-round);background:var(--teloa-surface);color:var(--teloa-text);font-size:var(--teloa-font-caption);cursor:pointer}

@@ -36,6 +36,30 @@ const markerName='teloa/project-context-generation'
 // 固定 DSH 的许可/委派上下文及本宿主的必要工作状态；新增 provider 必须先审核其无记忆语义。
 const memoryOffContexts=new Set(['sandbox:policy','approval:policy','subagent:delegation','teloa:product-identity','teloa:work-behavior-runtime','teloa/role-identity','teloa/saved-draft-state'])
 const denied=()=>new WorkError('teloa/conflict','项目上下文已更新，当前工作等待使用可用资料重新继续。')
+const projectDefinitionTool='teloa_projects_change'
+const definitionBoundaryName='teloa/project-definition-boundary'
+const definitionBoundaryText="The project title and goal are the owner's project definition, not a memory store. Never write decisions, remembered facts or notes into the project goal or title, and never call project change tools to remember anything. Edit the definition only when the owner explicitly asks for that definition change in this turn; ordinary decisions are captured by project memory extraction."
+const definitionWrite=()=>new WorkError('teloa/forbidden','项目定义（标题与目标）只由本人在项目页核对修改；项目会话中的长期记忆由自动提炼生成候选，不写入项目目标或标题。其他项目字段修改不受影响。')
+const sha256=(text:string)=>createHash('sha256').update(text).digest('hex')
+const definitionFields=(args:unknown):Record<string,unknown>|undefined=>{
+ if(!args||typeof args!=='object'||Array.isArray(args))return undefined
+ const fields=Reflect.get(args,'fields')
+ return fields&&typeof fields==='object'&&!Array.isArray(fields)?fields as Record<string,unknown>:undefined
+}
+/**
+ * 项目定义是本轮注入背景的事实正文，不是记忆载体：项目会话中拒绝模型借 teloa_projects_change 改写标题/目标。
+ * 只比较本轮真实输入来源里的项目标题与目标摘要；状态、期限、关联等其余字段修改照常放行。
+ */
+export function assertProjectDefinitionWrite(prepared:ProjectRuntimePrepared,name:string,args:unknown):void{
+ if(name!==projectDefinitionTool||!prepared.binding.projectId)return
+ const fields=definitionFields(args)
+ if(!fields)return
+ const project=prepared.sources.find(source=>source.kind==='project'&&source.id===prepared.binding.projectId)
+ if(!project)return
+ const title=Reflect.get(fields,'title'),goal=Reflect.get(fields,'goal')
+ if(typeof title==='string'&&title!==project.title)throw definitionWrite()
+ if(typeof goal==='string'&&sha256(goal)!==project.hash)throw definitionWrite()
+}
 const canonical=(value:unknown):unknown=>Array.isArray(value)?value.map(canonical):value&&typeof value==='object'?Object.fromEntries(Object.keys(value).sort().map(key=>[key,canonical(Reflect.get(value,key))])):value
 const hash=(value:unknown)=>createHash('sha256').update(JSON.stringify(canonical(value))).digest('hex')
 const promptHash=(options:Readonly<GenerateOptions>)=>hash({messages:options.messages,system:options.system??null,tools:options.tools??null,toolHistory:options.toolHistory??null,sessionId:options.sessionId??null})
@@ -145,7 +169,7 @@ export function registerProjectRuntimeContext(ctx:Context,ports:ProjectRuntimeCo
    if(!prepared)return
    sync(prepared);const rows=active.get(agent)??[];rows.push(prepared);active.set(agent,rows);selected(agent)
   },
-  async assertTool(exec){if(!exec.agent)return;const prepared=selected(exec.agent);if(prepared){await check(prepared,exec.signal);if(prepared.binding.memoryMode==='off'&&exec.name===roleMemoryProposalToolName)throw new WorkError('teloa/forbidden','此会话已关闭长期记忆，不能提交员工记忆候选。')}},
+  async assertTool(exec){if(!exec.agent)return;const prepared=selected(exec.agent);if(prepared){await check(prepared,exec.signal);if(prepared.binding.memoryMode==='off'&&exec.name===roleMemoryProposalToolName)throw new WorkError('teloa/forbidden','此会话已关闭长期记忆，不能提交员工记忆候选。');assertProjectDefinitionWrite(prepared,exec.name,exec.arguments)}},
   async restore(input){
    const rows:ProjectRuntimePrepared[]=[]
    for(const message of input.messages){
@@ -171,8 +195,8 @@ export function registerProjectRuntimeContext(ctx:Context,ports:ProjectRuntimeCo
   rebuildProjectModelSurface(agent.session,generation)
   if(result.contexts.some(row=>row.name==='teloa/project-context')||Object.hasOwn(result.variables,'teloa_project_context'))throw denied()
   const contexts=prepared.binding.memoryMode==='off'?result.contexts.filter(row=>memoryOffContexts.has(row.name)):result.contexts
-  if(contexts.some(row=>row.name===markerName)||Object.hasOwn(result.variables,'teloa_project_generation'))throw denied()
-  return {...result,contexts:[...contexts,{name:'teloa/project-context',text:'{{teloa_project_context}}'},{name:markerName,text:'{{teloa_project_generation}}'}],variables:{...result.variables,teloa_project_context:prepared.text,teloa_project_generation:generation}}
+  if(contexts.some(row=>row.name===markerName)||contexts.some(row=>row.name===definitionBoundaryName)||Object.hasOwn(result.variables,'teloa_project_generation'))throw denied()
+  return {...result,contexts:[...contexts,{name:'teloa/project-context',text:'{{teloa_project_context}}'},{name:definitionBoundaryName,text:definitionBoundaryText},{name:markerName,text:'{{teloa_project_generation}}'}],variables:{...result.variables,teloa_project_context:prepared.text,teloa_project_generation:generation}}
  },{prepend:true})
  const projection=Reflect.get(Object.getPrototypeOf(ctx.llm) as object,'installStreamProjection') as unknown
  if(typeof projection!=='function')throw new WorkError('teloa/unavailable','项目输入隔离能力尚未就绪，当前工作等待恢复。')

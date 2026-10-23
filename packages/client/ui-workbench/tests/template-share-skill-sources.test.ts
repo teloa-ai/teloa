@@ -154,7 +154,7 @@ test('the common share parser refuses two resources claiming the same skill entr
  const manifest=JSON.parse(pkg.files.find(file=>file.path==='teloa.json')!.text)
  manifest.resources.push({id:'knowledge',kind:'knowledge',title:'Knowledge',version:'1.0.0',required:true,source:{kind:'local',path:'summary/SKILL.md'}})
  pkg.files.find(file=>file.path==='teloa.json')!.text=JSON.stringify(manifest)
- assert.throws(()=>readSharePackage(pkg),/missing or reused/)
+ assert.throws(()=>readSharePackage(pkg),/resource file is reused/)
 })
 
 test('an authored skill may share its byte-verified frontmatter license when import metadata has none',async()=>{

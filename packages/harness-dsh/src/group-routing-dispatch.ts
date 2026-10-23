@@ -83,6 +83,12 @@ function decisionOf(now:()=>string,kind:GroupRoutingDecision['kind'],hops:number
  return {kind,respond:[],reactions:[],hops,candidateIds:[],truncatedCandidates:false,stopMessageId:null,at:now(),...fields}
 }
 
+/**
+ * 路由选人只看意图与分工，不需要上游正文的完整依据；为控制每次选人调用的成本，
+ * 路由可见面沿用后端 `groupRoutingTopicTextMaxChars`（1000）的较小预算。
+ * 执行员工的连续上下文由后端 `readRunGroupTopic` 用 4000 预算（GRP-03），两处预算不同是有意的。
+ */
+const routingTopicTextMaxChars=1000
 /** 候选超过 30 位时按岗位名字典序截前 30（同名再按 roleId 定序），并在决策里记 `truncatedCandidates`。 */
 function limitCandidates(all:readonly GroupRoutingCandidate[]):{candidates:GroupRoutingCandidate[];truncatedCandidates:boolean}{
  if(all.length<=groupRoutingCandidatesMax)return {candidates:[...all],truncatedCandidates:false}
@@ -233,17 +239,24 @@ export async function dispatchGroupRouting(ctx:Context,owner:string,messageId:st
   // 撤权同步收敛：respond、reactions 与 assignments 一起保留可用接手者，前序与失去依赖的后序都持久呈现失效。
   const withdrawn=decision.respond.filter(roleId=>!available(roleId))
   const fixed:GroupRoutingDecision={...decision,respond:decision.respond.filter(available),reactions:decision.reactions.filter(reaction=>available(reaction.roleId)),...(decision.assignments?{assignments:decision.assignments.filter(item=>available(item.roleId))}:{}),...(withdrawn.length?{withdrawn}:{})}
+  // GRP-04：员工回帖再次触发的派工不得与同一话题里仍在占用中的岗位重复。实测中接力后序（waiting）与运行中的
+  // 审校已覆盖同一职责，员工回帖的语义路由又派了第二个任务/第二条近重复回复。这里只收窄本轮派工，
+  // 不改写其他已确认决策；被收窄的接收者不建任务、不发放回执，消息状态按「已记录」呈现。
+  const busyRoles=trigger.authorKind==='role'&&ports.delivery?.outbox.activeRolesInRoot
+   ?new Set(await ports.delivery.outbox.activeRolesInRoot(owner,{groupId,messageId}))
+   :new Set<string>()
+  const dispatched:GroupRoutingDecision=busyRoles.size?{...fixed,respond:fixed.respond.filter(id=>!busyRoles.has(id)),reactions:fixed.reactions.filter(reaction=>!busyRoles.has(reaction.roleId)),...(fixed.assignments?{assignments:fixed.assignments.filter(item=>!busyRoles.has(item.roleId))}:{})}:fixed
   // 「收到」只给仍可接单的岗位；它与决策同事务落库，独立于模型的表情输出。
-  const acknowledged:{roleId:string;emoji:GroupReactionEmoji}[]=fixed.kind==='routed'||fixed.kind==='direct'
-   ?fixed.respond.filter(roleId=>!fixed.reactions.some(reaction=>reaction.roleId===roleId)).map(roleId=>({roleId,emoji:routedAckEmoji})):[]
-  const recorded=await record(db,carried.attempt,fixed)
+  const acknowledged:{roleId:string;emoji:GroupReactionEmoji}[]=dispatched.kind==='routed'||dispatched.kind==='direct'
+   ?dispatched.respond.filter(roleId=>!dispatched.reactions.some(reaction=>reaction.roleId===roleId)).map(roleId=>({roleId,emoji:routedAckEmoji})):[]
+  const recorded=await record(db,carried.attempt,dispatched)
   if(!recorded)return undefined
   // 每位接收者的稳定请求与终态决策同事务：提交前失败没有孤儿，提交后退出可由恢复worker补派。
   if(ports.delivery)await ports.delivery.outbox.recordRecipients(db,owner,{groupId,messageId,decision:recorded,decisionVersion:carried.attempt})
   // 表情与决策同一个事务：决策行写不进去（并发撞主键）时一个表情都不该落表，否则库里会留下
   // 「没有决策却有路由表情」的孤儿行。代价是一次 insert 加至多 30 条 upsert 都压在这把锁里——
   // 都是毫秒级的本地写，换来的是两张表恒一致。
-  for(const reaction of [...fixed.reactions,...acknowledged])await ports.applyReaction(db,owner,{groupId,messageId,roleId:reaction.roleId,emoji:reaction.emoji,requestId:groupRoutedReactionRequestId(owner,messageId,reaction.roleId,reaction.emoji)})
+  for(const reaction of [...dispatched.reactions,...acknowledged])await ports.applyReaction(db,owner,{groupId,messageId,roleId:reaction.roleId,emoji:reaction.emoji,requestId:groupRoutedReactionRequestId(owner,messageId,reaction.roleId,reaction.emoji)})
   // 对原工作的追加／停止：目标只能是段 A 读出的本群候选，版本取当时读到的那一版；回执与终态决策同事务登记。
   const target=(recorded.intent==='continue'||recorded.intent==='stop')&&recorded.workTarget?carried.work.find(item=>item.taskId===recorded.workTarget!.taskId&&item.runId===recorded.workTarget!.runId):undefined
   if(target&&ports.workInputs&&trigger.authorKind==='self'){
@@ -412,7 +425,7 @@ export async function readRoutingTopic(owner:string,groupId:string,rootId:string
  if(messageId){
   // 本人路由可见面（roleId=null）：与执行员工同一选择器；引用原消息作为锚点保留。
   const replyTo=(await db.query('select reply_to_message_id from teloa_group_messages where owner_id=$1 and group_id=$2 and id=$3',[owner,groupId,messageId])).rows[0]?.reply_to_message_id
-  return (await readGroupConversationTopic(db,owner,{groupId,messageId,replyToMessageId:typeof replyTo==='string'?replyTo:null,mode:rootId===messageId?'main':'thread',roleId:null,displayName}))?.messages??[]
+  return (await readGroupConversationTopic(db,owner,{groupId,messageId,replyToMessageId:typeof replyTo==='string'?replyTo:null,mode:rootId===messageId?'main':'thread',roleId:null,displayName,textMaxChars:routingTopicTextMaxChars}))?.messages??[]
  }
  return (await readRunGroupTopic(db,owner,{groupId,source:{rootId}} as unknown as RunGroupContext,displayName))?.messages??[]
 }

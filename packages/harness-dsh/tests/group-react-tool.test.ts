@@ -178,3 +178,23 @@ test('装配：群 RPC 的提供方换成组合对象，三条新端点各接自
  // `send` 多包一层「发完过一次路由」（T9 的触发点），写入本身仍然只由 CollaborationService 做。
  assert.match(wiring,/send:async\(actor,input\)=>\{\n\s+const message=await collaboration\.send\(actor,input\)/)
 })
+
+test('GRP-08 同一运行同一条消息同一表情只落一次，重复调用返回 duplicate；不同表情仍可各加一次',async()=>{
+ const {tool,calls,exec}=harness()
+ const first=await tool.execute({messageId,emoji:'👀'},exec)
+ assert.deepEqual(JSON.parse(String(first)),{messageId,emoji:'👀'})
+ const repeated=await tool.execute({messageId,emoji:'👀'},exec)
+ assert.deepEqual(JSON.parse(String(repeated)),{messageId,emoji:'👀',duplicate:true},'重复表态是空操作，不中断本轮')
+ assert.equal(calls.react.length,1,'同 run 同消息同表情只写一次')
+ await tool.execute({messageId,emoji:'✅'},exec)
+ assert.equal(calls.react.length,2,'不同表情仍可各落一次')
+})
+
+test('GRP-08 去重按运行隔离：另一段运行对同一条消息的同一表情仍可加',async()=>{
+ const otherRunId='77777777-7777-4777-8777-777777777777'
+ let calls=0
+ const {tool,exec,calls:recorded}=harness({context:async()=>inGroup({runId:calls++===0?runId:otherRunId})})
+ await tool.execute({messageId,emoji:'👍'},exec)
+ await tool.execute({messageId,emoji:'👍'},exec)
+ assert.equal(recorded.react.length,2,'去重表以 runId 为界，不跨运行吞掉表态')
+})

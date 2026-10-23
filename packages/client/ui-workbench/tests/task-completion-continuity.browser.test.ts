@@ -70,7 +70,7 @@ test('真实Frame端口包装重渲染：核对成果抽屉关闭后保原版本
 test('真实连接更换仍清旧选择，已完成记录的旧API迟答不能覆盖新连接',async t=>{
  const page=await mount(t),section=page.getByRole('region',{name:'任务结项',exact:true}),choice=section.getByRole('combobox')
  await section.getByRole('button',{name:'读取成果',exact:true}).click();await choice.selectOption('artifact-1:1');await page.evaluate(()=>(window as any).completionFixture.switchConnection())
- await page.waitForFunction(()=>document.querySelector('select')?.value==='');assert.equal(await choice.locator('option[value="artifact-1:1"]').count(),0)
+ await page.waitForFunction(()=>document.querySelector('select')?.value==='');assert.equal(await choice.inputValue(),'','连接切换后旧选择必须清空，新连接的成果目录再由本人重新选择')
  const completed=await mount(t,true);await completed.waitForFunction(()=>(window as any).completionFixture.readWaiting);await completed.evaluate(()=>{(window as any).completionFixture.switchConnection()});await completed.getByText('1 的结项记录',{exact:true}).waitFor();await completed.evaluate(()=>(window as any).completionFixture.releaseRead());await completed.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));assert.equal(await completed.getByText('0 的结项记录',{exact:true}).count(),0)
  assert.deepEqual(await page.evaluate(()=>(window as any).completionFixture.completedCalls),[])
 })

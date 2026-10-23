@@ -196,3 +196,12 @@ test('坏计划和坏旧领取消耗分页后仍恢复后续正常计划，不�
  assert.equal(f.reports.filter(report=>report.planId===id(1)).at(-1)?.outcome,'failed')
  assert.equal(f.reports.filter(report=>report.planId===id(2)).at(-1)?.outcome,'success')
 })
+
+test('同日小结已生成时领取返回显式跳过：不派发、记为 skipped 且不污染计划健康',async()=>{
+ const f=fixture();f.pending.length=0
+ f.ports.occurrences.claim=async(owner,{planId})=>{assert.equal(owner,'owner');f.calls.push(`claim:${planId}`);return {occurrence:null,dispatch:false,skip:{reason:'digest-exists'}}}
+ await f.coordinator.tick('2026-10-19T09:00:00.000Z',signal())
+ assert.ok(!f.calls.some(call=>call.startsWith('execute:')),'已有当日小结时不得再派发执行')
+ assert.ok(f.reports.some(report=>report.phase==='skip'&&report.outcome==='skipped'&&report.code==='teloa/digest-exists'))
+ assert.ok(f.reports.every(report=>report.outcome!=='failed'),'跳过不是失败')
+})

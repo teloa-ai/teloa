@@ -36,6 +36,10 @@ const conflict=(message:string)=>new WorkError('teloa/conflict',message)
 const invalid=()=>new WorkError('teloa/invalid-host-response','业务搭建返回的版本或身份不一致。')
 const code=(error:unknown)=>isRecord(error)?error.code:undefined
 const hash=(v:unknown):v is string=>typeof v==='string'&&/^[a-f0-9]{64}$/.test(v)
+/** 「继续搭建」目录只呈现仍在编辑的草案；已应用草案已由正式业务承载，不再占用搭建入口。 */
+export function pendingBuilderDrafts(directory:BusinessConversationDirectory|null|undefined):BusinessConversationDirectory['items']{
+ return directory?.items.filter(item=>item.draft?.status==='draft')??[]
+}
 export type BusinessBuilderState={
  setupPlan?:BusinessSetupPlan|null;setupPreview?:BusinessSetupPreview|null;setupReadiness?:{digest:string;rows:{itemInstanceId:string;kind:string;title:string;state:string}[]}|null;setupUnknown?:boolean;leaveConfirmation?:boolean
 
@@ -119,7 +123,7 @@ export class BusinessBuilderFlow{
  async refreshDirectory(cursor?:string){
   const generation=++this.directoryRead
   const result=await this.ports.api.list({kind:'builder',...(cursor===undefined?{}:{cursor})})
-  if(generation===this.directoryRead)this.publish({directory:{...result,items:result.items.filter(item=>!item.binding.draftId||!this.discardedDraftIds.has(item.binding.draftId))}})
+  if(generation===this.directoryRead)this.publish({directory:{...result,items:result.items.filter(item=>item.draft?.status!=='applied'&&(!item.binding.draftId||!this.discardedDraftIds.has(item.binding.draftId)))}})
   return result
  }
  async discard(binding:BusinessConversationBinding,draft:Pick<BusinessConfigurationDraftResponse,'id'|'scope'|'revision'|'status'>){
@@ -349,6 +353,7 @@ export class BusinessBuilderFlow{
     if(epoch===this.epoch)await this.refreshSetupPlan()
     if(this.pendingSetupSave()?.input.requestId!==pending.input.requestId)throw conflict('采用恢复记录已变化。')
     this.ports.storage.removeItem(this.setupJournalKey())
+    await this.dropSavedDraft(target.draftId)
     if(epoch===this.epoch)this.publish({phase:'saved',result:adoption.configuration,setupUnknown:false,setupPreview:null})
     return adoption
    }catch(error){if(epoch===this.epoch){const reviewed=isRecord(error)&&isRecord(error.details)&&['preview-review-required','setup-no-effective-changes-reviewed'].includes(String(error.details.reason));this.publish({phase:reviewed?'ready':'unknown',setupUnknown:!reviewed,error:reviewed?null:error})}throw error}
@@ -363,6 +368,12 @@ export class BusinessBuilderFlow{
   const after=await this.ports.api.setupReadiness({sessionId:target.sessionId,draftId:target.draftId})
   if(epoch===this.epoch)this.publish({setupPlan:plan,setupReadiness:after,error:null})
   return plan
+ }
+ /** 保存成功后立即把该草案移出「继续搭建」，并重读目录让状态以服务端 applied 为准；目录读取失败不回滚保存结果。 */
+ private async dropSavedDraft(draftId:string){
+  const directory=this.state.directory
+  if(directory)this.publish({directory:{...directory,items:directory.items.filter(item=>item.binding.draftId!==draftId)}})
+  try{await this.refreshDirectory()}catch{/* 保存已完成；下次进入或手动刷新再对齐目录。 */}
  }
  save():Promise<BusinessConfigurationApplyResult>{
   if(this.saveFlight)return this.saveFlight
@@ -416,6 +427,7 @@ export class BusinessBuilderFlow{
     const journal=this.journal()
     if(JSON.stringify(journal.save)!==JSON.stringify(intent))throw conflict('保存恢复记录已变化。')
     this.write({...journal,save:null},journal)
+    await this.dropSavedDraft(intent.input.draftId)
     if(visible())this.publish({phase:'saved',result,preview:null,error:null})
     return result
    }catch(error){

@@ -9,7 +9,7 @@ import { useDialogDismiss } from './use-dialog-dismiss.js'
 import { useEffect, useId, useRef, useState } from 'react'
 import { ClipboardPaste, FileArchive, FileUp, FolderOpen, GitBranch, Info, X } from 'lucide-react'
 import { ToolbarIconButton } from './ToolbarIconButton.js'
-import { createTeamTemplate, githubSource, itemFromManifest, MAX_MANIFEST_BYTES, parseMarketManifest, readGrokRecipeItemSource, reprepareGrokRecipeItem, sourceItem, type MarketItem } from './market-preview.js'
+import { createTeamTemplate, githubSource, itemFromManifest, MAX_MANIFEST_BYTES, MarketJsonSyntaxError, parseMarketManifest, readGrokRecipeItemSource, reprepareGrokRecipeItem, sourceItem, type MarketItem } from './market-preview.js'
 import {grokRecipeConnectorCandidates,grokRecipeConnectorMapping,type GrokRecipe,type GrokRecipeConnectorCandidate,type GrokRecipePluginMapping,type MarketCatalogConnectorEntry} from '@teloa/contract'
 import {catalogText,loadCatalogListing,type MarketCatalogApi,type MarketCatalogListing} from './market-catalog-api.js'
 import type { MarketContentApi } from './market-content-api.js'
@@ -190,9 +190,20 @@ export function MarketImportForm({githubSourceApi,contentApi,marketCatalogApi,op
         }
       }else{if(!request.trim())throw Error(t("market.forms.please.fill.in.the.working.methods.and.resource"));item=withFunction(sourceItem(crypto.randomUUID(),title||t("market.forms.industryTemplateDraft.defaultName"),{kind:'conversation',request:request.trim()},'general'),requestFunction)}
       if(item.recipeImport){await stageRecipe(item,token);return}
-      if(mode==='upload'){if(!contentApi)throw Error(t("market.forms.market.based.fixed.content.services.are.not.accessible"));if(isIndustryManifest(item.manifest)&&item.manifest.resources.some(resource=>resource.source.kind==='public')){const candidates=await prepareIndustryReferenceCandidates(item,items,row=>contentApi.hydrate(row));if(token===generation.current)setReferencePreview({item,items:candidates});return}item=await contentApi.importIndustry(item)}
+      // 上传与粘贴都是静态包：必须先把完整内容固定为本人市场内容，市场条目才会带 contentId。
+      // 只保存条目不固定内容，会让详情里的「加载」因缺 contentId 永远禁用（离线模板导入 BIZ-002 根因）。
+      if(mode==='upload'||(mode==='paste'&&isIndustryManifest(item.manifest))){
+        if(!contentApi)throw Error(t("market.forms.market.based.fixed.content.services.are.not.accessible"))
+        // 只给清单、没有资源正文：明确说清缺什么、怎么改，不保存成永远无法加载的半份模板。
+        if(mode==='paste'&&!item.packageContent)throw new SharePackageImportError('incomplete')
+        // 固定公共引用仍先走原核对步骤；用户确认后再固定内容，与上传路径逐字一致。
+        if(isIndustryManifest(item.manifest)&&item.manifest.resources.some(resource=>resource.source.kind==='public')){const candidates=await prepareIndustryReferenceCandidates(item,items,row=>contentApi.hydrate(row));if(token===generation.current)setReferencePreview({item,items:candidates});return}
+        if(!isIndustryManifest(item.manifest)||!item.packageContent)throw new SharePackageImportError('incomplete')
+        if(item.packageContent.resources.some(resource=>resource.state!=='available'))throw new SharePackageImportError('incomplete')
+        item=await contentApi.importIndustry(item)
+      }
       if(generation.current===token)save(item,mode==='conversation')
-    }catch(error){if(generation.current===token)setError(error instanceof SharePackageImportError?t(`market.forms.shareIssue.${error.issue}`):localizeWorkError(locale,error))}finally{if(generation.current===token)setBusy(false)}
+    }catch(error){if(generation.current===token)setError(error instanceof MarketJsonSyntaxError?t('market.forms.jsonSyntaxError',{where:mode==='paste'?t('market.forms.paste'):file?.name??t('market.forms.upload'),line:String(error.failure.line),column:String(error.failure.column),snippet:error.failure.snippet}):error instanceof SharePackageImportError?t(`market.forms.shareIssue.${error.issue}`):localizeWorkError(locale,error))}finally{if(generation.current===token)setBusy(false)}
   }
   const pendingGithub=githubSourceApi.pending(),githubRecovery=githubSourceApi.recoveryMessage()
   const previewing=!!referencePreview||!!fixedPreview||!!recipePreview||!!fixedSkill,heading=t(conversation?'market.forms.session.creation':'market.forms.importTitle'),visibleError=error||(skillSnapshot.error?localizeWorkError(locale,skillSnapshot.error):'')

@@ -172,3 +172,28 @@ export function createRoleFormInitial(preview:PageCreateDraftPreview){
  try{body=JSON.parse(preview.draft.body)}catch{throw Error('员工草案正文无法读取。')}
  return roleWriteDefinition(body)
 }
+
+/** 创建说明句稿的存储上限与 textarea 一致；超长按损坏处理，不把半截原稿当草稿恢复。 */
+export const createSentenceDraftMaxLength=2000
+const createSentenceDraftSchema='teloa.create-sentence-draft/v1'
+export type CreateSentenceDraft={text:string;prepared:boolean}
+/**
+ * 读创建说明句稿。旧版本只存纯文本，升级后按「未预备」继续用；新版本记 `{text, prepared}`：
+ * `prepared` 表示这句已经预备进会话、但用户可能在会话来没发送就关掉了页面。
+ * 记录损坏、结构不符或超长一律回落为空，不让旧数据阻塞下一次输入。
+ */
+export function readCreateSentenceDraft(raw:string|null|undefined):CreateSentenceDraft{
+ const empty:CreateSentenceDraft={text:'',prepared:false}
+ if(typeof raw!=='string'||!raw)return empty
+ if(!raw.startsWith('{'))return raw.length<=createSentenceDraftMaxLength?{text:raw,prepared:false}:empty
+ try{
+  const value=JSON.parse(raw) as Record<string,unknown>
+  if(value.schema!==createSentenceDraftSchema||typeof value.text!=='string'||typeof value.prepared!=='boolean'||value.text.length>createSentenceDraftMaxLength)return empty
+  return {text:value.text,prepared:value.prepared}
+ }catch{return empty}
+}
+/** 写创建说明句稿：空文本返回空串（调用方删除存储项），其余按版本化记录保存。 */
+export function writeCreateSentenceDraft(draft:CreateSentenceDraft):string{
+ if(!draft.text)return ''
+ return JSON.stringify({schema:createSentenceDraftSchema,text:draft.text,prepared:draft.prepared})
+}

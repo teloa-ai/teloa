@@ -38,6 +38,29 @@ const stableId=(parts:unknown[])=>{const h=hash(parts);return `${h.slice(0,8)}-$
 const sources=(event:ProjectExtractionEvent)=>[event.sourceId,...event.derivedSourceIds]
 const currentPolicy=(event:ProjectExtractionEvent,policy:ProjectExtractionPolicy|null,allowArchived=false):policy is ProjectExtractionPolicy=>!!policy&&policy.projectId===event.projectId&&policy.bindingVersion===event.bindingVersion&&policy.policyVersion===event.policyVersion&&policy.memoryEnabled&&policy.automatic!=='paused'&&(!policy.blocked||allowArchived&&policy.blocked==='archived')
 const candidate=(row:CandidateRow):ProjectExtractionCandidate=>({id:row.id,eventId:row.event_id,projectId:row.project_id,proposal:row.proposal,alternatives:row.alternatives,status:row.status,reason:row.reason,saved:row.saved})
+const rememberRequest=/(?:^|[，,。；;！!\s])(?:请|请先|帮我|麻烦你?|务必|一定要)?(?:记住|记下|记下来)|记入(?:项目)?记忆|(?:写入|存入|保存|存储|记录)(?:为|到|至|进)?(?:项目)?(?:记忆|候选)|作为(?:项目)?记忆(?:候选)?[^。\n]{0,12}(?:保存|记录)|(?:please\s+)?remember(?:\s+that|\s+this|\s*:)/iu
+const questionMark=/[？?]/u
+const questionWords=/(?:是否|能否|可否|什么|哪个|哪些|哪一|怎么|如何|为什么|多少|哪家|谁家|请问|请教)/u
+const questionTail=/吗[。.!！?\s]*$/u
+const lookupRequest=/(?:列出|列举|列一下|罗列|汇总|统计|显示|展示|告诉我|查一下|查找|检索|搜索|核对|确认一下|核实一下|检查一下|回顾一下|总结一下)/u
+const greetingOnly=/^(?:(?:好的|好|嗯+|哦|噢|收到|明白|了解|知道了|谢谢|感谢|多谢|辛苦了|ok|okay|thanks|thank you|cool|great)[\s。.!！~～，,]*)+$/iu
+/** 提炼器的来源价值：只有决策/规则/事实陈述值得成为项目记忆，提问、检索、确认与寒暄只作为对话。 */
+export type ProjectMemorySourceKind='fact'|'question'|'retrieval'|'greeting'
+export function readProjectMemorySourceKind(text:string):ProjectMemorySourceKind{
+ const value=text.trim()
+ if(!value||greetingOnly.test(value))return 'greeting'
+ if(rememberRequest.test(value))return 'fact'
+ if(lookupRequest.test(value))return 'retrieval'
+ if(questionMark.test(value)||questionWords.test(value)||questionTail.test(value))return 'question'
+ return 'fact'
+}
+/** 提炼提议必须来自可记忆来源；轮次里被宿主标注断言的已核实证据可与提问并列。 */
+export function projectExtractionProposalMemorable(event:ProjectExtractionEvent,proposal:ProjectExtractionProposal):boolean{
+ const cited=new Set(proposal.evidence.map(ref=>ref.evidenceId))
+ if(event.evidence.some(source=>cited.has(source.id)&&!!source.assertion))return true
+ const primary=event.evidence[0]
+ return !!primary&&readProjectMemorySourceKind(primary.text)==='fact'
+}
 
 function readEvent(value:unknown):ProjectExtractionEvent{
  const r=record(value,['eventId','projectId','sessionId','messageId','sourceId','derivedSourceIds','bindingVersion','policyVersion','evidence'])
@@ -178,7 +201,7 @@ export class ProjectMemoryExtractionService{
    if(policy.blocked==='archived'){await this.deferArchived(db,owner,row);return 'queued'}
    signal?.throwIfAborted()
    const groups=new Map<string,ProjectExtractionProposal[]>()
-   for(const proposal of proposals){const key=JSON.stringify([proposal.kind,topicKey(proposal.topic)]),group=groups.get(key)??[];if(!group.some(p=>JSON.stringify(p)===JSON.stringify(proposal)))group.push(proposal);groups.set(key,group)}
+   for(const proposal of proposals){if(!projectExtractionProposalMemorable(row.event,proposal))continue;const key=JSON.stringify([proposal.kind,topicKey(proposal.topic)]),group=groups.get(key)??[];if(!group.some(p=>JSON.stringify(p)===JSON.stringify(proposal)))group.push(proposal);groups.set(key,group)}
    for(const group of groups.values()){
     const proposal=group[0]!,id=stableId(['teloa/project-extraction',owner,row.event_id,proposal.kind,topicKey(proposal.topic)]),evaluation=evaluateProjectExtraction(row.event,proposal,policy),current=await this.ports.readCurrent(db,owner,{projectId:row.event.projectId,kind:proposal.kind,topic:proposal.topic})
     const ambiguous=group.some(p=>p.markdown!==proposal.markdown),old=current.entry,matches=old?.markdown===proposal.markdown

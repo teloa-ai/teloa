@@ -30,7 +30,7 @@ test('本机原件正文只读固定当前资料和来源版本，并拒绝替�
  await assert.rejects(createResourceApi(async()=>{requests++;return {resource,text}}).readContent!({...resource,sourceId:'knowledge_'+resource.id},signal),/格式/)
  assert.equal(requests,0)
  const controller=new AbortController();controller.abort()
- await assert.rejects(api.readContent(resource,controller.signal),{name:'AbortError'})
+ await assert.rejects(api.readContent!(resource,controller.signal),{name:'AbortError'})
  assert.equal(calls.length,1)
  const conflict=Object.assign(Error('版本冲突'),{code:'teloa/version-conflict'})
  await assert.rejects(createResourceApi(async()=>{throw conflict}).readContent!(resource,signal),error=>error===conflict)

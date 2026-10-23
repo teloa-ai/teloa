@@ -82,6 +82,7 @@ export const koMessages = {
   'settings.configurationHelp': '설정 가이드',
   'settings.document.open': '설정 파일 열기',
   'settings.document.opening': '여는 중…',
+  'settings.document.unavailable': '설정 파일을 직접 열 수 없습니다. Teloa를 실행하는 컴퓨터의 설정 디렉터리를 확인하거나 나중에 다시 시도하세요.',
   'profile.title': '개인 프로필',
   'profile.description': '이 이름은 현재 기기에 표시됩니다. 데이터는 이 기기에만 저장됩니다.',
   'profile.displayName': '표시 이름',

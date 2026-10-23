@@ -68,6 +68,20 @@ const positive=(v:unknown)=>Number.isSafeInteger(v)&&(v as number)>0
 const session=(v:unknown):v is string=>typeof v==='string'&&/^[a-zA-Z0-9_-]{1,128}$/.test(v)
 const preset=(v:unknown):v is string=>typeof v==='string'&&v.length<=120&&/^[a-z0-9][-a-z0-9]*$/.test(v)
 const states=['prepared','submitting','accepted','active','ended','withdrawn','configuration_failed'] as const
+export type RoleRunToolGate={executionMode:'reply'|'work'|null;allowedTools:readonly string[];grantsWired:boolean;systemDigest?:boolean}
+/**
+ * prepare 期的真实工具能力判定（RET-001）：群 v2 的 reply 型按设计冻结空工具集、只写正文；
+ * 其余角色运行（群 work、v1 群手工任务、普通员工任务）都必须至少有一项执行工具，空目录不能进入模型空转。
+ * AutoDream 每日小结（completionPolicy.verifier='system-digest'）例外：它只用自授权的证据/提交工具，
+ * 岗位执行工具按设计为空，不能按普通员工工作拦下（3299 live 回归）。
+ * 未接入岗位授权策略的构造（旧宿主/单元夹具）返回 null，避免把“工具候选未接线”误判成“员工没有授权”。
+ */
+export function roleRunToolGateFailure(input:RoleRunToolGate):'role-run-no-execution-tools'|null{
+ if(!input.grantsWired)return null
+ if(input.executionMode==='reply')return null
+ if(input.systemDigest===true)return null
+ return input.allowedTools.length===0?'role-run-no-execution-tools':null
+}
 const stopEpochs=new Map<string,number>()
 const stopKey=(owner:string,runId:string)=>JSON.stringify([owner,runId.toLowerCase()])
 const stopEpoch=(owner:string,runId:string)=>stopEpochs.get(stopKey(owner,runId))??0
@@ -220,7 +234,21 @@ type RoleGrantPolicy={validate:(rules:TaskToolArgumentRule[],knowledge:RunKnowle
 export class TaskRunService{
  readonly pool:Pool;readonly identity:{id:()=>string;now:()=>string};readonly inspect:Inspect;private readonly allowedTools:readonly string[];private readonly argumentRules:TaskToolArgumentRule[]|undefined;private readonly roleGrants:RoleGrantPolicy|undefined;private readonly industryContext:((db:PoolClient,owner:string,taskId:string)=>Promise<RunIndustryContext|undefined>)|undefined;private readonly businessContext:((db:PoolClient,owner:string,task:WorkTask,authorization:{roleId:string;allowedTools:readonly string[];argumentRules?:TaskToolArgumentRule[]})=>Promise<RunBusinessContext|undefined>)|undefined;private readonly ownerPlans:OwnerPlanAuthority|undefined;private readonly planContext:((db:PoolClient,owner:string,taskId:string,completion?:CompletedPlanRunProof,includeMethodSource?:boolean)=>Promise<RunPlanContext|undefined>)|undefined;private readonly industrySkills:((db:PoolClient,owner:string,taskId:string,roleId:string)=>Promise<IndustryRunSkillBindings|undefined>)|undefined;private readonly runReservation:((owner:string,sessionId:string)=>Promise<boolean>)|undefined;private readonly roleMemory:((db:PoolClient,owner:string,target:TaskExecutionScope,role:DigitalRole)=>Promise<RunRoleMemory[]>)|undefined;private readonly groupContext:((db:PoolClient,owner:string,task:WorkTask,role:DigitalRole,continuationReferences?:readonly MessageReference[])=>Promise<RunGroupContext|undefined>)|undefined;private readonly groupTopic:((db:PoolClient,owner:string,groupContext:RunGroupContext)=>Promise<RunGroupTopic|undefined>)|undefined;private readonly onSettled:((owner:string,run:TaskRun)=>Promise<void>)|undefined
  constructor(pool:Pool,identity:{id:()=>string;now:()=>string},inspect:Inspect,policy:{ownerPlans?:OwnerPlanAuthority;allowedTools:readonly string[];argumentRules?:readonly TaskToolArgumentRule[];roleGrants?:RoleGrantPolicy;industryContext?:(db:PoolClient,owner:string,taskId:string)=>Promise<RunIndustryContext|undefined>;businessContext?:(db:PoolClient,owner:string,task:WorkTask,authorization:{roleId:string;allowedTools:readonly string[];argumentRules?:TaskToolArgumentRule[]})=>Promise<RunBusinessContext|undefined>;planContext?:(db:PoolClient,owner:string,taskId:string,completion?:CompletedPlanRunProof,includeMethodSource?:boolean)=>Promise<RunPlanContext|undefined>;industrySkills?:(db:PoolClient,owner:string,taskId:string,roleId:string)=>Promise<IndustryRunSkillBindings|undefined>;runReservation?:(owner:string,sessionId:string)=>Promise<boolean>;roleMemory?:(db:PoolClient,owner:string,target:TaskExecutionScope,role:DigitalRole)=>Promise<RunRoleMemory[]>;groupContext?:(db:PoolClient,owner:string,task:WorkTask,role:DigitalRole,continuationReferences?:readonly MessageReference[])=>Promise<RunGroupContext|undefined>;groupTopic?:(db:PoolClient,owner:string,groupContext:RunGroupContext)=>Promise<RunGroupTopic|undefined>;onSettled?:(owner:string,run:TaskRun)=>Promise<void>}={allowedTools:[]}){this.ownerPlans=policy.ownerPlans;this.pool=pool;this.identity=identity;this.inspect=inspect;this.roleGrants=policy.roleGrants;this.planContext=policy.planContext;this.industryContext=policy.industryContext;this.businessContext=policy.businessContext;this.industrySkills=policy.industrySkills;this.runReservation=policy.runReservation;this.roleMemory=policy.roleMemory;this.groupContext=policy.groupContext;this.groupTopic=policy.groupTopic;this.onSettled=policy.onSettled;this.allowedTools=Object.freeze(toolNames(policy.allowedTools));this.argumentRules=policy.argumentRules===undefined?undefined:readTaskToolArgumentRules(policy.argumentRules);if(this.argumentRules?.some(rule=>!this.allowedTools.includes(rule.name)))throw new WorkError('teloa/invalid-input','参数授权必须属于允许的工具。')}
- private async readVerified(db:PoolClient,owner:string,row:Record<string,unknown>){
+ /**
+ * 只读判定：该 Run 是否来自 AutoDream 系统小结计划（source.kind='system-digest'）。
+ * 只认 run.lineage.definition.planId + 计划本人归属；读不到、旧数据或未迁移装配一律 false，
+ * 调用方（启动期空工具闸复核）据此决定是否豁免，绝不用标题或文案猜测。
+ */
+async isSystemDigestRun(owner:string,input:unknown):Promise<boolean>{
+ actor(owner)
+ const planId=typeof input==='object'&&input!==null&&'planId'in input?(input as {planId?:unknown}).planId:undefined
+ if(typeof planId!=='string'||!uuid(planId))return false
+ try{
+  const result=await this.pool.query("select 1 from teloa_plans where owner_id=$1 and id=$2 and source->>'kind'='system-digest'",[owner,planId])
+  return result.rowCount===1
+ }catch{return false}
+}
+private async readVerified(db:PoolClient,owner:string,row:Record<string,unknown>){
   const run=read(row)
   if(run.roleSnapshot||run.executor?.kind==='owner'){
    const lineage=await new WorkLineageService(this.pool,this.identity).readInTransaction(db,owner,{taskId:run.taskId})
@@ -886,6 +914,10 @@ export class TaskRunService{
     allowedTools=policy.allowedTools
     if(argumentRules!==undefined)argumentRules=policy.argumentRules
    }
+   // 空执行工具目录不能进入模型：v1 群手工任务没有 executionMode（null）按工作处理；reply 型只写正文。
+   const systemDigestTask=task.completionPolicy?.kind==='verified'&&task.completionPolicy.verifier==='system-digest'
+   const toolGate=roleRunToolGateFailure({executionMode,allowedTools,grantsWired:!!this.roleGrants,systemDigest:systemDigestTask})
+   if(toolGate)throw new WorkError('teloa/conflict','负责人还没有可用的执行工具，已阻止准备执行。请先打开员工详情，在员工权限（工具授权）中保存需要的工作工具，再重新准备。',{reason:toolGate})
    const planContext=readRunPlanContext(await this.planContext?.(db,owner,task.id))
    const industryContext=readRunIndustryContext(await this.industryContext?.(db,owner,task.id))
    const businessContext=readRunBusinessContext(await this.businessContext?.(db,owner,task,{roleId:role.id,allowedTools,...(argumentRules===undefined?{}:{argumentRules})}))

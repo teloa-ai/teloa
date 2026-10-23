@@ -72,6 +72,17 @@ const manualOccurrenceIdentity=(value:unknown):value is string=>typeof value==='
 const eventOccurrenceIdentity=(value:unknown):value is string=>typeof value==='string'&&/^event:[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)
 const occurrenceIdentity=(value:unknown):value is string=>typeof value==='string'&&value.length<=100&&(scheduledOccurrenceIdentity(value)||manualOccurrenceIdentity(value)||eventOccurrenceIdentity(value))
 const notificationPolicy=(value:unknown):value is PlanNotificationPolicy=>planNotificationPolicies.some(policy=>policy===value)
+/** 定时领取的 occurrenceId 形如 `2026-09-21T23:30[Asia/Singapore]`，前十位就是计划时区的当天；不是合法日期就不猜。 */
+const scheduleDigestDay=(occurrenceId:string):string|undefined=>{
+ if(!scheduledOccurrenceIdentity(occurrenceId))return
+ const day=occurrenceId.slice(0,10)
+ return new Date(day+'T00:00:00.000Z').toISOString().slice(0,10)===day?day:undefined
+}
+/** 立即运行没有日期身份，按计划时区的日历日折算（与后端 digestRun 对 manual occurrence 的算法一致）。 */
+const localCalendarDay=(iso:string,timezone:ScheduleTrigger['timezone']):string=>{
+ const parts=Object.fromEntries(new Intl.DateTimeFormat('en-US',{timeZone:timezone,year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(Date.parse(iso)).filter(part=>part.type!=='literal').map(part=>[part.type,part.value])) as Record<'year'|'month'|'day',string>
+ return `${parts.year}-${parts.month}-${parts.day}`
+}
 
 function readSource(value:unknown):PlanSource{return planSource(value)}
 function readFields(value:unknown):PlanOccurrenceFields{
@@ -186,6 +197,16 @@ export class PlanOccurrenceService{
  readonly ownerPlans:OwnerPlanAuthority|undefined
  readonly verifyEvent:WorkEventService['verifiedSourceInTransaction']|undefined
  constructor(pool:Pool,identity:{id:()=>string},marketSources?:PlanMarketSources,verifyEvent?:WorkEventService['verifiedSourceInTransaction'],ownerPlans?:OwnerPlanAuthority){this.ownerPlans=ownerPlans;this.pool=pool;this.identity=identity;this.marketSources=marketSources;this.verifyEvent=verifyEvent}
+ /**
+  * Auto Dream 系统小结的当日唯一性判据只读每日日志表：不导入 role-daily-logs，
+  * 避免它与本文件互相 import 形成环；表未初始化（旧装配/旧测试）时一律不拦。
+  */
+ private async digestDayTaken(db:PoolClient,owner:string,plan:CurrentPlan,day:string):Promise<boolean>{
+  if(plan.source.kind!=='system-digest')return false
+  const table=(await db.query("select to_regclass('teloa_role_daily_logs') as name")).rows[0] as {name:string|null}|undefined
+  if(!table?.name)return false
+  return (await db.query("select 1 from teloa_role_daily_logs where owner_id=$1 and role_id=$2 and kind='daily-digest' and day=$3::date",[owner,plan.source.roleId,day])).rows[0]!==undefined
+ }
  private input(owner:string,value:unknown):{planId:string;now:string}{
   if(!text(owner,128))throw new WorkError('teloa/forbidden','需要有效的本人身份。')
   const row=exact(value,['planId','now']);if(!uuid(row.planId))throw invalid();return {planId:row.planId,now:moment(row.now)}
@@ -230,7 +251,7 @@ export class PlanOccurrenceService{
   try{await db.query('begin');const plan=await this.current(db,owner,value.planId);const previous=plan.workDefinition?(await db.query('select * from teloa_plan_schedule_state where owner_id=$1 and plan_id=$2 for update',[owner,plan.id])).rows[0]:undefined;const state=previous?readState(previous,plan):await this.saveState(db,plan,plan.workDefinition?plan.updatedAt:value.now);plan.assertCurrent();await db.query('commit');return {nextAt:state.nextAt,occurrenceId:state.occurrenceId}}
   catch(error){await db.query('rollback');throw error}finally{db.release()}
  }
- async claim(owner:string,input:unknown):Promise<{occurrence:PlanOccurrence|null;dispatch:boolean;skip?:PlanScheduleSkip}>{
+ async claim(owner:string,input:unknown):Promise<{occurrence:PlanOccurrence|null;dispatch:boolean;skip?:PlanScheduleSkip|{reason:'digest-exists'}}>{
   const value=this.input(owner,input),db=await this.pool.connect()
   try{
    await db.query('begin');const plan=await this.current(db,owner,value.planId)
@@ -239,6 +260,15 @@ export class PlanOccurrenceService{
    if(state.planVersion!==plan.version||state.configVersion!==plan.configVersion)state=await this.saveState(db,plan,plan.updatedAt)
    if(plan.workDefinition&&!plan.workDefinition.triggers.some(t=>t.kind==='schedule')){plan.assertCurrent();await db.query('commit');return {occurrence:null,dispatch:false}}
    if(state.nextAt>value.now){plan.assertCurrent();await db.query('commit');return {occurrence:null,dispatch:false}}
+   // Auto Dream 当天已有小结：不建领取/任务/运行，直接推进到下一个日程。
+   // 服务端本身按 owner+role+kind+day 唯一；在领取前拦下可省掉一次完整模型运行与额度占用。
+   const digestDay=scheduleDigestDay(state.occurrenceId)
+   if(digestDay&&await this.digestDayTaken(db,owner,plan,digestDay)){
+    const next=nextScheduleOccurrence(plan.fields.trigger,value.now)
+    await db.query('update teloa_plan_schedule_state set plan_version=$2,config_version=$3,next_at=$4,occurrence_id=$5,updated_at=$6 where plan_id=$1',[plan.id,plan.version,plan.configVersion,next.at,next.occurrenceId,value.now])
+    plan.assertCurrent();await db.query('commit')
+    return {occurrence:null,dispatch:false,skip:{reason:'digest-exists'}}
+   }
    // 只取尚未结束的候选；未知状态仍落入候选，由读取白名单显式拒绝。
    const history=(await db.query(occurrenceOverview+` where o.owner_id=$1 and o.plan_id=$2 and (
     (t.id is not null and t.state not in ('completed','cancelled')) or
@@ -349,6 +379,8 @@ export class PlanOccurrenceService{
    }
    const plan=await this.current(db,owner,row.planId,true)
    if(plan.version!==row.expectedVersion||plan.configVersion!==row.expectedConfigVersion)throw new WorkError('teloa/version-conflict','持续计划已变化，请刷新后再立即运行。')
+   // 立即运行与 23:30 定时共用同一条当天小结：已有日志时在领取前就用中文说明，不再建出必被拒的运行。
+   if(plan.source.kind==='system-digest'&&await this.digestDayTaken(db,owner,plan,localCalendarDay(now,plan.fields.trigger.timezone)))throw new WorkError('teloa/conflict','今天已经写过小结，本次不再重复运行。')
    const history=(await db.query(occurrenceOverview+` where o.owner_id=$1 and o.plan_id=$2 and (
     (t.id is not null and t.state not in ('completed','cancelled')) or
     (t.id is null and p.state='active' and o.plan_version=p.version and o.config_version=p.config_version)

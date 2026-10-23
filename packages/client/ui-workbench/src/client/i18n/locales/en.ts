@@ -82,6 +82,7 @@ export const enMessages = {
   'settings.configurationHelp': 'Configuration guide',
   'settings.document.open': 'Open configuration file',
   'settings.document.opening': 'Opening…',
+  'settings.document.unavailable': 'Could not open the configuration file directly. Check the configuration directory on the machine running Teloa, or try again later.',
   'profile.title': 'Personal profile',
   'profile.description': 'This identity is shown on the current device. Its data stays on this device.',
   'profile.displayName': 'Display name',

@@ -82,6 +82,7 @@ export const viMessages = {
   'settings.configurationHelp': 'Hướng dẫn cấu hình',
   'settings.document.open': 'Mở tệp cấu hình',
   'settings.document.opening': 'Đang mở…',
+  'settings.document.unavailable': 'Không thể mở trực tiếp tệp cấu hình. Hãy kiểm tra thư mục cấu hình trên máy đang chạy Teloa hoặc thử lại sau.',
   'profile.title': 'Hồ sơ cá nhân',
   'profile.description': 'Danh tính này được hiển thị trên thiết bị hiện tại. Dữ liệu chỉ được lưu trên thiết bị này.',
   'profile.displayName': 'Tên hiển thị',

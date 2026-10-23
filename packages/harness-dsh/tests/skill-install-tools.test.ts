@@ -28,7 +28,7 @@ async function setup(overrides:Partial<SkillInstallToolsPorts>={},subagent=false
  return {ctx,agent,calls,call}
 }
 
-test('四个 Skill 工具通过真实 ToolRuntime 注册并只转发严格来源身份',async t=>{
+test('五个 Skill 工具通过真实 ToolRuntime 注册并只转发严格来源身份，卸载参数不可伪造 confirm',async t=>{
  const e=await setup();t.after(()=>e.ctx.fiber.dispose())
  const schemas=e.ctx.tools.schemas(e.agent).filter(x=>x.name.startsWith('teloa_skills_'))
  assert.deepEqual(schemas.map(x=>x.name).sort(),[...skillInstallToolNames].sort())
@@ -72,4 +72,63 @@ test('已有原生 deny 保留且不读预览，已有 ask 合并固定预览后
  const asked=await setup();t.after(()=>asked.ctx.fiber.dispose());asked.ctx.on('tools/pre-execute',async()=>({kind:'ask',reason:'原生确认'}));let reason='';const ApprovalService=await nativeApprovalService();await asked.ctx.plugin(ApprovalService,{policy:'ask'});asked.ctx.on('approval/request' as never,(async(input:{reason?:string})=>{reason=input.reason??'';return 'allowed-once'}) as never);asked.agent.session.append('turn/start',{turn:0})
  assert.equal((await asked.call('teloa_skills_install',{source,expectedBundleHash:hash,expectedTrustHash:trustHash})).isError,false)
  assert.deepEqual(asked.calls.map(x=>x[0]),['skill-installations/preview','skill-installations/install']);assert.match(reason,/原生确认/);assert.match(reason,/brief/);assert.match(reason,new RegExp(hash))
+})
+
+const uninstallReceipt={requestId:'33333333-3333-4333-8333-333333333333',installationId,nativeName:'brief',bundleHash:hash,removedAt:'2026-09-12T12:00:00.000Z'}
+async function uninstallSetup({installationValue=installation,receipt=uninstallReceipt,handlerCalls,getError}:{installationValue?:unknown;receipt?:unknown;handlerCalls?:unknown[][];getError?:unknown}={}){
+ const calls=handlerCalls??[]
+ const e=await setup({handler:async(method,payload)=>{calls.push([method,payload]);if(method==='skill-installations/get'){if(getError)throw getError;return installationValue}if(method==='skill-installations/uninstall')return receipt;throw Error('unexpected '+method)}})
+ return {...e,handlerCalls:calls}
+}
+
+test('自然语言卸载工具注册：参数只含安装身份/版本/摘要，不含可伪造的 confirm',async t=>{
+ const e=await setup();t.after(()=>e.ctx.fiber.dispose())
+ const schemas=e.ctx.tools.schemas(e.agent).filter(x=>x.name.startsWith('teloa_skills_'))
+ assert.ok(schemas.some(x=>x.name==='teloa_skills_uninstall'))
+ const schema=schemas.find(x=>x.name==='teloa_skills_uninstall')!
+ assert.deepEqual([...(schema.parameters as {required?:string[]}).required??[]].sort(),['expectedBundleHash','expectedVersion','installationId'])
+ assert.equal(JSON.stringify(schema.parameters).includes('confirm'),false,'confirm 必须由宿主内部固定，不能由模型伪造')
+})
+
+test('卸载执行先真实 get 核对身份，再以稳定 requestId 调用真实 uninstall（宿主 confirm:true）',async t=>{
+ const e=await uninstallSetup();t.after(()=>e.ctx.fiber.dispose());e.ctx.provide('approval',{request:async()=> 'allowed-once'})
+ const args={installationId,expectedVersion:1,expectedBundleHash:hash}
+ const first=await e.call('teloa_skills_uninstall',args,'stable-uninstall')
+ assert.equal(first.isError,false)
+ assert.deepEqual(e.handlerCalls.map(x=>x[0]),['skill-installations/get','skill-installations/get','skill-installations/uninstall'])
+ const get=e.handlerCalls[0]![1] as {installationId:string};assert.equal(get.installationId,installationId)
+ const uninstall=e.handlerCalls[2]![1] as Record<string,unknown>
+ assert.equal(uninstall.installationId,installationId);assert.equal(uninstall.expectedVersion,1);assert.equal(uninstall.expectedBundleHash,hash);assert.equal(uninstall.confirm,true)
+ assert.match(first.content.map(block=>block.type==='text'?block.text:'').join(''),/"nativeName":"brief"/)
+ await e.call('teloa_skills_uninstall',args,'stable-uninstall')
+ const writes=e.handlerCalls.filter(x=>x[0]==='skill-installations/uninstall') as [string,{requestId:string}][]
+ assert.equal(writes.length,2);assert.equal(writes[0]![1].requestId,writes[1]![1].requestId,'同一 callId 重试复用原 requestId')
+ assert.match(writes[0]![1].requestId,/^[a-f0-9-]{36}$/)
+})
+
+test('pre-execute 卸载必须 ask：理由含技能名、不可撤销影响与运行证据边界；确认前不卸载',async t=>{
+ const e=await uninstallSetup();t.after(()=>e.ctx.fiber.dispose())
+ assert.equal((await e.call('teloa_skills_uninstall',{installationId,expectedVersion:1,expectedBundleHash:hash})).isError,true)
+ assert.equal(e.handlerCalls.some(x=>x[0]==='skill-installations/uninstall'),false,'无审批时不得执行卸载')
+ let reason='';const allowed=await uninstallSetup();t.after(()=>allowed.ctx.fiber.dispose())
+ allowed.ctx.provide('approval',{request:async(input:{reason?:string})=>{reason=input.reason??'';return 'allowed-once'}})
+ assert.equal((await allowed.call('teloa_skills_uninstall',{installationId,expectedVersion:1,expectedBundleHash:hash})).isError,false)
+ assert.match(reason,/brief/);assert.match(reason,/不可撤销|不可恢复/);assert.match(reason,/受管技能目录/);assert.match(reason,/加载包引用/);assert.match(reason,/历史运行/);assert.match(reason,/只可停用|保留/);assert.doesNotMatch(reason,/ownerId|record_hash|local:teloa-owner|\/managed\//)
+})
+
+test('坏参数、查无安装、版本或摘要不符都在前置 deny，不执行卸载',async t=>{
+ for(const [overrides,args] of [
+  [{}, {installationId:'bad',expectedVersion:1,expectedBundleHash:hash}],
+  [{}, {installationId,expectedVersion:0,expectedBundleHash:hash}],
+  [{}, {installationId,expectedVersion:1,expectedBundleHash:'x'}],
+  [{getError:new (await import('@teloa/contract')).WorkError('teloa/forbidden','技能安装不存在或不属于当前本人。')},{installationId,expectedVersion:1,expectedBundleHash:hash}],
+  [{installationValue:{...installation,version:2}},{installationId,expectedVersion:1,expectedBundleHash:hash}],
+  [{installationValue:{...installation,bundleHash:'b'.repeat(64)}},{installationId,expectedVersion:1,expectedBundleHash:hash}],
+  [{installationValue:{...installation,id:'44444444-4444-4444-8444-444444444444'}},{installationId,expectedVersion:1,expectedBundleHash:hash}],
+ ] as const){
+  const e=await uninstallSetup(overrides as {installationValue?:unknown});t.after(()=>e.ctx.fiber.dispose());e.ctx.provide('approval',{request:async()=> 'allowed-once'})
+  const result=await e.call('teloa_skills_uninstall',args as Record<string,unknown>)
+  assert.equal(result.isError,true,JSON.stringify(args)+(result.isError?'':' '+JSON.stringify(result.content)))
+  assert.equal(e.handlerCalls.some(x=>x[0]==='skill-installations/uninstall'),false)
+ }
 })

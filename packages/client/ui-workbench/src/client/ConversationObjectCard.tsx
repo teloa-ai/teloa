@@ -18,8 +18,9 @@ import {TwinAvatar} from './TwinAvatar.js'
 import {twinDisplayName} from './team-presentation.js'
 import {usePersonalProfile} from './use-personal-profile.js'
 import {useI18n} from './i18n/provider.js'
+import {useBusinessScopes} from './business-scope-context.js'
 import {useTemplateShare} from './EmployeeTemplateShare.js'
-import {readSharePackage} from './share-package-plan.js'
+import {readSharePackage,sharePackageSummary,type SharePackage} from './share-package-plan.js'
 import {localizeWorkError} from './i18n/errors.js'
 import css from './ConversationObjectCard.module.css'
 
@@ -45,6 +46,9 @@ export type ConversationObjectCardPorts={
  openResource?:(id:string)=>void
  openResources?:(draftId?:string)=>void
  openIndustrySkill?:(target:{loadId:string;itemInstanceId:string;scope:string})=>void
+ /** BIZ-008：待应用分享草案的真实应用（template-share acceptance）与放弃（page-create-drafts/settle）。 */
+ acceptShareDraft?:(pkg:SharePackage,choice:{scope:string;skills:readonly string[]})=>Promise<{roleIds:readonly string[];loadId?:string;groupId?:string;coordinatorRoleId?:string}>
+ settleShareDraft?:(draft:PageCreateDraft)=>Promise<void>
 }
 type ObjectEvents={subscribe:(listener:()=>void)=>()=>void;getSnapshot:()=>ConversationPlanEvents}
 type Copy=(cn:string,tw:string,en:string)=>string
@@ -100,6 +104,9 @@ export function ConversationObjectCard({receipt,...ports}:{receipt:ConversationO
  const profile=usePersonalProfile()
  const {locale,t}=useI18n(),sharing=useTemplateShare(),zh=locale.startsWith('zh'),hant=/zh-(TW|HK|Hant)/.test(locale),copy=(cn:string,tw:string,en:string)=>zh?(hant?tw:cn):en
  const [detail,setDetail]=useState<{project?:WorkProject;task?:WorkTask;role?:DigitalRole;group?:Group;draftRecord?:PageCreateDraft;draft?:PageCreateDraftPreview;mcp?:ManagedMcpConnectionRecord;skill?:ConversationSkillResult;resource?:WorkResource;resourceDraft?:ResourceDraft;node?:KnowledgeNode;knowledge?:KnowledgeVersion;capability?:ConversationCapabilityDetail;industrySkill?:ConversationIndustrySkillDetail}>(),[error,setError]=useState(''),[retry,setRetry]=useState(0),[previewOpen,setPreviewOpen]=useState(false),[busy,setBusy]=useState(false),[requested,setRequested]=useState(!receipt.draftReference)
+ // 分享草案的应用/放弃都在详情内二次确认；失败保留原稿，不自动重试、不伪造落地。
+ const [shareApplyOpen,setShareApplyOpen]=useState(false),[shareDiscardOpen,setShareDiscardOpen]=useState(false),[shareApplying,setShareApplying]=useState(false),[shareDiscarding,setShareDiscarding]=useState(false),[shareApplyError,setShareApplyError]=useState(''),[shareDiscardError,setShareDiscardError]=useState(''),[shareSelected,setShareSelected]=useState<Set<string>>(new Set()),[shareScope,setShareScope]=useState(''),[shareApplied,setShareApplied]=useState<{roleIds:readonly string[];loadId?:string;groupId?:string;coordinatorRoleId?:string}>()
+ const scopeNames=useBusinessScopes()
  useEffect(()=>{if(receipt.draftReference&&!requested)return;const controller=new AbortController();let live=true;setError('');setDetail(undefined)
   const load=async()=>{
    const own=(ownerId:string)=>{if(ownerId!=='local:teloa-owner')throw Error(copy('对象不属于当前本人。','物件不屬於目前本人。','This object does not belong to the current user.'))}
@@ -142,7 +149,7 @@ export function ConversationObjectCard({receipt,...ports}:{receipt:ConversationO
  },[requested,receipt.kind,receipt.id,receipt.revision,receipt.scope,receipt.draftReference?.entity,receipt.skillSource?.resourceId,receipt.skillSource?.contentId,receipt.skillSource?.nativeName,retry,ports.readRole,ports.readGroup,ports.readProject,ports.readTask,ports.drafts,ports.mcp,ports.resources,ports.readSkill,ports.readCapability,locale])
  useEffect(()=>{
   const draft=detail?.draftRecord
-  if(!previewOpen||draft?.entity!=='share'||!sharing)return
+  if(!previewOpen||draft?.entity!=='share'||!sharing||ports.acceptShareDraft||ports.settleShareDraft)return
   try{
    // 原稿仍从本人的草案端口读取；共同契约核对后直接进入同一分享抽屉，不创建员工或运行工作。
    const pkg=readSharePackage(record(JSON.parse(draft.body)).package)
@@ -158,9 +165,59 @@ export function ConversationObjectCard({receipt,...ports}:{receipt:ConversationO
  const capabilityStatus=capabilityState==='active'?copy('已启用','已啟用','Active'):capabilityState==='available'?copy('已停用','已停用','Disabled'):capabilityState==='needs_authorization'?copy('需要本人授权','需要本人授權','Authorization required'):capabilityState==='needs_connection'?copy('等待连接','等待連線','Pending connection'):capabilityState==='detached'?copy('已解除关联','已解除關聯','Detached'):capabilityState==='failed'?copy('启用失败','啟用失敗','Activation failed'):capabilityState==='enable-pending'?copy('正在启用','正在啟用','Enabling'):capabilityState==='disable-pending'?copy('正在停用','正在停用','Disabling'):''
  const draftStatus=detail?.draftRecord?.status??receipt.draftReference?.status
  const state=detail?.project||detail?.task||detail?.knowledge?copy('已保存','已儲存','Saved'):capabilityStatus|| (skillState?(skillState==='enabled'?copy('已启用','已啟用','Enabled'):skillState==='disabled'?copy('已停用','已停用','Disabled'):copy('已保存，未启用','已儲存，未啟用','Saved, not enabled')):detail?.resource?(detail.resource.status==='active'?copy('已提交','已提交','Applied'):copy('已撤回','已撤回','Withdrawn')):detail?.resourceDraft?(detail.resourceDraft.status==='applied'?copy('已提交','已提交','Applied'):copy('待提交','待提交','Draft')):detail?.node?copy('已保存','已儲存','Saved'):detail?.role?(detail.role.state==='active'?copy('在岗','在職','Active'):detail.role.state==='paused'?t('status.paused'):copy('已离职','已離職','Retired')):detail?.group?(detail.group.archived?t('status.archived'):copy('已创建','已建立','Created')):draftStatus?(draftStatus==='applied'?copy('已应用','已套用','Applied'):draftStatus==='discarded'?copy('已丢弃','已捨棄','Discarded'):copy('待应用','待套用','Draft')):detail?.mcp?(detail.mcp.status==='connected'?copy('已连接','已連線','Connected'):detail.mcp.status==='saved'?copy('已保存','已儲存','Saved'):detail.mcp.status==='error'?copy('连接失败','連線失敗','Connection failed'):copy('等待连接','等待連線','Pending connection')):'')
- const closePreview=()=>{setPreviewOpen(false);if(receipt.draftReference){setRequested(false);setDetail(undefined);setError('')}}
+ const closePreview=()=>{setPreviewOpen(false);setShareApplyOpen(false);setShareDiscardOpen(false);setShareApplyError('');setShareDiscardError('');setShareApplied(undefined);if(receipt.draftReference){setRequested(false);setDetail(undefined);setError('')}}
  const open=()=>{if(receipt.draftReference){setDetail(undefined);setError('');setRequested(true);setPreviewOpen(true);return}if(detail?.project&&ports.openProject)ports.openProject(detail.project);else if(detail?.task&&ports.openTask)ports.openTask(detail.task.id);else if(receipt.kind==='role')ports.openRole(receipt.id);else if(receipt.kind==='group')ports.openGroup(receipt.id);else if(detail?.industrySkill&&ports.openIndustrySkill)ports.openIndustrySkill({loadId:detail.industrySkill.load.id,itemInstanceId:detail.industrySkill.installation.source.itemInstanceId,scope:detail.industrySkill.load.scope});else if(detail?.resource&&ports.openResource)ports.openResource(detail.resource.id);else if(detail?.resourceDraft&&ports.openResources)ports.openResources(detail.resourceDraft.id);else if(detail?.node&&!detail.knowledge&&ports.openResources)ports.openResources();else setPreviewOpen(true)}
  const mcpAction=async()=>{if(!detail?.mcp||busy)return;setBusy(true);setError('');try{const connection=detail.mcp.status==='connected'?await ports.mcp.disconnect(receipt.id):await ports.mcp.connect(receipt.id);setDetail({mcp:connection})}catch(cause){setError(localizeWorkError(locale,cause))}finally{setBusy(false)}}
+ // BIZ-008：待应用分享草案的应用/放弃都留在详情内二次确认；失败不关详情、不丢原稿，可原样重试。
+ const shareDraft=detail?.draftRecord?.entity==='share'?detail.draftRecord:undefined
+ const sharePackage=(()=>{try{return shareDraft?readSharePackage((JSON.parse(shareDraft.body) as {package:unknown}).package):undefined}catch{return undefined}})()
+ const shareSummary=sharePackage?sharePackageSummary(sharePackage):undefined
+ const shareScopeOptions=[...new Set(['general',...(shareDraft?.scope?[shareDraft.scope]:[]),...Object.keys(scopeNames)])]
+ const shareChoiceScope=shareScope||shareDraft?.scope||'general'
+ const shareScopeLabel=(scope:string)=>scope==='general'?copy('通用','通用','General'):scopeNames[scope]??scope
+ // 团队包可能只有员工/连接而没有可选技能：非技能内容存在时也允许应用，空包仍拒绝。
+ const shareSelectionReady=!!shareSummary&&(Object.entries(shareSummary.counts).some(([kind,count])=>kind!=='skill'&&count>0)||shareSelected.size>0)
+ const openShareApply=()=>{setShareApplyError('');setShareSelected(new Set(shareSummary?.skills.filter(skill=>skill.required).map(skill=>skill.resourceId)??[]));setShareScope(shareDraft?.scope??'general');setShareApplyOpen(true);setShareDiscardOpen(false);setShareApplied(undefined)}
+ const applyShareDraft=async()=>{if(!sharePackage||!ports.acceptShareDraft||shareApplying||!shareSelectionReady)return;setShareApplying(true);setShareApplyError('');try{const result=await ports.acceptShareDraft(sharePackage,{scope:shareChoiceScope,skills:[...shareSelected]});setShareApplied(result);setShareApplyOpen(false)}catch(cause){setShareApplyError(localizeWorkError(locale,cause))}finally{setShareApplying(false)}}
+ const discardShareDraft=async()=>{if(!shareDraft||!ports.settleShareDraft||shareDiscarding)return;setShareDiscarding(true);setShareDiscardError('');try{await ports.settleShareDraft(shareDraft);closePreview()}catch(cause){setShareDiscardError(localizeWorkError(locale,cause))}finally{setShareDiscarding(false)}}
+ const shareDrawer=previewOpen&&shareDraft&&(ports.acceptShareDraft||ports.settleShareDraft)?<ContextDrawer title={copy('草案详情','草案詳情','Draft details')} close={closePreview}><div className={css.preview}>
+  <h3>{shareDraft.title}</h3><p>{copy('待应用','待套用','Draft')}</p>
+  {!shareSummary&&<p role="alert">{copy('草案内容暂时无法读取，请重试后再应用或放弃。','草案內容暫時無法讀取，請重試後再套用或放棄。','The draft cannot be read right now. Retry before applying or discarding.')}</p>}
+  {shareSummary&&<dl><div><dt>{copy('员工','員工','Employees')}</dt><dd>{shareSummary.roles.length}</dd></div><div><dt>{copy('技能','技能','Skills')}</dt><dd>{shareSummary.skills.length}</dd></div><div><dt>{copy('知识','知識','Knowledge')}</dt><dd>{shareSummary.knowledge.length}</dd></div><div><dt>{copy('连接','連線','Connections')}</dt><dd>{shareSummary.connections.length}</dd></div></dl>}
+  {shareApplied?<section role="status"><h4>{copy('已应用','已套用','Applied')}</h4><p>{copy('模板已按选择加入：员工以暂停状态创建，可在团队页核对后启用；原草案记录已落定。','範本已依選擇加入：員工以暫停狀態建立，可在團隊頁核對後啟用；原草案紀錄已落定。','The template was added with your selection. Employees are created paused for review. The draft record is settled.')}</p>{shareApplied.roleIds[0]&&<button type="button" onClick={()=>{closePreview();ports.openRole(shareApplied.coordinatorRoleId??shareApplied.roleIds[0]!)}}>{copy('查看员工','查看員工','View employee')}</button>}<button type="button" onClick={closePreview}>{copy('关闭','關閉','Close')}</button></section>
+  :!shareApplyOpen?<section>
+   <h4>{copy('应用这份草案','套用這份草案','Apply this draft')}</h4>
+   <p>{copy('确认后会把分享包加入本机：创建员工（默认暂停）、加载模板到工作空间并按所选安装技能；不会发布分享链接，不会删除原草案。','確認後會把分享包加入本機：建立員工（預設暫停）、載入範本到工作空間並按所選安裝技能；不會發佈分享連結，不會刪除原草案。','Confirming adds the shared package locally: employees are created (paused by default), the template is loaded into your workspace, and selected skills are installed. It does not publish a share link or delete the draft.')}</p>
+   {shareApplyError&&<p role="alert">{shareApplyError}<button type="button" onClick={()=>setShareApplyError('')}>{t('common.retry')}</button></p>}
+   {ports.acceptShareDraft?<button type="button" disabled={!shareSummary} onClick={openShareApply}>{copy('应用/创建团队','套用/建立團隊','Apply / create team')}</button>:<p>{copy('此环境暂未接通模板应用，请在分享接收里打开。','此環境暫未接通範本套用，請在分享接收裡開啟。','Template application is unavailable in this environment. Open it from share receive.')}</p>}
+  </section>
+  :<section>
+   <p role="alert">{copy('将应用这份草案：创建员工（默认暂停）、加载模板、按所选安装技能；不发布分享链接，不删除原草案。','將套用這份草案：建立員工（預設暫停）、載入範本、按所選安裝技能；不發佈分享連結，不刪除原草案。','This will apply the draft: create employees (paused by default), load the template, and install selected skills. It does not publish a share link or delete the draft.')}</p>
+   <label>{copy('业务范围','業務範圍','Business scope')}<select value={shareChoiceScope} disabled={shareApplying||!shareSummary} onChange={event=>setShareScope(event.target.value)}>{shareScopeOptions.map(scope=><option key={scope} value={scope}>{shareScopeLabel(scope)}</option>)}</select></label>
+   {shareSummary&&shareSummary.skills.length>0&&<fieldset><legend>{copy('要安装的技能','要安裝的技能','Skills to install')}</legend>{shareSummary.skills.map(skill=><label key={skill.resourceId}><input type="checkbox" checked={shareSelected.has(skill.resourceId)} disabled={shareApplying} onChange={event=>setShareSelected(current=>{const next=new Set(current);if(event.target.checked)next.add(skill.resourceId);else next.delete(skill.resourceId);return next})}/>{skill.title} · v{skill.version}</label>)}</fieldset>}
+   {!shareSelectionReady&&<p role="status">{copy('至少选择一项内容后再应用。','至少選擇一項內容後再套用。','Select at least one item before applying.')}</p>}
+   {shareApplyError&&<p role="alert">{shareApplyError}</p>}
+   <button type="button" disabled={shareApplying||!shareSelectionReady} onClick={()=>void applyShareDraft()}>{shareApplying?copy('正在应用…','正在套用…','Applying…'):copy('确认应用','確認套用','Confirm apply')}</button>
+   <button type="button" disabled={shareApplying} onClick={()=>setShareApplyOpen(false)}>{copy('取消','取消','Cancel')}</button>
+  </section>}
+  <hr/>
+  {!shareDiscardOpen?<section>
+   <h4>{copy('放弃这份草案','放棄這份草案','Discard this draft')}</h4>
+   {shareDiscardError&&<p role="alert">{shareDiscardError}<button type="button" onClick={()=>setShareDiscardError('')}>{t('common.retry')}</button></p>}
+   {ports.settleShareDraft?<button type="button" disabled={shareDiscarding} onClick={()=>{setShareDiscardOpen(true);setShareApplyOpen(false)}}>{copy('放弃草案','放棄草案','Discard draft')}</button>:<p>{copy('此环境暂未接通草案落定，请稍后再试。','此環境暫未接通草案落定，請稍後再試。','Draft settlement is unavailable in this environment.')}</p>}
+  </section>
+  :<section>
+   <p role="alert">{copy('放弃只会丢弃这份待应用草案：不发布、不创建员工、不加载模板；草案正文将被清除，不能从这条记录恢复。','放棄只會丟棄這份待套用草案：不發佈、不建立員工、不載入範本；草案正文將被清除，不能從這條紀錄恢復。','Discarding only removes this pending draft: nothing is published, created, or loaded. The draft content is cleared and cannot be restored from this record.')}</p>
+   {shareDiscardError&&<p role="alert">{shareDiscardError}</p>}
+   <button type="button" disabled={shareDiscarding} onClick={()=>void discardShareDraft()}>{shareDiscarding?copy('正在放弃…','正在放棄…','Discarding…'):copy('确认放弃','確認放棄','Confirm discard')}</button>
+   <button type="button" disabled={shareDiscarding} onClick={()=>setShareDiscardOpen(false)}>{copy('取消','取消','Cancel')}</button>
+  </section>}
+  {sharing&&sharePackage&&<section>
+   <h4>{copy('发布与导出','發佈與匯出','Publish and export')}</h4>
+   <p>{copy('应用与发布是两件事：发布只生成分享链接与离线模板，不会把这份草案应用到本机。','套用與發佈是兩件事：發佈只產生分享連結與離線範本，不會把這份草案套用到本機。','Applying and publishing are separate: publishing only creates a share link and offline template; it does not apply the draft locally.')}</p>
+   <button type="button" onClick={()=>{sharing.openDraft(sharePackage);closePreview()}}>{copy('打开发布/分享','開啟發佈/分享','Open publish/share')}</button>
+  </section>}
+ </div></ContextDrawer>:null
  return <>
   <section className={css.card} aria-label={category+'：'+title} data-object-id={receipt.id}>
    <button type="button" className={css.row} onClick={open} disabled={(!detail&&!receipt.draftReference)||!!error||!!(receipt.draftReference&&requested&&!detail)}>
@@ -169,6 +226,7 @@ export function ConversationObjectCard({receipt,...ports}:{receipt:ConversationO
    </button>
    {error&&<p role="alert">{error}<button type="button" onClick={()=>setRetry(value=>value+1)}>{t('common.retry')}</button></p>}
   </section>
+  {shareDrawer}
   {previewOpen&&receipt.draftReference?.entity!=='share'&&detail?.draftRecord?.entity!=='share'&&(receipt.draftReference||detail?.draftRecord||detail?.skill||detail?.industrySkill)&&<ContextDrawer title={receipt.draftReference?.entity==='skill'||detail?.draftRecord?.entity==='skill'||detail?.skill||detail?.industrySkill?copy('技能详情','技能詳情','Skill details'):copy('草案详情','草案詳情','Draft details')} close={closePreview}><div className={css.preview}>
    {!detail&&(error?<p role="alert">{error}<button type="button" onClick={()=>setRetry(value=>value+1)}>{t('common.retry')}</button></p>:<p role="status">{copy('正在读取…','正在讀取…','Loading…')}</p>)}
    {detail?.draftRecord&&!detail.skill&&!detail.industrySkill&&<>

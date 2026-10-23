@@ -27,7 +27,7 @@ function setup(){
  const bundle:SkillInstallSourceBundle={ownerId:owner,source,entryPath:'SKILL.md',files:[{path:'SKILL.md',hash:sha('skill'),bytes:new TextEncoder().encode('skill')}],bundleHash}
  // 发布文件时（原生可见之前）记录当时的启停值：未启用必须从这一刻起就是 disabled。
  const atPublish:string[]=[]
- const files={inspect:async()=>native,publish:async(id:string)=>{atPublish.push((await pool.query('select availability from teloa_skill_install_availability where installation_id=$1',[id])).rows[0]?.availability)},verify:async()=>{}}
+ const files={inspect:async()=>native,publish:async(id:string)=>{atPublish.push((await pool.query('select availability from teloa_skill_install_availability where installation_id=$1',[id])).rows[0]?.availability)},verify:async()=>{},remove:async()=>{}}
  const installations=new SkillInstallationService(pool,{id:randomUUID,now:()=>now},{read:async(who,input)=>{if(who!==owner||input.kind!=='atomic'||input.contentId!==contentId)throw new WorkError('teloa/source-unavailable','missing');return structuredClone(bundle)}},files)
  // 启用核验固定来源由文件端口负责，这里沿用同一隔离桩。
  const availability=new SkillAvailabilityService(pool,{now:()=>now},{verify:async()=>{}})

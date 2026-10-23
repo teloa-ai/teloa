@@ -11,7 +11,9 @@ import {initializeRoles,RoleService} from '../src/work/roles.ts'
 import {initializePlans,PlanService,type PlanNotificationPolicy} from '../src/work/plans.ts'
 import {initializePlanOccurrences,PlanOccurrenceService} from '../src/work/plan-occurrences.ts'
 import {initializeTaskRuns,TaskRunService} from '../src/work/task-runs.ts'
+import {initializeRoleDailyLogs} from '../src/work/role-daily-logs.ts'
 import {initializeObjectConversations,ObjectConversationService} from '../src/work/object-conversations.ts'
+import {WorkError} from '@teloa/contract'
 import {testRoleResponsibility} from './role-test-fixture.ts'
 import {initializeCollaboration} from '../src/work/collaboration.ts'
 import {initializeGroupAgentGrants} from '../src/work/group-agent-grants.ts'
@@ -25,7 +27,7 @@ before(async()=>{
  process.env.TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE='/var/run/docker.sock'
  container=await new PostgreSqlContainer('postgres@sha256:18cfe3ef5e6815560c98237d6216d1e5119702fb0f3894c8785dd58b8bbe5d73').start()
  pool=new Pool({connectionString:container.getConnectionUri()})
- await initializeMarketContents(pool);await initializeRoles(pool);await initializeCollaboration(pool);await initializeGroupAgentGrants(pool);await initializePlans(pool);await initializeTasks(pool);await initializePlanOccurrences(pool);await initializeObjectConversations(pool);await initializeTaskRuns(pool)
+ await initializeMarketContents(pool);await initializeRoles(pool);await initializeCollaboration(pool);await initializeGroupAgentGrants(pool);await initializePlans(pool);await initializeTasks(pool);await initializePlanOccurrences(pool);await initializeObjectConversations(pool);await initializeTaskRuns(pool);await initializeRoleDailyLogs(pool)
 },{timeout:180_000})
 after(async()=>{await pool?.end();await container?.stop()})
 
@@ -36,6 +38,22 @@ async function activePlan(owner:string,enabledAt='2026-09-11T00:00:00.000Z',opti
  const plans=new PlanService(pool,identity),created=await plans.create(owner,{requestId:randomUUID(),fields:{title:options.title??'每日资料核对',goal:'核对新增资料并形成结论。',scope,dataScope:'本人已授权资料。',delivery:'变化与待核对项。',roleId:role.id,expectedRoleVersion:1,trigger:schedule,notificationPolicy:options.notificationPolicy??'attention'},source})
  const active=await plans.change(owner,{planId:created.id,requestId:randomUUID(),expectedVersion:1,action:'enable'})
  return {role,plan:active,plans}
+}
+
+/** 系统小结计划只能由服务端自建；这里按落库后的固定形状直接插入，用于领取与立即运行的重复生成判定。 */
+async function systemDigestPlan(owner:string){
+ const roles=new RoleService(pool,{id:randomUUID,now:()=>'2026-09-11T00:00:00.000Z'})
+ const role=await roles.create(owner,{requestId:randomUUID(),fields:{name:'每日小结岗',kind:'employee',scopes:['general'],duty:'写小结',dataScope:'本人资料',executionScope:'只读',skills:[],knowledge:[],responsibility:testRoleResponsibility,runtimeConfig:{agentPresetId:'schedule-reviewer'}}})
+ const planId=randomUUID(),definition={title:'Auto Dream · 每日小结',goal:'写当天小结。',scope:'general',dataScope:'本人资料。',delivery:'一份日志。',roleId:role.id,trigger:schedule,notificationPolicy:'silent'}
+ const source={kind:'system-digest' as const,roleId:role.id}
+ await pool.query(`insert into teloa_plans(id,owner_id,request_id,request_spec,definition,source,notification_policy,role_id,role_version,scope,version,config_version,state,archived_reason,archived_at,created_at,updated_at)
+  values($1,$2,$3,$4,$5,$6,'silent',$7,1,'general',1,1,'active',null,null,$8,$8)`,[planId,owner,randomUUID(),JSON.stringify({fields:{...definition,expectedRoleVersion:1},source}),JSON.stringify(definition),JSON.stringify(source),role.id,'2026-09-11T00:00:00.000Z'])
+ return {role,planId}
+}
+
+async function insertDigestLog(owner:string,roleId:string,day:string){
+ await pool.query(`insert into teloa_role_daily_logs(id,owner_id,role_id,role_version,kind,day,state,run_id,title,markdown,scope_ids,evidence,prune_hints,request_id,request_spec,created_at,discarded_at)
+  values($1,$2,$3,1,'daily-digest',$4::date,'kept',$5,'当天小结','正文','[]'::jsonb,'[]'::jsonb,'[]'::jsonb,$6,'{}'::jsonb,$7,null)`,[randomUUID(),owner,roleId,day,randomUUID(),randomUUID(),'2026-09-11T01:30:00.000Z'])
 }
 
 test('显式恢复固定未来日程，并发到期领取只有一个dispatch和一条记录',async()=>{
@@ -360,10 +378,14 @@ test('跨版本已创建但未关联的任务不被作废，恢复原关联前�
  assert.deepEqual(await service.pending(owner),[old])
  await new PlanService(pool,{id:randomUUID,now:()=>'2026-09-12T00:00:00.000Z'}).change(owner,{planId:plan.id,requestId:randomUUID(),expectedVersion:paused.version,action:'enable'})
  const blocked=await service.claim(owner,{planId:plan.id,now:'2026-09-12T01:00:00.000Z'})
- assert.equal(blocked.skip?.reason,'previous-task-unfinished');assert.equal(blocked.skip?.taskId,task.id)
+ assert.equal(blocked.skip?.reason,'previous-task-unfinished')
+ assert.ok(blocked.skip&&blocked.skip.reason==='previous-task-unfinished')
+ assert.equal(blocked.skip.taskId,task.id)
  const recovered=await service.dispatchTask(owner,{claimId:old.id,taskRequestId:old.taskRequestId,now:'2026-09-12T01:00:01.000Z'})
  assert.equal(recovered.task.id,task.id);assert.deepEqual(await service.pending(owner),[])
- assert.equal((await service.claim(owner,{planId:plan.id,now:'2026-09-13T01:00:00.000Z'})).skip?.taskId,task.id)
+ const stillBlocked=await service.claim(owner,{planId:plan.id,now:'2026-09-13T01:00:00.000Z'})
+ assert.ok(stillBlocked.skip&&stillBlocked.skip.reason==='previous-task-unfinished')
+ assert.equal(stillBlocked.skip.taskId,task.id)
 })
 
 test('非法任务状态显式阻断领取，不推进游标；跳过记录的阻塞身份错配拒绝读取',async()=>{
@@ -756,4 +778,28 @@ test('完整跳过历史保留固定阻塞关联，不依赖任务和岗位当�
  const history=await service.skipHistory(owner,{planId:plan.id,limit:10})
  assert.equal(history.items[0]?.blockingClaimId,claim.id);assert.equal(history.items[0]?.taskId,task.id)
  for(const input of [{planId:plan.id,limit:0},{planId:plan.id,limit:51},{planId:plan.id,limit:1.5},{planId:plan.id,limit:1,extra:true}])await assert.rejects(service.skipHistory(owner,input),{code:'teloa/invalid-input'})
+})
+
+test('系统小结当日已生成时，到点领取明确跳过并推进游标，不建领取与任务',async()=>{
+ const owner=randomUUID(),{role,planId}=await systemDigestPlan(owner),service=new PlanOccurrenceService(pool,{id:randomUUID})
+ assert.deepEqual(await service.recover(owner,{planId,now:'2026-09-11T00:30:00.000Z'}),{nextAt:'2026-09-11T01:00:00.000Z',occurrenceId:'2026-09-11T09:00[Asia/Singapore]'})
+ await insertDigestLog(owner,role.id,'2026-09-11')
+ assert.deepEqual(await service.claim(owner,{planId,now:'2026-09-11T01:00:00.000Z'}),{occurrence:null,dispatch:false,skip:{reason:'digest-exists'}})
+ assert.equal(Number((await pool.query('select count(*)::int n from teloa_plan_occurrences where owner_id=$1',[owner])).rows[0].n),0,'跳过不留下领取记录')
+ assert.equal(Number((await pool.query('select count(*)::int n from teloa_tasks where owner_id=$1',[owner])).rows[0].n),0,'跳过不创建任务')
+ // 下一天没有当日小结，按正常日程领取。
+ const next=await service.claim(owner,{planId,now:'2026-09-12T01:00:00.000Z'})
+ assert.equal(next.dispatch,true);assert.equal(next.occurrence?.scheduledAt,'2026-09-12T01:00:00.000Z')
+})
+
+test('系统小结当日已生成时，立即运行在领取前返回中文冲突且不建领取',async()=>{
+ const owner=randomUUID(),{role,planId}=await systemDigestPlan(owner),service=new PlanOccurrenceService(pool,{id:randomUUID})
+ await insertDigestLog(owner,role.id,'2026-09-11')
+ const input={planId,requestId:randomUUID(),expectedVersion:1,expectedConfigVersion:1,now:'2026-09-11T00:31:00.000Z'}
+ await assert.rejects(service.trigger(owner,input),error=>{
+  assert.equal((error as WorkError).code,'teloa/conflict')
+  assert.match((error as Error).message,/今天已经写过小结/)
+  return true
+ })
+ assert.equal(Number((await pool.query('select count(*)::int n from teloa_plan_occurrences where owner_id=$1',[owner])).rows[0].n),0)
 })

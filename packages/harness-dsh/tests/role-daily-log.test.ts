@@ -27,7 +27,7 @@ const logId='66666666-6666-4666-8666-666666666666'
 const memoryId='77777777-7777-4777-8777-777777777777'
 const nativeRequestId='88888888-8888-4888-8888-888888888888'
 const digestIdentity:RoleDigestRunIdentity={runId,taskId,planId,roleId,roleVersion:2,day:'2026-09-21'}
-const dayEvidence:RoleDayEvidence={day:'2026-09-21',roleId,roleVersion:2,scopeIds:['SOC'],runs:[{kind:'run',id:runId,version:1,title:'当天运行'}],artifacts:[],approvals:[],revisions:[],groupMessages:[]}
+const dayEvidence:RoleDayEvidence={day:'2026-09-21',timezone:'Asia/Singapore',roleId,roleVersion:2,scopeIds:['SOC'],runs:[{kind:'run',id:runId,version:1,title:'当天运行'}],artifacts:[],approvals:[],revisions:[],groupMessages:[]}
 /** 闸拒绝的理由固定中文，不含会话 id、工具参数、数据库文本或上游异常消息。 */
 const denied='这两个工具只能在 Auto Dream 的每日小结运行里使用。'
 const savedLog:RoleDailyLog={id:logId,ownerId:owner,roleId,roleVersion:2,kind:'daily-digest',day:'2026-09-21',state:'kept',runId,title:'今天的小结',markdown:'今天复核了三条告警。',scopeIds:['SOC'],evidence:[{kind:'run',id:runId,version:1,title:'当天运行'}],pruneHints:[{memoryId,memoryStateVersion:1,reason:'已经过时。'}],createdAt:'2026-09-21T15:30:00.000Z',discardedAt:null}
@@ -127,6 +127,32 @@ test('当日证据工具不接受任何参数',async t=>{
  assert.equal(result.isError,true)
  assert.match(JSON.stringify(result),/当日证据工具不接受任何参数/)
  assert.equal(env.calls.filter(row=>row[0]==='evidence').length,0)
+})
+
+test('提交参数缺 pruneHints 时给出中文可定位错误，不把英文校验错误抛给模型',async t=>{
+ const env=await setupTool();t.after(()=>env.ctx.fiber.dispose())
+ const {pruneHints:_pruneHints,...withoutPruneHints}=submission
+ const missing=await env.call(roleDailyDigestSubmitToolName,withoutPruneHints,'missing-prune')
+ assert.equal(missing.isError,true)
+ const text=JSON.stringify(missing)
+ assert.match(text,/每日小结参数/,'错误应是可读中文提示')
+ assert.match(text,/pruneHints/,'必须点名缺少的参数')
+ assert.match(text,/空数组/,'必须说明合法值：没有建议撤回时传空数组')
+ assert.equal(env.calls.filter(row=>row[0]==='submit').length,0,'参数错误不得进入提交端口')
+})
+
+test('提交参数缺 title 或类型不对时同样给中文可定位错误',async t=>{
+ const env=await setupTool();t.after(()=>env.ctx.fiber.dispose())
+ const {title:_title,...withoutTitle}=submission
+ const noTitle=await env.call(roleDailyDigestSubmitToolName,withoutTitle,'missing-title')
+ assert.equal(noTitle.isError,true)
+ assert.match(JSON.stringify(noTitle),/每日小结参数/,'缺 title 也应是可读中文提示')
+ assert.match(JSON.stringify(noTitle),/title/)
+ const badCandidates=await env.call(roleDailyDigestSubmitToolName,{...submission,candidates:'不是数组'},'bad-candidates')
+ assert.equal(badCandidates.isError,true)
+ assert.match(JSON.stringify(badCandidates),/每日小结参数/,'candidates 类型错误也应是可读中文提示')
+ assert.match(JSON.stringify(badCandidates),/candidates/)
+ assert.equal(env.calls.filter(row=>row[0]==='submit').length,0)
 })
 
 test('候选超 3 条由服务端整次拒绝，工具既不截断也不吞错',async t=>{

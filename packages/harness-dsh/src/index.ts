@@ -718,7 +718,7 @@ async function applyHost(ctx:Context,projectRoot:string):Promise<void> {
   })
   const skillInstallationsHandler=createSkillInstallationsHandler(owner,async()=>{
     const service=await skillInstallationService()
-    return {get:service.get.bind(service),list:service.list.bind(service),preview:service.preview.bind(service),install:(actor,input)=>availabilitySync.change(()=>service.install(actor,input))}
+    return {get:service.get.bind(service),list:service.list.bind(service),preview:service.preview.bind(service),install:(actor,input)=>availabilitySync.change(()=>service.install(actor,input)),uninstall:(actor,input)=>availabilitySync.change(()=>service.uninstall(actor,input))}
   },async installationId=>{
     await availabilitySync.refresh()
     return availabilitySync.stable(async()=>{

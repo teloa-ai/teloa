@@ -243,6 +243,7 @@ const expectedTables=[
  "teloa_skill_install_requests",
  "teloa_skill_install_usages",
  "teloa_skill_installations",
+ "teloa_skill_uninstall_requests",
  "teloa_skill_selection_migrations",
  "teloa_skill_selection_requests",
  "teloa_skill_selections",

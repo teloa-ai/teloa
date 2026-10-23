@@ -22,7 +22,8 @@ const ownedDescriptions=new Set([
 /** 只替换已知的官方技术说明，不改本人编辑过的名称与说明。 */
 export function standardModeDescription(option:StandardModeOption&{description?:string},active:string):string|undefined{
  const code=optionalCodeDescriptions.get(option.id)
- if(code&&option.name===undefined&&option.description===code[2])return code[localeIndex(active)]
+ // 自定义预设的 name 可能是 id；只要说明仍是官方英文原文，就按当前界面语言显示，改过的说明原样保留。
+ if(code&&option.description===code[2])return code[localeIndex(active)]
  if(!isOwnedStandardMode(option)||!option.description||!ownedDescriptions.has(option.description))return option.description
  const locale=active.toLowerCase()
  return ['zh-hant','zh-tw','zh-hk'].includes(locale)?'分析資料、使用工具並交付工作成果。':locale==='zh'||locale==='zh-cn'||locale==='zh-hans'?'分析资料、使用工具并交付工作成果。':'Analyze information, use tools, and deliver work results.'

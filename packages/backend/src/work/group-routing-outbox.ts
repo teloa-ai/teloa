@@ -120,6 +120,24 @@ export class GroupRoutingOutboxService{
   }
   admission.assertCurrent()
  }
+ /**
+  * GRP-04：同一话题里仍被占用的岗位。员工回帖再次触发路由时，这些岗位已有接力后序行或运行中的派工，
+  * 新一轮派工必须幂等跳过，避免同一话题出现重复任务与近重复回复（实测审校每轮被派两次）。
+  * 只认非终态（waiting/pending/leased/unknown/submitted）；同一触发消息自己的行不算，重试/重入仍由原判据处理。
+  */
+ async activeRolesInRoot(owner:string,input:{groupId:string;messageId:string}):Promise<string[]>{
+  actor(owner);exact(input,['groupId','messageId']);if(!uuid(input.groupId)||!uuid(input.messageId))throw invalid()
+  const rows=(await this.pool.query(`with target as (
+    select coalesce(root_id,id) as root_id from teloa_group_messages where owner_id=$1 and group_id=$2 and id=$3
+   )
+   select distinct outbox.role_id from teloa_group_routing_outbox outbox
+    join teloa_group_messages message on message.owner_id=outbox.owner_id and message.id=outbox.message_id
+    join target on target.root_id=coalesce(message.root_id,message.id)
+   where outbox.owner_id=$1 and outbox.group_id=$2 and outbox.message_id<>$3
+    and outbox.state in ('waiting','pending','leased','unknown','submitted')
+   order by outbox.role_id`,[owner,input.groupId,input.messageId])).rows
+  return rows.map(row=>String(row.role_id))
+ }
  async recordRecipients(db:PoolClient,owner:string,input:{groupId:string;messageId:string;decision:GroupRoutingDecision;decisionVersion:number}):Promise<GroupDispatchItem[]>{
   actor(owner);exact(input,['groupId','messageId','decision','decisionVersion']);if(!uuid(input.groupId)||!uuid(input.messageId)||!positive(input.decisionVersion)||!isGroupRoutingDecision(input.decision))throw invalid()
   // 第一尝试对应原决策行；重试尝试对应 teloa_group_routing_attempts 的同版本终态行（规格 §6.5 尝试绑定）。

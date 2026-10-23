@@ -59,10 +59,133 @@ export function validateManifest(raw:unknown):MarketManifest{
     return {kind:component.kind as 'skill'|'mcp'|'plugin'|'work-template'|'role',path,required:component.required}
   })}
 }
+/** JSON 语法错误定位：用户粘贴/上传的清单在解析前给出行、列与极短片段，别只回一句通用失败。 */
+export type MarketJsonSyntaxFailure={line:number;column:number;snippet:string}
+const jsonWhitespace=/[ \t\n\r]/
+const jsonSnippetRadius=16
+const jsonSnippetMax=40
+/** 判断某位置是否落在字符串内；只在错误提示里用，行内扫描到位置为止。 */
+function jsonInString(raw:string,lineStart:number,position:number):boolean{
+ let inString=false
+ for(let index=lineStart;index<position;index++){
+  const char=raw[index]
+  if(inString&&char==='\\'){index++;continue}
+  if(char==='"')inString=!inString
+ }
+ return inString
+}
+function jsonFailureSnippet(raw:string,offset:number):string{
+ const lineStart=raw.lastIndexOf('\n',offset-1)+1,lineEnd=raw.indexOf('\n',offset)<0?raw.length:raw.indexOf('\n',offset)
+ let start=Math.max(lineStart,offset-jsonSnippetRadius),end=Math.min(lineEnd,offset+jsonSnippetRadius)
+ // 不把片段起点/终点切在字符串中间：否则窗口会露出长凭据的尾部。字符串整体交给下面的掩码处理。
+ if(jsonInString(raw,lineStart,start)){for(let index=start-1;index>=lineStart;index--)if(raw[index]==='"'){start=index;break}}
+ if(jsonInString(raw,lineStart,end)){
+  let escaped=false,found=lineEnd
+  for(let index=end;index<lineEnd;index++){
+   const char=raw[index]
+   if(escaped){escaped=false;continue}
+   if(char==='\\'){escaped=true;continue}
+   if(char==='"'){found=index+1;break}
+  }
+  end=found
+ }
+ // 只给结构附近极短片段：引号内正文一律掩码，未加引号的较长标识（凭据/令牌样式）也掩码，不把用户正文带进错误提示。
+ const masked=raw.slice(start,end).replace(/"[^"]*"/g,'"…"').replace(/[A-Za-z0-9_.-]{12,}/g,'…').replace(/\s+/g,' ').trim()
+ return masked.length>jsonSnippetMax?masked.slice(0,jsonSnippetMax)+'…':masked
+}
+const jsonScanFailure=Symbol('json-scan-failure')
+/**
+ * 用与 JSON 语法一致的轻量扫描找出第一个语法错误位置（严格解析仍由 `JSON.parse` 兜底）。
+ * 只服务错误提示：合法 JSON 返回 `undefined`；位置按 1 起算，供 UI 说清「哪一行哪一列」。
+ */
+export function marketJsonSyntaxFailure(raw:string):MarketJsonSyntaxFailure|undefined{
+ try{JSON.parse(raw);return undefined}catch{}
+ let offset=-1,index=0
+ const fail=(at=index):never=>{offset=at;throw jsonScanFailure}
+ const skip=()=>{while(index<raw.length&&jsonWhitespace.test(raw[index]!))index++}
+ const scanString=()=>{
+  index++
+  while(index<raw.length){
+   const char=raw[index]!
+   if(char==='"'){index++;return}
+   if(char==='\\'){
+    index++
+    const escape=raw[index]
+    if(escape===undefined)return fail()
+    if(escape==='u'){for(let step=1;step<=4;step++){const hex=raw[index+step];if(!hex||!/[0-9a-fA-F]/.test(hex)){index=index+step;throw fail()}}index+=5;continue}
+    if(!'"\\/bfnrt'.includes(escape)){index++;throw fail()}
+    index++;continue
+   }
+   if(char.charCodeAt(0)<0x20)return fail()
+   index++
+  }
+  return fail()
+ }
+ const scanValue=():void=>{
+  skip()
+  const char=raw[index]
+  if(char===undefined)return fail()
+  if(char==='{'){
+   index++;skip()
+   if(raw[index]==='}'){index++;return}
+   for(;;){
+    skip()
+    if(raw[index]!=='"')return fail()
+    scanString();skip()
+    if(raw[index]!==':')return fail()
+    index++;scanValue();skip()
+    const separator=raw[index]
+    if(separator==='}'){index++;return}
+    if(separator!==',')return fail()
+    index++
+   }
+  }
+  if(char==='['){
+   index++;skip()
+   if(raw[index]===']'){index++;return}
+   for(;;){
+    scanValue();skip()
+    const separator=raw[index]
+    if(separator===']'){index++;return}
+    if(separator!==',')return fail()
+    index++
+   }
+  }
+  if(char==='"'){scanString();return}
+  if(char==='-'||/[0-9]/.test(char)){
+   const match=/^-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?/.exec(raw.slice(index))
+   if(!match||!match[0])return fail()
+   index+=match[0].length
+   return
+  }
+  for(const literal of ['true','false','null'])if(raw.startsWith(literal,index)){index+=literal.length;return}
+  return fail()
+ }
+ try{
+  scanValue();skip()
+  if(index<raw.length)throw fail()
+  return undefined
+ }catch(error){
+  if(error!==jsonScanFailure)throw error
+ }
+ const at=Math.max(0,Math.min(offset,raw.length))
+ const before=raw.slice(0,at),line=before.split('\n').length,column=at-before.lastIndexOf('\n')
+ return {line,column,snippet:jsonFailureSnippet(raw,at)}
+}
+
+/** 粘贴/上传的清单不是合法 JSON 时抛这个；UI 用失败位置渲染可操作提示，message 供非定制界面兜底。 */
+export class MarketJsonSyntaxError extends Error{
+ readonly failure:MarketJsonSyntaxFailure
+ constructor(raw:string){
+  const failure=marketJsonSyntaxFailure(raw)??{line:1,column:1,snippet:''}
+  super(`JSON 格式不正确：第 ${failure.line} 行第 ${failure.column} 列附近「${failure.snippet}」。请修正后再试。`)
+  this.name='MarketJsonSyntaxError';this.failure=failure
+ }
+}
 export async function parseMarketManifest(raw:string,recipeOptions?:Parameters<typeof convertGrokRecipe>[1]):Promise<ParsedManifest>{
   const bytes=new TextEncoder().encode(raw)
   if(bytes.length>MAX_MANIFEST_BYTES)throw Error('清单大小不能超过 1 MiB。')
-  let value:unknown;try{value=JSON.parse(raw)}catch{throw Error('JSON 格式无效。')}
+  let value:unknown;try{value=JSON.parse(raw)}catch{throw new MarketJsonSyntaxError(raw)}
   if(isGrokRecipe(value)){
     const converted=await convertGrokRecipe(raw,recipeOptions),manifest=validateIndustryManifest(converted.manifest),file=converted.files.find(file=>file.path===converted.manifestPath)!
     const paths=new Set(converted.files.map(file=>file.path))

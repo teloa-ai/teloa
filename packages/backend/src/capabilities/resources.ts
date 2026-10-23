@@ -40,6 +40,22 @@ function validateRoleKnowledge(actor:ResourceActor,targetScopes:string[],ids:rea
   authorizeResourceActor(actor)
   if(!resourceScopes(targetScopes)||!Array.isArray(ids)||ids.length>roleKnowledgeMaxReferences||ids.some(id=>!resourceId(id))||new Set(ids).size!==ids.length)throw badInput()
 }
+/**
+ * 保存岗位资料范围前的存在性核对：UUID 形式的知识引用必须属于本人且仍存在。
+ * 早期非 ID 文本（legacy）保持原行为；资源表尚未初始化的装配（旧测试/行业模板预检）不在此阻断，
+ * 执行准备仍按原规则拒绝。缺失资料必须阻止保存，否则任务准备会在运行期固定失败。
+ */
+export async function assertRoleKnowledgeReferences(db:Pick<PoolClient,'query'>,ownerId:string,ids:readonly string[]):Promise<void>{
+ if(!Array.isArray(ids)||!ids.length)return
+ const references=[...new Set(ids.filter((id):id is string=>typeof id==='string'&&resourceId(id)).map(id=>id.toLowerCase()))]
+ if(!references.length)return
+ if((await db.query("select to_regclass('teloa_resources') as present")).rows[0]?.present==null)return
+ const rows=(await db.query('select id from teloa_resources where owner_id=$1 and id=any($2::uuid[])',[ownerId,references])).rows.map(row=>String(row.id).toLowerCase())
+ const missing=references.filter(id=>!rows.includes(id))
+ if(!missing.length)return
+ const listed=missing.slice(0,5).join('、'),remainder=missing.length>5?' 等':''
+ throw new WorkError('teloa/invalid-input',`员工资料范围包含 ${missing.length} 份不可用资料：${listed}${remainder}。请先在员工资料中移除或替换后再保存。`,{reason:'role-knowledge-unavailable',resourceIds:missing})
+}
 function expected(input:Record<string,unknown>,key:string):{id:string;version:number}{
   if(!resourceId(input[key])||!resourceVersion(input.expectedVersion))throw badInput()
   return {id:input[key],version:input.expectedVersion}
@@ -127,6 +143,14 @@ export class ResourceService {
     const row=(await client.query('select * from teloa_resources where id=$1 for '+lock,[id])).rows[0] as Record<string,unknown>|undefined
     if(!row)throw new WorkError('teloa/not-found','工作资料不存在。')
     const resource=resourceRow(row);authorizeResourceActor(actor,resource.ownerId,resource.scopeIds);return resource
+  }
+  /** 岗位资料读取：缺失的资料不能伪装成通用不存在，要明确指出员工资料范围需要修复。 */
+  private async roleKnowledgeResource(client:PoolClient,actor:ResourceActor,id:string):Promise<WorkResource>{
+    try{return await this.resource(client,actor,id)}
+    catch(error){
+      if(error instanceof WorkError&&error.code==='teloa/not-found')throw new WorkError('teloa/invalid-input','员工资料范围包含不可用资料：引用的资料不存在或已被移除，请在员工资料中移除或替换后重试。',{reason:'role-knowledge-unavailable',resourceIds:[id]})
+      throw error
+    }
   }
   async update(actor:ResourceActor,input:unknown):Promise<ResourceDraft>{
     const data=object(input,['draftId','expectedVersion',...specKeys]),{id,version}=expected(data,'draftId'),value=spec(data)
@@ -230,7 +254,7 @@ export class ResourceService {
   }
   /**
    * 保存岗位资料或任务知识前的体积预检：单份与合计都不能超过整段进提示词的上限，文案与执行准备一致。
-   * 只看来源登记的字节数、不读正文；格式不对、不属于本人或不存在的资料不在这里判断（岗位定义本就允许先存），执行准备时仍按原规则拒绝。
+   * 只看来源登记的字节数、不读正文；格式不对或非本人的资料不在这里判断（岗位保存口的资料存在性核对与执行准备分别拒绝）。
    */
   async checkFullTextBudget(actor:ResourceActor,ids:readonly string[],kind:'role'|'task'):Promise<void>{
     authorizeResourceActor(actor)
@@ -257,7 +281,7 @@ export class ResourceService {
     validateRoleKnowledge(actor,targetScopes,ids)
       const resources=new Map<string,WorkResource>()
       for(const id of [...ids].sort()){
-        const resource=await this.resource(client,actor,id)
+        const resource=await this.roleKnowledgeResource(client,actor,id)
         if(!resource.scopeIds.every(scope=>targetScopes.includes(scope)))throw new WorkError('teloa/forbidden','目标执行范围无权使用此员工资料。')
         if(resource.status!=='active')throw new WorkError('teloa/resource-withdrawn','员工资料已撤回，请重新选择。')
         resources.set(id,resource)
@@ -280,7 +304,7 @@ export class ResourceService {
       const resources=new Map<string,WorkResource>()
       for(const id of [...ids].sort()){
         signal?.throwIfAborted()
-        const resource=await this.resource(client,actor,id)
+        const resource=await this.roleKnowledgeResource(client,actor,id)
         if(!resource.scopeIds.every(scope=>targetScopes.includes(scope)))throw new WorkError('teloa/forbidden','目标执行范围无权使用此员工资料。')
         if(resource.status!=='active')throw new WorkError('teloa/resource-withdrawn','员工资料已撤回，请重新选择。')
         resources.set(id,resource)

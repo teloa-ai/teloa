@@ -7,7 +7,7 @@ import {createManagedAvailabilitySync} from '../src/managed-skill-availability-s
 import {createAssistantMessage} from '@deepseek-ai/dsh-llm'
 
 function fixture(){
- let run={id:'run',sessionId:'session',nativeRequestId:'native',state:'prepared',stopRequestedAt:null,inputText:'固定目标'} as TaskRun,sends=0,checks=0,stops=0,requests=0,fail=false
+ let run={id:'run',sessionId:'session',nativeRequestId:'native',state:'prepared',stopRequestedAt:null,allowedTools:['bash'],inputText:'固定目标'} as TaskRun,sends=0,checks=0,stops=0,requests=0,fail=false
  const checkedTarget:TaskExecutionScope={taskId:'task',taskVersion:1,sessionId:'session',linkVersion:1,scope:'SOC'}
  const claimedTarget:TaskExecutionScope={...checkedTarget}
  const stopped:Array<string|null>=[]
@@ -19,7 +19,7 @@ function fixture(){
 test('固定整项控制未 active 或读口缺失时，prepare 后仍不可领取发送权',async()=>{
  for(const state of ['paused','pausing','stopping','stopped',undefined] as const){
   let claims=0,checks=0,sends=0
-  const run={id:'run',state:'prepared',lineage:{}} as TaskRun
+  const run={id:'run',state:'prepared',allowedTools:['bash'],lineage:{}} as TaskRun
   const driver=new TaskRunDriver({get:async()=>run,executionScope:async()=>{throw Error('暂停前不能读取发送目标')},claim:async()=>{claims++;throw Error('暂停前不能领取')},record:async()=>run,requestStop:async()=>run},{check:async()=>{checks++},send:async()=>{sends++},stop:async()=>{},events:async()=>[],...(state?{controlState:async()=>state}:{})})
   await assert.rejects(driver.start('owner',{runId:'run'},new AbortController().signal),{code:'teloa/forbidden'})
   assert.deepEqual({claims,checks,sends},{claims:0,checks:0,sends:0});assert.equal(run.state,'prepared')
@@ -250,7 +250,7 @@ test('运行配置失败是不可再停止或核对原生日志的终态',async(
 })
 
 test('稳定区覆盖检查、领取和发送接收，维护不能插入领取与原生提交之间',async()=>{
- let run={id:'run',sessionId:'session',nativeRequestId:'native',state:'prepared',inputText:'固定目标'} as TaskRun
+ let run={id:'run',sessionId:'session',nativeRequestId:'native',state:'prepared',allowedTools:['bash'],inputText:'固定目标'} as TaskRun
  const target:TaskExecutionScope={taskId:'task',taskVersion:1,sessionId:'session',linkVersion:1,scope:'SOC'},events:string[]=[]
  let releaseSend!:()=>void
  const sendAccepted=new Promise<void>(resolve=>{releaseSend=resolve})
@@ -495,4 +495,66 @@ test('本人结束后的成果保存失败可恢复同一候选，不重新记�
  const driver=new TaskRunDriver({get:async()=>run,executionScope:forbidden,claim:forbidden,record:forbidden,requestStop:forbidden},{check:forbidden,send:forbidden,stop:forbidden,events:forbidden,publishOwnerResult:async saved=>{assert.equal(saved,run);if(++attempts===1)throw Error('保存暂不可用')}})
  await assert.rejects(driver.reconcile('owner',{runId:run.id}),/保存暂不可用/)
  assert.equal(await driver.reconcile('owner',{runId:run.id}),run);assert.equal(attempts,2)
+})
+
+/** GRP-01 / RET-001：员工运行没有任何执行工具时不得把空工具目录交给模型循环。 */
+test('员工运行没有执行工具时阻止启动并给出可操作的授权提示',async()=>{
+ const make=(allowedTools:string[],extra:Partial<TaskRun>={})=>{
+  let run={id:'run',sessionId:'session',nativeRequestId:'native',state:'prepared',stopRequestedAt:null,allowedTools,skills:[],inputText:'固定目标',...extra} as TaskRun
+  let claims=0,sends=0
+  const target={taskId:'task',taskVersion:1,sessionId:'session',linkVersion:1,scope:'SOC'}
+  const driver=new TaskRunDriver({get:async()=>run,executionScope:async()=>target,claim:async()=>{claims++;run={...run,state:'submitting'};return {run,dispatch:true as const,target}},record:async(_owner:string,input:unknown)=>{run={...run,state:'accepted'};return run},requestStop:async()=>run},{check:async()=>{},send:async()=>{sends++},stop:async()=>{},events:async()=>[]})
+  return {driver,run:()=>run,claims:()=>claims,sends:()=>sends}
+ }
+ // 普通员工任务（非群交办）：RET-001 场景
+ const plain=make([])
+ await assert.rejects(plain.driver.start('owner',{runId:'run'},new AbortController().signal),error=>error instanceof Error&&'code' in error&&error.code==='teloa/conflict'&&'details' in error&&(error as {details?:{reason?:string}}).details?.reason==='role-run-no-execution-tools'&&/工具授权/.test(error.message))
+ assert.deepEqual({claims:plain.claims(),sends:plain.sends(),state:plain.run().state},{claims:0,sends:0,state:'prepared'})
+ // GRP-01：空授权清单就是空工具目录，必须阻止启动
+ const groupNoGrant=make([])
+ await assert.rejects(groupNoGrant.driver.start('owner',{runId:'run'},new AbortController().signal),{code:'teloa/conflict'})
+ assert.equal(groupNoGrant.sends(),0)
+ // 群工作交办（groupContext 带本人要求）同样要求执行工具
+ const groupWork=make([],{groupContext:{taskId:'task',groupId:'group',groupVersion:1,roleId:'role',roleVersion:1,grantVersion:1,source:{messageId:'message',rootId:'message',createdAt:'2026-10-22T00:00:00.000Z',text:'请整理'},materials:[],files:[],ownerRequest:{messageId:'message',text:'请整理',sha256:'0'.repeat(64)}} as unknown as NonNullable<TaskRun['groupContext']>})
+ await assert.rejects(groupWork.driver.start('owner',{runId:'run'},new AbortController().signal),{code:'teloa/conflict'})
+ // 有真正授权的执行工具时可以启动
+ const granted=make(['read','teloa_workspace_write'])
+ assert.equal((await granted.driver.start('owner',{runId:'run'},new AbortController().signal)).state,'accepted')
+ assert.equal(granted.sends(),1)
+ // 本人执行（owner）与群交流回应（无 ownerRequest）不按本规则阻断
+ const owner=make([],{executor:{kind:'owner',grantId:'11111111-1111-4111-8111-111111111111',grantVersion:1},roleId:null,roleVersion:null})
+ assert.equal((await owner.driver.start('owner',{runId:'run'},new AbortController().signal)).state,'accepted')
+ const groupReply=make([],{groupContext:{taskId:'task',groupId:'group',groupVersion:1,roleId:'role',roleVersion:1,grantVersion:1,source:{messageId:'message',rootId:'message',createdAt:'2026-10-22T00:00:00.000Z',text:'你好'},materials:[],files:[]} as unknown as NonNullable<TaskRun['groupContext']>})
+ assert.equal((await groupReply.driver.start('owner',{runId:'run'},new AbortController().signal)).state,'accepted')
+})
+
+// 3299 live 回归：AutoDream 每日小结（system-digest 计划来源）只用自授权证据/提交工具，
+// 岗位 allowedTools 为空也必须能启动；普通计划/普通员工运行仍按空执行工具闸拒绝。
+test('system-digest 每日小结空执行工具也可启动，普通计划与旧装配仍拒绝',async()=>{
+ const planId='11111111-1111-4111-8111-111111111111'
+ const lineage={schema:'teloa.work-lineage/v1',ownerId:'owner',rootTaskId:'task',definition:{planId,definitionVersion:1,occurrenceId:'2026-10-23T23:30[Asia/Singapore]'},parentRunId:null,definitionControlId:null,roundControlId:'round',controlGeneration:1,budgetAccountId:'budget'} as unknown as NonNullable<TaskRun['lineage']>
+ const make=(systemDigest:boolean,plan:boolean,hasMethod=true)=>{
+  let run={id:'run',sessionId:'session',nativeRequestId:'native',state:'prepared',stopRequestedAt:null,allowedTools:[],skills:[],inputText:'固定目标',...(plan?{lineage}:{})} as unknown as TaskRun
+  let claims=0,sends=0
+  const target={taskId:'task',taskVersion:1,sessionId:'session',linkVersion:1,scope:'general'}
+  const service={get:async()=>run,executionScope:async()=>target,claim:async()=>{claims++;run={...run,state:'submitting'};return {run,dispatch:true as const,target}},record:async():Promise<TaskRun>=>{run={...run,state:'accepted'};return run},requestStop:async()=>run,...(hasMethod?{isSystemDigestRun:async()=>systemDigest}:{})}
+  const driver=new TaskRunDriver(service,{check:async()=>{},send:async()=>{sends++},stop:async()=>{},events:async()=>[],controlState:async()=>'active' as const})
+  return {driver,run:()=>run,claims:()=>claims,sends:()=>sends}
+ }
+ // 系统小结来源经只读判定为 true → 放行启动
+ const digest=make(true,true)
+ const accepted=await digest.driver.start('owner',{runId:'run'},new AbortController().signal)
+ assert.equal(accepted.state,'accepted');assert.equal(digest.claims(),1);assert.equal(digest.sends(),1)
+ // 同一计划谱系但来源不是 system-digest → 仍拒绝
+ const normalPlan=make(false,true)
+ await assert.rejects(normalPlan.driver.start('owner',{runId:'run'},new AbortController().signal),error=>error instanceof Error&&'details' in error&&(error as {details?:{reason?:string}}).details?.reason==='role-run-no-execution-tools')
+ assert.equal(normalPlan.sends(),0)
+ // 旧装配没有只读方法：即使谱系带 planId 也不能猜放行
+ const oldAssembly=make(false,true,false)
+ await assert.rejects(oldAssembly.driver.start('owner',{runId:'run'},new AbortController().signal),{code:'teloa/conflict'})
+ assert.equal(oldAssembly.sends(),0)
+ // 没有计划谱系的普通员工运行不查来源、直接按空工具拒绝（只读方法即使恒 true 也不得放行）
+ const noLineage=make(true,false)
+ await assert.rejects(noLineage.driver.start('owner',{runId:'run'},new AbortController().signal),{code:'teloa/conflict'})
+ assert.equal(noLineage.sends(),0)
 })

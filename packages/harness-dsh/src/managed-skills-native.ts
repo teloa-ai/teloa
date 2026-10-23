@@ -47,7 +47,9 @@ const assertForwardSnapshot=(current:ReadonlyMap<string,FixedSnapshotItem>,next:
   const byName=new Map([...next.values()].map(item=>[item.native.name,item]))
   for(const before of current.values()){
     const after=byName.get(before.native.name)
-    if(!after||after.selectionVersion<before.selectionVersion)throw corrupt()
+    // 硬卸载后安装与原生目录一起消失，快照允许该安装整体移除；其余状态仍只允许前进。
+    if(!after)continue
+    if(after.selectionVersion<before.selectionVersion)throw corrupt()
     if(after.installationId!==before.installationId){if(after.selectionVersion===before.selectionVersion||after.installationState!=='installed')throw corrupt();continue}
     if(!sameNative(before.native,after.native)||after.installationVersion<before.installationVersion||after.availabilityVersion<before.availabilityVersion||(after.installationVersion===before.installationVersion&&after.installationState!==before.installationState)||(after.availabilityVersion===before.availabilityVersion&&after.availability!==before.availability)||(before.installationState==='installed'&&after.installationState!=='installed'))throw corrupt()
   }

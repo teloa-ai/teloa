@@ -280,7 +280,7 @@ Community 0.2.4 · 32 views · Actual interfaces with example data. Click an ima
 
 Bring your own model service and API key. Model usage is billed by your provider; the Community software license does not include inference credits.
 
-**0.2.6** is the current Community release. It fixes natural-language creation and sharing across AI employees, AI teams, Apps and SKILL, including original-draft confirmation, skill availability, successive imports and group delivery. The four creation, use and sharing workflows were verified with real MiniMax. The SDK remains compatible at `@teloa/sdk@0.2.4`. [GitHub Releases](https://github.com/teloa-ai/teloa/releases/tag/v0.2.6), [npm](https://www.npmjs.com/package/@teloa/cli/v/0.2.6) and [Docker Hub](https://hub.docker.com/r/teloa/teloa) provide this release: native macOS ARM64 and container Linux ARM64.
+**0.2.7** is the current Community release. It adds real hard uninstall for installed skills from both the workbench and natural language, with explicit host confirmation and protection for current selections, loaded packages and historical run evidence. It also closes production-QA gaps across task and group execution gates, project and employee memory, AutoDream, creation-draft recovery, installed-market management and directory focus. The affected flows were verified with real MiniMax and real PostgreSQL. The SDK remains compatible at `@teloa/sdk@0.2.4`. [GitHub Releases](https://github.com/teloa-ai/teloa/releases/tag/v0.2.7), [npm](https://www.npmjs.com/package/@teloa/cli/v/0.2.7) and [Docker Hub](https://hub.docker.com/r/teloa/teloa) provide this release: native macOS ARM64 and container Linux ARM64.
 
 ### What changes in this release
 
@@ -307,27 +307,27 @@ Use **Node.js 24.x** or **22.x from 22.19 onward**, **npm 11.x from 11.12.1 onwa
 ```sh
 mkdir teloa-command
 cd teloa-command
-npm install --ignore-scripts https://github.com/teloa-ai/teloa/releases/download/v0.2.6/teloa-cli-0.2.6.tgz
+npm install --ignore-scripts https://github.com/teloa-ai/teloa/releases/download/v0.2.7/teloa-cli-0.2.7.tgz
 ./node_modules/.bin/teloa up
 ./node_modules/.bin/teloa doctor
 ./node_modules/.bin/teloa status
 ```
 
-Teloa and DSH run natively on your computer. Startup opens the Web interface; configure your model in Settings. The default Web port is 3100. For a new installation, use `./node_modules/.bin/teloa up --port 3101` if it is occupied. The release also lists the package's SHA-256 checksum. To upgrade an existing installation, such as 0.2.0-alpha.7, keep its data and identity by installing the 0.2.6 package into a new command directory, then running `teloa stop` and `teloa upgrade --to 0.2.6` from that directory (pass the original `--home` for a custom installation). The upgrade creates a backup before switching. See the [installation and stop instructions](https://docs.teloa.ai/en/start/quickstart) and [backup and upgrades](https://docs.teloa.ai/en/deploy/backup). For npm, use `npm install --ignore-scripts @teloa/cli@0.2.6`.
+Teloa and DSH run natively on your computer. Startup opens the Web interface; configure your model in Settings. The default Web port is 3100. For a new installation, use `./node_modules/.bin/teloa up --port 3101` if it is occupied. The release also lists the package's SHA-256 checksum. To upgrade an existing installation, such as 0.2.0-alpha.7, keep its data and identity by installing the 0.2.7 package into a new command directory, then running `teloa stop` and `teloa upgrade --to 0.2.7` from that directory (pass the original `--home` for a custom installation). The upgrade creates a backup before switching. See the [installation and stop instructions](https://docs.teloa.ai/en/start/quickstart) and [backup and upgrades](https://docs.teloa.ai/en/deploy/backup). For npm, use `npm install --ignore-scripts @teloa/cli@0.2.7`.
 
 <details>
-<summary><strong>Docker Hub with Compose (0.2.6)</strong></summary>
+<summary><strong>Docker Hub with Compose (0.2.7)</strong></summary>
 
 ### Docker Hub with Compose
 
 Install Docker with Compose and start the engine. The published image and the configuration below have been verified on **Linux ARM64**; **amd64 has not been verified**. Teloa, DSH and PostgreSQL run in containers, so host Node.js and pnpm are not required.
 
-Download the versioned configuration into a new directory. It uses `teloa/teloa:0.2.6` for both initialization and the application, with persistent data volumes and a generated database password.
+Download the versioned configuration into a new directory. It uses `teloa/teloa:0.2.7` for both initialization and the application, with persistent data volumes and a generated database password.
 
 ```sh
 mkdir teloa-community
 cd teloa-community
-curl --fail --location https://docs.teloa.ai/downloads/0.2.6/compose.yaml --output compose.yaml
+curl --fail --location https://docs.teloa.ai/downloads/0.2.7/compose.yaml --output compose.yaml
 docker compose pull
 docker compose up -d --no-build
 docker compose ps

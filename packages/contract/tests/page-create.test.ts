@@ -151,3 +151,34 @@ test('模板草案失败透传固定校验原因，不回显正文、凭据或�
  const hostile={...pkg,get files():unknown{throw new TypeError('private /Users/someone/secret')}}
  assert.throws(()=>readPageCreateBody('share',{package:hostile}),(error:Error)=>/^模板草案/.test(error.message)&&!error.message.includes('/Users/'))
 })
+
+test('分享模板失败原因点名资源 id/路径/缺失字段，模型与用户都能按原因修正',()=>{
+ const baseManifest={format:'teloa.business-package/v2',id:'docs-app',version:'1.0.0',title:'文档应用',description:'整理文档',domain:'general',resources:[{id:'notes',kind:'skill',title:'整理',version:'1.0.0',required:true,source:{kind:'local',path:'notes/SKILL.md'}}],relations:[],entrypoints:[]}
+ const pkgFor=(manifest:Record<string,unknown>,files:{path:string;text:string}[])=>readPageCreateBody('share',{package:{format:'teloa.template-share/v2',subject:'app',id:'docs-app',version:'1.0.0',title:'文档应用',description:'整理文档',requirements:[],license:'MIT',trust:{publisher:'本人创作'},provenance:{sources:[]},sourceFiles:[],compatibility:{manifestFormat:'teloa.business-package/v2',capabilities:[]},files:[{path:'teloa.json',text:JSON.stringify(manifest)},...files]}})
+ const skill='---\nname: notes\ndescription: d\n---\nx'
+ assert.doesNotThrow(()=>pkgFor(baseManifest,[{path:'notes/SKILL.md',text:skill}]))
+ // 资源类型用错文件格式：原因带 kind、资源 id 与真实路径（长路径也要完整透传，不因长度缩成笼统失败）。
+ const longPath='work-templates/'+'a'.repeat(210)+'.md'
+ const wrongFormat={...baseManifest,resources:[{id:'flow',kind:'work-template',title:'流程',version:'1.0.0',required:true,source:{kind:'local',path:longPath}}]}
+ assert.throws(()=>pkgFor(wrongFormat,[{path:longPath,text:'# 流程'}]),error=>{
+  assert.equal((error as {code?:string}).code,'teloa/invalid-input')
+  const message=(error as Error).message
+  assert.match(message,/原因：Template work-template resource flow must use a JSON declaration file \(\.json\)/)
+  assert.ok(message.includes(longPath),'错误必须包含真实资源路径')
+  assert.doesNotMatch(message,/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/)
+  return true
+ })
+ // 必需资源文件缺失：原因带资源 id 与实际路径。
+ const missingFile={...baseManifest,resources:[{...baseManifest.resources[0],id:'notes'}]}
+ assert.throws(()=>pkgFor(missingFile,[]),error=>{
+  const message=(error as Error).message
+  assert.match(message,/原因：Template resource file is missing: notes \(notes\/SKILL\.md\)/)
+  return true
+ })
+ // 顶层缺字段：原因点名 Missing 后的字段名，不只回「操作未完成」。
+ const {title:_title,...withoutTitle}=baseManifest
+ assert.throws(()=>pkgFor(withoutTitle,[{path:'notes/SKILL.md',text:skill}]),error=>{
+  assert.match((error as Error).message,/原因：Template contains missing or unsupported fields\. Missing: title/)
+  return true
+ })
+})

@@ -28,7 +28,7 @@ import {EmployeeAvatar} from './EmployeeAvatar.js'
 import {TwinAvatar} from './TwinAvatar.js'
 import {personalAvatarInitials} from './personal-profile.js'
 import {Fragment,useEffect,useId,useMemo,useRef,useState,type Dispatch,type SetStateAction,type ReactNode} from 'react'
-import {Bold,Italic,Link,List,ListOrdered,Quote,Code,CaseSensitive,SendHorizontal,LoaderCircle,Check,Bot,Info,Archive,ArrowLeft,ArrowUp,AtSign,CheckCheck,Download,FileText,MessageSquare,Paperclip,Pin,Plus,ListPlus,ListTree,Megaphone,MoreHorizontal,RefreshCw,Reply,Search,Smile,UserRound,Users,X} from 'lucide-react'
+import {Bold,Italic,Link,List,ListOrdered,Quote,Code,CaseSensitive,SendHorizontal,LoaderCircle,Check,Bot,Info,Archive,ArrowLeft,ArrowUp,AtSign,CheckCheck,Download,FileText,MessageSquare,Paperclip,Pin,Plus,ListPlus,ListTree,Megaphone,MoreHorizontal,RefreshCw,Reply,Search,Smile,Square,UserRound,Users,X} from 'lucide-react'
 import clsx from 'clsx'
 import {MarkdownText,type MarkdownLabels} from '@deepseek-ai/dsh-client-ui-primitives'
 import {roleSupportsScope,groupAttachmentExtensions,groupAttachmentFileMediaTypes,groupAttachmentImageMediaTypes,groupAttachmentMaxBytesFor,groupReactionMessageIdsMax,groupReferenceMaxFiles,groupRoutingMessageIdsMax} from '@teloa/contract'
@@ -36,7 +36,7 @@ import type {Group,GroupAgentGrant,GroupAgentGrantRead,GroupAttachment,GroupChan
 import type {GroupAttachmentApi,OpenedAttachment,PendingAttachment} from './group-attachment-api.js'
 import {GroupReactionBar} from './GroupReactionBar.js'
 import type {GroupReactionApi} from './group-reaction-api.js'
-import type {GroupRoutingApi} from './group-routing-api.js'
+import {groupRunStopTargets,type GroupRoutingApi,type GroupRunStopTarget} from './group-routing-api.js'
 import {groupRoutingPending} from './group-routing-view.js'
 import {groupMainMessages,groupMessageOverlayIds,groupMessageStatusIds,groupProgressStatuses,mergeGroupMessageStatuses} from './group-message-overlays.js'
 import {parseBusinessRecordReferences,type GroupTaskBusinessTarget} from '@teloa/contract'
@@ -49,7 +49,8 @@ import {GroupEmojiPicker} from './GroupReactionBar.js'
 import {GroupChannelBindings,type GroupChannelContext} from './GroupChannelBindings.js'
 import type {GroupApi,GroupSnapshot,GroupTaskRecord} from './group-api.js'
 import {useBusinessScopes} from './business-scope-context.js'
-import {taskStates,type PreviewTask} from './task-preview.js'
+import type {PreviewTask} from './task-preview.js'
+import {groupWorkTaskStateLabel} from './task-list-presentation.js'
 import type {PreviewRole} from './role-preview.js'
 import {groupMentionCandidates,groupMentionLabel,groupMentionQuery,groupTaskAssignees,groupMessageIdentity,visibleSavedGroups} from './saved-collaboration-state.js'
 import {savedCollaborationDrafts,type GroupDraftEntry} from './saved-collaboration-drafts.js'
@@ -160,6 +161,8 @@ export function SavedCollaborationPage({workResources,artifactRail,templateMater
  const [reactionItems,setReactionItems]=useState<GroupReactionSummary[]>([]),[routingDecisions,setRoutingDecisions]=useState<GroupRoutingDecisionView[]>([])
  // 本人消息的真实处理状态与按输入入口保存的引用回复目标（规格 §3.2、§5）。
  const [messageStatuses,setMessageStatuses]=useState<GroupRoutingStatusView[]>([]),[replyDrafts,setReplyDrafts]=useState<Record<string,string>>({}),[retrying,setRetrying]=useState<Record<string,'pending'|'failed'>>({})
+ // GRP-05：群内停止入口的请求状态；复用任务运行停止链路，按原 taskId/runId 停止，不新造语义。
+ const [stopping,setStopping]=useState<Record<string,'pending'|'failed'>>({})
  // 成果卡先只取标题／版本／文件清单（describeArtifact，不取字节）；每个文件的字节等展开/单文件默认展开时才懒取（openArtifactFile）。
  const [artifactSummaries,setArtifactSummaries]=useState<Record<string,ArtifactSummaryState>>({}),[artifactFiles,setArtifactFiles]=useState<Record<string,ArtifactFileState>>({})
  const selectedGroup=useRef<string|undefined>(undefined),selectedRoot=useRef<string|undefined>(undefined),viewGeneration=useRef(0),groupReadGeneration=useRef(0),overlayReadGeneration=useRef(0)
@@ -600,9 +603,34 @@ export function SavedCollaborationPage({workResources,artifactRail,templateMater
    await reloadSelected(group.id)
   }catch{setRetrying(current=>({...current,[status.messageId]:'failed'}))}
  }
+ // GRP-05：仍在运行的接收者给出群消息行内的停止入口；停止只走既有 TaskRun 停止链路，失败可重试且不改动消息。
+ const stopGroupRuns=async(status:GroupRoutingStatusView,targets:readonly GroupRunStopTarget[])=>{
+  if(!routing||!group)return
+  const key=status.messageId
+  setStopping(current=>({...current,[key]:'pending'}))
+  try{
+   for(const target of targets)await routing.stopRun({taskId:target.taskId,runId:target.runId})
+   setStopping(({[key]:_done,...rest})=>rest)
+   await reloadSelected(group.id)
+  }catch{setStopping(current=>({...current,[key]:'failed'}))}
+ }
+ const stopRow=(message:GroupMessage)=>{
+  const status=messageStatuses.find(item=>item.messageId===message.id)
+  if(!status||!group||group.archived||!allowed||!routing)return null
+  const targets=groupRunStopTargets(status)
+  if(!targets.length)return null
+  const state=stopping[status.messageId]
+  const names=targets.map(target=>roleNames[target.roleId]??target.name)
+  const label=t('overview.stopAria',{name:names.join('、')})
+  return <div className={css.messageActions} role="group" aria-label={label}>
+   {targets.map(target=>{const one=t('overview.stopAria',{name:roleNames[target.roleId]??target.name});return <button key={`${target.taskId}:${target.runId}`} type="button" className={css.statusIconButton} aria-label={one} title={one} disabled={state==='pending'} onClick={()=>void stopGroupRuns(status,targets)}><Square size={13} aria-hidden/></button>})}
+   {state==='pending'&&<span className={css.messageStatusQuiet} role="status">{t('overview.stopRequesting')}</span>}
+   {state==='failed'&&<span className={css.messageStatusHint} role="alert">{t('taskCompletion.retry')}</span>}
+  </div>
+ }
  const statusRow=(message:GroupMessage)=>{
   const status=messageStatuses.find(item=>item.messageId===message.id)
-  return status&&group?<GroupMessageStatus status={status} message={message} decision={routingDecisions.find(item=>item.messageId===message.id)} archived={group.archived||!allowed} retrying={retrying[status.messageId]==='pending'} retryFailed={retrying[status.messageId]==='failed'} retry={()=>void retryRouting(status)} openTask={work?.openTask} resume={work?.controls&&status.controlId&&!group.archived&&allowed?(controlId=>setResumeTarget({controlId,taskId:status.recipients.find(item=>item.executionMode==='work'&&item.phase==='paused'&&item.taskId)?.taskId??null})):undefined}/>:null
+  return status&&group?<><GroupMessageStatus status={status} message={message} decision={routingDecisions.find(item=>item.messageId===message.id)} archived={group.archived||!allowed} retrying={retrying[status.messageId]==='pending'} retryFailed={retrying[status.messageId]==='failed'} retry={()=>void retryRouting(status)} openTask={work?.openTask} resume={work?.controls&&status.controlId&&!group.archived&&allowed?(controlId=>setResumeTarget({controlId,taskId:status.recipients.find(item=>item.executionMode==='work'&&item.phase==='paused'&&item.taskId)?.taskId??null})):undefined}/>{stopRow(message)}</>:null
  }
  // 输入框上方的聚合进行中状态只看本会话可见的本人消息与已派出接手者的员工交接，换群残留的投影按消息身份自然排除（N46）。
  const progressRow=(list:readonly GroupMessage[])=>{
@@ -726,7 +754,7 @@ export function SavedGroupWork({group,tasks,messageStatuses=[],roles,work,profil
  return <section className={css.workSummary}>
   {work?.createTask&&<header><span/><button type="button" className={css.iconButton} aria-label={t('collaboration.task.create')} title={t('collaboration.task.create')} disabled={blocked} onClick={()=>work.createTask?.(group.id)}><Plus size={17}/></button></header>}
   <div className={css.workRows}>{visibleTasks.map(task=><article className={css.workRow} key={task.id}>
-   <div className={css.workMeta}><span>{t('collaboration.view.task')}</span><span>{t(taskStates[task.state])}</span></div>
+   <div className={css.workMeta}><span>{t('collaboration.view.task')}</span><span>{groupWorkTaskStateLabel(task,t)}</span></div>
    <button type="button" className={css.objectName} disabled={!work} onClick={()=>work?.openTask(task.id)}>{task.title}</button>
    <div className={css.workOwner}>{task.assigneeId!=='self'&&roles.some(role=>role.id===task.assigneeId)&&work?<button type="button" className={css.memberName} onClick={()=>work.openRole(task.assigneeId)}>{roleName(task.assigneeId)}</button>:<span>{roleName(task.assigneeId)}</span>}{task.need&&<span>{t('attention.'+task.need)}</span>}</div>
   </article>)}</div>

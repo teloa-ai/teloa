@@ -23,6 +23,18 @@ export function WorkspaceSearch({visible,source,conversationStatus,knowledgeStat
  const resultList=useId(),optionPrefix=useId(),options=useRef(new Map<string,HTMLButtonElement>())
  const dismissEvents=useDialogDismiss(close,!busy)
  useEffect(()=>{if(visible)return openDialog(dialog.current,input.current)},[visible])
+ // 原生模态框的 Tab 会经过可滚动的结果列表容器，个别浏览器在末尾把焦点交给文档；显式按弹层内顺序回环。
+ const trapTab=(event:React.KeyboardEvent<HTMLDialogElement>)=>{
+  if(event.key!=='Tab')return
+  const node=dialog.current
+  if(!node)return
+  const focusable=Array.from(node.querySelectorAll<HTMLElement>('button:not(:disabled):not([tabindex="-1"]),input:not(:disabled):not([tabindex="-1"]),select:not(:disabled),textarea:not(:disabled),a[href]:not([tabindex="-1"]),[tabindex]:not([tabindex="-1"])')).filter(element=>element.isConnected&&element.getClientRects().length>0&&!element.matches(':disabled,[aria-disabled="true"]'))
+  if(!focusable.length){event.preventDefault();input.current?.focus();return}
+  const index=focusable.indexOf(document.activeElement as HTMLElement)
+  if(index===-1){event.preventDefault();(event.shiftKey?focusable[focusable.length-1]:focusable[0])?.focus();return}
+  if(!event.shiftKey&&index===focusable.length-1){event.preventDefault();focusable[0]?.focus()}
+  else if(event.shiftKey&&index===0){event.preventDefault();focusable[focusable.length-1]?.focus()}
+ }
  const trimmedQuery=query.trim()
  // 页签计数与列表同源：都来自本次未筛选的结果，「我的资源」与筛选同口径（应用 + 市场）。
  const allResults=searchWorkspace(source,query)
@@ -51,7 +63,7 @@ export function WorkspaceSearch({visible,source,conversationStatus,knowledgeStat
  }
  const selectKind=(kind:WorkspaceSearchKindFilter)=>{setSelectedKind(kind);setSelectedKey(undefined);setError('')}
  if(!visible)return null
- return <dialog ref={dialog} className={css.dialog} aria-label={t('workspaceSearch.title')} {...dismissEvents}>
+ return <dialog ref={dialog} className={css.dialog} aria-label={t('workspaceSearch.title')} {...dismissEvents} onKeyDown={trapTab}>
  <header className={css.header}>
   <label className={css.search}><Search size={17} aria-hidden="true"/><input ref={input} role="combobox" aria-autocomplete="list" aria-expanded="true" aria-controls={resultList} aria-activedescendant={activeKey?optionId(activeKey):undefined} aria-label={t('workspaceSearch.inputAria')} value={query} onKeyDown={navigate} onChange={event=>{setQuery(event.target.value);setSelectedKey(undefined);setError('')}} placeholder={t('workspaceSearch.placeholder')}/></label>
   <button className={css.close} type="button" aria-label={t('workspaceSearch.closeAria')} disabled={busy} onClick={close}><X size={20}/></button>

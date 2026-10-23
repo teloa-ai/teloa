@@ -69,7 +69,19 @@ test('统一交办：普通主会话→真实岗位Task/Run→结果回原会话
  ctx.on('approval/request',async request=>{if(!allowedTools.has(request.toolName))return 'rejected';approvedTools.push(request.toolName);return 'allowed-once'})
  const database=await openResourceDatabase(config,{id:randomUUID,now:()=>new Date().toISOString()}),pool=database.pool;t.after(()=>pool.end())
  const call=async<T>(endpoint:string,payload:unknown):Promise<T>=>{const result=await rpc!(endpoint,payload,AbortSignal.timeout(15000));assert.equal(result.ok,true,endpoint+': '+JSON.stringify(result.error));return result.value as T}
+ // 回归夹具（task-18）：新的空执行工具闸要求员工运行至少一项真实执行工具；按宿主候选授权后恢复在岗，不放宽产品闸。
+ type GrantableRole={id:string;version:number}
+ const reloadRole=async(roleId:string):Promise<GrantableRole>=>{const rows=await call<GrantableRole[]>('roles/list',{});const found=rows.find(item=>item.id===roleId);assert.ok(found,'岗位必须仍在目录');return found}
+ const moveRole=async(role:GrantableRole,action:'pause'|'resume'):Promise<GrantableRole>=>{await call('roles/lifecycle',{roleId:role.id,expectedVersion:role.version,action,reason:'回归夹具：配置执行工具'});return reloadRole(role.id)}
+ const grantExecutionTools=async(role:GrantableRole):Promise<GrantableRole>=>{
+  const paused=await moveRole(role,'pause')
+  const page=await call<{rules:{name:string}[]}>('role-tools/candidates',{roleId:paused.id})
+  const rule=page.rules.find(item=>item.name==='web_search')??page.rules[0]??{name:'subagent_task'}
+  await call('role-tools/change',{roleId:paused.id,expectedRoleVersion:paused.version,action:'save',rules:[{name:rule.name,anyArguments:true,allowed:[]}]})
+  return moveRole(await reloadRole(paused.id),'resume')
+ }
  model.role=await call('roles/create',{requestId:randomUUID(),fields:{name:'真实调查同事',kind:'employee',scopes:['SOC'],duty:'调查事件',dataScope:'本次输入',executionScope:'只读分析',skills:[],knowledge:[],responsibility:testRoleResponsibility,runtimeConfig:{agentPresetId:'teloa-standard'}}})
+ model.role=await grantExecutionTools(model.role)
  const memory=await call<{id:string;stateVersion:number}>('role-memory/create',{requestId:randomUUID(),roleId:model.role.id,expectedRoleVersion:model.role.version,title:'本岗位固定经验',markdown:'岗位私有验收经验：保留依据与未确认事项。',source:{kind:'self-feedback',id:randomUUID(),version:1},visibility:{kind:'role',scopeIds:['SOC']}})
  await call('role-memory/confirm',{requestId:randomUUID(),memoryId:memory.id,expectedStateVersion:memory.stateVersion})
  const conversation=await call<{sessionId:string}>('conversations/create',{requestId:randomUUID(),title:'统一交办验收'})
@@ -147,7 +159,8 @@ test('统一交办：普通主会话→真实岗位Task/Run→结果回原会话
   const sources=await call<{id:string;version:string}[]>('resources/sources',{});assert.ok(sources[0])
   const draft=await call<{id:string;version:number}>('resources/create',{requestId:randomUUID(),title:'统一交办固定资料',sourceId:sources[0].id,sourceVersion:sources[0].version,scopeIds:['general']})
   const resource=await call<{id:string;version:number}>('resources/apply',{draftId:draft.id,expectedVersion:draft.version})
-  const colleague=await call<{id:string;version:number}>('roles/create',{requestId:randomUUID(),fields:{name:'通用资料同事',kind:'employee',scopes:['general'],duty:'按资料核对',dataScope:'已授权资料',executionScope:'只读',skills:[],knowledge:[],responsibility:testRoleResponsibility,runtimeConfig:{agentPresetId:'teloa-standard'}}})
+  const colleague=await grantExecutionTools(await call<GrantableRole>('roles/create',{requestId:randomUUID(),fields:{name:'通用资料同事',kind:'employee',scopes:['general'],duty:'按资料核对',dataScope:'已授权资料',executionScope:'只读',skills:[],knowledge:[],responsibility:testRoleResponsibility,runtimeConfig:{agentPresetId:'teloa-standard'}}}))
+
   const reference=encodeResourceReference(resource),result=await invoke('固定资料交办','general','请核对这份资料 '+reference,{name:'teloa_work_dispatch',arguments:{scope:'general',title:'固定资料交办',goal:'读取原指令所选资料',roleId:colleague.id,expectedRoleVersion:colleague.version}})
   assert.equal(result.counts.received,1,JSON.stringify(result))
   const task=result.members[0]!.task!,material=(await pool.query('select resource_id,resource_version from teloa_task_materials where task_id=$1',[task.id])).rows

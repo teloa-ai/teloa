@@ -232,6 +232,9 @@ test('production apply 以真实 Context、临时 PG 与实际 /teloa handler �
       skills:[],knowledge:[],responsibility:{triggers:[],autonomousActions:[],confirmationPoints:[],escalationRules:[],deliveryChecks:[]},
       runtimeConfig:{agentPresetId:'general-analyst'},
     }}) as {id:string}
+    // 空工具 Run 已被启动闸拒绝；测试夹具直接落一条普通工具授权（产品授权只对暂停岗位开放），再激活岗位。
+    const rules=[{name:'web_search',allowed:[],anyArguments:true}]
+    await db.query("insert into teloa_role_tool_grants(role_id,base_version,role_version,state,rules,request_spec,created_at) values($1,1,2,'active',$2,$3,now())",[role.id,JSON.stringify(rules),JSON.stringify({action:'save',rules})])
     // 岗位要在效才能承接执行；生命周期接口之外的最短路径就是直接落库，与后端用例同一做法。
     await db.query("update teloa_roles set state='active',version=2 where id=$1",[role.id])
     const task=await call(rpc2,'tasks/create',{requestId:randomUUID(),fields:{title:'通用调查',goal:'核对一份材料',scope:'general'},assignee:{roleId:role.id,expectedVersion:2}}) as {id:string;version:number}

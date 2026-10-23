@@ -106,10 +106,10 @@ test('未授权岗位的执行会话拿不到 MCP 资源工具',{timeout:60000},
  const sessionId=randomUUID(),conversationId=randomUUID()
  const inspect=async()=>({id:conversationId,sessionId,ownerId:owner,status:'ready'})
  await new ObjectConversationService(pool,inspect,identity.now).change(owner,{requestId:randomUUID(),kind:'task',objectId:task.id,expectedObjectVersion:1,sessionId,expectedLinkVersion:0,action:'link'})
- const runs=new TaskRunService(pool,identity,inspect,{allowedTools:[],roleGrants:grantPolicy(knowledge)})
+ const runs=new TaskRunService(pool,identity,inspect,{allowedTools:['read']})
  const run=await runs.prepare(owner,{requestId:randomUUID(),taskId:task.id,expectedTaskVersion:1,roleId:role.id,expectedRoleVersion:1,sessionId,expectedLinkVersion:1},undefined,async()=>knowledge,undefined,async()=>'security-analyst')
- // 岗位从未保存授权，规则表为空，allowedTools 也就为空。
- assert.deepEqual(run.allowedTools,[])
+ // 只给普通工具，不授予任何 MCP 资源工具；空工具 Run 已被启动闸拒绝，不再是本用例要验证的路径。
+ assert.deepEqual(run.allowedTools,['read'])
  await runs.claim(owner,{runId:run.id})
  const ctx=new Context();t.after(()=>ctx.fiber.dispose())
  await ctx.plugin(LlmRuntime);await ctx.plugin(SessionStore);await ctx.plugin(SessionProjectionRegistry);await ctx.plugin(SystemPrompt);await ctx.plugin(ToolRuntime);await ctx.plugin(AgentRegistry);await ctx.plugin(AgentLoop,{agents:[]})

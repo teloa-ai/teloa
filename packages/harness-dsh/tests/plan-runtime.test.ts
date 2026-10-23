@@ -46,7 +46,7 @@ async function fixture(){
   loadKnowledge:async(target,ids,signal)=>{signal.throwIfAborted();assert.deepEqual(ids,[knowledge.id]);calls.knowledge.push(target);return [knowledge]},
   send:async run=>{calls.sends++;started.add(run.sessionId)},stop:async()=>{},events:async()=>[],
  }
- const getRunService=async():Promise<TaskRunService>=>{await beforeRunService?.();return new TaskRunService(pool,identity,(actor,id)=>conversations.bySession(actor,id),{allowedTools:[],runReservation:(actor,id)=>conversations.isTaskRunReserved(actor,id),planContext:(db,actor,taskId)=>runtime.executionContext(db,actor,taskId)})}
+ const getRunService=async():Promise<TaskRunService>=>{await beforeRunService?.();return new TaskRunService(pool,identity,(actor,id)=>conversations.bySession(actor,id),{allowedTools:['bash'],runReservation:(actor,id)=>conversations.isTaskRunReserved(actor,id),planContext:(db,actor,taskId)=>runtime.executionContext(db,actor,taskId)})}
  const runtime=createPlanRuntime({owner,getPool:async()=>pool,conversations,getRunService,runPorts})
  return {owner,plan,plans,role,controls,conversations,runtime,runPorts,calls,setNow:(value:string)=>{now=value},setBeforeRunService:(value:(()=>Promise<void>)|undefined)=>{beforeRunService=value},getRunService}
 }

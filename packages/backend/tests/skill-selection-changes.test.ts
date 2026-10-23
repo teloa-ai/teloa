@@ -17,7 +17,7 @@ class Reader{
  owner='';values=new Map<string,SkillInstallSourceBundle>()
  async read(owner:string,input:SkillInstallSourceInput){if(owner!==this.owner)throw new WorkError('teloa/forbidden','owner');const value=this.values.get(JSON.stringify(input));if(!value)throw new WorkError('teloa/source-unavailable','missing');return structuredClone(value)}
 }
-class Files implements SkillInstallationFilesPort{
+class Files implements SkillInstallationFilesPort{async remove(){}
  metadata=new Map<string,NativeSkillMetadata>()
  async inspect(bundle:SkillInstallSourceBundle){const value=this.metadata.get(bundle.bundleHash);if(!value)throw new WorkError('teloa/source-unavailable','metadata');return value}
  async publish(){}
