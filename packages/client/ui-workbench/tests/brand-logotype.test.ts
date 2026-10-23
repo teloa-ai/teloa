@@ -66,3 +66,14 @@ test('左栏品牌区左缘与导航项对齐并按新字标校正尺寸',async(
   assert.doesNotMatch(tier,/border-radius|border:1px/)
   assert.match(styles,/\.navItem\{[^}]*min-height:34px;[^}]*padding:0 10px/)
 })
+
+test('侧栏品牌行为非中文版本名留出空间，长名称收缩而不是压住新建与搜索',async()=>{
+  const styles=await readFile(new URL('WorkbenchFrame.module.css',client),'utf8')
+  // 英文 Community 比中文社区版宽；236px 侧栏下会伸到 quickActions。
+  assert.match(styles,/\.navigation\{[^}]*width:266px;flex:0 0 266px/)
+  const tier=styles.match(/(?:^|\})\.brandTier\{[^}]*\}/m)?.[0]??""
+  assert.match(tier,/flex:0 1 auto/)
+  assert.match(tier,/min-width:0/)
+  assert.match(tier,/overflow:hidden/)
+  assert.match(tier,/text-overflow:ellipsis/)
+})
