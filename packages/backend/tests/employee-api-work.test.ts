@@ -114,7 +114,7 @@ test('运行、固定结果、后续轮次与版本、取消按不同状态返�
  const f=await fixture(),saved=await f.work.command(f.identity,'start',randomUUID(),{employeeId:f.role.id,input:'核对第一轮'})
  await f.work.tick(AbortSignal.timeout(5000));let current=await f.work.get(f.identity,saved.id);assert.equal(current.state,'running');assert.equal(f.calls.length,2)
  next();f.setWaiting(true);await f.work.tick(AbortSignal.timeout(5000));assert.equal((await f.work.get(f.identity,saved.id)).state,'waiting');f.setWaiting(false)
- next();f.complete();await f.work.tick(AbortSignal.timeout(5000));current=await f.work.get(f.identity,saved.id);assert.equal(current.state,'succeeded')
+ next();await f.complete();await f.work.tick(AbortSignal.timeout(5000));current=await f.work.get(f.identity,saved.id);assert.equal(current.state,'succeeded')
  const result=await f.work.result(f.identity,saved.id);assert.equal(result.review,'unreviewed');assert.equal(result.round,1)
  await assert.rejects(()=>f.work.command(f.identity,'continue',randomUUID(),{expectedVersion:saved.version,input:'续做'},saved.id),{code:'version_conflict'})
  const continued=await f.work.command(f.identity,'continue',randomUUID(),{expectedVersion:current.version,input:'再核对第二轮'},saved.id)
@@ -139,7 +139,7 @@ test('按请求保存权限模式与模型，续办继承上一轮选择且幂�
  await f.work.tick(AbortSignal.timeout(5000))
  assert.equal(f.prepares[0]!.permissionMode,'read-only');assert.deepEqual(f.prepares[0]!.model,{provider:'custom-provider',model:'example-model',reasoningEffort:'high'})
  assert.deepEqual((await f.work.get(f.identity,work.id)).model,{provider:'custom-provider',model:'example-model',reasoningEffort:'high'})
- next();f.complete();await f.work.tick(AbortSignal.timeout(5000));let current=await f.work.get(f.identity,work.id);assert.equal(current.state,'succeeded')
+ next();await f.complete();await f.work.tick(AbortSignal.timeout(5000));let current=await f.work.get(f.identity,work.id);assert.equal(current.state,'succeeded')
  const continued=await f.work.command(f.identity,'continue',randomUUID(),{expectedVersion:current.version,input:'按上一轮继续'},work.id)
  assert.equal(continued.permissionMode,'read-only');assert.deepEqual(continued.model,{provider:'custom-provider',model:'example-model',reasoningEffort:'high'})
  stored=await rounds();assert.equal(stored[1]!.permission_mode,'read-only');assert.equal(stored[1]!.model_provider,'custom-provider')
@@ -174,7 +174,7 @@ test('成功结果在同一事务生成正式成果、完成关联任务并更�
 })
 test('升级前已保存固定结果但任务仍等待的工作直接补齐交付，不重新准备或重复成果',async()=>{
  const f=await fixture(),work=await f.work.command(f.identity,'start',randomUUID(),{employeeId:f.role.id,input:'旧结果补交付'})
- await f.work.tick(AbortSignal.timeout(5000));f.complete();next();await f.work.tick(AbortSignal.timeout(5000))
+ await f.work.tick(AbortSignal.timeout(5000));await f.complete();next();await f.work.tick(AbortSignal.timeout(5000))
  const round=(await pool.query('select * from teloa_employee_api_rounds where work_id=$1 and round=1',[work.id])).rows[0],delivery=(await pool.query('select * from teloa_employee_api_round_deliveries where work_id=$1 and round=1',[work.id])).rows[0]
  const calls=f.calls.length
  await pool.query('delete from teloa_employee_api_round_deliveries where work_id=$1',[work.id])
@@ -199,7 +199,7 @@ test('升级前已保存固定结果但任务仍等待的工作直接补齐交�
 test('固定结果超过成果容量时明确失败且不截断、不创建正式成果',async()=>{
  const f=await fixture(),work=await f.work.command(f.identity,'start',randomUUID(),{employeeId:f.role.id,input:'超长报告'})
  f.setResult('x'.repeat(64001))
- await f.work.tick(AbortSignal.timeout(5000));f.complete();next();await f.work.tick(AbortSignal.timeout(5000))
+ await f.work.tick(AbortSignal.timeout(5000));await f.complete();next();await f.work.tick(AbortSignal.timeout(5000))
  const current=await f.work.get(f.identity,work.id)
  assert.equal(current.state,'failed');assert.equal(current.error,'artifact_too_large')
  await assert.rejects(()=>f.work.result(f.identity,work.id),{code:'result_not_ready'})
