@@ -76,7 +76,7 @@ test('资料库员工知识分组：在岗员工资料可见，退役员工与�
   const batch=activeGroup.getByRole('button',{name:'全部加入检索（2）',exact:true})
   await batch.waitFor();await batch.click()
   await page.waitForFunction(()=>(window as any).__retrievalEnrolled.length===2)
-  assert.deepEqual(await page.evaluate(()=>(window as any).__retrievalEnrolled).then(rows=>[...rows].sort()),['knowledge_emp-know-1','knowledge_emp-know-2'],'按员工批量加入两个资料来源')
+  assert.deepEqual(await page.evaluate(()=>(window as any).__retrievalEnrolled).then((rows:string[])=>[...rows].sort()),['knowledge_emp-know-1','knowledge_emp-know-2'],'按员工批量加入两个资料来源')
   assert.equal(await page.getByRole('alert').count(),0,'批量加入不应报错')
   const writerGroup=directory.locator('details:has(> summary[data-teloa-entry="role-writer"])')
   assert.ok(await writerGroup.getByRole('button',{name:'新品发布文案',exact:true}).isVisible(),'只有成果的员工也出分组')
