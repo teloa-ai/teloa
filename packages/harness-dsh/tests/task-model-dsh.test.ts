@@ -2,7 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import type {Context} from '@deepseek-ai/cordis'
 import type {ModelReference} from '@teloa/contract'
-import {isDshRemoteModel,remoteModelAddress,resolveTaskModelPolicy} from '../src/task-model-dsh.ts'
+import {isDshRemoteModel,remoteModelAddress,resolveRequestedTaskModelPolicy,resolveTaskModelPolicy} from '../src/task-model-dsh.ts'
 const local={provider:'ollama',model:'small'},remote={provider:'remote',model:'large',reasoningEffort:'high'}
 const signal=new AbortController().signal
 function host(defaultModel:ModelReference=remote,providers:Record<string,unknown>={remote:{baseURL:'https://api.example.test/v1'},ollama:{baseURL:'http://127.0.0.1:11434/v1'}}){
@@ -57,4 +57,21 @@ test('未配置全局默认时显式岗位模型仍可使用，未选任何模�
  const ctx=host({provider:'',model:''})
  assert.deepEqual(await resolveTaskModelPolicy(ctx,{model:local},signal),{primary:local})
  await assert.rejects(resolveTaskModelPolicy(ctx,undefined,signal),{stage:'model-resolve'})
+})
+
+test('请求级模型只接受平台目录内且凭据可用的 provider/model，缺失不回退',async()=>{
+ const requested={provider:'custom-provider',model:'example-model',reasoningEffort:'high'},calls:unknown[]=[]
+ const hostFor=(missing:string[]=[],resolved?:()=>never)=>({
+  teloaModelCatalog:{read:async()=>({catalog:{default:null,routableProviders:['custom-provider'],groups:[{id:'custom-provider',name:'Custom',models:[{id:'example-model',name:'Example'}]}]},missingCredentialProviders:missing})},
+  llm:{resolveCallConfig:async(config:unknown)=>{calls.push(config);if(resolved)resolved();return config}},
+ } as unknown as Context)
+ assert.deepEqual(await resolveRequestedTaskModelPolicy(hostFor(),requested,signal),{primary:requested})
+ assert.deepEqual(calls,[{provider:'custom-provider',model:'example-model',reasoningEffort:'high'}])
+ await assert.rejects(resolveRequestedTaskModelPolicy(hostFor(['custom-provider']),requested,signal),(error:any)=>error.code==='teloa/model-unavailable'&&error.stage==='model-resolve')
+ await assert.rejects(resolveRequestedTaskModelPolicy(hostFor(),{...requested,model:'missing-model'},signal),{code:'teloa/model-unavailable'})
+ await assert.rejects(resolveRequestedTaskModelPolicy(hostFor(),{...requested,provider:'missing-provider'},signal),{code:'teloa/model-unavailable'})
+ await assert.rejects(resolveRequestedTaskModelPolicy(hostFor([],()=>{throw Error('private credential value')}),requested,signal),(error:any)=>error.code==='teloa/model-unavailable'&&!error.message.includes('private'))
+ assert.deepEqual(calls.length,2)
+ const abort=new AbortController();abort.abort()
+ await assert.rejects(resolveRequestedTaskModelPolicy(hostFor(),requested,abort.signal),{name:'AbortError'})
 })

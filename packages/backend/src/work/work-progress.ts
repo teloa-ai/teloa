@@ -1,6 +1,6 @@
 import {isDeepStrictEqual} from 'node:util'
 import {randomUUID} from 'node:crypto'
-import type {Pool} from 'pg'
+import type {Pool,PoolClient} from 'pg'
 import {WorkError} from '@teloa/contract'
 import {readWorkProgress,readWorkProgressFields,type WorkProgress} from '@teloa/contract'
 import {workObject,workUuid} from '@teloa/contract'
@@ -11,9 +11,27 @@ export async function initializeWorkProgress(pool:Pool):Promise<void>{await pool
  create table if not exists teloa_work_progress(owner_id text not null,root_task_id uuid not null,version integer not null check(version>0),progress jsonb not null,primary key(owner_id,root_task_id),foreign key(root_task_id,owner_id) references teloa_tasks(id,owner_id));
  create table if not exists teloa_work_progress_receipts(owner_id text not null,request_id uuid not null,request jsonb not null,result jsonb not null,primary key(owner_id,request_id));
 `)}
+/** 一次进展变更的固定输入；事务内外共用同一份校验。 */
+type ProgressChange={requestId:string;rootTaskId:string;expectedVersion:number;fields:ReturnType<typeof readWorkProgressFields>;request:Record<string,unknown>}
 export class WorkProgressService{
  readonly pool:Pool;readonly clock:{id:()=>string;now:()=>string}
  constructor(pool:Pool,clock:{id:()=>string;now:()=>string}){this.pool=pool;this.clock=clock}
+ private parseChange(input:unknown):ProgressChange{
+  const v=workObject(input,['requestId','rootTaskId','expectedVersion','progress']),fields=readWorkProgressFields(v.progress)
+  if(!workUuid(v.requestId)||!workUuid(v.rootTaskId)||!Number.isSafeInteger(v.expectedVersion)||Number(v.expectedVersion)<0)throw new WorkError('teloa/invalid-input','工作进展请求格式不正确。')
+  return {requestId:v.requestId,rootTaskId:v.rootTaskId,expectedVersion:Number(v.expectedVersion),fields,request:v}
+ }
+ /** 调用方已打开事务时复用同一连接；lock 只为同事务后续写入取行锁。 */
+ async readInTransaction(db:Pick<Pool,'query'>,owner:string,rootTaskId:string,lock=false):Promise<WorkProgress|null>{
+  if(!workUuid(rootTaskId))throw new WorkError('teloa/invalid-input','工作身份不正确。')
+  const lineage=await new WorkLineageService(this.pool,this.clock).readInTransaction(db as PoolClient,owner,{taskId:rootTaskId})
+  if(!lineage||lineage.rootTaskId!==rootTaskId)throw new WorkError('teloa/forbidden','只能读取根工作的进展。')
+  const row=(await db.query('select * from teloa_work_progress where owner_id=$1 and root_task_id=$2'+(lock?' for update':''),[owner,rootTaskId])).rows[0]
+  if(!row)return null
+  const result=readWorkProgress(row.progress)
+  if(result.rootTaskId!==rootTaskId||result.version!==row.version)throw new WorkError('teloa/storage-corrupt','工作进展记录损坏。')
+  return result
+ }
  /** 宿主在真实 Run/Flow 回执之后投影；没有新事实时不增加进展版本。 */
  async recordRunProgress(owner:string,runId:string):Promise<WorkProgress|null>{
   const row=(await this.pool.query('select * from teloa_task_runs where owner_id=$1 and id=$2',[owner,runId])).rows[0];if(!row)throw new WorkError('teloa/forbidden','执行不属于本人。');const run=readStoredTaskRun(row),lineage=await new WorkLineageService(this.pool,this.clock).read(owner,{taskId:run.taskId});if(!lineage)return null
@@ -25,23 +43,32 @@ export class WorkProgressService{
   const previous=await this.get(owner,{rootTaskId});if(previous){const {rootTaskId:_id,version:_version,updatedAt:_updated,...old}=previous;if(isDeepStrictEqual(old,fields))return previous}
   return this.change(owner,{requestId:randomUUID(),rootTaskId,expectedVersion:previous?.version??0,progress:fields})
  }
- async get(owner:string,input:{rootTaskId:string}):Promise<WorkProgress|null>{const v=workObject(input,['rootTaskId']);if(!workUuid(v.rootTaskId))throw new WorkError('teloa/invalid-input','工作身份不正确。');const lineage=await new WorkLineageService(this.pool,this.clock).read(owner,{taskId:v.rootTaskId});if(!lineage||lineage.rootTaskId!==v.rootTaskId)throw new WorkError('teloa/forbidden','只能读取根工作的进展。');const row=(await this.pool.query('select * from teloa_work_progress where owner_id=$1 and root_task_id=$2',[owner,v.rootTaskId])).rows[0];if(!row)return null;const result=readWorkProgress(row.progress);if(result.rootTaskId!==v.rootTaskId||result.version!==row.version)throw new WorkError('teloa/storage-corrupt','工作进展记录损坏。');return result}
+ async get(owner:string,input:{rootTaskId:string}):Promise<WorkProgress|null>{
+  const v=workObject(input,['rootTaskId']);if(!workUuid(v.rootTaskId))throw new WorkError('teloa/invalid-input','工作身份不正确。')
+  const db=await this.pool.connect()
+  try{await db.query('begin isolation level repeatable read');const result=await this.readInTransaction(db,owner,v.rootTaskId);await db.query('commit');return result}
+  catch(error){await db.query('rollback');throw error}finally{db.release()}
+ }
+ /** 在调用方事务内写进展并登记回执；成败随调用方事务一起去留。 */
+ async changeInTransaction(db:PoolClient,owner:string,input:unknown):Promise<WorkProgress>{
+  const v=this.parseChange(input)
+  await db.query('select pg_advisory_xact_lock(hashtextextended($1,0))',['teloa/work-progress/'+owner+'/'+v.rootTaskId])
+  const prior=(await db.query('select * from teloa_work_progress_receipts where owner_id=$1 and request_id=$2',[owner,v.requestId])).rows[0]
+  if(prior){if(!isDeepStrictEqual(prior.request,v.request))throw new WorkError('teloa/conflict','原进展请求已经保存其他内容。');const result=readWorkProgress(prior.result);if(result.rootTaskId!==v.rootTaskId||result.version!==v.expectedVersion+1)throw new WorkError('teloa/storage-corrupt','工作进展回执不匹配。');return result}
+  const lineage=await new WorkLineageService(this.pool,this.clock).readInTransaction(db,owner,{taskId:v.rootTaskId});if(!lineage||lineage.rootTaskId!==v.rootTaskId)throw new WorkError('teloa/forbidden','只能修改根工作的进展。')
+  const row=(await db.query('select * from teloa_work_progress where owner_id=$1 and root_task_id=$2 for update',[owner,v.rootTaskId])).rows[0];if((row?.version??0)!==v.expectedVersion)throw new WorkError('teloa/version-conflict','工作进展已变化。')
+  const {fields}=v,taskIds=(await db.query('select task_id from teloa_task_work_lineage where owner_id=$1 and root_task_id=$2',[owner,v.rootTaskId])).rows.map(r=>r.task_id)
+  if(fields.completedStepIds.length){const rows=(await db.query('select f.* from teloa_task_run_flows f join teloa_task_runs r on r.id=f.run_id and r.owner_id=f.owner_id where f.owner_id=$1 and r.task_id=any($2::uuid[])',[owner,taskIds])).rows.map(readStoredTaskRunFlow),completed=new Set(rows.flatMap(f=>f.steps.filter(s=>s.state==='succeeded'||s.state==='compensated').map(s=>s.id)));if(fields.completedStepIds.some(id=>!completed.has(id)))throw new WorkError('teloa/forbidden','步骤尚无所属 Run 的真实完成回执。')}
+  if(fields.artifactIds.length){const ids=(await db.query("select distinct artifact_id as id from teloa_artifact_versions where owner_id=$1 and artifact_id=any($2::uuid[]) and source->>'kind'='task' and source->>'id'=any($3::text[])",[owner,fields.artifactIds,taskIds])).rows.map(r=>r.id);if(fields.artifactIds.some(id=>!ids.includes(id)))throw new WorkError('teloa/forbidden','成果不属于本次工作。')}
+  if(fields.pendingActionIds.length){const ids=(await db.query("select id from teloa_security_actions where owner_id=$1 and id=any($2::uuid[]) and task_id=any($3::uuid[]) and state in ('proposed','pending_approval','approved','executing','effect_unknown')",[owner,fields.pendingActionIds,taskIds])).rows.map(r=>r.id);if(fields.pendingActionIds.some(id=>!ids.includes(id)))throw new WorkError('teloa/forbidden','待处理动作不属于本次工作或已经结束。')}
+  const result=readWorkProgress({rootTaskId:v.rootTaskId,version:v.expectedVersion+1,...fields,updatedAt:this.clock.now()})
+  await db.query('insert into teloa_work_progress(owner_id,root_task_id,version,progress) values($1,$2,$3,$4) on conflict(owner_id,root_task_id) do update set version=excluded.version,progress=excluded.progress',[owner,v.rootTaskId,result.version,JSON.stringify(result)])
+  await db.query('insert into teloa_work_progress_receipts(owner_id,request_id,request,result) values($1,$2,$3,$4)',[owner,v.requestId,JSON.stringify(v.request),JSON.stringify(result)])
+  return result
+ }
  async change(owner:string,input:unknown):Promise<WorkProgress>{
-  const v=workObject(input,['requestId','rootTaskId','expectedVersion','progress']),fields=readWorkProgressFields(v.progress)
-  if(!workUuid(v.requestId)||!workUuid(v.rootTaskId)||!Number.isSafeInteger(v.expectedVersion)||Number(v.expectedVersion)<0)throw new WorkError('teloa/invalid-input','工作进展请求格式不正确。')
-  const db=await this.pool.connect();try{await db.query('begin');await db.query('select pg_advisory_xact_lock(hashtextextended($1,0))',['teloa/work-progress/'+owner+'/'+v.rootTaskId])
-   const prior=(await db.query('select * from teloa_work_progress_receipts where owner_id=$1 and request_id=$2',[owner,v.requestId])).rows[0]
-   if(prior){if(!isDeepStrictEqual(prior.request,v))throw new WorkError('teloa/conflict','原进展请求已经保存其他内容。');const result=readWorkProgress(prior.result);if(result.rootTaskId!==v.rootTaskId||result.version!==Number(v.expectedVersion)+1)throw new WorkError('teloa/storage-corrupt','工作进展回执不匹配。');await db.query('commit');return result}
-   const lineage=await new WorkLineageService(this.pool,this.clock).readInTransaction(db,owner,{taskId:v.rootTaskId});if(!lineage||lineage.rootTaskId!==v.rootTaskId)throw new WorkError('teloa/forbidden','只能修改根工作的进展。')
-   const row=(await db.query('select * from teloa_work_progress where owner_id=$1 and root_task_id=$2 for update',[owner,v.rootTaskId])).rows[0];if((row?.version??0)!==v.expectedVersion)throw new WorkError('teloa/version-conflict','工作进展已变化。')
-   const taskIds=(await db.query('select task_id from teloa_task_work_lineage where owner_id=$1 and root_task_id=$2',[owner,v.rootTaskId])).rows.map(r=>r.task_id)
-   if(fields.completedStepIds.length){const rows=(await db.query('select f.* from teloa_task_run_flows f join teloa_task_runs r on r.id=f.run_id and r.owner_id=f.owner_id where f.owner_id=$1 and r.task_id=any($2::uuid[])',[owner,taskIds])).rows.map(readStoredTaskRunFlow),completed=new Set(rows.flatMap(f=>f.steps.filter(s=>s.state==='succeeded'||s.state==='compensated').map(s=>s.id)));if(fields.completedStepIds.some(id=>!completed.has(id)))throw new WorkError('teloa/forbidden','步骤尚无所属 Run 的真实完成回执。')}
-   if(fields.artifactIds.length){const ids=(await db.query("select distinct artifact_id as id from teloa_artifact_versions where owner_id=$1 and artifact_id=any($2::uuid[]) and source->>'kind'='task' and source->>'id'=any($3::text[])",[owner,fields.artifactIds,taskIds])).rows.map(r=>r.id);if(fields.artifactIds.some(id=>!ids.includes(id)))throw new WorkError('teloa/forbidden','成果不属于本次工作。')}
-   if(fields.pendingActionIds.length){const ids=(await db.query("select id from teloa_security_actions where owner_id=$1 and id=any($2::uuid[]) and task_id=any($3::uuid[]) and state in ('proposed','pending_approval','approved','executing','effect_unknown')",[owner,fields.pendingActionIds,taskIds])).rows.map(r=>r.id);if(fields.pendingActionIds.some(id=>!ids.includes(id)))throw new WorkError('teloa/forbidden','待处理动作不属于本次工作或已经结束。')}
-   const result=readWorkProgress({rootTaskId:v.rootTaskId,version:Number(v.expectedVersion)+1,...fields,updatedAt:this.clock.now()})
-   await db.query('insert into teloa_work_progress(owner_id,root_task_id,version,progress) values($1,$2,$3,$4) on conflict(owner_id,root_task_id) do update set version=excluded.version,progress=excluded.progress',[owner,v.rootTaskId,result.version,JSON.stringify(result)])
-   await db.query('insert into teloa_work_progress_receipts(owner_id,request_id,request,result) values($1,$2,$3,$4)',[owner,v.requestId,JSON.stringify(v),JSON.stringify(result)])
-   await db.query('commit');return result
-  }catch(error){await db.query('rollback');throw error}finally{db.release()}
+  this.parseChange(input)
+  const db=await this.pool.connect();try{await db.query('begin');const result=await this.changeInTransaction(db,owner,input);await db.query('commit');return result}
+  catch(error){await db.query('rollback');throw error}finally{db.release()}
  }
 }

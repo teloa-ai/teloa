@@ -2,7 +2,7 @@ import {BlockList,isIP} from 'node:net'
 import type {Context} from '@deepseek-ai/cordis'
 import type {Agent} from '@deepseek-ai/dsh-agent'
 import type {SessionStore} from '@deepseek-ai/dsh-session'
-import {createUserMessage,type ContextFormed,type LlmCallConfig} from '@deepseek-ai/dsh-llm'
+import {createUserMessage,ReasoningEffortId,type ContextFormed,type LlmCallConfig} from '@deepseek-ai/dsh-llm'
 import {TaskRunPresetError,type TaskRun} from '@teloa/backend'
 import {WorkError,isRecord,readModelReference,readModelRecovery,readTaskRunModelPolicy,type ModelReference,type ModelRecovery,type RoleRuntimeConfig,type TaskRunModelPolicy} from '@teloa/contract'
 import {readSessionEvents} from './session-events.ts'
@@ -59,6 +59,28 @@ export async function resolveTaskModelPolicy(ctx:Context,runtime:RoleRuntimeConf
  }catch{
   signal.throwIfAborted()
   throw new TaskRunPresetError('teloa/preset-unavailable','model-resolve','任务模型配置不可用，请核对首选模型和远程备用模型。')
+ }
+}
+
+/**
+ * 员工 API 的请求级模型只引用平台已配置 provider；目录、凭据与原生适配器都在下发前核对，
+ * 不接受地址或密钥，也不把缺失回退为另一个 provider/model。
+ */
+export async function resolveRequestedTaskModelPolicy(ctx:Context,model:ModelReference,signal:AbortSignal):Promise<TaskRunModelPolicy>{
+ signal.throwIfAborted()
+ try{
+  const requested=readModelReference(model)
+  const {catalog,missingCredentialProviders}=await ctx.teloaModelCatalog.read(signal)
+  signal.throwIfAborted()
+  const group=catalog.groups.find(row=>row.id===requested.provider)
+  if(!catalog.routableProviders.includes(requested.provider)||missingCredentialProviders.includes(requested.provider)||!group||!group.models.some(row=>row.id===requested.model))throw Error('unavailable')
+  await ctx.llm.resolveCallConfig({provider:requested.provider,model:requested.model,...(requested.reasoningEffort===undefined?{}:{reasoningEffort:ReasoningEffortId(requested.reasoningEffort)})},signal)
+  signal.throwIfAborted()
+  return readTaskRunModelPolicy({primary:requested})
+ }catch(error){
+  signal.throwIfAborted()
+  if(error instanceof TaskRunPresetError)throw error
+  throw new TaskRunPresetError('teloa/model-unavailable','model-resolve','请求的模型提供方、模型或凭据不可用，请核对平台模型配置。')
  }
 }
 
