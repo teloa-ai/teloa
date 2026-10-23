@@ -43,8 +43,8 @@ const builtInPresetNames=new Map<string,readonly [string,string,string]>([
 ])
 const localeIndex=(active:string)=>{const locale=active.toLowerCase();return ['zh-hant','zh-tw','zh-hk'].includes(locale)?1:locale==='zh'||locale==='zh-cn'||locale==='zh-hans'?0:2}
 const optionalCodeDescriptions=new Map<string,readonly [string,string,string]>([
- ['ptc-persistent',['在当前会话内存中保留变量；重启应用后清空。','在目前會話記憶體中保留變數；重新啟動應用程式後清除。','Keep variables in this session memory; restarting the app clears them.']],
- ['ptc-python',['使用 Python 执行代码，沿用当前文件权限与审批规则。','使用 Python 執行程式碼，沿用目前檔案權限與審批規則。','Run Python code with the current file permissions and approval rules.']],
+ ['ptc-persistent',['在当前 Agent 的代码运行会话中跨多个 run_code 调用保留变量、函数和导入模块；内存不落盘，重启、取消、超时或 Agent 重启后清空。','在目前 Agent 的程式碼執行工作階段中，跨多個 run_code 呼叫保留變數、函式與匯入模組；記憶體不落盤，重新啟動、取消、逾時或 Agent 重新啟動後清除。','Keep variables, functions and imported modules across run_code calls in this live agent runtime; memory is not persisted and clears on restart, cancellation, timeout or agent teardown.']],
+ ['ptc-python',['使用 Python 执行 run_code 代码，沿用当前文件权限与审批规则。','使用 Python 執行 run_code 程式碼，沿用目前檔案權限與審批規則。','Run run_code with Python, using the current file permissions and approval rules.']],
 ])
 /**
  * 工作模式显示名。Teloa 固定标准预设沿用「标准模式」；其余内置预设只在 roster 没有发布 name 时显示产品名（官方 isBuiltInPreset），

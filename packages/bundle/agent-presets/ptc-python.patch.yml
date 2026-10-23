@@ -5,6 +5,7 @@
       disabled: false
       config:
         id: ptc-python
+        name: 代码模式（Python）
         order: 2.2
         plugins:
           - id: selected-code-runtime
@@ -141,4 +142,4 @@
           - id: tool-plugin-market
             name: "@deepseek-ai/dsh-plugin-market/tools"
             disabled: true
-        description: Run Python code with the current file permissions and approval rules.
+        description: 使用 Python 执行 run_code 代码，沿用当前文件权限与审批规则。

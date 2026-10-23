@@ -10,7 +10,7 @@ test('未发布名称的 DSH 内置预设按简繁英显示产品名，其余语
 })
 
 test('可选代码模式沿原选择器显示简繁英名称和说明，本人改名及说明保留',()=>{
- const persistent={id:'ptc-persistent',description:'Keep variables in this session memory; restarting the app clears them.'},python={id:'ptc-python',description:'Run Python code with the current file permissions and approval rules.'}
+ const persistent={id:'ptc-persistent',description:'Keep variables, functions and imported modules across run_code calls in this live agent runtime; memory is not persisted and clears on restart, cancellation, timeout or agent teardown.'},python={id:'ptc-python',description:'Run run_code with Python, using the current file permissions and approval rules.'}
  for(const locale of ['zh-Hans','zh-TW','en'])for(const option of [persistent,python]){
   assert.notEqual(presetDisplayName(option,locale),option.id)
   assert.ok(standardModeDescription(option,locale))
