@@ -665,6 +665,11 @@ async function applyHost(ctx:Context,projectRoot:string):Promise<void> {
     const {pool,identity,plans}=await autoDreamPlans()
     return (await new RoleService(pool,identity,{plans}).list(actor,{})).find(role=>role.id===roleId)?.scopes
   }
+  // 员工普通单聊的检索只看服务端可信会话关联的岗位；读不到岗位或身份不符时由检索授权层明确拒绝。
+  const readRole=async(actor:string,roleId:string)=>{
+    const {pool,identity,plans}=await autoDreamPlans()
+    return new RoleService(pool,identity,{plans}).get(actor,roleId)
+  }
   const taskMaterialService=async()=>new TaskMaterialService((await resources.database()).pool,{id:randomUUID,now:()=>new Date().toISOString()})
   // 添加任务知识前按已固定的知识加上这一份做体积预检：超过整段进提示词上限的资料在这里就拒，不等到执行准备。
   const checkTaskMaterialBudget=async(taskId:string,resourceId:string)=>{
@@ -2371,7 +2376,7 @@ async function applyHost(ctx:Context,projectRoot:string):Promise<void> {
   const retrievalPausePath=resolve(runtimeRoot,'retrieval-auto-paused.json')
   const retrievalModelSelectionPath=resolve(runtimeRoot,'model-selection.json')
   const localRetrieval=registerLocalRetrieval(toolRegistrationContext,{
-   owner,conversation:id=>service.bySession(owner,id),readTaskPolicy:ordinaryTaskPolicy,
+   owner,conversation:id=>service.bySession(owner,id),requestedRoleId:id=>service.requestedRoleId(owner,id),role:roleId=>readRole(owner,roleId),readTaskPolicy:ordinaryTaskPolicy,
    taskAuthorization:async(sessionId,signal)=>{
     signal.throwIfAborted()
     const runs=await runService(),run=await runs.skillScope(owner,{sessionId})

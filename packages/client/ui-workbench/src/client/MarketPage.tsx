@@ -32,7 +32,7 @@ import type { MarketContentApi } from './market-content-api.js'
 import type {GithubSourceApi} from './github-source-api.js'
 import {localizedMarketItemCopy,localizedMarketItemDetailCopy,localizedMarketResourceEntryTitle,localizedMarketResourceUseTitle,marketCatalogItemCopy,marketCategoryKind,marketCategoryLabel,marketCategoryOf,marketItemPresentation,marketResourcePresentation,marketVisibilityLabel,restoredMarketCategory,marketPrimaryItem,marketItemGroup,marketResourceGroup,solutionRoleCount,type MarketBrowseKind,type MarketPrimaryView,type MarketCategory} from './market-home-presentation.js'
 import { ItemArt, SolutionCards, StateMark } from './SolutionCards.js'
-import {currentSolutionCatalog,localReadOnlyConnections,marketItemMark,marketResourceMark,solutionInstalled,solutionAdded,solutionMark,solutionMembers,solutionRowResources} from './market-solution-presentation.js'
+import {currentSolutionCatalog,localReadOnlyConnections,marketItemMark,marketResourceMark,solutionInstalled,solutionManaged,solutionAdded,solutionMark,solutionMembers,solutionRowResources} from './market-solution-presentation.js'
 import {COMPOSITION_EXTENSION_NOTE_KEY,COMPOSITION_ROWS,composeFromManifest,compositionCountText,compositionMethodNote,compositionSummary,connectorModeLabel,sourceConnectorMode} from './industry-composition.js'
 import {ContextDrawer} from './ContextDrawer.js'
 import {StaffAvatar} from './StaffAvatar.js'
@@ -237,8 +237,8 @@ function MarketCatalog(props:MarketProps&{runtime:MarketSkillRuntime;runtimeChan
   // 官方方案产品页接上本机团队步骤：先加到本机再就地展开同一个团队确认步骤，问答以官方包内容为依据（设计约束）
   const solutionTeam:CatalogSolutionTeam={
     find:contentId=>state.items.find(row=>row.contentStorage?.contentId===contentId),
-    installed:value=>solutionInstalled(value,props.industryLoads.loads),
-    loadLinks:value=><SolutionLoadLinks loads={props.industryLoads.loads.filter(load=>solutionInstalled(value,[load]))} manage={props.manageIndustryLoad}/>,
+    installed:value=>solutionManaged(value,props.industryLoads.loads),
+    loadLinks:value=><SolutionLoadLinks loads={props.industryLoads.loads.filter(load=>solutionManaged(value,[load]))} manage={props.manageIndustryLoad}/>,
     resolve:async contentId=>{
       if(!contentApi)throw Error('teloa/source-unavailable')
       const found=merge(await contentApi.list()).find(row=>row.contentStorage?.contentId===contentId)
@@ -450,9 +450,10 @@ function MarketDetail({item,draft,back,contentReadFailed,...props}:MarketProps&{
     const pendingLoad=props.industryLoads.api?.pending()
     // 未知回执属于原固定内容；已有加载不能遮住核对入口，也不能借另一份同名模板替换原请求。
     const recoveringCurrentLoad=!!pendingLoad&&pendingLoad.contentId===item.contentStorage?.contentId&&pendingLoad.contentHash===(item.packageContent?.hash??item.hash)
-    // 与方案卡共用 solutionInstalled：逐条过一遍，既拿到「是否已添加」，也保留要列出的那几条生效加载。
+    // 当前精确版本用于「是否已添加本版」；同模板任一活动版本用于保留旧版安装的管理入口。
     const matchingLoads=props.industryLoads.loads.filter(load=>solutionInstalled(item,[load]))
-    const currentStatus=matchingLoads.length?t('market.workspace.loadedPersonal'):item.contentStorage?.loaded?t('market.content.fixedNotLoaded'):item.packageContent?t('market.content.readNotFixed'):item.hash?t('market.manifest.parsedContentPending'):item.source.kind==='builtin'?t('market.source.builtinNotLoaded'):t('market.source.savedContentUnavailable')
+    const managedLoads=props.industryLoads.loads.filter(load=>solutionManaged(item,[load]))
+    const currentStatus=managedLoads.length?t('market.workspace.loadedPersonal'):item.contentStorage?.loaded?t('market.content.fixedNotLoaded'):item.packageContent?t('market.content.readNotFixed'):item.hash?t('market.manifest.parsedContentPending'):item.source.kind==='builtin'?t('market.source.builtinNotLoaded'):t('market.source.savedContentUnavailable')
     // 「添加后你会得到」按业务结构七行分节：顺序、主标签、副标、计数单位与附注全部来自共享模块，不在这里另写一份分类。
     const rows=composeFromManifest(manifest)
     const members=solutionMembers(manifest,locale,manifest.id)
@@ -463,8 +464,8 @@ function MarketDetail({item,draft,back,contentReadFailed,...props}:MarketProps&{
       <header className={css.solutionHero} aria-label={t('market.industry.overviewAria')}>
         <p>{copy.summary}</p>
         {/* 一键添加就是今天 industryLoads.loadWorkspace 那个按钮：只换文案与位置，展开逻辑一字不改（走既有 IndustryLoadForm 两段式）。 */}
-        {(recoveringCurrentLoad||!manifest.resources.every(row=>row.kind==='business-configuration'))&&<button className={css.primaryAction} type="button" disabled={!!matchingLoads.length&&!recoveringCurrentLoad} aria-expanded={actionPanel==='load'} onClick={()=>setActionPanel('load')}>{recoveringCurrentLoad?t('market.industry.load.reviewResult'):matchingLoads.length?t('market.solution.added'):t('market.industry.loadWorkspace')}{matchingLoads.length&&!recoveringCurrentLoad?<Check size={15}/>:<Plus size={15}/>}</button>}
-        <SolutionLoadLinks loads={matchingLoads} manage={props.manageIndustryLoad}/>
+        {(recoveringCurrentLoad||!manifest.resources.every(row=>row.kind==='business-configuration'))&&<button className={css.primaryAction} type="button" disabled={!!managedLoads.length&&!recoveringCurrentLoad} aria-expanded={actionPanel==='load'} onClick={()=>setActionPanel('load')}>{recoveringCurrentLoad?t('market.industry.load.reviewResult'):managedLoads.length?t('market.solution.added'):t('market.industry.loadWorkspace')}{managedLoads.length&&!recoveringCurrentLoad?<Check size={15}/>:<Plus size={15}/>}</button>}
+        <SolutionLoadLinks loads={managedLoads} manage={props.manageIndustryLoad}/>
         <button type="button" disabled={busy||targetBlocked||draft?.status==='withdrawn'||draft?.preparation?.status==='pending'} onClick={()=>void prepare(t('market.solution.askFitDraft',{name:copy.title}))}><MessageSquare size={13}/>{t('market.solution.askFit')}</button>
       </header>
       {message&&<p role="alert" className={css.notice}>{message}</p>}{notice&&<p role="status">{notice}</p>}

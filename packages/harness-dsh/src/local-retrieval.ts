@@ -4,7 +4,8 @@ import {WorkError,isRecord,readEmbeddingPreparationState,readRetrievalSearchResu
 import type {Embedder,ResourceActor,RetrievalIndexService} from '@teloa/backend'
 import type {TaskToolPolicyReader} from './task-tool-guard.ts'
 import {captureRetrievalPreparation,sameRetrievalPreparation,readRetrievalPrepareInput,readRetrievalPreparationDetails,type RetrievalPreparationDetails} from '@teloa/contract'
-import {retrievalCitationPath} from '@teloa/contract'
+import {retrievalCitationPath,type DigitalRole} from '@teloa/contract'
+import {roleRetrievalAuthorization} from './role-retrieval-authorization.ts'
 
 /** 公开检索工具名（规格 §7.1）；岗位授权候选与 `task-tool-guard` 的清单都按这个名字。 */
 export const knowledgeSearchToolName='teloa_knowledge_search'
@@ -26,6 +27,9 @@ export type LocalRetrievalPorts={
  owner:string
  conversation:(sessionId:string)=>Promise<{ownerId:string;sessionId:string;status:'pending'|'ready';scopeIds:readonly string[]}>
  readTaskPolicy:TaskToolPolicyReader
+ /** 员工普通单聊的岗位身份与员工资料清单；普通会话两者都为空/未绑定。 */
+ requestedRoleId:(sessionId:string)=>Promise<string|null>
+ role:(roleId:string)=>Promise<DigitalRole|null>
  /** 受管任务的主体、目标范围与可信资料许可；普通会话不调，空许可不得回落全部资料。 */
  taskAuthorization:(sessionId:string,signal:AbortSignal)=>Promise<{actor:ResourceActor;targetScopes:string[];knowledgeIds?:readonly string[]|null}>
  /** 本人主体（含全部已登记范围）：只用于界面端点，模型工具永远拿不到它。 */
@@ -261,8 +265,13 @@ export function registerLocalRetrieval(ctx:Context,ports:LocalRetrievalPorts){
   catch(error){if(error instanceof WorkError)throw error;throw new WorkError('teloa/dependency-unavailable','暂时无法核对会话身份。')}
   if(binding.ownerId!==ports.owner||binding.sessionId!==sessionId||binding.status!=='ready')throw forbidden('当前会话未绑定为本人可用工作会话。')
   exec.signal.throwIfAborted()
-  // 本人普通会话：模型就绪后默认可用，范围即会话绑定范围（IM 私聊同样是普通会话绑定，不另扩大）。
-  if(policy===null)return {actor:{ownerId:ports.owner,kind:'agent',scopeIds:[...binding.scopeIds]},targetScopes:[...binding.scopeIds]}
+  // 本人普通会话：先核对是否绑定了员工；员工单聊按岗位业务范围与员工资料清单检索，不能沿用 general 占位范围。
+  if(policy===null){
+   const role=await roleRetrievalAuthorization(sessionId,{owner:ports.owner,requestedRoleId:ports.requestedRoleId,role:ports.role})
+   if(role)return role
+   // 非员工普通会话（含 IM 私聊）保持原会话绑定范围，不另扩大。
+   return {actor:{ownerId:ports.owner,kind:'agent',scopeIds:[...binding.scopeIds]},targetScopes:[...binding.scopeIds]}
+  }
   if(policy.stopRequested===true)throw forbidden('本次执行已请求停止。')
   if(!policy.allowedTools.includes(knowledgeSearchToolName))throw forbidden('当前任务未授权本地检索，请核对员工执行范围。')
   return ports.taskAuthorization(sessionId,exec.signal)

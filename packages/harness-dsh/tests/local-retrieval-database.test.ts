@@ -61,7 +61,7 @@ test('原生检索工具与真库：本人加入、会话范围、岗位授权�
  agent.session.append('user/message',createUserMessage({source:{kind:'user',rpcId:'request'},content:[{type:'text',text:'查一下规则'}]}),{surfaceOp:'append'})
  let policy:TaskToolPolicy|null=null
  host=registerLocalRetrieval(ctx,{
-  owner,conversation:async id=>({ownerId:owner,sessionId:id,status:'ready',scopeIds:['general']}),
+  owner,conversation:async id=>({ownerId:owner,sessionId:id,status:'ready',scopeIds:['general']}),requestedRoleId:async()=>null,role:async()=>null,
   readTaskPolicy:async()=>policy,
   taskAuthorization:async()=>({actor:{ownerId:owner,kind:'agent',scopeIds:['soc']},targetScopes:['soc']}),
   humanActor:async()=>human,retrieval:async()=>db.retrieval,embedding:()=>embedding,admit:work=>work(),log:()=>{},

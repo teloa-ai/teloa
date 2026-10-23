@@ -6,6 +6,8 @@ type Journal={read:()=>string|null;write:(value:string)=>void;clear:()=>void}
 type Ports={registerLocalMaterial?:(input:LocalMaterialRegistrationInput)=>Promise<SourceReference>;create:(input:ResourceSpec&{requestId:string})=>Promise<ResourceDraft>}
 type Command=LocalMaterialRegistrationInput&{draftRequestId:string;source?:SourceReference}
 export const isLocalMaterialSourceId=(id:string)=>id.startsWith('local_material_')&&resourceId(id.slice('local_material_'.length))
+/** 员工包资料与市场固定内容共用 `industry_<loadId>_<itemId>` 身份；正文仍由服务端固定版本核对。 */
+export const isIndustryMaterialSourceId=(id:string)=>/^industry_[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}_[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id)
 export function readLocalMaterialInput(value:unknown):LocalMaterialRegistrationInput{
  const row=taskInput(value,['requestId','title','path','scopeIds'])
  if(!resourceId(row.requestId)||!resourceTitle(row.title)||row.title!==row.title.trim()||!resourceScopes(row.scopeIds)||typeof row.path!=='string'||!row.path||row.path!==row.path.trim()||row.path.length>4096||row.path.startsWith('/')||row.path.includes('\\')||row.path.includes('\0')||/^[a-z]:/i.test(row.path)||row.path.split('/').some(part=>!part||part==='.'||part==='..')||!(/\.(md|markdown)$/i.test(row.path)))throw Error('本机文件登记输入格式不正确。')

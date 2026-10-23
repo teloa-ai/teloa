@@ -230,7 +230,7 @@ export class ResourceService {
     authorizeResourceActor(actor);const data=object(input,['resourceId']);if(!resourceId(data.resourceId))throw badInput()
     return this.tx(client=>this.resource(client,actor,data.resourceId as string))
   }
-  /** 本人预览已确认加入的本机原件；固定版本读取，不更新正文或扩大资料范围。 */
+  /** 本人预览已确认加入的本机原件或员工包资料；固定版本读取，不更新正文或扩大资料范围。 */
   async readContent(actor:ResourceActor,input:unknown):Promise<{resource:WorkResource;text:string}>{
     authorizeResourceActor(actor,actor.ownerId,[],true)
     const data=object(input,['resourceId','expectedVersion','sourceVersion']),{id,version}=expected(data,'resourceId')
@@ -239,7 +239,7 @@ export class ResourceService {
       const resource=await this.resource(client,actor,id)
       if(resource.status!=='active')throw new WorkError('teloa/resource-withdrawn','资料已撤回，请先核对资料状态。')
       if(resource.version!==version||resource.sourceVersion!==data.sourceVersion)throw new WorkError('teloa/version-conflict','资料已更新，请刷新后查看当前内容。')
-      if(!resource.sourceId.startsWith('local_material_'))throw new WorkError('teloa/forbidden','此入口仅用于已加入的本机文件。')
+      if(!resource.sourceId.startsWith('local_material_')&&!resource.sourceId.startsWith('industry_'))throw new WorkError('teloa/forbidden','此入口仅用于已加入的本机文件或员工包资料。')
       return {resource,text:await this.source(resource,actor,client)}
     })
   }

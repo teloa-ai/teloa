@@ -98,6 +98,16 @@ export function solutionInstalled(
  return loads.some(load=>load.status==='active'&&load.templateId===manifest.id&&load.templateVersion===manifest.version&&(!item.contentStorage||!!contentHash&&load.contentId===contentId&&load.contentHash===contentHash))
 }
 
+/** 同模板任一活动版本的可管理安装：新版目录仍要能打开旧版安装的管理入口。 */
+export function solutionManaged(
+ item:SolutionIdentity,
+ loads:readonly SolutionLoadIdentity[],
+):boolean{
+ const manifest=item.manifest
+ if(!manifest?.id)return false
+ return loads.some(load=>load.status==='active'&&load.templateId===manifest.id)
+}
+
 /** 生效加载的数量，供运行状态使用；本机收藏目录使用 solutionAdded。 */
 export function solutionInstalledCount(
  items:readonly SolutionIdentity[],

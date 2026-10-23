@@ -5,7 +5,7 @@ import {readFile} from 'node:fs/promises'
 import {registerHooks} from 'node:module'
 import {createElement} from 'react'
 import {renderToStaticMarkup} from 'react-dom/server'
-import {currentSolutionCatalog,marketItemMark,marketResourceMark,solutionInstalled,solutionInstalledCount,solutionAdded,solutionMark,solutionMembers,solutionRowResources} from '../src/client/market-solution-presentation.ts'
+import {currentSolutionCatalog,marketItemMark,marketResourceMark,solutionInstalled,solutionInstalledCount,solutionManaged,solutionAdded,solutionMark,solutionMembers,solutionRowResources} from '../src/client/market-solution-presentation.ts'
 import {COMPOSITION_ROWS} from '../src/client/industry-composition.ts'
 import * as composition from '../src/client/industry-composition.ts'
 import type {IndustryManifest,IndustryResource} from '../src/client/industry-manifest.ts'
@@ -127,6 +127,15 @@ test('SolutionCards 不再留「需重启」死 prop：调用处没人传，组�
  assert.doesNotMatch(source,/restartRequired\?\.\(/)
  const market=await readFile(new URL('../src/client/MarketPage.tsx',import.meta.url),'utf8')
  assert.doesNotMatch(market,/restartRequired=/)
+})
+
+test('solutionManaged：同模板旧版本仍保留管理入口，停用或升级取代的加载不算',()=>{
+ const current=item({manifest:{...manifest([]),version:'1.0.2'}})
+ assert.equal(solutionInstalled(current,[load({templateVersion:'1.0.1'})]),false)
+ assert.equal(solutionManaged(current,[load({templateVersion:'1.0.1'})]),true)
+ assert.equal(solutionManaged(current,[load({templateId:'bundle-y'})]),false)
+ assert.equal(solutionManaged(current,[load({status:'unloaded'})]),false)
+ assert.equal(solutionManaged(current,[load({status:'superseded'})]),false)
 })
 
 test('solutionInstalled：只有生效加载且模板标识与版本都对上才算已添加',()=>{

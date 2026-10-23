@@ -1,7 +1,7 @@
 import {isResourceUsagePage,type ResourceUsagePage} from '@teloa/contract'
 import { isKnowledgeResourceRevision,isKnowledgeTree,isKnowledgeTreeMutation,isKnowledgeVersion,isKnowledgeVersionSummary,isResourceDirectory,isResourceDraft,isWorkResource,isSourceReference,isResourceHistoryPage,type KnowledgeResourceRestoreInput,type KnowledgeResourceReviseInput,type KnowledgeResourceRevision,type KnowledgeTree,type KnowledgeTreeMutation,type KnowledgeVersion,type KnowledgeVersionSummary,type ResourceHistoryPage,type ResourceSpec,type ResourceDirectory,type ResourceDraft,type WorkResource,type SourceReference } from '@teloa/contract'
 import { isResourceRecoveryPage,type ResourceRecoveryPage } from '@teloa/contract'
-import {createLocalMaterialRegistration,readLocalMaterialInput,isLocalMaterialReference,isLocalMaterialSourceId,type LocalMaterialRegistrationInput,type LocalMaterialRegistration} from './local-material-registration.ts'
+import {createLocalMaterialRegistration,readLocalMaterialInput,isLocalMaterialReference,isIndustryMaterialSourceId,isLocalMaterialSourceId,type LocalMaterialRegistrationInput,type LocalMaterialRegistration} from './local-material-registration.ts'
 import {isPasteKnowledge,verifyKnowledgeVersionContent,type KnowledgeReviseInput,type KnowledgeRestoreInput,type PasteKnowledge} from '@teloa/contract'
 export type ResourceApi={
   registerLocalMaterial?:(input:LocalMaterialRegistrationInput)=>Promise<SourceReference>;
@@ -33,7 +33,7 @@ export function createResourceApi(call:Call,journal?:{read:()=>string|null;write
     async registerLocalMaterial(input){const request=readLocalMaterialInput(input),value=await call('resources/register-local-material',request);if(!isLocalMaterialReference(value,request))throw invalid();return value},
     async readContent(resource,signal){
       signal.throwIfAborted()
-      if(!isWorkResource(resource)||resource.status!=='active'||!isLocalMaterialSourceId(resource.sourceId))throw invalid()
+      if(!isWorkResource(resource)||resource.status!=='active'||!(isLocalMaterialSourceId(resource.sourceId)||isIndustryMaterialSourceId(resource.sourceId)))throw invalid()
       const value=await call('resources/read-content',{resourceId:resource.id,expectedVersion:resource.version,sourceVersion:resource.sourceVersion},signal)
       signal.throwIfAborted()
       if(!value||typeof value!=='object'||Array.isArray(value)||Object.keys(value).length!==2||!('resource' in value)||!('text' in value)||!isWorkResource(value.resource)||typeof value.text!=='string')throw invalid()

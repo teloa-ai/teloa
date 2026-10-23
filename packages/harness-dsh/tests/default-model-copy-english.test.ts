@@ -17,7 +17,7 @@ test('默认检索与技能HTTP工具发送英文说明，注册不执行，参�
  const ctx=new Context();await ctx.plugin(SystemPrompt);await ctx.plugin(ToolRuntime)
  t.after(()=>ctx.fiber.dispose())
  const retrieval=registerLocalRetrieval(ctx,{
-  owner:'copy-test-owner',conversation:unexpected,readTaskPolicy:unexpected,taskAuthorization:unexpected,
+  owner:'copy-test-owner',conversation:unexpected,requestedRoleId:unexpected,role:unexpected,readTaskPolicy:unexpected,taskAuthorization:unexpected,
   humanActor:unexpected,retrieval:unexpected,embedding:()=>undefined,admit:work=>work(),log:()=>{},
  })
  t.after(()=>retrieval.dispose())

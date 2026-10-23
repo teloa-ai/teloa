@@ -8,7 +8,7 @@ import {SessionStore,SessionId} from '@deepseek-ai/dsh-session'
 import {AgentRegistry} from '@deepseek-ai/dsh-agent'
 import {AgentLoop} from '@deepseek-ai/dsh-agent-loop'
 import {SessionProjectionRegistry} from '@deepseek-ai/dsh-session-projection'
-import {captureRetrievalPreparation,WorkError,readRetrievalSearchResult,retrievalEndpoints,type RetrievalSearchResult,type EmbeddingProviderId} from '@teloa/contract'
+import {captureRetrievalPreparation,WorkError,readRetrievalSearchResult,retrievalEndpoints,type RetrievalSearchResult,type EmbeddingProviderId,type DigitalRole} from '@teloa/contract'
 import type {ResourceActor,RetrievalStatus} from '@teloa/backend'
 import {registerLocalRetrieval,readEmbeddingProvider,knowledgeSearchToolName,embeddingProviderId,type LocalRetrievalPorts,type EmbeddingServiceLike} from '../src/local-retrieval.ts'
 import {retrievalPreparationDetails} from '../../local-embedding/src/preparation-details.ts'
@@ -87,7 +87,7 @@ async function setup(overrides:Partial<LocalRetrievalPorts>={},options:{subagent
  const logs:string[]=[],taskAuthorizations:string[]=[]
  const ports:LocalRetrievalPorts={
   owner,
-  conversation:async id=>({ownerId:owner,sessionId:id,status:'ready',scopeIds:['general','design']}),
+  conversation:async id=>({ownerId:owner,sessionId:id,status:'ready',scopeIds:['general','design']}),requestedRoleId:async()=>null,role:async()=>null,
   readTaskPolicy:async()=>null,
   taskAuthorization:async id=>{taskAuthorizations.push(id);return {actor:{ownerId:owner,kind:'agent',scopeIds:['SOC']},targetScopes:['SOC']}},
   humanActor:async()=>human,
@@ -131,6 +131,16 @@ test('本人普通会话：模型就绪即默认可用，按会话绑定范围�
  // limit 缺省时不由宿主补默认值，交给服务端（规格默认 5）。
  const plain=await e.call({query:'报销'})
  assert.equal(plain.isError,false);assert.deepEqual(e.store.of('search')[1]!.args[2],{query:'报销'})
+})
+
+test('员工单聊：按岗位业务范围与员工资料清单检索，不沿用 general 占位范围',async t=>{
+ const roleId='22222222-2222-4222-8222-222222222222',role={id:roleId,ownerId:owner,scopes:['SOC'],knowledge:[resourceId]} as DigitalRole
+ const e=await setup({requestedRoleId:async()=>roleId,role:async()=>role});t.after(()=>e.ctx.fiber.dispose())
+ const result=await e.call({query:'告警处置'})
+ assert.equal(result.isError,false,text(result))
+ const [search]=e.store.of('search')
+ assert.deepEqual(search!.args.slice(0,2),[{ownerId:owner,kind:'agent',scopeIds:['SOC']},['SOC']],'员工范围不能回落到 general')
+ assert.deepEqual(search!.args.at(-1),[resourceId],'员工资料清单是检索硬上限')
 })
 
 test('受管任务：用 taskKnowledgeAuthorization 给出的主体与目标范围；未授予时 task-tool-guard 与工具正文都拒绝',async t=>{
@@ -452,7 +462,7 @@ test('真实 Cordis 兄弟服务：冷启动先通用对账，扩展出现补当
  const hostFiber=ctx.plugin({name:'retrieval-lifecycle-host',inject:['tools'],async apply(scope:Context){
   hostScope=scope
   host=registerLocalRetrieval(scope,{
-   owner,conversation:async id=>({ownerId:owner,sessionId:id,status:'ready',scopeIds:['general']}),readTaskPolicy:async()=>null,taskAuthorization:async()=>({actor:human,targetScopes:['general']}),humanActor:async()=>human,
+   owner,conversation:async id=>({ownerId:owner,sessionId:id,status:'ready',scopeIds:['general']}),requestedRoleId:async()=>null,role:async()=>null,readTaskPolicy:async()=>null,taskAuthorization:async()=>({actor:human,targetScopes:['general']}),humanActor:async()=>human,
    retrieval:async()=>{if(delayRead){waiting.resolve();await held.promise}return {...store.retrieval,async reconcile(value?:string){
     hashes.push(value)
     if(value===profileHash)first.resolve()
