@@ -304,7 +304,7 @@ Teloa 是用于组建、管理和运行 AI 员工团队的 **AI-Native Team Stud
 
 ### 从 GitHub Release 原生安装
 
-需要 **Node.js 24.x** 或 **22.19 及以上的 22.x**、**npm 11.12.1 及以上的 11.x**，以及运行中的本机 Docker 引擎，用于独立 PostgreSQL 数据库。将精确版本安装到新建命令目录，无需全局安装或编译源码。
+需要 **Node.js 24.x（24.22.1 及以上）** 或 **22.x（22.23.4 及以上）**、**npm 11.12.1 及以上的 11.x**，以及运行中的本机 Docker 引擎，用于独立 PostgreSQL 数据库。将精确版本安装到新建命令目录，无需全局安装或编译源码。
 
 ```sh
 mkdir teloa-command
@@ -375,7 +375,7 @@ docker compose start
 
 ### 本机源码运行
 
-需要 **Node.js 24.x** 或 **22.19 及以上的 22.x**、**pnpm 11.7.0**，以及用于 PostgreSQL 的本机 Docker 引擎。此方式在电脑上运行 Teloa 与 DSH，数据库运行在 Docker 中。
+需要 **Node.js 24.x（24.22.1 及以上）** 或 **22.x（22.23.4 及以上）**、**pnpm 11.7.0**，以及用于 PostgreSQL 的本机 Docker 引擎。此方式在电脑上运行 Teloa 与 DSH，数据库运行在 Docker 中。
 
 当前主分支固定 DSH **0.2.1-rc.2**，包含默认语音输入；已发布的 npm 和 Docker 版本独立更新，请勿将源码能力视为旧发行包已包含的功能。
 

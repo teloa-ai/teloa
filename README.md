@@ -302,7 +302,7 @@ This overview covers the release’s capabilities and improvements; not all of t
 
 ### Native installation from the GitHub Release
 
-Use **Node.js 24.x** or **22.x from 22.19 onward**, **npm 11.x from 11.12.1 onward**, and a running local Docker engine for the dedicated PostgreSQL database. Install the exact version into a new command directory; no global installation or source build is required.
+Use **Node.js 24.x from 24.22.1 onward** or **22.x from 22.23.4 onward**, **npm 11.x from 11.12.1 onward**, and a running local Docker engine for the dedicated PostgreSQL database. Install the exact version into a new command directory; no global installation or source build is required.
 
 ```sh
 mkdir teloa-command
@@ -373,7 +373,7 @@ Container tools run inside the container. Mounting a folder does not give access
 
 ### Native source installation
 
-Use **Node.js 24.x** or **22.x from 22.19 onward**, **pnpm 11.7.0**, and a running local Docker engine for PostgreSQL. Teloa and DSH run on your computer, while the database runs in Docker.
+Use **Node.js 24.x from 24.22.1 onward** or **22.x from 22.23.4 onward**, **pnpm 11.7.0**, and a running local Docker engine for PostgreSQL. Teloa and DSH run on your computer, while the database runs in Docker.
 
 The current main branch pins DSH **0.2.1-rc.2** and includes voice input by default. Published npm and Docker releases are updated separately; source features are not necessarily available in an older release.
 
