@@ -42,13 +42,25 @@ test('独立员工HTTP/MCP鉴权、SDK和跨协议幂等、权限隔离、密钥
  assert.equal((await credentials.readRecord(('teloa-employee-api/i'+issued.integration.id.replaceAll('-','')) as never))?.kind,'grant')
  const client=new TeloaClient({baseUrl:origin,apiKey:issued.apiKey}),readClient=new TeloaClient({baseUrl:origin,apiKey:readonly.apiKey})
  assert.equal((await client.listEmployees()).items[0]?.id,role.id)
- const requestId=randomUUID(),input={employeeId:role.id,input:'核对本机测试资料'},work=await client.startWork(input,{requestId})
+ const requestId=randomUUID(),model={provider:'custom-provider',model:'example-model',reasoningEffort:'high'},input={employeeId:role.id,input:'核对本机测试资料',permissionMode:'read-only' as const,model},work=await client.startWork(input,{requestId})
+ assert.equal(work.permissionMode,'read-only');assert.deepEqual(work.model,model)
+ const storedRound=(await pool.query('select permission_mode,model_provider,model_id,model_reasoning_effort from teloa_employee_api_rounds where work_id=$1 and round=1',[work.id])).rows[0]
+ assert.deepEqual(storedRound,{permission_mode:'read-only',model_provider:'custom-provider',model_id:'example-model',model_reasoning_effort:'high'})
  await assert.rejects(()=>client.startWork({...input,input:'不同正文'},{requestId}),{code:'idempotency_conflict'})
  await assert.rejects(()=>readClient.getWork(work.id),{code:'not_found'})
  await assert.rejects(()=>readClient.startWork(input,{requestId:randomUUID()}),{code:'forbidden'})
  mcp=new Client({name:'teloa-test',version:'1'},{capabilities:{}})
  await mcp.connect(new StreamableHTTPClientTransport(new URL(origin+'/mcp'),{requestInit:{headers:{authorization:'Bearer '+issued.apiKey}}}) as Parameters<Client['connect']>[0])
  const toolList=await mcp.listTools();assert.equal(toolList.tools.length,7)
+ const startTool=toolList.tools.find(tool=>tool.name==='teloa_start_work')!
+ assert.equal((startTool.inputSchema.properties as Record<string,{enum?:string[]}>).permissionMode?.enum?.includes('read-only'),true)
+ assert.deepEqual((startTool.inputSchema.properties as Record<string,{required?:string[]}>).model?.required,['provider','model'])
+ const continueTool=toolList.tools.find(tool=>tool.name==='teloa_continue_work')!
+ assert.equal((continueTool.inputSchema.properties as Record<string,unknown>).permissionMode!==undefined,true)
+ const document=await (await fetch(origin+'/api/v1/openapi.json')).json() as {components:{schemas:Record<string,{properties:Record<string,unknown>}>}}
+ assert.deepEqual(document.components.schemas.StartWork!.properties.model,(await import('../../sdk/contract.mjs')).employeeApiSchemas.StartWork.properties.model)
+ assert.equal((await fetch(origin+'/api/v1/works',{method:'POST',headers:{authorization:'Bearer '+issued.apiKey,'content-type':'application/json','idempotency-key':randomUUID()},body:JSON.stringify({employeeId:role.id,input:'核对',permissionMode:'auto'})})).status,400)
+ assert.equal((await fetch(origin+'/api/v1/works',{method:'POST',headers:{authorization:'Bearer '+issued.apiKey,'content-type':'application/json','idempotency-key':randomUUID()},body:JSON.stringify({employeeId:role.id,input:'核对',model:{provider:'custom-provider'}})})).status,400)
  const retry=await mcp.callTool({name:'teloa_start_work',arguments:{...input,requestId}});assert.equal(JSON.parse((retry.content as {text:string}[])[0]!.text).id,work.id)
  readMcp=new Client({name:'readonly',version:'1'},{capabilities:{}})
  await readMcp.connect(new StreamableHTTPClientTransport(new URL(origin+'/mcp'),{requestInit:{headers:{authorization:'Bearer '+readonly.apiKey}}}) as Parameters<Client['connect']>[0])

@@ -596,3 +596,27 @@ test('发送只解析一次执行会话：核对用的就是被收窄、被发�
  await ports.send({taskId:'task',taskVersion:3,linkVersion:2,sessionId:'session',nativeRequestId:'native',inputText:'固定目标',allowedTools:[]} as unknown as TaskRun,new AbortController().signal,target)
  assert.deepEqual({resolves,inspects},{resolves:1,inspects:1})
 })
+
+test('运行专用会话按请求设置并核对原生权限预设，缺失或行为不匹配时明确拒绝',async()=>{
+ const presetTable:{[name:string]:{sandbox:string;approval:string}}={'read-only':{sandbox:'read-only',approval:'ask'},'workspace-write':{sandbox:'workspace-write',approval:'ask'},'danger-full-access':{sandbox:'danger-full-access',approval:'never'}},state={preset:'workspace-write'},calls:string[]=[]
+ const agent={status:'idle',inbox:{nextTurn:[],nextStep:[]},session:{header:{agentPreset:'security-analyst'},snapshotEvents:()=>[]}}
+ const ctxFor=(table=presetTable)=>({
+  agentPresets:{resolve:async(id?:string)=>({id:id??'default-agent'})},
+  sessionController:{create:async()=>({sessionId:'run-session',agentPreset:'security-analyst'}),inspect:async()=>({meta:{id:'run-session',agentPreset:'security-analyst'}}),resolveAgent:async()=>({agent})},
+  permissionPresets:{names:Object.keys(table),resolve:(name:string)=>{const spec=table[name];if(!spec)throw Error('missing preset');return spec},current:()=>state.preset,set:(_session:unknown,name:string)=>{calls.push('set:'+name);state.preset=name}},
+  sandboxPolicy:{resolve:()=>({mode:table[state.preset]!.sandbox})},
+  approval:{config:{policy:'ask'},overrideOf:()=>table[state.preset]!.approval},
+ } as unknown as Context)
+ const signal=new AbortController().signal
+ const ports=dshTaskRunPorts(ctxFor(),'owner',async()=>({ownerId:'owner',sessionId:'run-session',status:'ready'}))
+ await ports.prepareSession!('run-session','security-analyst',signal,'read-only')
+ assert.equal(state.preset,'read-only');assert.deepEqual(calls,['set:read-only'])
+ await ports.check({sessionId:'run-session',permissionMode:'danger-full-access'},signal)
+ assert.equal(state.preset,'danger-full-access');assert.deepEqual(calls,['set:read-only','set:danger-full-access'])
+ const missing=dshTaskRunPorts(ctxFor({'workspace-write':presetTable['workspace-write']!}),'owner',async()=>({ownerId:'owner',sessionId:'run-session',status:'ready'}))
+ const missingError=await missing.prepareSession!('run-session','security-analyst',signal,'read-only').then(()=>undefined,value=>value)
+ assert.equal(missingError.code,'teloa/permission-mode-unavailable');assert.equal(missingError.stage,'permission-resolve')
+ const mismatch=dshTaskRunPorts(ctxFor({'read-only':{sandbox:'workspace-write',approval:'ask'}}),'owner',async()=>({ownerId:'owner',sessionId:'run-session',status:'ready'}))
+ const mismatchError=await mismatch.prepareSession!('run-session','security-analyst',signal,'read-only').then(()=>undefined,value=>value)
+ assert.equal(mismatchError.code,'teloa/permission-mode-unavailable');assert.equal(mismatchError.stage,'permission-resolve')
+})

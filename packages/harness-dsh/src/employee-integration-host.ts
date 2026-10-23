@@ -69,9 +69,9 @@ export function createEmployeeIntegrationHost(ctx:Context,ports:Ports){
  const runMcp=async(identity:EmployeeIntegrationIdentity,name:string,args:unknown,signal:AbortSignal)=>{
   signal.throwIfAborted();const s=await services()
   if(name===toolName.listEmployees){taskInput(args,[]);return s.work.employees(identity)}
-  if(name===toolName.startWork){const r=taskInput(args,['requestId','employeeId','input','title']);const {requestId,...input}=r;return s.work.command(identity,'start',employeeApiId(requestId),input)}
+  if(name===toolName.startWork){const r=taskInput(args,['requestId','employeeId','input','title','permissionMode','model']);const {requestId,...input}=r;return s.work.command(identity,'start',employeeApiId(requestId),input,undefined,signal)}
   if(name===toolName.getWork){const r=taskInput(args,['workId']);return s.work.get(identity,employeeApiId(r.workId))}
-  if(name===toolName.continueWork||name===toolName.cancelWork){const r=taskInput(args,name===toolName.continueWork?['workId','requestId','input','expectedVersion']:['workId','requestId','expectedVersion']),{workId,requestId,...input}=r;return s.work.command(identity,name===toolName.continueWork?'continue':'cancel',employeeApiId(requestId),input,employeeApiId(workId))}
+  if(name===toolName.continueWork||name===toolName.cancelWork){const r=taskInput(args,name===toolName.continueWork?['workId','requestId','input','expectedVersion','permissionMode','model']:['workId','requestId','expectedVersion']),{workId,requestId,...input}=r;return s.work.command(identity,name===toolName.continueWork?'continue':'cancel',employeeApiId(requestId),input,employeeApiId(workId),signal)}
   if(name===toolName.getResult){const r=taskInput(args,['workId','version']);return s.work.result(identity,employeeApiId(r.workId),r.version as number|undefined)}
   if(name===toolName.listEvents){const r=taskInput(args,['workId','after']);return s.work.events(identity,employeeApiId(r.workId),r.after===undefined?0:r.after as number)}
   throw new EmployeeApiError('not_found','Unknown employee tool.',404)
@@ -104,13 +104,13 @@ export function createEmployeeIntegrationHost(ctx:Context,ports:Ports){
    const readQuery=(allowed:string[])=>{if([...url.searchParams.keys()].some(key=>!allowed.includes(key))||allowed.some(key=>url.searchParams.getAll(key).length>1))throw new EmployeeApiError('invalid_request','Unknown or repeated query parameter.')}
    let value:unknown,status=200
    if(req.method==='GET'&&url.pathname==='/api/v1/employees'){readQuery([]);value=await s.work.employees(identity)}
-   else if(req.method==='POST'&&url.pathname==='/api/v1/works'){readQuery([]);value=await s.work.command(identity,'start',employeeApiId(req.headers['idempotency-key']),await body(req));status=202}
+   else if(req.method==='POST'&&url.pathname==='/api/v1/works'){readQuery([]);value=await s.work.command(identity,'start',employeeApiId(req.headers['idempotency-key']),await body(req),undefined,abort.signal);status=202}
    else if(match){
     const id=employeeApiId(match[1]),action=match[2]
     if(req.method==='GET'&&!action){readQuery([]);value=await s.work.get(identity,id)}
     else if(req.method==='GET'&&action==='result'){readQuery(['version']);value=await s.work.result(identity,id,integer(url.searchParams.get('version')))}
     else if(req.method==='GET'&&action==='events'){readQuery(['after']);value=await s.work.events(identity,id,integer(url.searchParams.get('after'),0))}
-    else if(req.method==='POST'&&(action==='inputs'||action==='cancel')){readQuery([]);value=await s.work.command(identity,action==='inputs'?'continue':'cancel',employeeApiId(req.headers['idempotency-key']),await body(req),id);status=202}
+    else if(req.method==='POST'&&(action==='inputs'||action==='cancel')){readQuery([]);value=await s.work.command(identity,action==='inputs'?'continue':'cancel',employeeApiId(req.headers['idempotency-key']),await body(req),id,abort.signal);status=202}
     else throw new EmployeeApiError('not_found','Unknown employee API operation.',404)
    }else throw new EmployeeApiError('not_found','Unknown employee API operation.',404)
    json(res,status,value,requestId)

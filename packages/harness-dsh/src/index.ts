@@ -160,13 +160,15 @@ import {readSubagentDelegationLimits} from './subagent-delegation.ts'
 import {registerTaskSubagentTool} from './task-subagent-tool.ts'
 import {createTaskRunHandler,taskRunEndpoints} from './task-runs.ts'
 import {createTaskRunDeliveryReader} from './task-run-delivery-status.ts'
+import {resolveRequestedTaskModelPolicy} from './task-model-dsh.ts'
+import {EmployeeApiError,type EmployeeModelSelection,type EmployeePermissionMode} from '../../sdk/contract.mjs'
 import {createTaskRunFlowHandler,taskRunFlowEndpoints,createConfirmedTaskRunFlowHandler,confirmedTaskRunFlowEndpoints} from './task-run-flows.ts'
 import {TaskRunFlowDriver} from './task-run-flow-driver.ts'
 import {TaskRunFlowService} from '@teloa/backend'
 import {NotificationDeliveryService} from '@teloa/backend'
 import {NotificationDeliveryDriver,createLocalNotificationAdapter,createBroadcastNotificationAdapter} from './notification-deliveries.ts'
 import {createTaskMaterialHandler,createTaskMaterialKnowledgeLoader,taskMaterialEndpoints} from './task-materials.ts'
-import {dshTaskRunPorts,prepareDshTaskSession,taskKnowledgeAuthorization,pickPromptImages,runDateLine,skillHttpRunHint} from './task-run-dsh.ts'
+import {dshTaskRunPorts,prepareDshTaskSession,taskKnowledgeAuthorization,taskRunPermissionPreset,pickPromptImages,runDateLine,skillHttpRunHint} from './task-run-dsh.ts'
 import {taskInputWithoutMemory} from './task-memory-input.ts'
 import {resolveDshManagedRoleSkills} from './role-skills-dsh.ts'
 import {TaskTransitions} from '@teloa/backend'
@@ -2510,6 +2512,10 @@ async function applyHost(ctx:Context,projectRoot:string):Promise<void> {
    withdraw:async(actor,runId,signal)=>{if(actor!==owner)throw new WorkError('teloa/forbidden','集成归属不一致。');return taskRunHandler('task-runs/withdraw',{runId},signal)},
    waiting:async run=>{const events=await runPorts.events(run),pending=new Set<string>();for(const event of events){if(run.evidence&&run.evidence.state!=='accepted'&&event.seq<run.evidence.messageSeq)continue;if(event.type==='approval/asked')pending.add(event.data.id);else if(event.type==='approval/decided')pending.delete(event.data.id)}return pending.size>0},
    result:async run=>{if(run.state!=='ended'||run.evidence?.state!=='ended'||run.evidence.reason!=='completed'||run.stopRequestedAt!==null)return;const events=(await runPorts.events(run)).slice(0,run.evidence.endSeq+1),continuations=await runPorts.continuations?.(run,events),goal=await runPorts.goalObservation?.(run,events),reviewed=readTaskRunGroupResult(events,run.nativeRequestId,continuations,goal,{requireReview:true,runId:run.id}),text=reviewed??readTaskRunGroupResult(events,run.nativeRequestId,continuations,goal);return text?{text,review:reviewed===undefined?'unreviewed':'accepted'}:undefined},
+   check:async({permissionMode,model}:{permissionMode:EmployeePermissionMode;model:EmployeeModelSelection|null},signal:AbortSignal)=>{
+    try{taskRunPermissionPreset(ctx,permissionMode)}catch{throw new EmployeeApiError('permission_mode_unavailable','The host does not provide a matching native preset for the requested permission mode.',409)}
+    if(model)try{await resolveRequestedTaskModelPolicy(ctx,model,signal)}catch(error){signal.throwIfAborted();throw new EmployeeApiError('model_unavailable','The requested provider, model or credential is not available on this host.',409)}
+   },
   }})
   resources.beforeDatabaseClose(()=>employeeIntegrations.close())
   const dispatchTeloaEndpoint=async(endpoint:string,payload:unknown,signal:AbortSignal)=>{

@@ -4,7 +4,11 @@ import {createHash} from 'node:crypto'
 import {resolveDshRoleSkills} from './role-skills-dsh.ts'
 import type {Context} from '@deepseek-ai/cordis'
 import {brandString} from '@deepseek-ai/dsh-brand'
-import type {SessionId,SessionStore} from '@deepseek-ai/dsh-session'
+import type {Session,SessionId,SessionStore} from '@deepseek-ai/dsh-session'
+import type {} from '@deepseek-ai/dsh-permission-presets'
+import type {} from '@deepseek-ai/dsh-sandbox-policy'
+import type {} from '@deepseek-ai/dsh-user-approval'
+import type {EmployeePermissionMode} from '../../sdk/contract.mjs'
 import type {SessionRequestId} from '@deepseek-ai/dsh-api-session-controller'
 import type {WorkspaceId} from '@deepseek-ai/dsh-workspace'
 import type {RunGroupFile,TaskExecutionScope,TaskRun,TaskRunSkillDatabase} from '@teloa/backend'
@@ -32,7 +36,7 @@ import type {Agent} from '@deepseek-ai/dsh-agent'
 import type {createNativeWorkInput} from './native-work-input.ts'
 import {createUserMessage} from '@deepseek-ai/dsh-llm'
 import type {} from '@deepseek-ai/dsh-attachment'
-import {createTaskModelRouting,resolveTaskModelPolicy} from './task-model-dsh.ts'
+import {createTaskModelRouting,resolveRequestedTaskModelPolicy,resolveTaskModelPolicy} from './task-model-dsh.ts'
 import type {ModelReference} from '@teloa/contract'
 import {readNativeReassignmentInspection,withNativeResourceInspection,type NativeAbortInspection,type NativeResourceFacts} from './business-reassignment-native.ts'
 import {taskInputWithoutMemory} from './task-memory-input.ts'
@@ -310,6 +314,25 @@ export async function resolveDshTaskPreset(ctx:Context,agentPresetId:string|unde
  catch{signal.throwIfAborted();throw new TaskRunPresetError('teloa/preset-unavailable','preset-resolve',agentPresetId===undefined?'无法解析当前默认运行配置。':'员工运行配置不存在或不可组合。')}
 }
 
+/** 请求的权限模式必须对应宿主已配置且行为一致的原生预设；缺失或错配不静默换档。 */
+export function taskRunPermissionPreset(ctx:Context,permissionMode:EmployeePermissionMode){
+ let spec
+ try{spec=ctx.permissionPresets.resolve(permissionMode)}
+ catch{throw new TaskRunPresetError('teloa/permission-mode-unavailable','permission-resolve','宿主没有配置请求的权限模式预设。')}
+ if(spec.sandbox!==permissionMode||spec.approval!==(permissionMode==='danger-full-access'?'never':'ask'))throw new TaskRunPresetError('teloa/permission-mode-unavailable','permission-resolve','宿主权限预设与请求的权限模式行为不一致。')
+ return spec
+}
+/** 新建会话后设置模式；恢复已有会话时只在固定选择不一致时重放同一选择，并在返回前核对实际沙箱与审批。 */
+export function applyDshTaskPermissionMode(ctx:Context,session:Session,permissionMode:EmployeePermissionMode,signal?:AbortSignal){
+ signal?.throwIfAborted()
+ const spec=taskRunPermissionPreset(ctx,permissionMode)
+ if(ctx.permissionPresets.current(session)!==permissionMode)ctx.permissionPresets.set(session,permissionMode)
+ signal?.throwIfAborted()
+ try{
+  const approval=ctx.approval.overrideOf(session)??ctx.approval.config.policy??'ask'
+  if(ctx.permissionPresets.current(session)!==permissionMode||ctx.sandboxPolicy.resolve({session}).mode!==spec.sandbox||approval!==spec.approval)throw Error()
+ }catch{throw new TaskRunPresetError('teloa/permission-mode-unavailable','permission-resolve','会话实际权限与请求的权限模式不一致。')}
+}
 export async function prepareDshTaskSession(ctx:Context,sessionId:string,agentPresetId:string|undefined,signal:AbortSignal,workspaceId?:WorkspaceId):Promise<string>{
  const fixedPresetId=await resolveDshTaskPreset(ctx,agentPresetId,signal)
  let receipt:{sessionId:string;agentPreset?:string}
@@ -392,12 +415,22 @@ export function dshTaskRunPorts(ctx:Context,owner:string,inspect:(sessionId:stri
   if(agentPresetId!==undefined)throw new TaskRunPresetError('teloa/preset-unavailable','preset-resolve','创造模式仅供本人会话使用，不能用于员工运行。')
   return resolveDshTaskPreset(ctx,'teloa-standard',signal)
  }
- const prepareSession=async(sessionId:string,agentPresetId:string|undefined,signal:AbortSignal)=>prepareDshTaskSession(ctx,sessionId,await resolvePreset(agentPresetId,signal),signal)
- const checkAgent=async(run:Pick<TaskRun,'sessionId'>&Partial<Pick<TaskRun,'id'|'modelPolicy'|'taskId'|'taskVersion'|'linkVersion'|'agentPresetId'|'roleId'|'skills'|'knowledge'|'inputText'>>,signal:AbortSignal,target?:TaskExecutionScope,resolved?:Agent)=>{
+ const prepareSession=async(sessionId:string,agentPresetId:string|undefined,signal:AbortSignal,permissionMode?:EmployeePermissionMode)=>{
+  const created=await prepareDshTaskSession(ctx,sessionId,await resolvePreset(agentPresetId,signal),signal)
+  if(permissionMode){
+   signal.throwIfAborted()
+   const resolved=await ctx.sessionController.resolveAgent(brandString<SessionId>(sessionId))
+   if('error' in resolved)throw new TaskRunPresetError('teloa/permission-mode-unavailable','permission-resolve','运行会话创建后不可读取，无法核对权限模式。')
+   applyDshTaskPermissionMode(ctx,resolved.agent.session,permissionMode,signal)
+  }
+  return created
+ }
+ const checkAgent=async(run:Pick<TaskRun,'sessionId'>&Partial<Pick<TaskRun,'id'|'modelPolicy'|'permissionMode'|'taskId'|'taskVersion'|'linkVersion'|'agentPresetId'|'roleId'|'skills'|'knowledge'|'inputText'>>,signal:AbortSignal,target?:TaskExecutionScope,resolved?:Agent)=>{
   if(target)validateTarget(run,target)
   signal.throwIfAborted();const agent=resolved??await resolve(run);signal.throwIfAborted()
   if(run.agentPresetId==='cordis'||agent.session.header?.agentPreset==='cordis')throw new WorkError('teloa/forbidden','创造模式仅供本人会话使用，不能用于员工运行。')
   if(run.agentPresetId!==undefined&&agent.session.header.agentPreset!==run.agentPresetId)throw new WorkError('teloa/version-conflict','原生会话运行配置与本次执行快照不一致。')
+  if(run.permissionMode)applyDshTaskPermissionMode(ctx,agent.session,run.permissionMode,signal)
   if(run.knowledge?.length){
    if(!loadKnowledge||!target)throw new WorkError('teloa/conflict','知识资料读取缺少可信任务关联。')
    // 复核必须和运行准备读到同一份资料：通用范围任务里主体范围要并上岗位自身范围，否则准备得起来的
@@ -423,6 +456,8 @@ export function dshTaskRunPorts(ctx:Context,owner:string,inspect:(sessionId:stri
   prepareSession,
   ensureModels:(agent,run)=>{ensureModels(agent,run)},
   prepareModels:(runtime,signal)=>resolveTaskModelPolicy(ctx,runtime,signal),
+  checkPermissionMode:async(permissionMode,signal)=>{signal.throwIfAborted();taskRunPermissionPreset(ctx,permissionMode)},
+  checkModel:async(model,signal)=>{await resolveRequestedTaskModelPolicy(ctx,model,signal)},
   check:async(run,signal,target)=>{
    const agent=await checkAgent(run,signal,target)
    if(run.modelPolicy&&run.id){

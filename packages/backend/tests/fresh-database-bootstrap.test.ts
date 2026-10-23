@@ -35,6 +35,7 @@ const expectedTables=[
  "teloa_employee_api_results",
  "teloa_employee_api_events",
  "teloa_employee_api_deliveries",
+ "teloa_employee_api_round_deliveries",
  "teloa_artifact_revision_producers",
  "teloa_artifact_revision_requests",
  "teloa_method_reuse_requests",

@@ -6,7 +6,8 @@ import {readTaskRunGroupResult} from './task-run-group-result.ts'
 import {taskRunPlanReportOccurrence} from './task-run-group-publisher.ts'
 import {isTextOnlyTaskRun} from './task-run-background.ts'
 import {deliveryReviewSource,deliveryReviewToolName} from './task-delivery-review.ts'
-import type {GoalObservationContext} from '@teloa/contract'
+import type {GoalObservationContext,ModelReference} from '@teloa/contract'
+import type {EmployeePermissionMode} from '../../sdk/contract.mjs'
 
 export const roleRunNoExecutionToolsReason='role-run-no-execution-tools'
 /**
@@ -78,10 +79,13 @@ export type TaskRunPorts={
  prepareRetry?:(run:TaskRun,signal:AbortSignal)=>Promise<void>
  stableStart?:<T>(operation:()=>Promise<T>)=>Promise<T>
  resolvePreset?:(agentPresetId:undefined|string,signal:AbortSignal)=>Promise<string>
- prepareSession?:(sessionId:string,agentPresetId:undefined|string,signal:AbortSignal)=>Promise<string>
+ prepareSession?:(sessionId:string,agentPresetId:undefined|string,signal:AbortSignal,permissionMode?:EmployeePermissionMode)=>Promise<string>
+ /** 请求级权限模式与模型只在准备时核对；缺席表示旧宿主不提供该能力。 */
+ checkPermissionMode?:(permissionMode:EmployeePermissionMode,signal:AbortSignal)=>Promise<void>
+ checkModel?:(model:ModelReference,signal:AbortSignal)=>Promise<void>
  prepareModels?:(runtime:RoleRuntimeConfig|undefined,signal:AbortSignal)=>Promise<TaskRunModelPolicy>
  /** `roleId` 只供复核时补读岗位自身范围；缺席时知识复核退回任务范围。 */
- check:(run:Pick<TaskRun,'sessionId'>&Partial<Pick<TaskRun,'id'|'modelPolicy'|'taskId'|'taskVersion'|'linkVersion'|'agentPresetId'|'roleId'|'skills'|'knowledge'|'inputText'>>,signal:AbortSignal,target?:TaskExecutionScope)=>Promise<void>
+ check:(run:Pick<TaskRun,'sessionId'>&Partial<Pick<TaskRun,'id'|'modelPolicy'|'permissionMode'|'taskId'|'taskVersion'|'linkVersion'|'agentPresetId'|'roleId'|'skills'|'knowledge'|'inputText'>>,signal:AbortSignal,target?:TaskExecutionScope)=>Promise<void>
  /** `roleScopes` 只在通用范围任务里把主体范围并上岗位自身范围；拿不到岗位时省略，退回任务范围。 */
  loadKnowledge?:(target:TaskExecutionScope,ids:readonly string[],signal:AbortSignal,roleScopes?:readonly string[],database?:TaskRunSkillDatabase)=>Promise<TaskRun['knowledge']>
  loadSkills?:(sessionId:string,names:readonly string[],signal:AbortSignal,database?:TaskRunSkillDatabase,industryInstallationIds?:readonly string[])=>Promise<TaskRun['skills']>

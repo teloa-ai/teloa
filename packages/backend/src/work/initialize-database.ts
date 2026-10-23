@@ -108,7 +108,6 @@ export async function initializeTeloaDatabase(pool:Pool,options:{businessSqlSecr
  await initializeRoles(pool)
  await initializeTasks(pool)
  await initializeEmployeeIntegrations(pool)
- await initializeEmployeeApiWork(pool)
  await initializeProjects(pool)
  await initializeProjectContext(pool)
  await initializeProjectRuntime(pool)
@@ -136,6 +135,8 @@ export async function initializeTeloaDatabase(pool:Pool,options:{businessSqlSecr
  await initializeArtifacts(pool)
  await initializeArtifactFeedback(pool)
  await initializeTaskCompletions(pool)
+ // 员工 API 交付复用正式成果与任务结项；初始化必须排在两者的表之后。
+ await initializeEmployeeApiWork(pool)
  // 市场与安装：技能安装表被行业技能引用与执行技能引用共用。
  await initializeMarketContents(pool)
  await initializeSkillInstallations(pool)

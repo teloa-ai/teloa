@@ -214,3 +214,18 @@ test('模型观察只在归属校验后附带；观察失败不能让已完成�
  assert.deepEqual(await handler('task-runs/withdraw',{runId:'one'},new AbortController().signal),{...run,state:'withdrawn',modelStatus:{state:'unavailable'}})
  assert.deepEqual(calls,['withdraw','one'])
 })
+
+test('准备执行前先核对请求级权限预设与模型，并把选择固定进 Run',async()=>{
+ const taskId='22345678-1234-4234-8234-123456789012',roleId='32345678-1234-4234-8234-123456789012',requestId='12345678-1234-4234-8234-123456789012',model={provider:'custom-provider',model:'example-model',reasoningEffort:'high'},calls:string[]=[]
+ const service={conversationParent:async()=>null,prepare:async(_owner:string,_payload:unknown,checkSession:unknown,_loadRoleKnowledge:unknown,_loadTaskKnowledge:unknown,resolveRuntime:unknown,_resolveModels:unknown,_admit:unknown,options:unknown)=>{
+  calls.push('prepare:'+JSON.stringify(options))
+  await (checkSession as (sessionId:string,role:DigitalRole,database:TaskRunSkillDatabase)=>Promise<void>)('run-session',{skills:[],knowledge:[],runtimeConfig:{agentPresetId:'security-analyst'}} as unknown as DigitalRole,{query:async()=>({rows:[]})} as unknown as TaskRunSkillDatabase)
+  assert.equal(await (resolveRuntime as (sessionId:string,agentPresetId?:string,permissionMode?:string)=>Promise<string>)('run-session','security-analyst','read-only'),'security-analyst')
+  return {id:'run',state:'prepared'}
+ }} as unknown as TaskRunService
+ const signal=new AbortController().signal,checks:string[]=[]
+ const handler=createTaskRunHandler('local-owner',async()=>service,{checkPermissionMode:async permissionMode=>{checks.push('mode:'+permissionMode)},checkModel:async model=>{checks.push('model:'+model.provider+'/'+model.model)},prepareSession:async(_id,preset,actualSignal,permissionMode)=>{assert.equal(actualSignal,signal);checks.push('session:'+permissionMode);return preset!},check:async run=>{checks.push('check:'+run.permissionMode)},send:async()=>{},stop:async()=>{},events:async()=>[]})
+ assert.deepEqual(await handler('task-runs/prepare',{requestId,taskId,expectedTaskVersion:3,roleId,expectedRoleVersion:5,sessionId:'run-session',expectedLinkVersion:2,permissionMode:'read-only',model},signal),{id:'run',state:'prepared'})
+ assert.deepEqual(checks,['mode:read-only','model:custom-provider/example-model','check:read-only','session:read-only'])
+ assert.deepEqual(JSON.parse(calls[0]!.slice('prepare:'.length)),{permissionMode:'read-only',modelPolicy:{primary:model}})
+})
