@@ -202,7 +202,7 @@ test('固定结果超过成果容量时明确失败且不截断、不创建正�
  await f.work.tick(AbortSignal.timeout(5000));f.complete();next();await f.work.tick(AbortSignal.timeout(5000))
  const current=await f.work.get(f.identity,work.id)
  assert.equal(current.state,'failed');assert.equal(current.error,'artifact_too_large')
- assert.equal((await f.work.result(f.identity,work.id)).text.length,64001)
+ await assert.rejects(()=>f.work.result(f.identity,work.id),{code:'result_not_ready'})
  assert.equal((await pool.query('select count(*)::int n from teloa_artifacts where owner_id=$1',[f.owner])).rows[0].n,0)
  const round=(await pool.query('select task_id from teloa_employee_api_rounds where work_id=$1 and round=1',[work.id])).rows[0]
  assert.equal((await pool.query('select state from teloa_tasks where owner_id=$1 and id=$2',[f.owner,round.task_id])).rows[0].state,'waiting')

@@ -276,9 +276,7 @@ export class EmployeeApiWorkService{
   const saved=(await db.query('select * from teloa_employee_api_results where work_id=$1 and version=$2',[row.id,row.result_version])).rows[0]
   if(!saved||hash(saved.text)!==saved.sha256||!['accepted','unreviewed'].includes(saved.review)){await fail('result_unavailable');return}
   const run=await this.runtime.read(row.owner_id,round.run_id,signal)
-  let delivery:DeliveryResult
-  try{delivery=await this.deliver(db,row,round,run,{text:saved.text,review:saved.review},saved.version)}
-  catch(error){if(error instanceof WorkError)throw error;await fail('delivery_failed');return}
+  const delivery=await this.deliver(db,row,round,run,{text:saved.text,review:saved.review},saved.version)
   if(!delivery.ok){await fail(delivery.error);return}
   const config=roundConfig(round),time=this.now(),updated=(await db.query("update teloa_employee_api_work set delivery_required=false,version=version+1,updated_at=$2,next_check_at=$2::timestamptz+interval '1 hour' where id=$1 returning *",[row.id,time])).rows[0]
   await this.event(db,updated,config)
@@ -319,14 +317,8 @@ export class EmployeeApiWorkService{
       if(result?.text.trim()){
        if(result.text.length>artifactTextLimit){state='failed';error='artifact_too_large'}
        else{
-        const resultVersion=(row.result_version??0)+1
-        try{
-         const delivery=await this.deliver(db,row,round,run,result,resultVersion)
-         if(delivery.ok){state='succeeded';delivered=true}else{state='failed';error=delivery.error}
-        }catch(cause){
-         if(cause instanceof WorkError)throw cause
-         state='failed';error='delivery_failed'
-        }
+        const resultVersion=(row.result_version??0)+1,delivery=await this.deliver(db,row,round,run,result,resultVersion)
+        if(delivery.ok){state='succeeded';delivered=true}else{state='failed';error=delivery.error}
        }
       }else{state='failed';error='empty_result'}
      }else{state='failed';error='execution_failed'}
@@ -344,7 +336,7 @@ export class EmployeeApiWorkService{
     const task=(await db.query('select version,state from teloa_tasks where owner_id=$1 and id=$2 for update',[row.owner_id,round.task_id])).rows[0]
     if(task&&task.state!=='cancelled'&&task.state!=='completed')await new TaskTransitions(this.pool,{id:randomUUID,now:()=>this.now().toISOString()}).changeInTransaction(db,row.owner_id,{requestId:round.request_id,taskId:round.task_id,expectedVersion:task.version,action:'cancel'})
    }
-   const persistResult=state==='succeeded'||state==='failed'&&(error==='artifact_too_large'||(error??'').startsWith('delivery_'))
+   const persistResult=state==='succeeded'
    if(state!==row.state||error!==row.error||delivered){
     let resultVersion=row.result_version
     if(result&&persistResult){
