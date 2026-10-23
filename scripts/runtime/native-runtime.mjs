@@ -22,6 +22,8 @@ const specs=[
 specs.find(spec=>spec.name==='@deepseek-ai/dsh-session-persistence-jsonl').targets=['lib/index.js']
 specs.push({name:'@deepseek-ai/dsh-experimental-agent-team',basename:'dsh-experimental-agent-team-'+version+'-input-admission',targets:['lib/index.js']})
 specs.push({name:'@deepseek-ai/dsh-client-ui-conversation',basename:'dsh-client-ui-conversation-'+version+'-empty-header-utilities',targets:['lib/client.js'],unidiffZero:true})
+// Teloa 业务标准预设归入 Agent 预设页的内置分组；只改官方客户端展示判定，不动 preset 声明和会话保存值。
+specs.push({name:'@deepseek-ai/dsh-client-ui-agent-preset',basename:'dsh-client-ui-agent-preset-'+version+'-teloa-standard-builtin',targets:['lib/client.js'],unidiffZero:true})
 // 提供方未单独配置上限时，固定 SDK 模型已有有限输出上界；将它绑定到原生 prepared call，供受控工作预留额度。
 specs.push({name:'@deepseek-ai/dsh-llm-pi-ai',basename:'dsh-llm-pi-ai-'+version+'-output-cap',targets:['lib/index.js','lib/types/adapter.d.ts']})
 specs.push({name:'@deepseek-ai/dsh-experimental-auto-review',basename:'dsh-experimental-auto-review-'+version+'-request-owner',targets:['lib/index.js']})

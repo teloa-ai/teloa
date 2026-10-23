@@ -1,0 +1,25 @@
+{
+  "schema": "teloa.dsh-compat-patch/v1",
+  "package": "@deepseek-ai/dsh-client-ui-agent-preset",
+  "version": "0.2.1-rc.2",
+  "upstreamCommit": "687f282e8625c6b8d11ff58211a90524be2e4317",
+  "patchSha256": "cd37faddf9baa117a08e0c0c73ea714d6f532f935341a689fa85426a012c953f",
+  "files": [
+    {
+      "path": "lib/client.js",
+      "beforeSha256": "6ecdf173de66fce620e588f10ed1e3b624725febab059fb867beefef9ae4ddb8",
+      "afterSha256": "2c7fd272a50893add645bb2459ef5c8af98c5c7cfafd36a22ec82b0f9b01e4a1"
+    }
+  ],
+  "api": [
+    "agent-preset.section.grouping"
+  ],
+  "scope": {
+    "default": "Teloa 的业务标准预设 teloa-standard 归入 Agent 预设页的内置分组；其余内置/自定义判定保持不变。",
+    "boundary": "只改官方客户端展示分组判定，不修改 preset 声明、默认值、会话保存值、权限或工具能力。",
+    "limitations": [
+      "仅影响 Agent 预设页的分组徽标与顺序；真正的内置文案仍由官方词典提供，Teloa 预设保留自己的名称和说明。"
+    ],
+    "patchContext": "单行零上下文补丁；安装前核对固定官方版本、来源与前后文件摘要。"
+  }
+}

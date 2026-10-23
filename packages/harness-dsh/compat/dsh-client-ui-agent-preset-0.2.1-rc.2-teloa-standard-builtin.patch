@@ -1,0 +1,5 @@
+--- a/lib/client.js
++++ b/lib/client.js
+@@ -884 +884 @@ window.__ModuleLoader__.load({
+-			return preset.name === void 0 && BUILT_IN_PRESET_KEYS[preset.id] !== void 0;
++			return preset.id === "teloa-standard" || preset.name === void 0 && BUILT_IN_PRESET_KEYS[preset.id] !== void 0;
