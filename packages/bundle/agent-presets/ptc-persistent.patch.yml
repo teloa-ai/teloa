@@ -5,7 +5,6 @@
       disabled: false
       config:
         id: ptc-persistent
-        name: 代码模式（保留变量）
         order: 2.1
         plugins:
           - id: selected-code-runtime
@@ -144,4 +143,5 @@
           - id: tool-plugin-market
             name: "@deepseek-ai/dsh-plugin-market/tools"
             disabled: true
+        name: 代码模式（保留变量）
         description: 在当前 Agent 的代码运行会话中跨多个 run_code 调用保留变量、函数和导入模块；内存不落盘，重启、取消、超时或 Agent 重启后清空。

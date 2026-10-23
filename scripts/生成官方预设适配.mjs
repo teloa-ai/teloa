@@ -48,8 +48,9 @@ for(const id of ['standard','ptc','cordis']){
   const runtime={id:'selected-ptc-runtime',name:variant==='ptc-python'?'@deepseek-ai/dsh-experimental-ptc-runtime-python':'@deepseek-ai/dsh-ptc-runtime-node',...(variant==='ptc-persistent'?{config:{executionMode:'persistent-in-memory'}}:{})}
   const plugins=structuredClone(declaration.config.plugins)
   plugins.unshift({id:'selected-code-runtime',name:'cordis:group',group:true,isolate:{ptcRuntime:true},config:[runtime,{id:'bind-code-runtime',name:'@teloa/harness-dsh/native-ptc-selection'}]})
-  const description=variant==='ptc-persistent'?'Keep variables in this session memory; restarting the app clears them.':'Run Python code with the current file permissions and approval rules.'
-  variants.push({id:variant,rows:[{insert:[{id:'preset-'+variant,name:'@deepseek-ai/dsh-agent-preset',disabled:false,config:{...declaration.config,id:variant,description,order:variant==='ptc-persistent'?2.1:2.2,plugins}}]}]})
+  const name=variant==='ptc-persistent'?'代码模式（保留变量）':'代码模式（Python）'
+  const description=variant==='ptc-persistent'?'在当前 Agent 的代码运行会话中跨多个 run_code 调用保留变量、函数和导入模块；内存不落盘，重启、取消、超时或 Agent 重启后清空。':'使用 Python 执行 run_code 代码，沿用当前文件权限与审批规则。'
+  variants.push({id:variant,rows:[{insert:[{id:'preset-'+variant,name:'@deepseek-ai/dsh-agent-preset',disabled:false,config:{...declaration.config,id:variant,name,description,order:variant==='ptc-persistent'?2.1:2.2,plugins}}]}]})
   derivedDigests[variant]=presetBodyNormalizedDigest(plugins)
  }
  for(const variant of variants){

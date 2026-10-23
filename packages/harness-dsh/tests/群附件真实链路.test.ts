@@ -542,7 +542,7 @@ test('群附件从上传到看图与同事贴回：真库、真端点、真附�
  // 模拟升级前的固定输入，JSON 键序保持不变（claim 核对原文指纹）。
  const storedTwo=(await pool.query('select input_text from teloa_task_runs where id=$1',[runTwo.id])).rows[0]
  const legacyInputTwo=JSON.parse(storedTwo.input_text);delete legacyInputTwo.modelPolicy
- await pool.query('update teloa_task_runs set input_text=$2 where id=$1',[runTwo.id,JSON.stringify(legacyInputTwo)])
+ await pool.query('update teloa_task_runs set input_text=$2,model_policy=null where id=$1',[runTwo.id,JSON.stringify(legacyInputTwo)])
  runtime.setVision('unknown');runtime.setRejectImages(true)
  await rpcCall('task-runs/start',{runId:runTwo.id})
  const promptTwo=runtime.prompts[runtime.prompts.length-1]!
