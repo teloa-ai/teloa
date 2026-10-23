@@ -22,6 +22,7 @@
 .treeBranch>summary strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:var(--teloa-font-control);font-weight:var(--teloa-weight-regular)}
 .treeBranch>summary small{color:var(--teloa-muted);font-size:var(--teloa-font-caption)}
 .treeGroup{display:grid;margin-left:14px;padding-left:7px;border-left:1px solid var(--teloa-border)}
+.treeBatch{margin:3px 0 3px 7px;padding:3px 7px;border:0;border-radius:6px;background:transparent;color:var(--teloa-secondary);font:inherit;font-size:var(--teloa-font-caption);text-align:left;cursor:pointer}.treeBatch:hover{background:var(--teloa-hover);color:var(--teloa-text)}.treeBatch:disabled{cursor:default;opacity:.6}
 .treeDocument{display:grid;grid-template-columns:14px minmax(0,1fr);align-items:center;gap:7px;width:100%;min-height:34px;padding:4px 7px;border:0;border-radius:7px;background:transparent;color:var(--teloa-text);font:inherit;text-align:left;cursor:pointer}
 .treeDocument:hover,.treeDocument[aria-current=page]{background:var(--teloa-subtle)}
 .treeDocument[aria-current=page]{background:var(--teloa-active);color:var(--teloa-text)}

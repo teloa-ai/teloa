@@ -29,7 +29,7 @@ export function ResourceManager({openUsage,onLocalModels,preferenceStorage,onUse
   const [directory,setDirectory]=useState<ResourceDirectory>({drafts:[],resources:[]}),[sources,setSources]=useState<SourceReference[]>([]),[loadedKnowledgeTree,setKnowledgeTree]=useState<KnowledgeTree>()
   // 根节点标题只在显示层本地化；目录操作只用节点身份与修订号，发起会话等请求仍取服务端原始目录。
   const knowledgeRootTitle=t('knowledge.space.rootTitle'),knowledgeTree=useMemo(()=>loadedKnowledgeTree&&localizeKnowledgeRoot(loadedKnowledgeTree,knowledgeRootTitle),[loadedKnowledgeTree,knowledgeRootTitle])
-  const [loading,setLoading]=useState(false),[busy,setBusy]=useState(false),[error,setError]=useState<string>(),[notice,setNotice]=useState<string>()
+  const [loading,setLoading]=useState(false),[busy,setBusy]=useState(false),[batchBusy,setBatchBusy]=useState(false),[error,setError]=useState<string>(),[notice,setNotice]=useState<string>()
   const [employeeGroups,setEmployeeGroups]=useState<EmployeeKnowledgeGroup[]>([])
   const [browseNodeId,setBrowseNodeId]=useState<string|undefined>(navigationState?.browseNodeId)
   const [libraryView,setLibraryView]=useState<LibraryView>(navigationState?.libraryView??'recent'),[preferences,setPreferences]=useState<LibraryPreferences>({recent:[],favorites:[]}),[loadedApi,setLoadedApi]=useState<ResourceApi>(),[documentDirty,setDocumentDirty]=useState(false),[documentReferenceReady,setDocumentReferenceReady]=useState(false),[pendingLeave,setPendingLeave]=useState<(()=>void)>()
@@ -85,7 +85,20 @@ export function ResourceManager({openUsage,onLocalModels,preferenceStorage,onUse
     catch(cause){if(generation===loadGeneration.current&&currentApi.current===api)setError(localizeWorkError(locale,cause))}
     finally{if(generation===loadGeneration.current&&currentApi.current===api)setLoading(false)}
   }
-  const priorApi=useRef(api)
+    /** 按员工批量加入：只在检索模型就绪时执行；按来源去重，已加入的来源由服务端幂等处理。 */
+  const enrollEmployeeMaterials=async(group:EmployeeKnowledgeGroup)=>{
+    if(!localRetrievalApi||batchBusy)return
+    setBatchBusy(true);setError(undefined);setNotice(undefined)
+    try{
+      const model=await localRetrievalApi.modelStatus()
+      if(!model.enabled||!model.provider||!['ready','standby'].includes(model.provider.preparation.phase)){onLocalModels?.();return}
+      const sourceIds=[...new Set(group.resources.filter(resource=>resource.status==='active').map(resource=>resource.sourceId))]
+      if(!sourceIds.length){setNotice(t('retrieval.employee.none'));return}
+      for(const sourceId of sourceIds)await localRetrievalApi.enroll(sourceId)
+      setNotice(t('retrieval.employee.enrolled',{count:sourceIds.length}))
+    }catch(cause){setError(localizeWorkError(locale,cause))}finally{setBatchBusy(false)}
+  }
+const priorApi=useRef(api)
   useEffect(()=>{if(priorApi.current!==api){priorApi.current=api;formGeneration.current++;prefsKey.current=undefined;prefsRef.current={recent:[],favorites:[]};setPreferences(prefsRef.current);setEditing(undefined);setSelectedResourceId(undefined);setSelectedNodeId(undefined);setBrowseNodeId(undefined);setTracking(false);setLocalTitle('');setLocalPath('');setTitle('');setSourceId('');setSourceVersion('');setCreatingFolder(false);setFolderTitle('');setGovernanceAction(undefined);folderRequest.current=undefined;governanceRequest.current=undefined;setMobileDetailOpen(false);setDocumentDirty(false);setPendingLeave(undefined);setBusy(false);setError(undefined);setNotice(undefined);restoredSelection.current=undefined;setQuery('');setLibraryView('recent');setEmployeeGroups([])}if(visible)void refresh();return ()=>{loadGeneration.current++}},[visible,api,targetResource?.request])
   useEffect(()=>{if(targetResource&&selectedResourceId===targetResource.id)clearTarget()},[targetResource?.request,selectedResourceId,clearTarget])
   useEffect(()=>{
@@ -207,6 +220,8 @@ export function ResourceManager({openUsage,onLocalModels,preferenceStorage,onUse
         createFolder={()=>void createFolder()}
         governance={knowledgeTree&&selectedNode&&canGovernKnowledgeNode(knowledgeTree,selectedNode.id)?<KnowledgeGovernance nodeTitle={selectedNode.title} action={governanceAction} title={governanceTitle} moveParentId={moveParentId} moveTargets={moveTargets} busy={busy} startRename={()=>{setGovernanceAction('rename');setGovernanceTitle(selectedNode.title);setMoveParentId('');governanceRequest.current=undefined}} startMove={()=>{setGovernanceAction('move');setMoveParentId(moveTargets[0]?.id??'');setGovernanceTitle('');governanceRequest.current=undefined}} changeTitle={value=>{setGovernanceTitle(value);if(governanceRequest.current?.value!==value.trim())governanceRequest.current=undefined}} changeMoveParent={value=>{setMoveParentId(value);if(governanceRequest.current?.value!==value)governanceRequest.current=undefined}} cancel={()=>{setGovernanceAction(undefined);governanceRequest.current=undefined}} rename={()=>void renameNode()} move={()=>void moveNode()}/>:undefined}
         employeeGroups={employeeGroups}
+        batchBusy={batchBusy}
+        {...(localRetrievalApi?{onEnrollEmployee:enrollEmployeeMaterials}:{})}
         selectedResourceId={selectedResourceId}
         {...(openArtifact?{openArtifact:(output:RoleArtifactSummary)=>{setError(undefined);void openArtifact(output).catch(cause=>{if(currentApi.current===api)setError(localizeWorkError(locale,cause))})}}:{})}
         selectResource={resource=>beforeLeave(()=>{recordVisit(resource.id);formGeneration.current++;setEditing(undefined);setSelectedResourceId(resource.id);setSelectedNodeId(knowledgeTree?.space.rootNodeId);setMobileDetailOpen(true);setError(undefined);rememberNavigation({selectedId:resource.id,mobileLayer:'detail'})})}
@@ -226,14 +241,14 @@ function KnowledgeBranch({branch,selectedNodeId,selectFolder}:{branch:KnowledgeD
   return <details className={css.treeBranch} open><summary data-teloa-entry={branch.id} aria-current={selectedNodeId===branch.id?'page':undefined} onClick={()=>selectFolder(branch.id)}><ChevronDown size={14}/><Folder size={15}/><strong>{branch.title}</strong><small>{branch.count}</small></summary><div className={css.treeGroup}>{branch.children.filter((child):child is KnowledgeDirectoryBranch=>child.type!=='page').map(child=><KnowledgeBranch key={child.id} branch={child} selectedNodeId={selectedNodeId} selectFolder={selectFolder}/>)}</div></details>
 }
 
-function WikiKnowledgeTree({tree,query,selectedNodeId,selectFolder,openConversation,refresh,refreshing,creatingFolder,folderTitle,folderTarget,startFolder,cancelFolder,setFolderTitle,createFolder,governance,employeeGroups,selectedResourceId,selectResource,openArtifact}:{
+function WikiKnowledgeTree({tree,query,selectedNodeId,selectFolder,openConversation,refresh,refreshing,creatingFolder,folderTitle,folderTarget,startFolder,cancelFolder,setFolderTitle,createFolder,governance,employeeGroups,batchBusy=false,onEnrollEmployee,selectedResourceId,selectResource,openArtifact}:{
   query:string
   tree:KnowledgeDirectoryBranch|undefined;selectedNodeId:string|undefined
   selectFolder:(id:string)=>void;openConversation:()=>void
   refresh:()=>void;refreshing:boolean;creatingFolder:boolean;folderTitle:string;folderTarget:string
   startFolder:()=>void;cancelFolder:()=>void;setFolderTitle:(value:string)=>void;createFolder:()=>void
   governance:ReactNode
-  employeeGroups:EmployeeKnowledgeGroup[];selectedResourceId:string|undefined;selectResource:(resource:WorkResource)=>void;openArtifact?:(output:RoleArtifactSummary)=>void
+  employeeGroups:EmployeeKnowledgeGroup[];batchBusy?:boolean;onEnrollEmployee?:(group:EmployeeKnowledgeGroup)=>void;selectedResourceId:string|undefined;selectResource:(resource:WorkResource)=>void;openArtifact?:(output:RoleArtifactSummary)=>void
 }){
   const {t}=useI18n()
   const count=tree?.count??0
@@ -245,6 +260,7 @@ function WikiKnowledgeTree({tree,query,selectedNodeId,selectFolder,openConversat
       {tree&&<KnowledgeBranch branch={tree} selectedNodeId={selectedNodeId} selectFolder={selectFolder}/>}
       {count===0&&<div className={css.treeEmpty}><p>{t(query.trim()?'knowledge.manager.searchEmpty':'knowledge.manager.emptyTree')}</p></div>}
       {filterEmployeeKnowledgeGroups(employeeGroups,query).map(group=><details key={group.roleId} className={css.treeBranch} open><summary data-teloa-entry={group.roleId}><ChevronDown size={14}/><Users size={15}/><strong>{group.roleName}</strong><small>{group.resources.length+group.outputs.length}</small></summary><div className={css.treeGroup}>
+        {group.resources.length>0&&onEnrollEmployee&&<button type="button" className={css.treeBatch} disabled={batchBusy} onClick={()=>void onEnrollEmployee(group)}>{t('retrieval.employee.enrollAll',{count:group.resources.length})}</button>}
         {group.resources.length>0&&<details className={css.treeBranch} open><summary><ChevronDown size={14}/><Folder size={15}/><strong>{t('library.employeeMaterials')}</strong><small>{group.resources.length}</small></summary><div className={css.treeGroup}>{group.resources.map(resource=><button key={resource.id} type="button" className={css.treeDocument} aria-current={selectedResourceId===resource.id?'page':undefined} onClick={()=>selectResource(resource)}><FileText size={14}/><span><strong>{resource.title}</strong></span></button>)}</div></details>}
         {group.outputs.length>0&&<details className={css.treeBranch} open><summary><ChevronDown size={14}/><Folder size={15}/><strong>{t('library.employeeOutputs')}</strong><small>{group.outputs.length}</small></summary><div className={css.treeGroup}>{group.outputs.map(output=><button key={output.artifactId} type="button" className={css.treeDocument} title={output.source.title} disabled={!openArtifact} onClick={()=>openArtifact?.(output)}><FileCheck size={14}/><span><strong>{output.title}</strong></span></button>)}</div></details>}
       </div></details>)}

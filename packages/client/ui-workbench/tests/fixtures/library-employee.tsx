@@ -56,6 +56,9 @@ const outputs:Record<string,ReturnType<typeof output>[]>={
 }
 const requested:string[]=[],opened:string[]=[]
 Object.assign(window,{__libraryOutputs:{requested,opened}})
+const enrolled:string[]=[]
+const retrievalApi:any={modelStatus:async()=>({enabled:true,provider:{id:'qwen',location:'host-local',catalogId:'fixture',catalogVersion:'1',profileHash:'a'.repeat(64),variant:'fp32',totalMemoryBytes:1,memoryRisk:false,preparation:{phase:'ready'}},building:false,guidance:null}),status:async()=>({items:[],enrolled:0,chunks:0,building:false}),enroll:async(sourceId:string)=>{enrolled.push(sourceId);return {items:[],enrolled:enrolled.length,chunks:0,building:false}},remove:async()=>({items:[],enrolled:0,chunks:0,building:false}),reindex:async()=>({items:[],enrolled:0,chunks:0,building:false}),cancel:async()=>({items:[],enrolled:0,chunks:0,building:false}),prepare:async()=>({enabled:true,provider:null,building:false,guidance:null}),cancelPreparation:async()=>({enabled:true,provider:null,building:false,guidance:null}),select:async()=>({enabled:true,provider:null,building:false,guidance:null})}
+Object.assign(window,{__retrievalEnrolled:enrolled})
 const artifactApi={listByRole:async(roleId:string)=>{requested.push(roleId);if(roleId==='role-flaky')throw Error('fixture：成果目录暂不可用');return outputs[roleId]??[]}}
 const openArtifact=async(item:{artifactId:string})=>{opened.push(item.artifactId);if(item.artifactId.startsWith('2222'))throw Object.assign(Error('forbidden'),{code:'teloa/forbidden'})}
 
@@ -67,7 +70,7 @@ const storage={getItem:(key:string)=>memory.get(key)??null,setItem:(key:string,v
 function App(){
   const [navigation,setNavigation]=useState<any>({})
   return <div className={tokens.tokens} style={{...prototypeThemes.light,height:'100vh'} as any}>
-    <ResourceManager api={api} roleApi={roleApi} artifactApi={artifactApi} openArtifact={openArtifact} visible selectedDraftId={null} targetResource={null} clearTarget={()=>{}} navigationState={navigation} onNavigationChange={setNavigation} preferenceStorage={storage} openConversation={()=>{}} onUseResource={()=>{}}/>
+    <ResourceManager api={api} roleApi={roleApi} artifactApi={artifactApi} localRetrievalApi={retrievalApi} openArtifact={openArtifact} visible selectedDraftId={null} targetResource={null} clearTarget={()=>{}} navigationState={navigation} onNavigationChange={setNavigation} preferenceStorage={storage} openConversation={()=>{}} onUseResource={()=>{}}/>
   </div>
 }
 createRoot(document.getElementById('root')!).render(<I18nProvider runtime={i18n as any}><App/></I18nProvider>)
