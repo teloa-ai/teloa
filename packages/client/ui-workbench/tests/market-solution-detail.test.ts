@@ -92,9 +92,9 @@ test('产品页版心照原型的 680 单栏', async () => {
 })
 
 test('必须保留、只是移位：状态句、已加载入口、其他用法两个动作、治理三件套与原始清单全部还在', () => {
- assert.match(industryBranch, /const currentStatus=matchingLoads\.length\?t\('market\.workspace\.loadedPersonal'\)/)
+ assert.match(industryBranch, /const currentStatus=managedLoads\.length\?t\('market\.workspace\.loadedPersonal'\)/)
  assert.match(industryBranch, /\{currentStatus\}/)
- assert.match(industryBranch, /<SolutionLoadLinks loads=\{matchingLoads\} manage=\{props\.manageIndustryLoad\}\/>/)
+ assert.match(industryBranch, /<SolutionLoadLinks loads=\{managedLoads\} manage=\{props\.manageIndustryLoad\}\/>/)
  assert.match(loadLinks, /loads\.map\(load=><button type="button" key=\{load\.id\} onClick=\{\(\)=>manage\(load\.id\)\}>/)
  assert.match(industryBranch, /t\('market\.industry\.otherUsage'\)/)
  assert.match(industryBranch, /\{draft&&<button type="button" aria-label=\{t\('market\.intent\.view'\)\}/)
@@ -124,8 +124,8 @@ test('内容与用法直接可达，来源折叠保留运行环境、治理与�
 })
 
 test('已加载时主按钮显示已添加，原内容仍有待核对申请时保留正规恢复入口', () => {
- assert.match(industryBranch, /disabled=\{!!matchingLoads\.length&&!recoveringCurrentLoad\}[\s\S]{0,80}onClick=\{\(\)=>setActionPanel\('load'\)\}>\{recoveringCurrentLoad\?t\('market\.industry\.load\.reviewResult'\):matchingLoads\.length\?t\('market\.solution\.added'\):t\('market\.industry\.loadWorkspace'\)\}/)
- assert.match(industryBranch, /<SolutionLoadLinks loads=\{matchingLoads\}/)
+ assert.match(industryBranch, /disabled=\{!!managedLoads\.length&&!recoveringCurrentLoad\}[\s\S]{0,80}onClick=\{\(\)=>setActionPanel\('load'\)\}>\{recoveringCurrentLoad\?t\('market\.industry\.load\.reviewResult'\):managedLoads\.length\?t\('market\.solution\.added'\):t\('market\.industry\.loadWorkspace'\)\}/)
+ assert.match(industryBranch, /<SolutionLoadLinks loads=\{managedLoads\}/)
  assert.match(loadLinks, /t\('market\.solution\.openLoad'\)/)
 })
 

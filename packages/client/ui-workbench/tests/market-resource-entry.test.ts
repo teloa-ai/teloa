@@ -13,7 +13,7 @@ test('市场加号按创建员工、团队和导入分层，不再直接展示�
  let tree=nodes(runtime.render('TestCatalog',props))
  const menu=tree.find(node=>node.type==='details'&&node.props.className==='toolMenu')!
  const buttons=nodes(menu).filter(node=>node.type==='button')
- assert.deepEqual(buttons.map(node=>node.children.filter(x=>typeof x==='string').join('')),['market.create.employee','market.create.team','market.import.industry','market.import.skill'])
+ assert.deepEqual(buttons.map(node=>node.children.filter(x=>typeof x==='string').join('')),['market.create.employee','market.create.team','market.apps.createSkill','market.apps.createApp','market.import.industry','market.import.skill'])
  buttons[0]!.props.onClick()
  tree=nodes(runtime.render('TestCatalog',props))
  assert.ok(tree.some(node=>node.props.kind==='employee'&&node.props.open===true),'员工入口打开同一可分享模板创建流程')

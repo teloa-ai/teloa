@@ -54,7 +54,7 @@ test('行业模板加载后可从市场来源进入同一个真实资源工作�
   ])
   assert.match(market,/manageIndustryLoad:\(loadId:string\)=>void/)
   // 「看看它带进来什么 · 空间」入口抽成本机页与官方方案页共用的 SolutionLoadLinks（审查 L5）
-  assert.match(market,/<SolutionLoadLinks loads=\{matchingLoads\} manage=\{props\.manageIndustryLoad\}\/>/)
+  assert.match(market,/<SolutionLoadLinks loads=\{managedLoads\} manage=\{props\.manageIndustryLoad\}\/>/)
   assert.match(market,/loads\.map\(load=><button type="button" key=\{load\.id\} onClick=\{\(\)=>manage\(load\.id\)\}>/)
   assert.match(frame,/actions\.openIndustryResources\(\{loadId\}\)/)
   assert.match(frame,/industryResourceTarget/)

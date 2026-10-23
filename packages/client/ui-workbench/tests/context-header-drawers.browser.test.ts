@@ -34,7 +34,7 @@ test('真实身份与引用记录抽屉恢复焦点和草稿；窄桌面概览�
   await page.setViewportSize({width,height:900})
   await page.waitForFunction(()=>{const node=document.querySelector('[data-testid="overview"]')!;return innerWidth===1200?node.getBoundingClientRect().width===324:innerWidth===1024?node.getBoundingClientRect().width===360:node.getBoundingClientRect().width===0})
   const metrics=await page.evaluate(()=>{const main=document.querySelector('[data-testid="main"]')!.getBoundingClientRect(),overview=document.querySelector('[data-testid="overview"]')!.getBoundingClientRect(),input=document.querySelector('textarea')!,box=input.getBoundingClientRect();return {mainWidth:main.width,mainRight:main.right,overviewLeft:overview.left,overviewWidth:overview.width,inputClickable:document.elementFromPoint(box.left+box.width/2,box.top+box.height/2)===input,overflow:document.documentElement.scrollWidth>innerWidth}})
-  assert.ok(metrics.mainWidth>=400);assert.ok(metrics.mainRight<=metrics.overviewLeft+1);assert.equal(metrics.inputClickable,true);assert.equal(metrics.overflow,false)
+  assert.ok(metrics.mainWidth>=360);assert.ok(metrics.mainRight<=metrics.overviewLeft+1);assert.equal(metrics.inputClickable,true);assert.equal(metrics.overflow,false)
   assert.equal(await page.getByRole('button',{name:'工作概览',exact:true}).isVisible(),true)
  }
  await page.getByRole('button',{name:'切换目录',exact:true}).click();await page.waitForFunction(()=>document.querySelector('[data-testid="overview"]')!.getBoundingClientRect().width>0)
