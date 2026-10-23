@@ -995,6 +995,42 @@
             "type": "string",
             "minLength": 1,
             "maxLength": 120
+          },
+          "permissionMode": {
+            "type": "string",
+            "enum": [
+              "danger-full-access",
+              "workspace-write",
+              "read-only"
+            ]
+          },
+          "model": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "provider": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128,
+                "pattern": "^[^\\s\\x00-\\x1f\\x7f]+$"
+              },
+              "model": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256,
+                "pattern": "^[^\\s\\x00-\\x1f\\x7f]+$"
+              },
+              "reasoningEffort": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128,
+                "pattern": "^[^\\s\\x00-\\x1f\\x7f]+$"
+              }
+            },
+            "required": [
+              "provider",
+              "model"
+            ]
           }
         },
         "required": [
@@ -1014,6 +1050,42 @@
             "type": "string",
             "minLength": 1,
             "maxLength": 6000
+          },
+          "permissionMode": {
+            "type": "string",
+            "enum": [
+              "danger-full-access",
+              "workspace-write",
+              "read-only"
+            ]
+          },
+          "model": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "provider": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128,
+                "pattern": "^[^\\s\\x00-\\x1f\\x7f]+$"
+              },
+              "model": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256,
+                "pattern": "^[^\\s\\x00-\\x1f\\x7f]+$"
+              },
+              "reasoningEffort": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128,
+                "pattern": "^[^\\s\\x00-\\x1f\\x7f]+$"
+              }
+            },
+            "required": [
+              "provider",
+              "model"
+            ]
           }
         },
         "required": [
@@ -1094,6 +1166,45 @@
               "null"
             ]
           },
+          "permissionMode": {
+            "type": "string",
+            "enum": [
+              "danger-full-access",
+              "workspace-write",
+              "read-only"
+            ]
+          },
+          "model": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "provider": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128,
+                "pattern": "^[^\\s\\x00-\\x1f\\x7f]+$"
+              },
+              "model": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256,
+                "pattern": "^[^\\s\\x00-\\x1f\\x7f]+$"
+              },
+              "reasoningEffort": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128,
+                "pattern": "^[^\\s\\x00-\\x1f\\x7f]+$"
+              }
+            },
+            "required": [
+              "provider",
+              "model"
+            ]
+          },
           "links": {
             "type": "object",
             "additionalProperties": false,
@@ -1127,6 +1238,8 @@
           "updatedAt",
           "resultVersion",
           "error",
+          "permissionMode",
+          "model",
           "links"
         ]
       },
