@@ -280,7 +280,7 @@ Community 0.2.4 · 32 views · Actual interfaces with example data. Click an ima
 
 Bring your own model service and API key. Model usage is billed by your provider; the Community software license does not include inference credits.
 
-**0.2.9** is the current Community release. It adds optional next-step suggestions in the composer: after a reply, an empty composer shows a short grey next step written by the model; pressing Tab puts it into the draft without sending, typing dismisses it, and Settings → General can turn it off. Suggestions are produced through the host's admitted auxiliary-model path and never create messages, tasks or execution. The affected flows were verified with a real MiniMax model and browser checks. The SDK remains compatible at `@teloa/sdk@0.2.4`. [GitHub Releases](https://github.com/teloa-ai/teloa/releases/tag/v0.2.9), [npm](https://www.npmjs.com/package/@teloa/cli/v/0.2.9) and [Docker Hub](https://hub.docker.com/r/teloa/teloa) provide this release: native macOS ARM64 and container Linux ARM64.
+**0.2.10** is the current Community release. It is a patch for 0.2.9: the native package manifest now records the pinned DSH version, matching the release manifest schema; features are unchanged from 0.2.9, which added optional next-step suggestions in the composer — after a reply an empty composer shows one grey model-written sentence, Tab puts it into the draft without sending, typing dismisses it, and Settings → General can turn it off. The SDK remains compatible at `@teloa/sdk@0.2.4`. [GitHub Releases](https://github.com/teloa-ai/teloa/releases/tag/v0.2.10), [npm](https://www.npmjs.com/package/@teloa/cli/v/0.2.10) and [Docker Hub](https://hub.docker.com/r/teloa/teloa) provide this release: native macOS ARM64 and container Linux ARM64.
 
 ### What changes in this release
 
@@ -309,22 +309,22 @@ Use **Node.js 24.x from 24.22.1 onward** or **22.x from 22.23.4 onward**, **npm 
 ```sh
 mkdir teloa-command
 cd teloa-command
-npm install --ignore-scripts https://github.com/teloa-ai/teloa/releases/download/v0.2.9/teloa-cli-0.2.9.tgz
+npm install --ignore-scripts https://github.com/teloa-ai/teloa/releases/download/v0.2.10/teloa-cli-0.2.10.tgz
 ./node_modules/.bin/teloa up
 ./node_modules/.bin/teloa doctor
 ./node_modules/.bin/teloa status
 ```
 
-Teloa and DSH run natively on your computer. Startup opens the Web interface; configure your model in Settings. The default Web port is 3100. For a new installation, use `./node_modules/.bin/teloa up --port 3101` if it is occupied. The release also lists the package's SHA-256 checksum. To upgrade an existing installation, such as 0.2.0-alpha.7, keep its data and identity by installing the 0.2.9 package into a new command directory, then running `teloa stop` and `teloa upgrade --to 0.2.9` from that directory (pass the original `--home` for a custom installation). The upgrade creates a backup before switching. See the [installation and stop instructions](https://docs.teloa.ai/en/start/quickstart) and [backup and upgrades](https://docs.teloa.ai/en/deploy/backup). For npm, use `npm install --ignore-scripts @teloa/cli@0.2.9`.
+Teloa and DSH run natively on your computer. Startup opens the Web interface; configure your model in Settings. The default Web port is 3100. For a new installation, use `./node_modules/.bin/teloa up --port 3101` if it is occupied. The release also lists the package's SHA-256 checksum. To upgrade an existing installation, such as 0.2.0-alpha.7, keep its data and identity by installing the 0.2.10 package into a new command directory, then running `teloa stop` and `teloa upgrade --to 0.2.10` from that directory (pass the original `--home` for a custom installation). The upgrade creates a backup before switching. See the [installation and stop instructions](https://docs.teloa.ai/en/start/quickstart) and [backup and upgrades](https://docs.teloa.ai/en/deploy/backup). For npm, use `npm install --ignore-scripts @teloa/cli@0.2.10`.
 
 <details>
-<summary><strong>Docker Hub with Compose (0.2.9)</strong></summary>
+<summary><strong>Docker Hub with Compose (0.2.10)</strong></summary>
 
 ### Docker Hub with Compose
 
 Install Docker with Compose and start the engine. The published image and the configuration below have been verified on **Linux ARM64**; **amd64 has not been verified**. Teloa, DSH and PostgreSQL run in containers, so host Node.js and pnpm are not required.
 
-Download the versioned configuration into a new directory. It uses `teloa/teloa:0.2.9` for both initialization and the application, with persistent data volumes and a generated database password.
+Download the versioned configuration into a new directory. It uses `teloa/teloa:0.2.10` for both initialization and the application, with persistent data volumes and a generated database password.
 
 ```sh
 mkdir teloa-community
