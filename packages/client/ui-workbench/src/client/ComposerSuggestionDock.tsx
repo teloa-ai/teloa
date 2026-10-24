@@ -144,10 +144,10 @@ function ComposerSuggestionDockInner({sessionId,session,input,running,insertText
     const text=await suggest().catch(()=>null)
     if(!live)return
     if(text){controller.setCandidate(lastSeq,text);refresh();return}
-    await new Promise(done=>setTimeout(done,1200))
+    await new Promise(done=>setTimeout(done,2500))
    }
   }
-  void attempt(3)
+  void attempt(4)
   return()=>{live=false}
  },[suggest,lastSeq,resolvedRunning,controller,refresh])
  useEffect(()=>{

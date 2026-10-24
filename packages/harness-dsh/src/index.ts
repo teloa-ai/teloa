@@ -240,7 +240,7 @@ import {groupRunAwaitsApproval} from './group-run-append.ts'
 import {readHomeSkills} from './home-skills.ts'
 import { randomUUID } from 'node:crypto'
 import { readFileSync, realpathSync } from 'node:fs'
-import { mkdir, readFile, readFile as readTextFile, rename, rm, writeFile } from 'node:fs/promises'
+import { mkdir, readFile as readTextFile, rename, rm, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { fileURLToPath } from 'node:url'
 import { dirname, join, resolve } from 'node:path'
@@ -2722,25 +2722,6 @@ async function applyHost(ctx:Context,projectRoot:string):Promise<void> {
         if(typeof selection?.provider!=='string'||typeof selection.model!=='string')return undefined
         const call=await ctx.llm.prepareCall({provider:selection.provider,model:selection.model,maxTokens:120},AbortSignal.timeout(9_000)).catch(()=>undefined)
         return call?.config
-      },complete:async({provider,model,system,prompt})=>{
-        // 只支持当前实例已配置的 MiniMax BYOK：密钥来源与启动器一致（*_FILE），不落盘、不进日志。
-        if(provider!=='minimax')return null
-        const file=process.env.MINIMAX_API_KEY_FILE
-        if(!file)return null
-        let key=''
-        try{key=(await readFile(file,'utf8')).trim()}catch{return null}
-        if(!key)return null
-        try{
-          const response=await fetch('https://api.minimax.io/anthropic/v1/messages',{
-            method:'POST',headers:{'content-type':'application/json','x-api-key':key,'anthropic-version':'2023-06-01'},
-            body:JSON.stringify({model,max_tokens:120,system,messages:[{role:'user',content:prompt}]}),
-            signal:AbortSignal.timeout(4_000),
-          })
-          if(!response.ok)return null
-          const body=await response.json() as {content?:{type?:string;text?:string}[]}
-          const text=(body.content??[]).filter(part=>part.type==='text').map(part=>part.text??'').join('').trim()
-          return text||null
-        }catch{return null}
       }},payload,signal)
       const value=endpoint==='requests/pending/list'?await pendingRequests.list(owner):endpoint==='requests/pending/ack'?await (async()=>{
         if(!isRecord(payload)||typeof payload.requestId!=='string'||Object.keys(payload).some(key=>key!=='requestId'))throw new WorkError('teloa/invalid-input','确认待核对请求只能提交请求身份。')

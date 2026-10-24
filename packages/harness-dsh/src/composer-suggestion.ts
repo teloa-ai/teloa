@@ -4,6 +4,7 @@ import {brandString} from '@deepseek-ai/dsh-brand'
 import {BlockAssembler,createUserMessage,type GenerateOptions} from '@deepseek-ai/dsh-llm'
 import {SessionId} from '@deepseek-ai/dsh-session'
 import {WorkError,taskInput} from '@teloa/contract'
+import {projectRuntimeExposure} from './project-runtime-context.ts'
 import {readSessionEvents} from './session-events.ts'
 
 // 消息来源按官方"merge-extensible"约定在本模块登记，和 title 插件同一写法；
@@ -83,8 +84,6 @@ export type ComposerSuggestionPorts={
  owner:string
  /** 该会话当前模型调用的完整配置（含适配器默认值）；取不到就不发这次辅助调用。 */
  model:(sessionId:string)=>Promise<object|undefined>
- /** 用本人已配置的 BYOK 凭据直接请求一次模型，返回原文；失败返回 null。 */
- complete:(input:{provider:string;model:string;system:string;prompt:string})=>Promise<string|null>
 }
 
 /**
@@ -141,10 +140,21 @@ export async function readComposerSuggestion(ctx:Context,ports:ComposerSuggestio
    }
    if(latest!==source!.id||!ended)throw new Error('composer-suggestion-stale')
   }})
-  // 直接调用本人 BYOK 的模型 HTTP：不经过受管执行通路，因此不需要工作因果上下文，
- // 也不消耗执行预算（这条只产出一句话建议，不属于任何工作动作）。
- const raw=await ports.complete({provider:String(route.provider),model:String(route.model),system:systemPrompt,prompt:`用户问题：${facts.question}\n\n助手回答：${facts.answer}`}).catch(()=>null)
- text=raw===null?null:normalizeSuggestion(raw)
+  // 走 Teloa 受管的辅助模型通路：必须挂在"已准备的项目/工作上下文"上，
+ // 与项目记忆提炼同一条准入链（withAuxiliaryContext + withAuxiliaryModel），
+ // 不绕开因果闸，也不另开 HTTP 直连。
+ const hooks=projectRuntimeExposure()
+ if(!hooks)return skip()
+ if(!hooks)return skip()
+ const prepared=hooks.preparedForSession(sessionId)
+ if(!prepared)return skip()
+ const combinedLease=Object.freeze({assertCurrent:()=>{hooks.assertPreparedCurrent(prepared);lease.assertCurrent()}})
+ const nativeInput=ctx.teloaNativeInput.input
+ const dispatch=()=>nativeInput.withAuxiliaryModel({source:{ownerId:ports.owner,sessionId,messageId:source!.id,eventId:'composer-suggestion:'+source!.id},options:options as never,lease:combinedLease as never},()=>ctx.llm.stream(options as never))
+ const assembler=new BlockAssembler()
+ for await(const chunk of hooks.withAuxiliaryContext(prepared,options,dispatch as never) as AsyncIterable<{type?:string;text?:string}>)assembler.push(chunk as never)
+ const blocks=assembler.blocks() as {type?:string;text?:string}[]
+ text=normalizeSuggestion(blocks.filter(block=>block.type==='text').map(block=>String(block.text??'')).join(''))
  }catch{text=null}
  if(text!==null)remember(key,text)
  

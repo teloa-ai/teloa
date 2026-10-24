@@ -32,6 +32,15 @@ export type ProjectRuntimeInputHooks={
  assertTool:(exec:ToolRunContext)=>Promise<void>
  restore?:(input:NativeInputRestoreInput)=>Promise<WorkAccessLease|null>
 }
+/** 仅在宿主内部使用：辅助模型调用需要"当前会话已准备上下文"这一准入证明。 */
+export type ProjectRuntimeExposure={
+ preparedForSession:(sessionId:string)=>ProjectRuntimePrepared|null
+ assertPreparedCurrent:(prepared:ProjectRuntimePrepared)=>void
+ withAuxiliaryContext:(prepared:ProjectRuntimePrepared,options:Readonly<GenerateOptions>,dispatch:()=>AsyncIterable<import('@deepseek-ai/dsh-llm').StreamChunk>,onDispatched?:()=>void|Promise<void>)=>AsyncIterable<import('@deepseek-ai/dsh-llm').StreamChunk>
+}
+let projectRuntimeExposureValue:ProjectRuntimeExposure|undefined
+/** 供宿主内部模块（如输入框建议）取用；不对外暴露任何授权入口。 */
+export function projectRuntimeExposure():ProjectRuntimeExposure|undefined{return projectRuntimeExposureValue}
 const markerName='teloa/project-context-generation'
 // 固定 DSH 的许可/委派上下文及本宿主的必要工作状态；新增 provider 必须先审核其无记忆语义。
 const memoryOffContexts=new Set(['sandbox:policy','approval:policy','subagent:delegation','teloa:product-identity','teloa:work-behavior-runtime','teloa/role-identity','teloa/saved-draft-state'])
@@ -238,8 +247,10 @@ export function registerProjectRuntimeContext(ctx:Context,ports:ProjectRuntimeCo
   catch(error){if(!state.dispatched)await ports.recordUsed({manifestId:prepared.manifestId,promptHash:hashOfPrompt,generation:prepared.binding.generation,stage:'failed'}).catch(()=>{});throw error}
   finally{requests.delete(original)}
  },{global:true})
- return Object.freeze({
+ const runtime=Object.freeze({
   hooks,
+  /** 当前会话仍有效的已准备上下文（回合结束后、下一轮开始前可用）。 */
+  preparedForSession(sessionId:string):ProjectRuntimePrepared|null{const agent=ctx.agents.get(SessionId(sessionId));return agent?selected(agent):null},
   preparedForMessage(sessionId:string,messageId:string):ProjectRuntimePrepared|null{const value=acceptedPrepared.get(JSON.stringify([sessionId,messageId]));if(!value)return null;sync(value);return value},
   assertPreparedCurrent:check,
   async *withAuxiliaryContext(prepared:ProjectRuntimePrepared,options:Readonly<GenerateOptions>,dispatch:()=>AsyncIterable<import('@deepseek-ai/dsh-llm').StreamChunk>,onDispatched?:()=>void|Promise<void>){
@@ -252,4 +263,6 @@ export function registerProjectRuntimeContext(ctx:Context,ports:ProjectRuntimeCo
   async assertResultCurrent(sessionId:string):Promise<void>{const agent=ctx.agents.get(SessionId(sessionId)),prepared=agent?selected(agent):null;if(prepared)await check(prepared);else if(!await assertUnbound(sessionId))throw denied()},
   close(){closed=true;candidates.clear();acceptedPrepared.clear();releaseContext();releaseStream()},
  })
+ projectRuntimeExposureValue={preparedForSession:sessionId=>{const agent=ctx.agents.get(SessionId(sessionId));return agent?selected(agent):null},assertPreparedCurrent:check,withAuxiliaryContext:runtime.withAuxiliaryContext}
+ return runtime
 }
