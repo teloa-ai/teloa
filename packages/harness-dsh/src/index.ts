@@ -2722,7 +2722,7 @@ async function applyHost(ctx:Context,projectRoot:string):Promise<void> {
         if(typeof selection?.provider!=='string'||typeof selection.model!=='string')return undefined
         const call=await ctx.llm.prepareCall({provider:selection.provider,model:selection.model,maxTokens:120},AbortSignal.timeout(9_000)).catch(()=>undefined)
         return call?.config
-      }},payload,signal)
+      }},payload,signal) as never
       const value=endpoint==='requests/pending/list'?await pendingRequests.list(owner):endpoint==='requests/pending/ack'?await (async()=>{
         if(!isRecord(payload)||typeof payload.requestId!=='string'||Object.keys(payload).some(key=>key!=='requestId'))throw new WorkError('teloa/invalid-input','确认待核对请求只能提交请求身份。')
         await pendingRequests.acknowledge(owner,payload.requestId,new Date().toISOString())
