@@ -131,6 +131,7 @@ import {createRoleToolGrantHandler,orchestrationTools,roleGrantPageRules,roleToo
 import {createWebAccessHandler,webAccessEndpoints} from './web-access.ts'
 import {monitorTaskRuns} from './task-run-monitor.ts'
 import {readSessionEvents,projectSessionEvent} from './session-events.ts'
+import {readComposerSuggestion,composerSuggestionEndpoint} from './composer-suggestion.ts'
 import {TaskRunDriver} from './task-run-driver.ts'
 import {createTaskRunGroupPublisher} from './task-run-group-publisher.ts'
 import {ObjectConversationService} from '@teloa/backend'
@@ -239,7 +240,7 @@ import {groupRunAwaitsApproval} from './group-run-append.ts'
 import {readHomeSkills} from './home-skills.ts'
 import { randomUUID } from 'node:crypto'
 import { readFileSync, realpathSync } from 'node:fs'
-import { mkdir, readFile as readTextFile, rename, rm, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, readFile as readTextFile, rename, rm, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { fileURLToPath } from 'node:url'
 import { dirname, join, resolve } from 'node:path'
@@ -332,7 +333,7 @@ const projectRoot=fileURLToPath(new URL('../../../',import.meta.url))
 const owner='local:teloa-owner'
 const conversationWorkContextEndpoints=['conversations/assistant','work-context/read','work-context/set','work-context/eligibility','work-requests/list','work-requests/status','work-requests/stop','work-requests/resume'] as const
 export const handoffEndpoints=['handoffs/list','handoffs/resolve','handoffs/change'] as const
-const endpointSet=new Set([...externalHarnessEndpoints,...businessWorkEndpoints,...groupWorkLinkEndpoints,...conversationWorkContextEndpoints,...projectEndpoints,...projectContextEndpoints,...projectRuntimeEndpoints,...securityActionEndpoints,...businessSpaceEndpoints,...businessScopeEndpoints,...businessDataEndpoints,...businessBuilderEndpoints,...businessDashboardResourceEndpoints,...businessImportEndpoints,...businessResponsibilityEndpoints,...businessDefinitionEndpoints,businessDashboardShareEndpoint,...businessDashboardEndpoints,...pageCreateDraftEndpoints,...skillEditEndpoints,...businessTaskEndpoints,...githubSourceEndpoints,...marketPluginInstallationEndpoints,...skillUpgradePreviewEndpoints,...skillSelectionEndpoints,...skillAvailabilityEndpoints,...skillInstallationEndpoints,...industryPlanEndpoints,...industryTaskEndpoints,...industryRoleEndpoints,...industryKnowledgeEndpoints,...industryDataSourceEndpoints,...industryExecutionToolEndpoints,...industryMcpConnectionEndpoints,...connectorEndpoints,...industryPluginEndpoints,...managedMcpConnectionEndpoints,...industryLoadEndpoints,...industryPrepareEndpoints,'tasks/attention','work-attention',...planScheduleEndpoints,...planEndpoints,...marketContentEndpoints,...marketCatalogEndpoints,...roleToolGrantEndpoints,...webAccessEndpoints,...taskMaterialEndpoints,...taskRunEndpoints,...taskRunFlowEndpoints,'tasks/context','object-conversations/list','object-conversations/session','object-conversations/change','conversations/create','conversations/read','conversations/ensure','conversations/adopt','conversations/list','conversations/search','session-capabilities/read','copies/create','copies/list','copies/resolve','copies/release','capabilities/read','capabilities/home-skills','resource-use/list','roles/lifecycle',...handoffEndpoints,...resourceEndpoints.filter(endpoint=>!['resources/register-local-material','resources/read-content'].includes(endpoint)),...artifactEndpoints,...artifactFileEndpoints,...roleEndpoints,...roleMemoryEndpoints,...roleDailyLogEndpoints,...groupEndpoints,...groupAgentGrantEndpoints,...groupTaskEndpoints,...groupAttachmentEndpoints,...taskEndpoints.filter(endpoint=>endpoint!=='tasks/create-confirmed'),...imChannelEndpoints,...bundledExtensionEndpoints,...retrievalEndpoints,...localModelEndpoints,...modelOptionEndpoints,'requests/pending/list','requests/pending/recover','requests/pending/ack'])
+const endpointSet=new Set([...externalHarnessEndpoints,...businessWorkEndpoints,...groupWorkLinkEndpoints,...conversationWorkContextEndpoints,...projectEndpoints,...projectContextEndpoints,...projectRuntimeEndpoints,...securityActionEndpoints,...businessSpaceEndpoints,...businessScopeEndpoints,...businessDataEndpoints,...businessBuilderEndpoints,...businessDashboardResourceEndpoints,...businessImportEndpoints,...businessResponsibilityEndpoints,...businessDefinitionEndpoints,businessDashboardShareEndpoint,...businessDashboardEndpoints,...pageCreateDraftEndpoints,...skillEditEndpoints,...businessTaskEndpoints,...githubSourceEndpoints,...marketPluginInstallationEndpoints,...skillUpgradePreviewEndpoints,...skillSelectionEndpoints,...skillAvailabilityEndpoints,...skillInstallationEndpoints,...industryPlanEndpoints,...industryTaskEndpoints,...industryRoleEndpoints,...industryKnowledgeEndpoints,...industryDataSourceEndpoints,...industryExecutionToolEndpoints,...industryMcpConnectionEndpoints,...connectorEndpoints,...industryPluginEndpoints,...managedMcpConnectionEndpoints,...industryLoadEndpoints,...industryPrepareEndpoints,'tasks/attention','work-attention',...planScheduleEndpoints,...planEndpoints,...marketContentEndpoints,...marketCatalogEndpoints,...roleToolGrantEndpoints,...webAccessEndpoints,...taskMaterialEndpoints,...taskRunEndpoints,...taskRunFlowEndpoints,'tasks/context','object-conversations/list','object-conversations/session','object-conversations/change','conversations/create','conversations/read','conversations/ensure','conversations/adopt','conversations/list','conversations/search','session-capabilities/read','copies/create','copies/list','copies/resolve','copies/release','capabilities/read','capabilities/home-skills','resource-use/list','roles/lifecycle',...handoffEndpoints,...resourceEndpoints.filter(endpoint=>!['resources/register-local-material','resources/read-content'].includes(endpoint)),...artifactEndpoints,...artifactFileEndpoints,...roleEndpoints,...roleMemoryEndpoints,...roleDailyLogEndpoints,...groupEndpoints,...groupAgentGrantEndpoints,...groupTaskEndpoints,...groupAttachmentEndpoints,...taskEndpoints.filter(endpoint=>endpoint!=='tasks/create-confirmed'),...imChannelEndpoints,...bundledExtensionEndpoints,...retrievalEndpoints,...localModelEndpoints,...modelOptionEndpoints,composerSuggestionEndpoint,'requests/pending/list','requests/pending/recover','requests/pending/ack'])
 
 type HandoffPort=Pick<HandoffService,'list'|'resolve'|'change'>
 export function createHandoffHandler(ownerId:string,get:()=>Promise<HandoffPort>):(endpoint:string,payload:unknown)=>Promise<unknown>{
@@ -2712,6 +2713,35 @@ async function applyHost(ctx:Context,projectRoot:string):Promise<void> {
         return {ok:true,value}
       }
       if(!endpointSet.has(endpoint))throw new WorkError('teloa/not-found','未提供此工作接口。')
+      if(endpoint===composerSuggestionEndpoint)return await readComposerSuggestion(ctx,{owner,model:async sessionId=>{
+        let selection:{provider?:unknown;model?:unknown}|undefined
+        try{selection=ctx.agents.get(brandString<SessionId>(sessionId))?.session.requestHeader()?.config}catch{selection=undefined}
+        if(typeof selection?.provider!=='string'||typeof selection.model!=='string'){
+          selection=(await ctx.sessionController.modelCatalog().catch(()=>undefined))?.default
+        }
+        if(typeof selection?.provider!=='string'||typeof selection.model!=='string')return undefined
+        const call=await ctx.llm.prepareCall({provider:selection.provider,model:selection.model,maxTokens:120},AbortSignal.timeout(9_000)).catch(()=>undefined)
+        return call?.config
+      },complete:async({provider,model,system,prompt})=>{
+        // 只支持当前实例已配置的 MiniMax BYOK：密钥来源与启动器一致（*_FILE），不落盘、不进日志。
+        if(provider!=='minimax')return null
+        const file=process.env.MINIMAX_API_KEY_FILE
+        if(!file)return null
+        let key=''
+        try{key=(await readFile(file,'utf8')).trim()}catch{return null}
+        if(!key)return null
+        try{
+          const response=await fetch('https://api.minimax.io/anthropic/v1/messages',{
+            method:'POST',headers:{'content-type':'application/json','x-api-key':key,'anthropic-version':'2023-06-01'},
+            body:JSON.stringify({model,max_tokens:120,system,messages:[{role:'user',content:prompt}]}),
+            signal:AbortSignal.timeout(4_000),
+          })
+          if(!response.ok)return null
+          const body=await response.json() as {content?:{type?:string;text?:string}[]}
+          const text=(body.content??[]).filter(part=>part.type==='text').map(part=>part.text??'').join('').trim()
+          return text||null
+        }catch{return null}
+      }},payload,signal)
       const value=endpoint==='requests/pending/list'?await pendingRequests.list(owner):endpoint==='requests/pending/ack'?await (async()=>{
         if(!isRecord(payload)||typeof payload.requestId!=='string'||Object.keys(payload).some(key=>key!=='requestId'))throw new WorkError('teloa/invalid-input','确认待核对请求只能提交请求身份。')
         await pendingRequests.acknowledge(owner,payload.requestId,new Date().toISOString())

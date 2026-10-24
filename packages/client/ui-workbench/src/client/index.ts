@@ -176,6 +176,10 @@ import {KnowledgeSaveReceiptCard} from './KnowledgeSaveReceiptCard.js'
 import { ResourceRecovery } from './ResourceRecovery.js'
 import { PromptPreparation } from './prompt-preparation.js'
 import { PreparedPromptCard } from './PreparedPromptCard.js'
+import { ComposerSuggestionDock } from './ComposerSuggestionDock.js'
+import { ComposerSuggestionSetting } from './ComposerSuggestionSetting.js'
+const IDLE_INPUT_STATE=(()=>{const snapshot={draft:'',focused:true};return {getSnapshot:()=>snapshot,subscribe:()=>()=>{}}})()
+import { readSuggestionEnabled } from './composer-suggestion.js'
 import { createShareAcceptance, readPublicCatalogSkill } from './template-share-accept.js'
 import { isSharePackageV2 } from './share-package-plan.js'
 import { findIndustryTeam } from './industry-team.js'
@@ -259,6 +263,8 @@ export async function apply(ctx: Context): Promise<void> {
   ctx.slots.inject('settings.header',()=>ctx.slots.register({name:'settings.header',priority:-100,inject:()=>({theme:brandTheme})},SettingsBrand))
   ctx.slots.inject('settings.section',()=>ctx.slots.register({name:'settings.section',id:'teloa-about',order:100,label:()=>requireI18n().t('settings.about'),inject:()=>({theme:brandTheme})},AboutSettings))
   ctx.slots.inject('settings.general.item',()=>ctx.slots.register({name:'settings.general.item',id:'teloa-personal-profile',order:-100},PersonalProfileSettings))
+  // 输入框「下一条建议」开关：默认开，只影响灰字提示本身。
+  ctx.slots.inject('settings.general.item',()=>ctx.slots.register({name:'settings.general.item',id:'teloa-composer-suggestion',order:-90},ComposerSuggestionSetting))
   ctx.slots.inject('settings.section',()=>ctx.slots.register({name:'settings.section',id:'teloa-auto-dream',order:7,label:()=>requireI18n().t('autoDream.name'),inject:()=>({api:autoDreamSettingApi,recent:autoDreamRecentApi,openRole:(id:string)=>requireActions().openRole(id)})},AutoDreamSettingsPage))
   ctx.slots.inject('settings.section',()=>ctx.slots.register({name:'settings.section',id:'teloa-credential-store',order:8,label:()=>requireI18n().t('credentialStore.title'),inject:()=>({api:credentialStoreApi})},CredentialStoreSettings))
   ctx.inject(['pluginNavigation'],child=>{
@@ -995,6 +1001,30 @@ export async function apply(ctx: Context): Promise<void> {
       return {state:child.conversation.input.for(scope).state,running:child.sessions.list.getSnapshot().byId[sessionId]?.running??true,text:request=>scope.bail(scope,'slash/input-insert-text',request),reference:request=>scope.bail(scope,'slash/input-insert-reference',request)}
     }),validateTask:async(row:import('./prompt-preparation.js').PreparedPrompt)=>{const current=await objectConversationApi.taskContext(row.sourceId,row.sessionId,row.sourceVersion);if(JSON.stringify(current)!==row.taskSnapshot){preparation.invalidate(row.sourceId);throw Error('任务、负责员工或会话关联已变化，请返回任务重新准备。')}},openSource:(id:string,kind?:'home'|'task')=>kind==='task'?requireActions().openTask(id):kind==='home'?requireActions().navigate('home'):requireActions().openMarket(undefined,id)})},PreparedPromptCard))
     child.slots.inject('conversation.input.dock',()=>child.slots.register({name:'conversation.input.dock',id:'teloa-resource-recovery',order:-90,inject:()=>({api:resourceApi,work})},ResourceRecovery))
+    // 输入框「下一条建议」（对齐 Codex Composer predictions）：框内灰字，Tab 才放进草稿、绝不发送。
+    // 只有开始输入、Tab 采纳或 Escape 才结束；点消息区或点进输入框但未输入时保持显示。
+    child.slots.inject('conversation.input.dock',()=>child.slots.register({name:'conversation.input.dock',id:'teloa-composer-suggestion',order:-70,inject:(sessionId)=>{
+      try{
+        const scope=child.sessions.scope(sessionId)
+        return {
+          input:scope?child.conversation.input.for(scope).state:IDLE_INPUT_STATE,
+          running:child.sessions.list.getSnapshot().byId[sessionId]?.running??false,
+          // 模型候选：宿主走本人 BYOK；失败返回 null，界面退回本地兜底。
+          suggest:async()=>{
+            try{
+              const response=await call('composer-suggestion/read',{sessionId}) as {text?:string|null}|null
+              return typeof response?.text==='string'?response.text:null
+            }catch{return null}
+          },
+          insertText:(text:string)=>{
+            const live=child.sessions.scope(sessionId)
+            if(!live)throw Error('目标会话作用域不可用。')
+            const current=child.conversation.input.for(live).state.getSnapshot()
+            live.bail(live,'slash/input-insert-text',{text,span:{start:0,end:current.draft.length,draftRev:current.draftRev}})
+          },
+        }
+      }catch{return {input:IDLE_INPUT_STATE,running:false,insertText:()=>{}}}
+    }},ComposerSuggestionDock))
     child.slots.inject('conversation.session.header.utilities',()=>child.slots.register({name:'conversation.session.header.utilities',id:'teloa-role-identity',order:70,inject:()=>({readIdentity:(sessionId:string)=>readSessionRoleIdentity(sessionId,{links:id=>objectConversationApi.bySession(id),roles:()=>roleApi.list()})})},RoleConversationIdentity))
     for(const key of ['teloa_work_dispatch','teloa_work_collect_reports','teloa_work_status','teloa_work_stop','teloa_work_resume'])child.slots.inject('tool.call.toolview',()=>child.slots.register({name:'tool.call.toolview',key,inject:()=>({call,openTask:(id:string)=>requireActions().openTask(id)})},HomeWorkRequestCard))
     for(const key of ['teloa_plans_create','teloa_plans_change','teloa_plans_update'])child.slots.inject('tool.call.toolview',()=>child.slots.register({name:'tool.call.toolview',key,inject:()=>({directory:conversationPlans,api:planApi,roleName:async(id:string)=>(await roleApi.list()).find(role=>role.id===id)?.name??''})},ConversationPlanCard))

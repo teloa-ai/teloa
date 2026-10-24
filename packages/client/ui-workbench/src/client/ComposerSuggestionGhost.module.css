@@ -1,0 +1,48 @@
+/* 灰字建议：与输入框同一行、不可点击、不抢焦点，只提示"按 Tab 放入"。 */
+.ghost{
+  display:flex;
+  align-items:center;
+  gap:8px;
+  padding:2px 4px;
+  color:var(--text-tertiary,rgba(120,120,128,.9));
+  font-size:inherit;
+  line-height:1.4;
+  pointer-events:none;
+  user-select:none;
+  opacity:.9;
+}
+/* Codex 样式：整段灰字在框内换行，最多三行，超出省略。 */
+.text{
+  display:-webkit-box;
+  -webkit-line-clamp:3;
+  -webkit-box-orient:vertical;
+  overflow:hidden;
+  white-space:pre-wrap;
+}
+.hint{
+  flex:none;
+  padding:0 6px;
+  border:1px solid currentColor;
+  border-radius:6px;
+  font-size:.75em;
+  opacity:.75;
+}
+
+/* 框内覆盖：贴在输入框文字行上，盖住占位提示；不接收指针事件。 */
+.ghostInline{
+  position:absolute;
+  left:14px;
+  right:64px;
+  top:50%;
+  transform:translateY(-50%);
+  display:flex;
+  align-items:center;
+  gap:8px;
+  color:var(--text-tertiary,rgba(120,120,128,.9));
+  font-size:inherit;
+  line-height:1.4;
+  pointer-events:none;
+  user-select:none;
+}
+.ghostInline .text{display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;white-space:pre-wrap;}
+.ghostInline .hint{flex:none;padding:0 6px;border:1px solid currentColor;border-radius:6px;font-size:.75em;opacity:.75;}
