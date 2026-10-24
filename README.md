@@ -329,7 +329,7 @@ Download the versioned configuration into a new directory. It uses `teloa/teloa:
 ```sh
 mkdir teloa-community
 cd teloa-community
-curl --fail --location https://docs.teloa.ai/downloads/0.2.8/compose.yaml --output compose.yaml
+curl --fail --location https://docs.teloa.ai/downloads/0.2.10/compose.yaml --output compose.yaml
 docker compose pull
 docker compose up -d --no-build
 docker compose ps
