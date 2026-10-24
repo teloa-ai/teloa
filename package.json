@@ -25,7 +25,8 @@
     "test:native": "pnpm --filter @teloa/harness-dsh test",
     "test:extensions": "pnpm --filter @teloa/im-gateway --filter @teloa/local-embedding test",
     "setup:database": "node scripts/准备资料数据库.mjs",
-    "setup:workspace": "node scripts/准备本机工作目录.mjs"
+    "setup:workspace": "node scripts/准备本机工作目录.mjs",
+    "release:pack": "node scripts/生成发行包.mjs"
   },
   "devDependencies": {
     "clsx": "2.1.1",
