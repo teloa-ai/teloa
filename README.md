@@ -280,9 +280,11 @@ Community 0.2.4 · 32 views · Actual interfaces with example data. Click an ima
 
 Bring your own model service and API key. Model usage is billed by your provider; the Community software license does not include inference credits.
 
-**0.2.8** is the current Community release. It adds per-request permission mode and custom model selection to the employee API, automatic delivery of fixed API results into formal artifacts and completed tasks, employee-package material preview and role-scoped retrieval, one-action enrollment of an employee's materials into local retrieval, market creation entries for skills and apps, the Teloa standard preset under built-in agent presets, clearer settings grouping, and a Node.js 24.22.1 security baseline. The affected flows were verified with backend, harness, SDK and browser checks. The SDK remains compatible at `@teloa/sdk@0.2.4`. [GitHub Releases](https://github.com/teloa-ai/teloa/releases/tag/v0.2.8), [npm](https://www.npmjs.com/package/@teloa/cli/v/0.2.8) and [Docker Hub](https://hub.docker.com/r/teloa/teloa) provide this release: native macOS ARM64 and container Linux ARM64.
+**0.2.9** is the current Community release. It adds optional next-step suggestions in the composer: after a reply, an empty composer shows a short grey next step written by the model; pressing Tab puts it into the draft without sending, typing dismisses it, and Settings → General can turn it off. Suggestions are produced through the host's admitted auxiliary-model path and never create messages, tasks or execution. The affected flows were verified with a real MiniMax model and browser checks. The SDK remains compatible at `@teloa/sdk@0.2.4`. [GitHub Releases](https://github.com/teloa-ai/teloa/releases/tag/v0.2.9), [npm](https://www.npmjs.com/package/@teloa/cli/v/0.2.9) and [Docker Hub](https://hub.docker.com/r/teloa/teloa) provide this release: native macOS ARM64 and container Linux ARM64.
 
 ### What changes in this release
+
+**Next-step suggestions in the composer:** after a reply, an empty composer can show one grey sentence describing the likely next input. Tab accepts it into the draft (never sends), typing dismisses it, and Settings → General switches it off. Suggestions come from the admitted auxiliary-model path and never create messages, tasks or execution.
 
 **A clearer workbench and more reliable first use:** your avatar opens My twin, with a separate Settings entry. Personal and employee editors preserve text drafts across navigation and refresh. The first configured BYOK provider can initialize an unavailable default; group routing follows the current default model. Task drafts are distinguished from saved tasks, with a form fallback and native approval before execution. Archive actions offer Undo, while high-impact actions use explicit confirmation.
 
@@ -307,22 +309,22 @@ Use **Node.js 24.x from 24.22.1 onward** or **22.x from 22.23.4 onward**, **npm 
 ```sh
 mkdir teloa-command
 cd teloa-command
-npm install --ignore-scripts https://github.com/teloa-ai/teloa/releases/download/v0.2.8/teloa-cli-0.2.8.tgz
+npm install --ignore-scripts https://github.com/teloa-ai/teloa/releases/download/v0.2.9/teloa-cli-0.2.9.tgz
 ./node_modules/.bin/teloa up
 ./node_modules/.bin/teloa doctor
 ./node_modules/.bin/teloa status
 ```
 
-Teloa and DSH run natively on your computer. Startup opens the Web interface; configure your model in Settings. The default Web port is 3100. For a new installation, use `./node_modules/.bin/teloa up --port 3101` if it is occupied. The release also lists the package's SHA-256 checksum. To upgrade an existing installation, such as 0.2.0-alpha.7, keep its data and identity by installing the 0.2.8 package into a new command directory, then running `teloa stop` and `teloa upgrade --to 0.2.8` from that directory (pass the original `--home` for a custom installation). The upgrade creates a backup before switching. See the [installation and stop instructions](https://docs.teloa.ai/en/start/quickstart) and [backup and upgrades](https://docs.teloa.ai/en/deploy/backup). For npm, use `npm install --ignore-scripts @teloa/cli@0.2.8`.
+Teloa and DSH run natively on your computer. Startup opens the Web interface; configure your model in Settings. The default Web port is 3100. For a new installation, use `./node_modules/.bin/teloa up --port 3101` if it is occupied. The release also lists the package's SHA-256 checksum. To upgrade an existing installation, such as 0.2.0-alpha.7, keep its data and identity by installing the 0.2.9 package into a new command directory, then running `teloa stop` and `teloa upgrade --to 0.2.9` from that directory (pass the original `--home` for a custom installation). The upgrade creates a backup before switching. See the [installation and stop instructions](https://docs.teloa.ai/en/start/quickstart) and [backup and upgrades](https://docs.teloa.ai/en/deploy/backup). For npm, use `npm install --ignore-scripts @teloa/cli@0.2.9`.
 
 <details>
-<summary><strong>Docker Hub with Compose (0.2.8)</strong></summary>
+<summary><strong>Docker Hub with Compose (0.2.9)</strong></summary>
 
 ### Docker Hub with Compose
 
 Install Docker with Compose and start the engine. The published image and the configuration below have been verified on **Linux ARM64**; **amd64 has not been verified**. Teloa, DSH and PostgreSQL run in containers, so host Node.js and pnpm are not required.
 
-Download the versioned configuration into a new directory. It uses `teloa/teloa:0.2.8` for both initialization and the application, with persistent data volumes and a generated database password.
+Download the versioned configuration into a new directory. It uses `teloa/teloa:0.2.9` for both initialization and the application, with persistent data volumes and a generated database password.
 
 ```sh
 mkdir teloa-community
