@@ -92,7 +92,10 @@ test('负责人生产装配：真实RPC、原生审批、单连接池和任务�
  const raw=(endpoint:string,payload:unknown)=>rpc!(endpoint,payload,AbortSignal.timeout(15000))
  const call=async<T>(endpoint:string,payload:unknown):Promise<T>=>{const reply=await raw(endpoint,payload);assert.equal(reply.ok,true,endpoint+': '+JSON.stringify(reply.error));return reply.value as T}
  const userTurn=(sessionId:string)=>invocation.instruction(ctx.agents.get(SessionId(sessionId))!)
- const tool=(sessionId:string,name:string,args:Record<string,unknown>={},callId?:ToolCallId)=>invocation.invoke(ctx.agents.get(SessionId(sessionId))!,{name,arguments:args,...(callId?{callId}:{}),signal:AbortSignal.timeout(15000)})
+ const tool=async(sessionId:string,name:string,args:Record<string,unknown>={},callId?:ToolCallId)=>{
+  try{return await invocation.invoke(ctx.agents.get(SessionId(sessionId))!,{name,arguments:args,...(callId?{callId}:{}),signal:AbortSignal.timeout(15000)})}
+  catch(cause){throw new Error('原生工具执行未完成：'+name,{cause})}
+ }
  const builder=async(title:string)=>{const request={requestId:randomUUID(),kind:'builder',title},reservation=await call<BusinessConversationBinding>('business-conversations/reserve',request),native=await call<{sessionId:string}>('conversations/create',{requestId:request.requestId,title});return {...native,reservation,request}}
  await t.test('本人主聊正式RPC核验旧通用上下文，登记原身份、固定标题和拒绝改投',async()=>{
   const legacy=await call<{sessionId:string;requestId:string}>('conversations/create',{requestId:randomUUID(),title:'Teloa 小松鼠助手'})
@@ -219,13 +222,16 @@ test('负责人生产装配：真实RPC、原生审批、单连接池和任务�
  assert.equal(status.counts.received,1)
  assert.match(status.members[0]!.result??'',/固定记录快照/)
  const notices=()=>readSessionEvents(ctx.agents.get(SessionId(ordinary.sessionId))!.session).filter(event=>event.type==='user/message'&&event.surfaceOp==='append'&&event.data.source.kind==='plugin:teloa.work'&&event.data.source.requestId===received.requestId)
- for(let attempt=0;attempt<100&&!notices().length;attempt++)await new Promise(resolve=>setTimeout(resolve,50))
- assert.equal(notices().length,1,'受管执行结果应回流到原本人会话且只追加一次')
- assert.match(JSON.stringify(notices()[0]),/固定记录快照/)
+ assert.equal(notices().length,0,'本人原轮次仍活动时结果保持待回流，不插入在途工具链')
  const repeat=await tool(ordinary.sessionId,'teloa_work_dispatch',dispatch)
  assert.equal(repeat.isError,false,JSON.stringify(repeat))
  assert.equal(model.calls,1,'同一本人消息重试不能重复发送 Run')
- assert.equal(notices().length,1,'重试不重复回流通知')
+ assert.equal(notices().length,0,'原轮次内重试也不能提前回流通知')
+ // 工具模型结束真实原轮次后才进入 idle；回流通知不能替它结束或唤醒模型。
+ await invocation.finish(ctx.agents.get(SessionId(ordinary.sessionId))!,'交办结果已就绪，等待本人核对。')
+ for(let attempt=0;attempt<100&&!notices().length;attempt++)await new Promise(resolve=>setTimeout(resolve,50))
+ assert.equal(notices().length,1,'闲置后受管执行结果回流到原本人会话且只追加一次')
+ assert.match(JSON.stringify(notices()[0]),/固定记录快照/)
  assert.equal((await pool.query('select count(*)::int n from teloa_conversation_work_requests where owner_id=$1 and request_id=$2',[owner,received.requestId])).rows[0].n,1)
  // 父身份只由正式 dispatch 内部消费；公开入口即使复制已成功原spec也不能冒领回执。
  const fixedTask=(await pool.query('select request_id,request_spec from teloa_tasks where owner_id=$1 and id=$2',[owner,received.members[0]!.task!.id])).rows[0]
