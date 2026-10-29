@@ -6,6 +6,20 @@ import {roleDefinition} from '@teloa/contract'
 import {readRunKnowledge} from '../src/work/task-run-knowledge.ts'
 import {ResourceService,type ResourceActor,type ResourceSourceCatalog} from '../src/capabilities/resources.ts'
 
+/** 这些资料来源均未清理；完整模拟来源检查，未知 SQL 仍直接使测试失败。 */
+function resourceClient(read:(id:unknown)=>Record<string,unknown>[]):PoolClient{
+ return {query:async(sql:string,params:unknown[]=[])=>{
+  if(sql==="select to_regclass('teloa_employee_knowledge_source_retirements') as present")return {rows:[{present:'teloa_employee_knowledge_source_retirements'}]}
+  if(sql==='select 1 from teloa_employee_knowledge_source_retirements where owner_id=$1 and source_id=$2 and source_version=$3'){
+   assert.equal(params.length,3)
+   return {rows:[],rowCount:0}
+  }
+  assert.equal(sql,'select * from teloa_resources where id=$1 for share')
+  assert.equal(params.length,1)
+  return {rows:read(params[0])}
+ }} as unknown as PoolClient
+}
+
 test('岗位资料非法主体、身份或预取消在借用连接前拒绝',async()=>{
   let checkouts=0
   const pool={connect:async()=>{checkouts++;throw Error('database unavailable')}} as unknown as Pool
@@ -23,7 +37,7 @@ test('合法员工12/30引用元数据和正文可读取并固定，31拒绝且�
  const owner='isolated-owner',actor:ResourceActor={ownerId:owner,kind:'agent',scopeIds:['general']},texts=new Map<string,string>(),at=new Date('2026-10-14T00:00:00.000Z')
  const rows=Array.from({length:31},(_,index)=>{const id='10000000-0000-4000-8000-'+String(index+1).padStart(12,'0'),text='固定依据 '+index;const sourceId='source-'+index;const sourceVersion=createHash('sha256').update(text).digest('hex');texts.set(sourceId,text);return {id,owner_id:owner,spec:{title:'依据 '+index,sourceId,sourceVersion,scopeIds:['general']},revision:1,status:'active',created_at:at,updated_at:at}})
  let reads=0
- const client={query:async(_sql:string,params:unknown[])=>({rows:rows.filter(row=>row.id===params[0])})} as unknown as PoolClient
+ const client=resourceClient(id=>rows.filter(row=>row.id===id))
  const service=new ResourceService({} as Pool,{list:async()=>({schema:'teloa.reference-list/v1',references:[]}),read:async(id,version)=>{reads++;const text=texts.get(id)!;return {schema:'teloa.reference/v1',id,title:'固定依据',source:id,version,bytes:Buffer.byteLength(text),text}}},{id:()=>'',now:()=>''})
  for(const count of [12,30]){
   const ids=rows.slice(0,count).map(row=>row.id),role=roleDefinition({name:'固定模板员工',kind:'employee',scopes:['general'],duty:'核对来源',dataScope:'固定来源',executionScope:'只读',skills:[],knowledge:ids})
@@ -41,7 +55,7 @@ test('30引用支持仍保留归属、范围、撤回、重复、正文总预算
  const owner='owner',actor:ResourceActor={ownerId:owner,kind:'agent',scopeIds:['general','design']},at=new Date('2026-10-14T00:00:00.000Z')
  let text='a'.repeat(256*1024),scopeIds=['general'],status='active'
  const ids=Array.from({length:31},(_,index)=>'10000000-0000-4000-8000-'+String(index+1).padStart(12,'0'))
- const client={query:async(_sql:string,params:unknown[])=>({rows:[{id:params[0],owner_id:owner,spec:{title:'固定依据',sourceId:'fixed',sourceVersion:createHash('sha256').update(text).digest('hex'),scopeIds},revision:1,status,created_at:at,updated_at:at}]})} as unknown as PoolClient
+ const client=resourceClient(id=>[{id,owner_id:owner,spec:{title:'固定依据',sourceId:'fixed',sourceVersion:createHash('sha256').update(text).digest('hex'),scopeIds},revision:1,status,created_at:at,updated_at:at}])
  const service=new ResourceService({} as Pool,{list:async()=>({schema:'teloa.reference-list/v1',references:[]}),read:async(id,version)=>({schema:'teloa.reference/v1',id,title:'固定依据',source:id,version,bytes:Buffer.byteLength(text),text})},{id:()=>'',now:()=>''})
  assert.equal((await service.executionKnowledgeInTransaction(client,actor,['general'],[ids[0]!]))[0]!.text.length,256*1024)
  text+='a';await assert.rejects(service.executionKnowledgeInTransaction(client,actor,['general'],[ids[0]!]),{code:'teloa/invalid-input'})
