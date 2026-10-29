@@ -47,6 +47,7 @@ export async function initializeKnowledgeTree(pool:Pool):Promise<void>{
    foreign key(owner_id,knowledge_id) references teloa_knowledge_items(owner_id,id) deferrable initially deferred,
    check((node_type='space' and parent_id is null and knowledge_id is null and sibling_order=0) or (node_type='folder' and parent_id is not null and knowledge_id is null) or (node_type='page' and parent_id is not null and knowledge_id is not null))
   );
+  alter table teloa_knowledge_nodes add column if not exists archived boolean not null default false;
   create table if not exists teloa_knowledge_directory_operations(
    owner_id text not null,request_id uuid not null,request_spec jsonb not null check(jsonb_typeof(request_spec)='object'),operation text not null check(operation in ('create-folder','move','rename')),
    result jsonb not null check(jsonb_typeof(result)='object'),created_at timestamptz not null,primary key(owner_id,request_id)
@@ -93,7 +94,7 @@ async function lockSpace(client:PoolClient,ownerId:string,workspaceId:string,now
  return spaceRow(row!)
 }
 async function readNode(client:PoolClient,ownerId:string,nodeId:string,lock=false):Promise<KnowledgeNode>{
- const row=(await client.query('select * from teloa_knowledge_nodes where owner_id=$1 and id=$2'+(lock?' for update':''),[ownerId,nodeId])).rows[0]
+ const row=(await client.query('select * from teloa_knowledge_nodes where owner_id=$1 and id=$2 and not archived'+(lock?' for update':''),[ownerId,nodeId])).rows[0]
  if(!row)throw new WorkError('teloa/not-found','知识目录节点不存在。')
  return nodeRow(row)
 }
@@ -102,11 +103,11 @@ async function updateSpace(client:PoolClient,space:KnowledgeSpace,now:string):Pr
  return spaceRow(row)
 }
 async function orderedChildren(client:PoolClient,ownerId:string,spaceId:string,parentId:string,exclude?:string):Promise<KnowledgeNode[]>{
- const values=(await client.query('select * from teloa_knowledge_nodes where owner_id=$1 and space_id=$2 and parent_id=$3 order by sibling_order,id',[ownerId,spaceId,parentId])).rows.map(nodeRow)
+ const values=(await client.query('select * from teloa_knowledge_nodes where owner_id=$1 and space_id=$2 and parent_id=$3 and not archived order by sibling_order,id',[ownerId,spaceId,parentId])).rows.map(nodeRow)
  return exclude?values.filter(value=>value.id!==exclude):values
 }
 async function storedTree(client:PoolClient,space:KnowledgeSpace):Promise<KnowledgeTree>{
- const rows=(await client.query('select * from teloa_knowledge_nodes where owner_id=$1 and space_id=$2',[space.ownerId,space.id])).rows.map(nodeRow),byParent=new Map<string,KnowledgeNode[]>()
+ const rows=(await client.query('select * from teloa_knowledge_nodes where owner_id=$1 and space_id=$2 and not archived',[space.ownerId,space.id])).rows.map(nodeRow),byParent=new Map<string,KnowledgeNode[]>()
  for(const node of rows){if(node.parentId!==null){const children=byParent.get(node.parentId)??[];children.push(node);byParent.set(node.parentId,children)}}
  for(const children of byParent.values())children.sort((left,right)=>left.siblingOrder-right.siblingOrder||left.id.localeCompare(right.id))
  const ordered:KnowledgeNode[]=[],root=rows.find(node=>node.id===space.rootNodeId)
@@ -224,7 +225,7 @@ export class KnowledgeTreeService{
    if(node.spaceId!==space.id||parent.spaceId!==space.id)throw new WorkError('teloa/forbidden','目录节点不属于当前知识空间。')
    if(node.type==='space'||parent.type==='page'||parent.path.includes(node.id))throw new WorkError('teloa/conflict',parent.type==='page'?'Markdown 页面是叶子节点，不能包含子节点。':'知识目录不能移动到自身或后代节点。')
    const oldParent=node.parentId!,oldSiblings=await orderedChildren(client,actor.ownerId,space.id,oldParent,node.id),targetSiblings=oldParent===parent.id?oldSiblings:await orderedChildren(client,actor.ownerId,space.id,parent.id,node.id),position=at(row.position,targetSiblings.length),oldPath=node.path,newPath=[...parent.path,node.id]
-   const descendants=(await client.query('select * from teloa_knowledge_nodes where owner_id=$1 and space_id=$2',[actor.ownerId,space.id])).rows.map(nodeRow).filter(value=>value.path.length>=oldPath.length&&oldPath.every((part,index)=>value.path[index]===part))
+   const descendants=(await client.query('select * from teloa_knowledge_nodes where owner_id=$1 and space_id=$2 and not archived',[actor.ownerId,space.id])).rows.map(nodeRow).filter(value=>value.path.length>=oldPath.length&&oldPath.every((part,index)=>value.path[index]===part))
    for(const descendant of descendants){const path=[...newPath,...descendant.path.slice(oldPath.length)];await client.query('update teloa_knowledge_nodes set path=$3,updated_at=$4 where owner_id=$1 and id=$2',[actor.ownerId,descendant.id,JSON.stringify(path),now])}
    const moved=nodeRow((await client.query('update teloa_knowledge_nodes set parent_id=$3,sibling_order=$4,updated_at=$5 where owner_id=$1 and id=$2 returning *',[actor.ownerId,node.id,parent.id,position,now])).rows[0])
    if(oldParent!==parent.id)await reorder(client,actor.ownerId,oldSiblings,now)

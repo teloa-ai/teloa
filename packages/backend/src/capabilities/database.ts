@@ -11,6 +11,7 @@ import {dirname,resolve} from 'node:path'
 import {MarkdownKnowledgeService} from './markdown-knowledge.ts'
 import {MarkdownKnowledgeCatalog} from './markdown-knowledge-catalog.ts'
 import {KnowledgeResourceService} from './knowledge-resources.ts'
+import {EmployeeKnowledgeService} from './employee-knowledge.ts'
 import {KnowledgeTreeService} from './knowledge-tree.ts'
 import {RetrievalIndexService} from './retrieval-index.ts'
 import {resourceDatabaseEndpointPolicy} from './database-endpoint.ts'
@@ -24,7 +25,7 @@ export function databaseConnectionAllowed(connectionString:string,deployment?:st
 }
 
 /** `options.deployment`：宿主传入只读启动快照里的 TELOA_DEPLOYMENT（工作区 .env 不能借它放宽主机白名单）；缺省读 process.env 只给脚本用。 */
-export async function openResourceDatabase(path:string,identity:{id:()=>string;now:()=>string},options:{deployment?:string|undefined;localMaterialCatalog?:(pool:Pool)=>Promise<ResourceSourceCatalog>}={deployment:process.env.TELOA_DEPLOYMENT}):Promise<{pool:Pool;dispatchLocks:Pool;close:()=>Promise<void>;service:ResourceService;knowledge:MarkdownKnowledgeService;knowledgeTree:KnowledgeTreeService;knowledgeResources:KnowledgeResourceService;retrieval:RetrievalIndexService;sources:ReturnType<typeof combineReferenceCatalogs>}>{
+export async function openResourceDatabase(path:string,identity:{id:()=>string;now:()=>string},options:{deployment?:string|undefined;localMaterialCatalog?:(pool:Pool)=>Promise<ResourceSourceCatalog>}={deployment:process.env.TELOA_DEPLOYMENT}):Promise<{pool:Pool;dispatchLocks:Pool;close:()=>Promise<void>;service:ResourceService;knowledge:MarkdownKnowledgeService;knowledgeTree:KnowledgeTreeService;knowledgeResources:KnowledgeResourceService;employeeKnowledge:EmployeeKnowledgeService;retrieval:RetrievalIndexService;sources:ReturnType<typeof combineReferenceCatalogs>}>{
   let config:unknown
   try{
     const entry=await lstat(path)
@@ -66,5 +67,5 @@ export async function openResourceDatabase(path:string,identity:{id:()=>string;n
   try{localMaterials=await options.localMaterialCatalog?.(pool)}catch(error){await close();throw error}
   const sources=combineReferenceCatalogs(createPublicReferenceCatalog(),new IndustryReferenceCatalog(pool,market,loads),new MarkdownKnowledgeCatalog(knowledge),localMaterials,new ResourceAdoptionCatalog(pool))
   const service=new ResourceService(pool,sources,identity)
-  return {pool,dispatchLocks,close,service,knowledge,knowledgeTree:new KnowledgeTreeService(pool,'default',identity),knowledgeResources:new KnowledgeResourceService(pool,knowledge,service),retrieval:new RetrievalIndexService(pool,service,identity),sources}
+  return {pool,dispatchLocks,close,service,knowledge,knowledgeTree:new KnowledgeTreeService(pool,'default',identity),knowledgeResources:new KnowledgeResourceService(pool,knowledge,service),employeeKnowledge:new EmployeeKnowledgeService(pool,knowledge,service,identity),retrieval:new RetrievalIndexService(pool,service,identity),sources}
 }

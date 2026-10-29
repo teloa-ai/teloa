@@ -6,6 +6,7 @@ import type {Pool,PoolClient} from 'pg'
 import {WorkError,isKnowledgeItem,isKnowledgeVersion,isKnowledgeVersionSummary,isPasteKnowledge,isRecord,knowledgeCategories,resourceId,resourceScopes,resourceVersion,type KnowledgeCategory,type KnowledgeItem,type KnowledgeVersion,type KnowledgeVersionSummary,type PasteKnowledge} from '@teloa/contract'
 import {authorizeResourceActor,type ResourceActor} from './resources.ts'
 import {attachKnowledgePage,initializeKnowledgeTree} from './knowledge-tree.ts'
+import {assertFixedRunKnowledgeReadInTransaction,type FixedRunKnowledgeRead} from './fixed-run-knowledge-read.ts'
 
 /** 粘贴知识单份上限，与检索单来源上限一致；进岗位/任务全文另受 256 KiB 合计约束（resources.ts）。 */
 const maxBytes=2*1024*1024
@@ -257,11 +258,17 @@ export class MarkdownKnowledgeService{
  private async cleanupPublished(value:Published):Promise<void>{if(!value.created)return;try{await this.verifyAnchors(value.anchors);await unlink(value.target).catch(error=>{if((error as NodeJS.ErrnoException).code!=='ENOENT')throw error});await this.syncDirectory(value.anchors)}catch{throw unavailable()}}
  private async byRequest(client:PoolClient,ownerId:string,requestId:string):Promise<Record<string,unknown>|undefined>{
   const row=(await client.query(selectStored+' where i.owner_id=$1 and i.request_id=$2 and v.number=i.current_version',[ownerId,requestId])).rows[0]
-  if(row)return row
+  if(row){if(await this.archived(client,ownerId,String(row.id)))throw new WorkError('teloa/not-found','该知识历史已在重新导入包时清空。');return row}
   if((await client.query('select 1 from teloa_knowledge_items where owner_id=$1 and request_id=$2',[ownerId,requestId])).rowCount)throw corrupt()
   return undefined
  }
- async createPaste(actor:ResourceActor,input:unknown):Promise<PasteKnowledge>{
+ async createPaste(actor:ResourceActor,input:unknown):Promise<PasteKnowledge>{return (await this.createPasteWithTransaction(actor,input,async()=>undefined)).knowledge}
+ /** 受管员工副本：原正文作为 v1、校正正文作为 v2，与绑定和投影在同一事务提交。 */
+ async forkWithTransaction<T>(actor:ResourceActor,input:{requestId:string;title:string;category:KnowledgeCategory;topics:string[];scopeIds:string[];initialMarkdown:string;markdown:string},within:(client:PoolClient,value:PasteKnowledge)=>Promise<T>):Promise<{knowledge:PasteKnowledge;value:T}>{
+  const {initialMarkdown,markdown,...fields}=input
+  return this.createPasteWithTransaction(actor,{...fields,markdown:initialMarkdown},within,normalizePasteMarkdown(markdown))
+ }
+ private async createPasteWithTransaction<T>(actor:ResourceActor,input:unknown,within:(client:PoolClient,value:PasteKnowledge)=>Promise<T>,forkMarkdown?:string):Promise<{knowledge:PasteKnowledge;value:T}>{
   const row=exact(input,['requestId','title','category','topics','scopeIds','markdown','parentId','expectedDirectoryRevision','position'])
   if(!resourceId(row.requestId)||typeof row.title!=='string'||!row.title.trim()||row.title.length>200||!knowledgeCategories.includes(row.category as KnowledgeCategory)||!resourceScopes(row.scopeIds))throw bad()
   const hasDirectory=row.parentId!==undefined||row.expectedDirectoryRevision!==undefined||row.position!==undefined
@@ -270,7 +277,7 @@ export class MarkdownKnowledgeService{
   authorizeResourceActor(actor,actor.ownerId,scopeIds,true)
   const directory=hasDirectory?{parentId:(row.parentId as string|undefined)??null,position:(row.position as number|undefined)??null,expectedDirectoryRevision:row.expectedDirectoryRevision as number}:undefined
   const requestSpec:PasteRequestSpec={workspaceId:this.workspaceId,title,category,topics,scopeIds,contentHash,...(directory?{directory}:{})},client=await this.pool.connect().catch(()=>{throw unavailable()})
-  let published:Published|undefined,commitStarted=false
+  let published:Published|undefined,forkPublished:Published|undefined,commitStarted=false
   try{
    await client.query('begin')
    await client.query('select pg_advisory_xact_lock(hashtextextended($1,0))',[JSON.stringify(['paste-knowledge',actor.ownerId,row.requestId])])
@@ -280,7 +287,8 @@ export class MarkdownKnowledgeService{
     const item=itemRow(existing),summary=versionRow(existing),path=existing.markdown_path
     if(item.workspaceId!==this.workspaceId||summary.sourceId!==item.sourceId||typeof path!=='string'||path!==this.relative(item.id,summary.contentHash))throw corrupt()
     const saved=stored(existing,await this.readContent(path,summary.contentHash,summary.bytes))
-    commitStarted=true;await client.query('commit');return {item:saved.item,version:saved.version}
+    const knowledge={item:saved.item,version:saved.version},value=await within(client,knowledge)
+    commitStarted=true;await client.query('commit');return {knowledge,value}
    }
    const knowledgeId=this.identity.id(),sourceId=this.identity.id(),now=this.identity.now(),relative=this.relative(knowledgeId,contentHash)
    if(!resourceId(knowledgeId)||!resourceId(sourceId)||!Number.isFinite(Date.parse(now)))throw corrupt()
@@ -289,9 +297,15 @@ export class MarkdownKnowledgeService{
    await client.query(`insert into teloa_knowledge_items(id,owner_id,request_id,request_spec,source_id,workspace_id,title,category,topics,scope_ids,current_version,status,created_at,updated_at) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,1,'active',$11,$11)`,[knowledgeId,actor.ownerId,row.requestId,JSON.stringify(requestSpec),sourceId,this.workspaceId,title,category,JSON.stringify(topics),JSON.stringify(scopeIds),now])
    await client.query('insert into teloa_knowledge_versions values($1,$2,$3,1,$4,$5,$6,$7)',[actor.ownerId,knowledgeId,sourceId,contentHash,bytes.length,relative,now])
    await attachKnowledgePage(client,{ownerId:actor.ownerId,workspaceId:this.workspaceId,knowledgeId,title,now,...(directory?{expectedDirectoryRevision:directory.expectedDirectoryRevision,...(directory.parentId?{parentId:directory.parentId}:{}),...(directory.position===null?{}:{position:directory.position})}:{})})
-   const result=stored((await this.byRequest(client,actor.ownerId,row.requestId))!,markdown)
-   commitStarted=true;await client.query('commit');return {item:result.item,version:result.version}
-  }catch(error){await client.query('rollback').catch(()=>{});if(published&&!commitStarted)await this.cleanupPublished(published);if(error instanceof WorkError)throw error;throw unavailable()}finally{if(published)await this.closeAnchors(published.anchors);client.release()}
+   if(forkMarkdown!==undefined){
+    const forkBytes=Buffer.from(forkMarkdown,'utf8'),forkHash=digest(forkBytes),forkRelative=this.relative(knowledgeId,forkHash)
+    forkPublished=await this.writeContent(forkRelative,forkBytes)
+    await client.query('insert into teloa_knowledge_versions values($1,$2,$3,2,$4,$5,$6,$7)',[actor.ownerId,knowledgeId,sourceId,forkHash,forkBytes.length,forkRelative,now])
+    await client.query('update teloa_knowledge_items set current_version=2 where owner_id=$1 and id=$2',[actor.ownerId,knowledgeId])
+   }
+   const result=stored((await this.byRequest(client,actor.ownerId,row.requestId))!,forkMarkdown??markdown),knowledge={item:result.item,version:result.version},value=await within(client,knowledge)
+   commitStarted=true;await client.query('commit');return {knowledge,value}
+  }catch(error){await client.query('rollback').catch(()=>{});if(forkPublished&&!commitStarted)await this.cleanupPublished(forkPublished);if(published&&!commitStarted)await this.cleanupPublished(published);if(error instanceof WorkError)throw error;throw unavailable()}finally{if(forkPublished)await this.closeAnchors(forkPublished.anchors);if(published)await this.closeAnchors(published.anchors);client.release()}
  }
  private sameItemIdentity(left:KnowledgeItem,right:KnowledgeItem):boolean{
   return left.id===right.id&&left.ownerId===right.ownerId&&left.sourceId===right.sourceId&&left.sourceType===right.sourceType&&left.workspaceId===right.workspaceId&&left.title===right.title&&left.category===right.category&&JSON.stringify(left.topics)===JSON.stringify(right.topics)&&JSON.stringify(left.scopeIds)===JSON.stringify(right.scopeIds)&&left.status===right.status&&left.createdAt===right.createdAt
@@ -311,12 +325,13 @@ export class MarkdownKnowledgeService{
   if(!isPasteKnowledge(value)||value.item.updatedAt!==value.version.createdAt)throw corrupt()
   return value
  }
- private async appendVersion<T>(actor:ResourceActor,requestId:string,spec:RevisionRequestSpec,source:{kind:'markdown';markdown:string}|{kind:'version';version:number},within:(client:PoolClient,value:PasteKnowledge,replayed:boolean)=>Promise<T>):Promise<{knowledge:PasteKnowledge;value:T}>{
+ private async appendVersion<T>(actor:ResourceActor,requestId:string,spec:RevisionRequestSpec,source:{kind:'markdown';markdown:string}|{kind:'version';version:number},within:(client:PoolClient,value:PasteKnowledge,replayed:boolean)=>Promise<T>,before?:(client:PoolClient)=>Promise<void>):Promise<{knowledge:PasteKnowledge;value:T}>{
   authorizeResourceActor(actor,actor.ownerId,[],true)
   const client=await this.pool.connect().catch(()=>{throw unavailable()})
   let published:Published|undefined,commitStarted=false
   try{
    await client.query('begin')
+   await before?.(client)
    await client.query('select pg_advisory_xact_lock(hashtextextended($1,0))',[JSON.stringify(['knowledge-revision',actor.ownerId,requestId])])
    const prior=(await client.query('select * from teloa_knowledge_revision_requests where owner_id=$1 and request_id=$2 for update',[actor.ownerId,requestId])).rows[0] as Record<string,unknown>|undefined
    if(prior){
@@ -349,11 +364,11 @@ export class MarkdownKnowledgeService{
    commitStarted=true;await client.query('commit');return {knowledge:value,value:result}
   }catch(error){await client.query('rollback').catch(()=>{});if(published&&!commitStarted)await this.cleanupPublished(published);if(error instanceof WorkError)throw error;throw unavailable()}finally{if(published)await this.closeAnchors(published.anchors);client.release()}
  }
- async reviseWithTransaction<T>(actor:ResourceActor,input:unknown,within:(client:PoolClient,value:PasteKnowledge,replayed:boolean)=>Promise<T>):Promise<{knowledge:PasteKnowledge;value:T}>{
+ async reviseWithTransaction<T>(actor:ResourceActor,input:unknown,within:(client:PoolClient,value:PasteKnowledge,replayed:boolean)=>Promise<T>,before?:(client:PoolClient)=>Promise<void>):Promise<{knowledge:PasteKnowledge;value:T}>{
   const row=exact(input,['requestId','knowledgeId','expectedVersion','markdown'])
   if(!resourceId(row.requestId)||!resourceId(row.knowledgeId)||!resourceVersion(row.expectedVersion))throw bad()
   const markdown=normalizePasteMarkdown(row.markdown),contentHash=digest(Buffer.from(markdown,'utf8')),spec:RevisionRequestSpec={operation:'revise',knowledgeId:(row.knowledgeId as string).toLowerCase(),expectedVersion:row.expectedVersion as number,contentHash}
-  return this.appendVersion(actor,(row.requestId as string).toLowerCase(),spec,{kind:'markdown',markdown},within)
+  return this.appendVersion(actor,(row.requestId as string).toLowerCase(),spec,{kind:'markdown',markdown},within,before)
  }
  async restoreWithTransaction<T>(actor:ResourceActor,input:unknown,within:(client:PoolClient,value:PasteKnowledge,replayed:boolean)=>Promise<T>):Promise<{knowledge:PasteKnowledge;value:T}>{
   const row=exact(input,['requestId','knowledgeId','version','expectedVersion'])
@@ -370,11 +385,13 @@ export class MarkdownKnowledgeService{
  async list(actor:ResourceActor,input:unknown):Promise<KnowledgeItem[]>{
   authorizeResourceActor(actor);exact(input,[])
   let rows:Record<string,unknown>[]
-  try{rows=(await this.pool.query(selectItem+' where i.owner_id=$1 and i.workspace_id=$2 order by i.created_at desc,i.id',[actor.ownerId,this.workspaceId])).rows}catch(error){if(error instanceof WorkError)throw error;throw unavailable()}
+  try{const archive=(await this.pool.query("select to_regclass('teloa_employee_knowledge_archives') as present")).rows[0]?.present!=null;rows=(await this.pool.query(selectItem+' where i.owner_id=$1 and i.workspace_id=$2'+(archive?' and not exists(select 1 from teloa_employee_knowledge_archives a where a.owner_id=i.owner_id and a.knowledge_id=i.id)':'')+' order by i.created_at desc,i.id',[actor.ownerId,this.workspaceId])).rows}catch(error){if(error instanceof WorkError)throw error;throw unavailable()}
   const values=rows.map(value=>itemRow(value,true))
   return values.filter(item=>item.scopeIds.every(scope=>actor.scopeIds.includes(scope)))
  }
- private async item(client:PoolClient,actor:ResourceActor,knowledgeId:string,lock=false):Promise<KnowledgeItem>{
+ private async archived(client:PoolClient,owner:string,knowledgeId:string):Promise<boolean>{return (await client.query("select to_regclass('teloa_employee_knowledge_archives') as present")).rows[0]?.present!=null&&!!(await client.query('select 1 from teloa_employee_knowledge_archives where owner_id=$1 and knowledge_id=$2',[owner,knowledgeId])).rowCount}
+ private async item(client:PoolClient,actor:ResourceActor,knowledgeId:string,lock=false,allowArchived=false):Promise<KnowledgeItem>{
+  if(!allowArchived&&await this.archived(client,actor.ownerId,knowledgeId))throw new WorkError('teloa/not-found','该知识历史已在重新导入包时清空。')
   let row:Record<string,unknown>|undefined
   if(lock){
    row=(await client.query(`select i.*,s.source_type from teloa_knowledge_items i join teloa_knowledge_sources s on s.owner_id=i.owner_id and s.id=i.source_id where i.id=$1 and i.owner_id=$2 and i.workspace_id=$3 for update of i`,[knowledgeId,actor.ownerId,this.workspaceId])).rows[0]
@@ -404,5 +421,22 @@ export class MarkdownKnowledgeService{
    const version={...summary,markdown:await this.readContent(relative,summary.contentHash,summary.bytes)}
    if(!isKnowledgeVersion(version))throw corrupt();await client.query('commit');return version
   }catch(error){await client.query('rollback').catch(()=>{});if(error instanceof WorkError)throw error;throw unavailable()}finally{client.release()}
+ }
+ /** 来源适配器复用调用方事务，避免 COW 与执行读取嵌套借用连接。 */
+ async readHashInTransaction(client:PoolClient,actor:ResourceActor,knowledgeId:string,contentHash:string,fixed?:{capability?:FixedRunKnowledgeRead;resourceId?:string}):Promise<{item:KnowledgeItem;version:KnowledgeVersion}>{
+  authorizeResourceActor(actor)
+  if(!resourceId(knowledgeId)||!/^[a-f0-9]{64}$/.test(contentHash))throw bad()
+  const archived=await this.archived(client,actor.ownerId,knowledgeId)
+  if(archived){
+   if(actor.kind!=='agent')throw new WorkError('teloa/not-found','该知识历史已在重新导入包时清空。')
+   await assertFixedRunKnowledgeReadInTransaction(client,fixed?.capability,actor.ownerId,fixed?.resourceId,'knowledge_'+knowledgeId.toLowerCase(),contentHash)
+  }
+  const item=await this.item(client,actor,knowledgeId,false,archived)
+  const row=(await client.query(selectStored+' where i.owner_id=$1 and i.id=$2 and v.content_hash=$3 order by v.number desc limit 1',[actor.ownerId,knowledgeId,contentHash])).rows[0]
+  if(!row)throw new WorkError('teloa/version-conflict','知识固定正文版本不存在。')
+  const summary=versionRow(row)
+  if(row.markdown_path!==this.relative(item.id,summary.contentHash))throw corrupt()
+  const version={...summary,markdown:await this.readContent(row.markdown_path,summary.contentHash,summary.bytes)}
+  if(!isKnowledgeVersion(version))throw corrupt();return {item,version}
  }
 }

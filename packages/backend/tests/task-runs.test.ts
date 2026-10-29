@@ -1267,3 +1267,16 @@ test('准备条件与实际准备共用空工具拒绝，预检不调用原生�
  assert.equal((await pool.query('select count(*)::int as count from teloa_object_conversations where owner_id=$1',[f.owner])).rows[0].count,before)
  assert.equal((await pool.query('select version from teloa_tasks where id=$1',[f.task.id])).rows[0].version,1)
 })
+
+test('内容映射派生工具只允许原授权子集，新增工具或参数在Run落库前拒绝',async()=>{
+ const {RoleToolGrantService}=await import('../src/work/role-tool-grants.ts')
+ const granted=[{name:'read_reference',allowed:[{id:'one',version:'v1'},{id:'two',version:'v2'}]},{name:'teloa_knowledge_search',anyArguments:true as const,allowed:[]}]
+ const setup=async()=>{const f=await fixture();await pool.query("update teloa_roles set state='paused' where id=$1",[f.role.id]);await new RoleToolGrantService(pool,identity.now,async()=>{}).change(f.owner,{roleId:f.role.id,expectedRoleVersion:2,action:'save',rules:granted});await pool.query("update teloa_roles set state='active',version=4 where id=$1",[f.role.id]);await pool.query('update teloa_tasks set assignee_role_version=4 where id=$1',[f.task.id]);return {...f,command:{...f.command,expectedRoleVersion:4}}}
+ const f=await setup(),subset=[{name:'read_reference',allowed:[{id:'two',version:'v2'}]},granted[1]!],service=new TaskRunService(pool,identity,f.inspect,{allowedTools:[],roleGrants:{narrow:async()=>subset,validate:async rules=>assert.deepEqual(rules,subset),recheck:async()=>{}}})
+ assert.deepEqual((await service.prepare(f.owner,f.command)).argumentRules,subset)
+ for(const expanded of [[...granted,{name:'web_fetch',anyArguments:true as const,allowed:[]}],[{name:'read_reference',allowed:[{id:'new-source',version:'v3'}]}],[...granted,{name:'read',workspaceFiles:'default-workspace' as const,allowed:[]}]]){
+  const g=await setup(),invalid=new TaskRunService(pool,identity,g.inspect,{allowedTools:[],roleGrants:{narrow:async()=>expanded,validate:async()=>{},recheck:async()=>{}}})
+  await assert.rejects(invalid.prepare(g.owner,g.command),{code:'teloa/forbidden'})
+  assert.equal((await pool.query('select count(*)::int n from teloa_task_runs where owner_id=$1',[g.owner])).rows[0].n,0)
+ }
+})

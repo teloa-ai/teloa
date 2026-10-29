@@ -2,6 +2,7 @@ import type { Pool } from 'pg'
 import {initializeMarkdownKnowledge} from './markdown-knowledge.ts'
 import {initializeKnowledgeResources} from './knowledge-resources.ts'
 import {initializeRetrievalIndex} from './retrieval-index.ts'
+import {initializeEmployeeKnowledge} from './employee-knowledge.ts'
 export async function initializeResources(pool:Pool):Promise<void>{
   const client=await pool.connect()
   try{
@@ -53,6 +54,7 @@ export async function initializeResources(pool:Pool):Promise<void>{
   await initializeKnowledgeResources(pool)
   // 本地检索索引外键指向 teloa_resources，随资料底座一起建。
   await initializeRetrievalIndex(pool)
+  await initializeEmployeeKnowledge(pool)
   await pool.query(`
     create table if not exists teloa_conversation_knowledge_operations(
       owner_id text not null,request_id uuid not null,command_hash text not null check(command_hash ~ '^[a-f0-9]{64}$'),command_spec jsonb not null check(jsonb_typeof(command_spec)='object'),

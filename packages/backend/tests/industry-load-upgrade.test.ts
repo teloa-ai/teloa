@@ -1,7 +1,9 @@
+import {createPublicReferenceCatalog} from '@teloa/mcp-reference/local'
 import test,{after,before} from 'node:test'
 import assert from 'node:assert/strict'
 import {randomUUID} from 'node:crypto'
-import {homedir} from 'node:os'
+import {homedir,tmpdir} from 'node:os'
+import {mkdtemp,rm} from 'node:fs/promises'
 import {join} from 'node:path'
 import type {Pool as PoolType,PoolClient} from 'pg'
 import {Pool} from './postgres-test-lifecycle.ts'
@@ -13,12 +15,16 @@ import {
  IndustryRoleService,IndustryRoleSource,MarketContentStore,PlanService,RoleService,createIndustryLoadSource,
  initializeIndustryDataSources,initializeIndustryExecutionTools,initializeIndustryLoads,initializeIndustryMcpConnections,
  initializeIndustryPlans,initializeIndustryPlugins,initializeIndustryRoles,initializeMarketContents,initializePlanOccurrences,
- initializePlans,initializeRoles,initializeTasks,
+ initializePlans,initializeRoles,initializeTasks,initializeResources,initializeIndustryKnowledge,IndustryKnowledgeService,IndustryReferenceCatalog,combineReferenceCatalogs,ResourceService,MarkdownKnowledgeService,MarkdownKnowledgeCatalog,EmployeeKnowledgeService,
  type IndustryLoadRecord,
 } from '../src/index.ts'
 import {testRoleResponsibility} from './role-test-fixture.ts'
 import type {IndustryUpdateChoices,MarketPluginInstallPreview,MarketPluginInstallationState} from '@teloa/contract'
 import type {PluginInstallation} from '../src/market/plugin-installations.ts'
+import {WorkError} from '@teloa/contract'
+import {isEmployeeKnowledgeContent,isEmployeeKnowledgeRevision} from '@teloa/contract'
+import {createEmployeeKnowledgeHandler} from '../../harness-dsh/src/employee-knowledge.ts'
+import {createEmployeeKnowledgeApi} from '../../client/ui-workbench/src/client/employee-knowledge-api.ts'
 
 let container:StartedPostgreSqlContainer,pool:PoolType
 before(async()=>{
@@ -77,7 +83,7 @@ async function prepare(){
  const load=await loads.create(owner,{requestId:randomUUID(),contentId:baseline.id,contentHash:baseline.hash,target:{kind:'new',spaceId:randomUUID(),name:'研究空间'}})
  return {owner,market,loads,baseline,candidate,load}
 }
-const choices=(patch:Partial<IndustryUpdateChoices>={}):IndustryUpdateChoices=>({resources:{guide:'keep',legacy:'skip',extra:'candidate'},roles:{},relations:'keep',entrypoints:'keep',positioning:'candidate',...patch})
+const choices=(patch:Partial<IndustryUpdateChoices>={}):IndustryUpdateChoices=>({resources:{guide:'candidate',legacy:'skip',extra:'candidate'},roles:{},relations:'keep',entrypoints:'keep',positioning:'candidate',...patch})
 const command=(f:Awaited<ReturnType<typeof prepare>>,patch:Record<string,unknown>={})=>({requestId:randomUUID(),loadId:f.load.id,candidateContentId:f.candidate.id,expectedMappingHash:f.load.mappingHash,choices:choices(),...patch})
 const untouched=async(f:Awaited<ReturnType<typeof prepare>>)=>{
  assert.equal((await f.loads.get(f.owner,{loadId:f.load.id})).status,'active')
@@ -132,8 +138,8 @@ test('升级固定计划并建立继任加载：旧加载转 superseded、沿用
  assert.equal(successor.targetVersion,2)
  assert.deepEqual(successor.upgrade,{loadId:f.load.id,templateVersion:'1.0.0',choices:choices(),diffDigest:successor.upgrade!.diffDigest,createdAt:successor.upgrade!.createdAt})
  assert.match(successor.upgrade!.diffDigest,/^[0-9a-f]{64}$/)
- // 沿用项带旧实例身份：未列出选择的 analyst/alerts 默认沿用，显式 keep 的 guide 也沿用，新增的 extra 不沿用。
- assert.equal(successor.items.find(item=>item.localId==='guide')?.carriedFrom,instanceOf(f.load,'guide'))
+ // 员工和连接可沿用；知识采用候选版本，不能沿用旧正文。
+ assert.equal(successor.items.find(item=>item.localId==='guide')?.carriedFrom,undefined)
  assert.equal(successor.items.find(item=>item.localId==='analyst')?.carriedFrom,instanceOf(f.load,'analyst'))
  assert.equal(successor.items.find(item=>item.localId==='alerts')?.carriedFrom,instanceOf(f.load,'alerts'))
  assert.equal(successor.items.find(item=>item.localId==='extra')?.carriedFrom,undefined)
@@ -167,7 +173,7 @@ test('被替代的加载不再接受实例写入，候选版本已在场时不�
  assert.equal((await dataSources.instantiate(f.owner,{requestId:randomUUID(),loadId:successor.id,itemInstanceId:instanceOf(successor,'alerts')})).state,'needs_authorization')
  // 继任加载可以继续往上升级，沿用链逐级记来源实例。
  const third=await content(f.owner,f.market,'1.2.0',{body:'# 第三版手册',legacy:false,extra:true})
- const {successor:latest}=await f.loads.upgrade(f.owner,{requestId:randomUUID(),loadId:successor.id,candidateContentId:third.id,expectedMappingHash:successor.mappingHash,choices:choices({resources:{guide:'keep'}})})
+ const {successor:latest}=await f.loads.upgrade(f.owner,{requestId:randomUUID(),loadId:successor.id,candidateContentId:third.id,expectedMappingHash:successor.mappingHash,choices:choices({resources:{guide:'candidate'}})})
  assert.equal(latest.upgrade?.loadId,successor.id)
  assert.equal(latest.upgrade?.templateVersion,'1.1.0')
  assert.equal(latest.items.find(item=>item.localId==='extra')?.carriedFrom,instanceOf(successor,'extra'))
@@ -695,4 +701,109 @@ test('卸载重装沿用原员工身份，旧请求仍返回卸载历史，反�
  const third=await f.loads.create(f.owner,{...reload,requestId:randomUUID(),target:{...reload.target,expectedVersion:result.space.version}})
  assert.equal(third.items.find(item=>item.localId==='analyst')!.carriedFrom,instanceOf(f.load,'analyst'))
  assert.deepEqual((await pool.query('select id from teloa_roles where owner_id=$1 order by id',[f.owner])).rows,before)
+})
+
+
+test('知识导入权威链路：覆盖确认绑定版本，keep-local员工采用candidate正文并从v1重新编辑',{timeout:60_000},async t=>{
+ await initializeResources(pool);await initializeIndustryKnowledge(pool)
+ const root=await mkdtemp(join(tmpdir(),'teloa-import-knowledge-'));t.after(()=>rm(root,{recursive:true,force:true}))
+ const f=await prepare(),actor={ownerId:f.owner,kind:'human' as const,scopeIds:[f.load.scope]},knowledge=new MarkdownKnowledgeService(pool,root,'default',identity),catalog=combineReferenceCatalogs(createPublicReferenceCatalog(),new IndustryReferenceCatalog(pool,f.market,f.loads),new MarkdownKnowledgeCatalog(knowledge)),resources=new ResourceService(pool,catalog,identity),industryKnowledge=new IndustryKnowledgeService(pool,identity,f.loads,catalog,resources),employees=new EmployeeKnowledgeService(pool,knowledge,resources,identity)
+ const original=await industryKnowledge.instantiate(f.owner,{requestId:randomUUID(),loadId:f.load.id,itemInstanceId:instanceOf(f.load,'guide')});assert.ok(original.resource)
+ const roleService=new RoleService(pool,identity),industryRoles=new IndustryRoleService(pool,identity,f.loads,new IndustryRoleSource(f.market,f.loads),industryKnowledge,roleService),created=await industryRoles.instantiate(f.owner,{requestId:randomUUID(),loadId:f.load.id,itemInstanceId:instanceOf(f.load,'analyst')});assert.ok(created.role)
+ const role=created.role!,target={roleId:role.id,resourceId:original.resource.id},before=await employees.read(actor,target),edit=await employees.revise(actor,{...target,requestId:randomUUID(),expectedBodyVersion:before.bodyVersion,expectedContentHash:before.contentHash,markdown:'# 本地手册覆盖'})
+ const request=command(f,{choices:choices({roles:{[instanceOf(f.load,'analyst')]:'keep-local'}})})
+ await assert.rejects(f.loads.upgrade(f.owner,request),(error:unknown)=>error instanceof Error&&'details'in error&&(error.details as {reason:string}).reason==='employee-knowledge-reset-required')
+ const first=await f.loads.previewKnowledgeReset(f.owner,{loadId:f.load.id,expectedMappingHash:f.load.mappingHash,candidateContentId:f.candidate.id,candidateContentHash:f.candidate.hash});assert.equal(first.documents.length,1)
+ const changed=await employees.revise(actor,{...target,requestId:randomUUID(),expectedBodyVersion:edit.document.bodyVersion,expectedContentHash:edit.document.contentHash,markdown:'# 预览之后又修改'})
+ await assert.rejects(f.loads.upgrade(f.owner,{...request,knowledgeResetDigest:first.digest}),{code:'teloa/version-conflict'})
+ const confirmation=await f.loads.previewKnowledgeReset(f.owner,{loadId:f.load.id,expectedMappingHash:f.load.mappingHash,candidateContentId:f.candidate.id,candidateContentHash:f.candidate.hash})
+ const result=await f.loads.upgrade(f.owner,{...request,knowledgeResetDigest:confirmation.digest})
+ assert.equal((await employees.read(actor,target)).bodyVersion,1,'待接入期间旧原文仍可查看')
+ await assert.rejects(employees.revise(actor,{...target,requestId:randomUUID(),expectedBodyVersion:1,expectedContentHash:before.contentHash,markdown:'不能在导入窗口重建旧版副本'}),error=>error instanceof WorkError&&error.details?.reason==='employee-knowledge-import-pending')
+ const nextRequest={requestId:randomUUID(),loadId:result.successor.id,itemInstanceId:instanceOf(result.successor,'guide')},apply=resources.apply.bind(resources)
+ resources.apply=async()=>{throw new WorkError('teloa/storage-unavailable','合成接入暂时不可用')}
+ const pending=await industryKnowledge.instantiate(f.owner,nextRequest);assert.equal(pending.state,'pending')
+ assert.equal((await pool.query("select state from teloa_employee_knowledge_import_transitions where owner_id=$1 and role_id=$2",[f.owner,role.id])).rows[0].state,'pending')
+ resources.apply=apply
+ const next=await industryKnowledge.instantiate(f.owner,nextRequest);assert.ok(next.resource)
+ assert.equal((await pool.query("select state from teloa_employee_knowledge_import_transitions where owner_id=$1 and role_id=$2",[f.owner,role.id])).rows[0].state,'completed')
+ const imported=await employees.read(actor,target);assert.equal(imported.markdown,'# 新手册');assert.equal(imported.bodyVersion,1);assert.equal(imported.resource.id,next.resource.id);assert.equal((await roleService.get(f.owner,role.id))!.version,role.version);assert.deepEqual((await employees.versions(actor,target)).map(row=>row.version),[1])
+ await assert.rejects(knowledge.readVersion(actor,{knowledgeId:changed.document.knowledgeId,version:changed.document.bodyVersion}),{code:'teloa/not-found'})
+ const editedAgain=await employees.revise(actor,{...target,requestId:randomUUID(),expectedBodyVersion:1,expectedContentHash:imported.contentHash,markdown:'# 再次本地编辑'});assert.equal(editedAgain.document.bodyVersion,2)
+ const reloadPlan=await f.loads.previewKnowledgeReset(f.owner,{loadId:result.successor.id,expectedMappingHash:result.successor.mappingHash})
+ const reimport={requestId:randomUUID(),contentId:f.candidate.id,contentHash:f.candidate.hash,target:{kind:'existing',spaceId:result.successor.space.id,expectedVersion:result.successor.space.version},knowledgeResetDigest:reloadPlan.digest}
+ const same=await f.loads.create(f.owner,reimport);assert.equal(same.id,result.successor.id)
+ const reset=await employees.read(actor,target);assert.equal(reset.markdown,'# 新手册');assert.equal(reset.bodyVersion,1);assert.deepEqual((await employees.versions(actor,target)).map(row=>row.version),[1])
+ const postResetEdit=await employees.revise(actor,{...target,requestId:randomUUID(),expectedBodyVersion:1,expectedContentHash:reset.contentHash,markdown:'# 导入后本人继续编辑'})
+ await f.loads.create(f.owner,reimport);assert.equal((await employees.read(actor,target)).contentHash,postResetEdit.document.contentHash,'导入成功请求重放不应再次清除后续编辑')
+ // 新版尚未接入时卸载，事务取消 pending；用户仍可查看、维护原独立资料。
+ const g=await prepare(),gActor={ownerId:g.owner,kind:'human' as const,scopeIds:[g.load.scope]},gKnowledge=new IndustryKnowledgeService(pool,identity,g.loads,catalog,resources)
+ const gOriginal=await gKnowledge.instantiate(g.owner,{requestId:randomUUID(),loadId:g.load.id,itemInstanceId:instanceOf(g.load,'guide')});assert.ok(gOriginal.resource)
+ const gRoles=new IndustryRoleService(pool,identity,g.loads,new IndustryRoleSource(g.market,g.loads),gKnowledge,roleService),gCreated=await gRoles.instantiate(g.owner,{requestId:randomUUID(),loadId:g.load.id,itemInstanceId:instanceOf(g.load,'analyst')});assert.ok(gCreated.role)
+ const gResult=await g.loads.upgrade(g.owner,command(g,{choices:choices({roles:{[instanceOf(g.load,'analyst')]:'keep-local'}})}))
+ assert.equal((await pool.query("select state from teloa_employee_knowledge_import_transitions where owner_id=$1",[g.owner])).rows[0].state,'pending')
+ await g.loads.unload(g.owner,{requestId:randomUUID(),loadId:gResult.successor.id,expectedMappingHash:gResult.successor.mappingHash})
+ assert.equal((await pool.query("select state from teloa_employee_knowledge_import_transitions where owner_id=$1",[g.owner])).rows[0].state,'cancelled')
+ const gTarget={roleId:gCreated.role.id,resourceId:gOriginal.resource.id},gCurrent=await employees.read(gActor,gTarget)
+ assert.equal((await employees.revise(gActor,{...gTarget,requestId:randomUUID(),expectedBodyVersion:1,expectedContentHash:gCurrent.contentHash,markdown:'卸载后仍可维护原知识'})).document.bodyVersion,2)
+})
+
+test('知识未变化而其他资源升级时沿用原基线，清空本地历史后不产生无法完成的pending',{timeout:60_000},async t=>{
+ await initializeResources(pool);await initializeIndustryKnowledge(pool)
+ const root=await mkdtemp(join(tmpdir(),'teloa-unchanged-knowledge-'));t.after(()=>rm(root,{recursive:true,force:true}))
+ const f=await prepare(),actor={ownerId:f.owner,kind:'human' as const,scopeIds:[f.load.scope]},knowledge=new MarkdownKnowledgeService(pool,root,'default',identity),catalog=combineReferenceCatalogs(createPublicReferenceCatalog(),new IndustryReferenceCatalog(pool,f.market,f.loads),new MarkdownKnowledgeCatalog(knowledge)),resources=new ResourceService(pool,catalog,identity),industryKnowledge=new IndustryKnowledgeService(pool,identity,f.loads,catalog,resources),employees=new EmployeeKnowledgeService(pool,knowledge,resources,identity)
+ const original=await industryKnowledge.instantiate(f.owner,{requestId:randomUUID(),loadId:f.load.id,itemInstanceId:instanceOf(f.load,'guide')});assert.ok(original.resource)
+ const roles=new IndustryRoleService(pool,identity,f.loads,new IndustryRoleSource(f.market,f.loads),industryKnowledge,new RoleService(pool,identity)),created=await roles.instantiate(f.owner,{requestId:randomUUID(),loadId:f.load.id,itemInstanceId:instanceOf(f.load,'analyst')});assert.ok(created.role)
+ const target={roleId:created.role.id,resourceId:original.resource.id},before=await employees.read(actor,target)
+ await employees.revise(actor,{...target,requestId:randomUUID(),expectedBodyVersion:1,expectedContentHash:before.contentHash,markdown:'需被导入清空的本地历史'})
+ const candidate=await content(f.owner,f.market,'1.2.0',{body:'# 原手册',legacy:false,extra:true}),preview=await f.loads.previewKnowledgeReset(f.owner,{loadId:f.load.id,expectedMappingHash:f.load.mappingHash,candidateContentId:candidate.id,candidateContentHash:candidate.hash})
+ const upgraded=await f.loads.upgrade(f.owner,command(f,{candidateContentId:candidate.id,choices:choices({resources:{legacy:'skip',extra:'candidate'}}),knowledgeResetDigest:preview.digest}))
+ assert.equal(upgraded.successor.items.find(item=>item.localId==='guide')?.carriedFrom,instanceOf(f.load,'guide'))
+ assert.equal((await pool.query("select count(*)::int n from teloa_employee_knowledge_import_transitions where owner_id=$1 and state='pending'",[f.owner])).rows[0].n,0)
+ const listed=await employees.list(actor,{roleId:created.role.id,requireReady:true});assert.equal(listed[0]?.bodyVersion,1);assert.equal(listed[0]?.resource.id,original.resource.id)
+ assert.equal((await employees.read(actor,target)).markdown,'# 原手册');assert.deepEqual((await employees.versions(actor,target)).map(row=>row.version),[1])
+})
+
+test('candidate删除员工知识时未来列表与解析移除旧文，重新引入同localId后从新基线v1恢复',{timeout:60_000},async t=>{
+ await initializeResources(pool);await initializeIndustryKnowledge(pool)
+ const root=await mkdtemp(join(tmpdir(),'teloa-removed-knowledge-'));t.after(()=>rm(root,{recursive:true,force:true}))
+ const f=await prepare(),actor={ownerId:f.owner,kind:'human' as const,scopeIds:[f.load.scope]},knowledge=new MarkdownKnowledgeService(pool,root,'default',identity),catalog=combineReferenceCatalogs(createPublicReferenceCatalog(),new IndustryReferenceCatalog(pool,f.market,f.loads),new MarkdownKnowledgeCatalog(knowledge)),resources=new ResourceService(pool,catalog,identity),industryKnowledge=new IndustryKnowledgeService(pool,identity,f.loads,catalog,resources),employees=new EmployeeKnowledgeService(pool,knowledge,resources,identity)
+ const original=await industryKnowledge.instantiate(f.owner,{requestId:randomUUID(),loadId:f.load.id,itemInstanceId:instanceOf(f.load,'guide')});assert.ok(original.resource)
+ const roleService=new RoleService(pool,identity),roles=new IndustryRoleService(pool,identity,f.loads,new IndustryRoleSource(f.market,f.loads),industryKnowledge,roleService),created=await roles.instantiate(f.owner,{requestId:randomUUID(),loadId:f.load.id,itemInstanceId:instanceOf(f.load,'analyst')});assert.ok(created.role)
+ const base=manifest('1.3.0',{body:'',legacy:false,extra:false}),removedManifest={...base,resources:base.resources.filter(item=>item.id!=='guide'),relations:[]},removed=await f.market.import({ownerId:f.owner,kind:'human'},{kind:'industry-template',requestId:randomUUID(),source:{kind:'upload',name:'删除知识的包'},manifestPath:'teloa.json',files:files('',{legacy:false,extra:false},removedManifest as ReturnType<typeof manifest>),references:[]})
+ const upgraded=await f.loads.upgrade(f.owner,command(f,{candidateContentId:removed.content.id,choices:choices({resources:{guide:'skip',legacy:'skip'},relations:'candidate'})}))
+ assert.deepEqual(await employees.list(actor,{roleId:created.role.id,requireReady:true}),[])
+ await assert.rejects(employees.read(actor,{roleId:created.role.id,resourceId:original.resource.id}),{code:'teloa/not-found'})
+ assert.ok(!(await resources.list(actor)).resources.some(row=>row.id===original.resource!.id))
+ const role=await roleService.get(f.owner,created.role.id);assert.equal(role!.version,created.role.version);assert.deepEqual(role!.knowledge,[original.resource.id],'原控制身份保留，内容可用性由有效引用解析')
+ const reintroduced=await content(f.owner,f.market,'1.4.0',{body:'# 重新引入的手册',legacy:false,extra:false}),next=await f.loads.upgrade(f.owner,{requestId:randomUUID(),loadId:upgraded.successor.id,candidateContentId:reintroduced.id,expectedMappingHash:upgraded.successor.mappingHash,choices:choices({resources:{guide:'candidate'},relations:'candidate'})})
+ await assert.rejects(employees.list(actor,{roleId:created.role.id,requireReady:true}),error=>error instanceof WorkError&&error.details?.reason==='employee-knowledge-import-pending')
+ const restored=await industryKnowledge.instantiate(f.owner,{requestId:randomUUID(),loadId:next.successor.id,itemInstanceId:instanceOf(next.successor,'guide')});assert.ok(restored.resource)
+ const listed=await employees.list(actor,{roleId:created.role.id,requireReady:true});assert.equal(listed[0]?.bodyVersion,1);assert.equal(listed[0]?.resource.id,restored.resource.id)
+ assert.equal((await employees.read(actor,{roleId:created.role.id,resourceId:original.resource.id})).markdown,'# 重新引入的手册')
+ const currentRole=(await roleService.get(f.owner,created.role.id))!,{id:_id,ownerId:_owner,version:_version,state:_state,createdAt:_createdAt,updatedAt:_updatedAt,...fields}=currentRole
+ const editedRole=await roleService.edit(f.owner,{roleId:currentRole.id,expectedVersion:currentRole.version,expectedProfile:{name:currentRole.name},fields:{...fields,duty:'重新引入资料后仍可维护职责',responsibility:fields.responsibility??testRoleResponsibility}})
+ assert.deepEqual(editedRole.knowledge,[original.resource.id]);assert.equal((await employees.list(actor,{roleId:created.role.id,requireReady:true}))[0]?.resource.id,restored.resource.id)
+ await assert.rejects(roleService.create(f.owner,{requestId:randomUUID(),fields:{...fields,responsibility:fields.responsibility??testRoleResponsibility}}),{code:'teloa/invalid-input'})
+ await pool.query("update teloa_roles set state='paused' where owner_id=$1 and id=$2",[f.owner,editedRole.id])
+ const withoutKnowledge=await roleService.edit(f.owner,{roleId:editedRole.id,expectedVersion:editedRole.version,expectedProfile:{name:editedRole.name},fields:{...fields,knowledge:[],responsibility:fields.responsibility??testRoleResponsibility}})
+ await assert.rejects(roleService.edit(f.owner,{roleId:withoutKnowledge.id,expectedVersion:withoutKnowledge.version,expectedProfile:{name:withoutKnowledge.name},fields:{...fields,responsibility:fields.responsibility??testRoleResponsibility}}),{code:'teloa/invalid-input'},'已从当前员工定义移除的旧origin不能借历史alias作为新增引用洗白')
+})
+
+test('原包首次COW复用v1资源的历史回读与恢复通过真实PG、宿主校验和contract',{timeout:60_000},async t=>{
+ await initializeResources(pool);await initializeIndustryKnowledge(pool)
+ const root=await mkdtemp(join(tmpdir(),'teloa-cow-history-contract-'));t.after(()=>rm(root,{recursive:true,force:true}))
+ const f=await prepare(),actor={ownerId:f.owner,kind:'human' as const,scopeIds:[f.load.scope]},knowledge=new MarkdownKnowledgeService(pool,root,'default',identity),catalog=combineReferenceCatalogs(createPublicReferenceCatalog(),new IndustryReferenceCatalog(pool,f.market,f.loads),new MarkdownKnowledgeCatalog(knowledge)),resources=new ResourceService(pool,catalog,identity),industryKnowledge=new IndustryKnowledgeService(pool,identity,f.loads,catalog,resources),employees=new EmployeeKnowledgeService(pool,knowledge,resources,identity)
+ const original=await industryKnowledge.instantiate(f.owner,{requestId:randomUUID(),loadId:f.load.id,itemInstanceId:instanceOf(f.load,'guide')});assert.ok(original.resource)
+ const roles=new IndustryRoleService(pool,identity,f.loads,new IndustryRoleSource(f.market,f.loads),industryKnowledge,new RoleService(pool,identity)),created=await roles.instantiate(f.owner,{requestId:randomUUID(),loadId:f.load.id,itemInstanceId:instanceOf(f.load,'analyst')});assert.ok(created.role)
+ const handle=createEmployeeKnowledgeHandler({service:async()=>employees,actor:async()=>actor}),api=createEmployeeKnowledgeApi(handle),target={roleId:created.role.id,resourceId:original.resource.id},before=await handle('employee-knowledge/read',target);assert.ok(isEmployeeKnowledgeContent(before))
+ const revised=await handle('employee-knowledge/revise',{...target,requestId:randomUUID(),expectedBodyVersion:1,expectedContentHash:before.contentHash,markdown:'# 本员工修改后的正文'});assert.ok(isEmployeeKnowledgeRevision(revised));assert.equal(revised.document.bodyVersion,2)
+ const row=(await pool.query('select resource_id from teloa_employee_knowledge_versions where owner_id=$1 and role_id=$2 and body_version=1',[f.owner,created.role.id])).rows[0]
+ assert.equal(row.resource_id,original.resource.id,'覆盖既有v1原resource存储形式，不以迁移数据绕过契约')
+ const baseline=await api.read({...target,version:1});assert.ok(isEmployeeKnowledgeContent(baseline));assert.equal(baseline.markdown,'# 原手册');assert.equal(baseline.resource.id,original.resource.id);assert.equal(baseline.editing,'employee-copy');assert.equal(baseline.knowledgeId,revised.document.knowledgeId);assert.equal(baseline.resource.sourceId,baseline.origin.sourceId);assert.equal(baseline.contentHash,baseline.origin.sourceVersion)
+ const restore={...target,requestId:randomUUID(),expectedBodyVersion:2,expectedContentHash:revised.document.contentHash,restoreVersion:1},restored=await api.restore(restore);assert.ok(isEmployeeKnowledgeRevision(restored));assert.equal(restored.document.bodyVersion,3);assert.equal(restored.document.markdown,baseline.markdown);assert.equal(restored.document.resource.sourceId,'knowledge_'+restored.document.knowledgeId)
+ assert.deepEqual(await api.restore(restore),restored)
+ assert.ok(isEmployeeKnowledgeContent(await api.read({...target,version:1})))
+ assert.ok(isEmployeeKnowledgeContent(await api.read({...target,version:2})))
+ assert.equal((await resources.getResource(actor,{resourceId:original.resource.id})).sourceVersion,before.contentHash)
 })

@@ -1,5 +1,7 @@
 import {WorkError,type KnowledgeItem,type KnowledgeVersion,type KnowledgeVersionSummary} from '@teloa/contract'
 import type {ResourceActor,ResourceSourceCatalog,ResourceSourceContext} from './resources.ts'
+import type {PoolClient} from 'pg'
+import type {FixedRunKnowledgeRead} from './fixed-run-knowledge-read.ts'
 
 const pattern=/^knowledge_([0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$/i
 const forbidden=()=>new WorkError('teloa/forbidden','当前主体、工作空间或范围无权读取此工作资料。')
@@ -9,6 +11,7 @@ type KnowledgePort={
  list(actor:ResourceActor,input:unknown):Promise<KnowledgeItem[]>
  listVersions(actor:ResourceActor,input:unknown):Promise<KnowledgeVersionSummary[]>
  readVersion(actor:ResourceActor,input:unknown):Promise<KnowledgeVersion>
+ readHashInTransaction?(client:PoolClient,actor:ResourceActor,knowledgeId:string,contentHash:string,fixed?:{capability?:FixedRunKnowledgeRead;resourceId?:string}):Promise<{item:KnowledgeItem;version:KnowledgeVersion}>
 }
 
 export class MarkdownKnowledgeCatalog implements ResourceSourceCatalog{
@@ -44,6 +47,11 @@ export class MarkdownKnowledgeCatalog implements ResourceSourceCatalog{
  }
  async read(id:string,version:string,context?:ResourceSourceContext){
   const actor=this.actor(context),match=pattern.exec(id);if(!match)throw new WorkError('teloa/source-unavailable','工作资料知识来源身份不存在。')
+  if(context?.client&&this.knowledge.readHashInTransaction){
+   const {item,version:fixed}=await this.knowledge.readHashInTransaction(context.client,actor,match[1]!.toLowerCase(),version,{...(context.fixedKnowledgeRead?{capability:context.fixedKnowledgeRead}:{}),...(context.resourceId?{resourceId:context.resourceId}:{})})
+   this.allowed(item,context)
+   return {schema:'teloa.reference/v1' as const,id,title:item.title,source:`knowledge:${item.id}@${fixed.version}`,version:fixed.contentHash,bytes:fixed.bytes,text:fixed.markdown}
+  }
   const items=await this.knowledge.list(actor,{}),item=items.find(row=>row.id.toLowerCase()===match[1]!.toLowerCase())
   if(!item)throw forbidden();this.allowed(item,context!)
   const versions=await this.knowledge.listVersions(actor,{knowledgeId:item.id}),summary=versions.find(row=>row.contentHash===version)

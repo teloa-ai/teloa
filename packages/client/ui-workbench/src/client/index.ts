@@ -347,7 +347,7 @@ export async function apply(ctx: Context): Promise<void> {
   const homeContextApi=createHomeContextApi(call,localStorage)
   const isHomeAssistantContext=async(id:string,signal?:AbortSignal)=>{const value=await call('work-context/eligibility',{sessionId:id},signal);if(!value||typeof value!=='object'||!('sessionId'in value)||value.sessionId!==id||!('eligible'in value)||typeof value.eligible!=='boolean')throw Error('会话身份核对失败。');return value.eligible}
   const localRetrievalApi=createLocalRetrievalApi(call)
-  const resourceApi=createResourceApi(async(endpoint,payload,signal)=>{const result=await callWithReceipt(endpoint,payload,signal);if(!result.ok)throw Object.assign(Error(result.error.message),{rejected:true,code:result.error.code});return result.value},journal('teloa.local-material-command/v1'),applicationPresentation.getNavigationStorageScope()===undefined?localStorage:navigationStorage)
+  const resourceApi=createResourceApi(async(endpoint,payload,signal)=>{const result=await callWithReceipt(endpoint,payload,signal);if(!result.ok)throw Object.assign(Error(result.error.message),{rejected:true,code:result.error.code,details:result.error.details});return result.value},journal('teloa.local-material-command/v1'),applicationPresentation.getNavigationStorageScope()===undefined?localStorage:navigationStorage)
   const artifactChanges=createSnapshotStore(0)
   const artifactApi=createArtifactApi(async(method,payload)=>{
     const value=await call(method,payload)

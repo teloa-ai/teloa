@@ -465,6 +465,7 @@ function MarketDetail({item,draft,back,contentReadFailed,...props}:MarketProps&{
         <p>{copy.summary}</p>
         {/* 一键添加就是今天 industryLoads.loadWorkspace 那个按钮：只换文案与位置，展开逻辑一字不改（走既有 IndustryLoadForm 两段式）。 */}
         {(recoveringCurrentLoad||!manifest.resources.every(row=>row.kind==='business-configuration'))&&<button className={css.primaryAction} type="button" disabled={!!managedLoads.length&&!recoveringCurrentLoad} aria-expanded={actionPanel==='load'} onClick={()=>setActionPanel('load')}>{recoveringCurrentLoad?t('market.industry.load.reviewResult'):managedLoads.length?t('market.solution.added'):t('market.industry.loadWorkspace')}{managedLoads.length&&!recoveringCurrentLoad?<Check size={15}/>:<Plus size={15}/>}</button>}
+        {matchingLoads.length>0&&<button type="button" aria-expanded={actionPanel==='load'} onClick={()=>setActionPanel('load')}>{t('employeeKnowledge.reset.reloadPackage')}</button>}
         <SolutionLoadLinks loads={managedLoads} manage={props.manageIndustryLoad}/>
         <button type="button" disabled={busy||targetBlocked||draft?.status==='withdrawn'||draft?.preparation?.status==='pending'} onClick={()=>void prepare(t('market.solution.askFitDraft',{name:copy.title}))}><MessageSquare size={13}/>{t('market.solution.askFit')}</button>
       </header>
@@ -503,7 +504,7 @@ function MarketDetail({item,draft,back,contentReadFailed,...props}:MarketProps&{
             <section className={css.sourceSection} aria-label={t('market.template.sourceRuntimeAria')}><h3>{t('market.template.sourceRuntime.title')}</h3><dl><dt>{t('market.catalog.source')}</dt><dd>{sourceLabel(item.source,t)}</dd><dt>{t('market.template.author')}</dt><dd>{copy.author}</dd><dt>{t('market.template.license')}</dt><dd>{copy.license}</dd><dt>{t('market.template.runtimeOwnership')}</dt><dd>{t('market.template.runtimeOwnershipDescription')}</dd></dl><button type="button" onClick={props.nativeSettings}>{t('market.template.connectionsRuntime')}</button></section>
             <section className={css.provenanceGroup} aria-label={t('market.template.governance.title')}><h3>{t('market.template.governance.title')}</h3><small>{t('market.template.governance.description')}</small>
               <IndustryReferences item={item} items={props.state.items} save={props.saveResolved}/>
-              <IndustryUpdatePreview item={item} items={props.state.items} spaces={props.spaces} {...props.industryReview}/>
+              <IndustryUpdatePreview item={item} items={props.state.items} spaces={props.spaces} {...props.industryReview} {...(props.contentApi?{hydrate:props.contentApi.hydrate}:{})}/>
               <IndustryExport item={item}/>
             </section>
             {item.raw&&<section className={css.sourceSection}><h3>{t('market.template.manifestValidation')}</h3><details><summary>{t('market.template.viewRaw')}</summary><pre>{item.raw}</pre><small>SHA-256：{item.hash}</small></details><button type="button" onClick={exportDefinition}>{t('market.template.exportDefinition')}</button></section>}

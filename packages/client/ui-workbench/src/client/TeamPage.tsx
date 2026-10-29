@@ -571,7 +571,7 @@ export function RoleDetail({ localRetrievalApi,openRetrieval,twinDrafts,employee
               </>}
               {section === 'reading' && <>
                 <p>{role.dataScope}</p>
-                <RoleKnowledge compact api={resourceApi} ids={role.knowledge} scopes={role.scopes} retrieval={localRetrievalApi} openRetrieval={openRetrieval??resources}/>
+                <RoleKnowledge compact role={role.storage==='persistent'&&!retired?{id:role.id,name:role.name}:undefined} api={resourceApi} ids={role.knowledge} scopes={role.scopes} retrieval={localRetrievalApi} openRetrieval={openRetrieval??resources}/>
               </>}
               {section === 'limit' && <>
                 {role.responsibility && <dl className={teamCss.responsibilities}>{responsibilityGroups(role.responsibility).filter(group => (['confirmationPoints', 'escalationRules'] as string[]).includes(group.key)).map(group => <div key={group.key}><dt>{t(group.labelKey)}</dt><dd>{group.items.length ? <ul>{group.items.map(item => <li key={item}>{item}</li>)}</ul> : t('team.detail.notSet')}</dd></div>)}</dl>}

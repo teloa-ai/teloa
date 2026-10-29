@@ -69,6 +69,7 @@ export class KnowledgeResourceService{
   return (await this.knowledge.restoreWithTransaction(actor,input,(client,saved,replayed)=>this.standalone(client,actor,saved,replayed))).knowledge
  }
  private async project(client:PoolClient,actor:ResourceActor,requestId:string,spec:CommandSpec,saved:PasteKnowledge):Promise<KnowledgeResourceRevision>{
+  if((await client.query('select 1 from teloa_employee_knowledge_bindings where owner_id=$1 and knowledge_id=$2',[actor.ownerId,spec.knowledgeId])).rowCount)throw new WorkError('teloa/conflict','员工独立知识须从该员工的知识编辑入口修订或恢复。')
   await client.query('select pg_advisory_xact_lock(hashtextextended($1,0))',[JSON.stringify(['knowledge-resource-revision',actor.ownerId,requestId])])
   const prior=(await client.query('select * from teloa_knowledge_resource_revisions where owner_id=$1 and request_id=$2 for update',[actor.ownerId,requestId])).rows[0] as Record<string,unknown>|undefined
   if(prior){

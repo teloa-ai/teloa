@@ -6,6 +6,7 @@ import type {MarketTargetCheck} from '../market-target.js'
 export type WorkErrorLike = Readonly<{code?: unknown; message?: unknown; check?: unknown}>
 
 const errorKeys: Readonly<Record<string, MessageKey>> = {
+  'teloa/complete-business-cross-scope':'business.complete.crossScope',
   'teloa/role-create-pending':'error.roleCreatePending',
   'teloa/industry-role-pending':'error.industryRolePending',
   'teloa/role-create-busy':'error.roleCreateBusy',

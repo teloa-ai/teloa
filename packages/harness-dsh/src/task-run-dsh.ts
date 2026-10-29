@@ -306,7 +306,7 @@ export function taskKnowledgeAuthorization(ownerId:string,target:TaskExecutionSc
  // 退回 `[target.scope]`——最坏也只是改前的行为，不能让「岗位声明得多」把通用任务从能跑变成 forbidden。
  const union=target.scope==='general'&&roleScopes?.length?[...new Set(['general',...roleScopes])]:[target.scope]
  const scopeIds=union.length>16||union.some(scope=>scope.length>64)?[target.scope]:union
- return {actor:{ownerId,kind:'agent' as const,scopeIds:[...scopeIds]},targetScopes:[...scopeIds],...(target.knowledgeIds===undefined?{}:{knowledgeIds:target.knowledgeIds})}
+ return {actor:{ownerId,kind:'agent' as const,scopeIds:[...scopeIds]},targetScopes:[...scopeIds],...(target.knowledgeIds===undefined?{}:{knowledgeIds:target.knowledgeIds}),...(target.fixedKnowledgeRead===undefined?{}:{fixedKnowledgeRead:target.fixedKnowledgeRead})}
 }
 
 export async function resolveDshTaskPreset(ctx:Context,agentPresetId:string|undefined,signal:AbortSignal):Promise<string>{

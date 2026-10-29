@@ -1,14 +1,15 @@
 import {industryResourceModelDependencies,readIndustryModelObservations,type IndustryModelObservation,type IndustryModelDependency,readIndustryUpdateChoices,type IndustryUpdateChoices} from '@teloa/contract'
 import {recoveryStorageError} from './recovery-error.ts'
 import {industryResourceKinds} from './industry-manifest.ts'
+import {readKnowledgeResetPreview} from './knowledge-reset.ts'
 type Call=(method:string,payload:unknown)=>Promise<unknown>
 export type IndustryLoadStatus='active'|'unloaded'|'superseded'
 /** 继任加载的升级血缘：被替代的加载、它的模板版本，以及当时固定下来的升级计划。 */
 export type IndustryLoadUpgrade={loadId:string;templateVersion:string;choices:IndustryUpdateChoices;diffDigest:string;createdAt:string}
 export type IndustryLoadRecord={id:string;ownerId:string;contentId:string;contentHash:string;templateId:string;templateVersion:string;templateTitle:string;domain:string;scope:string;description:string;targetVersion:number;space:{id:string;name:string;version:number;scope:string};items:Array<{localId:string;instanceId:string;kind:typeof kinds[number];title:string;version:string;required:boolean;status:'pending-adapter'|'skipped'|'instantiated'|'active'|'detached';carriedFrom?:string;modelDependencies?:IndustryModelDependency[]}>;relations:Array<{kind:string;from:string;to:string}>;entrypoints:string[];createdAt:string;mappingHash:string;status:IndustryLoadStatus;unloadedAt?:string;upgrade?:IndustryLoadUpgrade}
-export type IndustryLoadCreateInput={requestId:string;contentId:string;contentHash:string;target:{kind:'new';spaceId:string;name:string}|{kind:'existing';spaceId:string;expectedVersion:number}}
+export type IndustryLoadCreateInput={requestId:string;contentId:string;contentHash:string;target:{kind:'new';spaceId:string;name:string}|{kind:'existing';spaceId:string;expectedVersion:number};knowledgeResetDigest?:string}
 export type IndustryLoadUnloadInput={requestId:string;loadId:string;expectedMappingHash:string}
-export type IndustryLoadUpgradeInput={requestId:string;loadId:string;candidateContentId:string;expectedMappingHash:string;choices:IndustryUpdateChoices}
+export type IndustryLoadUpgradeInput={requestId:string;loadId:string;candidateContentId:string;expectedMappingHash:string;choices:IndustryUpdateChoices;knowledgeResetDigest?:string}
 export type IndustryLoadUpgradeResult={superseded:IndustryLoadRecord;successor:IndustryLoadRecord}
 /** 卸载被拒绝时宿主回报的在途事实，界面据此列出先要收尾的执行。 */
 export type IndustryLoadUnloadBlocker={kind:'plan-occurrence'|'task-run';id:string}
@@ -26,10 +27,12 @@ const exact=(value:unknown,keys:readonly string[])=>{if(!value||typeof value!=='
 
 function request(value:unknown):IndustryLoadCreateInput{
  try{
-  const row=exact(value,['requestId','contentId','contentHash','target']),target=exact(row.target,['kind','spaceId','name','expectedVersion'])
+  const row=exact(value,['requestId','contentId','contentHash','target','knowledgeResetDigest']),target=exact(row.target,['kind','spaceId','name','expectedVersion'])
+  if(row.knowledgeResetDigest!==undefined&&!hash(row.knowledgeResetDigest))throw Error()
+  const reset=row.knowledgeResetDigest===undefined?{}:{knowledgeResetDigest:row.knowledgeResetDigest as string}
   if(!uuid(row.requestId)||!uuid(row.contentId)||!hash(row.contentHash)||!uuid(target.spaceId))throw Error()
-  if(target.kind==='new'){exact(target,['kind','spaceId','name']);if(!text(target.name,80))throw Error();return {requestId:row.requestId,contentId:row.contentId,contentHash:row.contentHash,target:{kind:'new',spaceId:target.spaceId,name:target.name.trim()}}}
-  if(target.kind==='existing'){exact(target,['kind','spaceId','expectedVersion']);if(!positive(target.expectedVersion))throw Error();return {requestId:row.requestId,contentId:row.contentId,contentHash:row.contentHash,target:{kind:'existing',spaceId:target.spaceId,expectedVersion:target.expectedVersion}}}
+  if(target.kind==='new'){exact(target,['kind','spaceId','name']);if(!text(target.name,80))throw Error();return {requestId:row.requestId,contentId:row.contentId,contentHash:row.contentHash,target:{kind:'new',spaceId:target.spaceId,name:target.name.trim()},...reset}}
+  if(target.kind==='existing'){exact(target,['kind','spaceId','expectedVersion']);if(!positive(target.expectedVersion))throw Error();return {requestId:row.requestId,contentId:row.contentId,contentHash:row.contentHash,target:{kind:'existing',spaceId:target.spaceId,expectedVersion:target.expectedVersion},...reset}}
   throw Error()
  }catch{throw Error('行业模板加载请求格式不正确。')}
 }
@@ -44,9 +47,10 @@ function unloadRequest(value:unknown):IndustryLoadUnloadInput{
 
 function upgradeRequest(value:unknown):IndustryLoadUpgradeInput{
  try{
-  const row=exact(value,['requestId','loadId','candidateContentId','expectedMappingHash','choices'])
+  const row=exact(value,['requestId','loadId','candidateContentId','expectedMappingHash','choices','knowledgeResetDigest'])
+  if(row.knowledgeResetDigest!==undefined&&!hash(row.knowledgeResetDigest))throw Error()
   if(!uuid(row.requestId)||!uuid(row.loadId)||!uuid(row.candidateContentId)||!hash(row.expectedMappingHash))throw Error()
-  return {requestId:row.requestId,loadId:row.loadId,candidateContentId:row.candidateContentId,expectedMappingHash:row.expectedMappingHash,choices:readIndustryUpdateChoices(row.choices)}
+  return {requestId:row.requestId,loadId:row.loadId,candidateContentId:row.candidateContentId,expectedMappingHash:row.expectedMappingHash,choices:readIndustryUpdateChoices(row.choices),...(row.knowledgeResetDigest===undefined?{}:{knowledgeResetDigest:row.knowledgeResetDigest as string})}
  }catch{throw Error('行业模板升级请求格式不正确。')}
 }
 
@@ -137,6 +141,7 @@ export function createIndustryLoadApi(call:Call,journal?:IndustryLoadJournal,unl
  try{const raw=upgradeJournal?.read();if(raw){if(raw.length>3000)throw Error();const saved=exact(JSON.parse(raw),['schema','request']);if(saved.schema!=='teloa.industry-load-upgrade/v1')throw Error();upgradePending=upgradeRequest(saved.request)}}catch{upgradeRecoveryError=recoveryStorageError()}
  const sendUpgrade=async()=>{if(upgradeRecoveryError)throw upgradeRecoveryError;if(!upgradePending)throw Error('没有待核对的行业模板升级请求。');if(upgradeBusy)throw Error('行业模板升级正在核对。');const input=upgradePending;upgradeBusy=true;try{upgradeJournal?.write(JSON.stringify({schema:'teloa.industry-load-upgrade/v1',request:input}));const response=exact(await call('industry-loads/upgrade',input),['superseded','successor']);const result={superseded:record(response.superseded),successor:record(response.successor)};if(result.superseded.id!==input.loadId||result.superseded.status!=='superseded'||result.successor.status!=='active'||result.successor.contentId!==input.candidateContentId||result.successor.upgrade?.loadId!==input.loadId)throw Error('行业模板升级响应与原请求不一致。');upgradeJournal?.clear();upgradePending=undefined;return result}catch(error){if(error&&typeof error==='object'&&'rejected' in error&&error.rejected===true&&'code' in error&&['teloa/invalid-input','teloa/forbidden','teloa/conflict','teloa/version-conflict','teloa/source-unavailable'].includes(String(error.code))){upgradeJournal?.clear();upgradePending=undefined}throw error}finally{upgradeBusy=false}}
  return {
+  async previewKnowledgeReset(input:{loadId:string;expectedMappingHash:string;candidateContentId?:string;candidateContentHash?:string}){if(!uuid(input.loadId)||!hash(input.expectedMappingHash)||input.candidateContentId!==undefined&&(!uuid(input.candidateContentId)||!hash(input.candidateContentHash))||input.candidateContentHash!==undefined&&!input.candidateContentId)throw Error('知识覆盖预览参数不正确。');return readKnowledgeResetPreview(await call('industry-loads/knowledge-reset-preview',input))},
   pending:()=>pending?structuredClone(pending):undefined,
   recoveryMessage:()=>recoveryError,
   /** 丢弃只清本地恢复记录，不通知服务端（规格 §二 D4）。 */

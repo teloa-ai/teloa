@@ -1,3 +1,4 @@
+import {createFixedRunKnowledgeRead,type FixedRunKnowledgeRead} from '../capabilities/fixed-run-knowledge-read.ts'
 import type {OwnerPlanAuthority,OwnerPlanPolicy} from './owner-plan-authority.ts'
 import {artifactRevisionContext} from './artifact-revision-requests.ts'
 import {OwnerWorkAuthority,type OwnerExecutor} from './owner-work-authority.ts'
@@ -28,8 +29,9 @@ import {initializeTaskRunRuntimeLinks} from './task-run-runtime-links.ts'
 import {readRunIndustryContext,runIndustryContextHash,industryContextNotice,isIndustryContextNotice,type RunIndustryContext} from './task-run-industry-context.ts'
 import {readRunPlanContext,readStoredRunPlanReport,runPlanContextHash,planContextNotice,planWorkContextNotice,type RunPlanContext,type CompletedPlanRunProof} from './task-run-plan-context.ts'
 import {initializeRoleToolGrants,readRoleToolGrant} from './role-tool-grants.ts'
-import {isMessageReference,readTaskToolArgumentRules,type TaskToolArgumentRule,type MessageReference} from '@teloa/contract'
+import {isMessageReference,readTaskToolArgumentRules,taskToolArgumentsAllowed,type TaskToolArgumentRule,type MessageReference} from '@teloa/contract'
 import {readRunKnowledge,type RunKnowledge} from './task-run-knowledge.ts'
+import {resolveEmployeeKnowledgeReferences,employeeKnowledgeReferenceOrigins} from '../capabilities/employee-knowledge.ts'
 import {readRunSkills,type RunSkill,type TaskRunSkillDatabase} from './task-run-skills.ts'
 import {initializeTaskRunSkillRefs,verifyTaskRunSkillRefs,writeTaskRunSkillRefs} from './task-run-skill-refs.ts'
 import {initializeTaskRunWebAccess} from './web-access.ts'
@@ -53,7 +55,7 @@ import {groupContextNotice,groupFileHandleLine,groupReferenceNotice,readStoredRu
 import {isStoredGroupTopicNotice,groupTopicMaxMessages,groupTopicTextMaxChars,type RunGroupTopic} from './group-topic.ts'
 
 /** taskVersion 是本次执行固定的任务版本；当前运行状态版本由服务端另行校验。 */
-export type TaskExecutionScope={taskId:string;taskVersion:number;sessionId:string;linkVersion:number;scope:string;groupId?:string|null;memoryViewId?:string|null;knowledgeIds?:readonly string[]|null}
+export type TaskExecutionScope={taskId:string;taskVersion:number;sessionId:string;linkVersion:number;scope:string;groupId?:string|null;memoryViewId?:string|null;knowledgeIds?:readonly string[]|null;fixedKnowledgeRead?:FixedRunKnowledgeRead}
 function executionTarget(task:WorkTask,sessionId:string,linkVersion:number,taskVersion=task.version):TaskExecutionScope{return {taskId:task.id,taskVersion,sessionId,linkVersion,scope:task.scope}}
 type Inspect=(owner:string,sessionId:string)=>Promise<{id:string;sessionId:string;ownerId:string;status:string}>
 export type TaskRunConfigurationFailure={code:string;stage:'model-resolve'|'permission-resolve'|'preset-resolve'|'session-create'|'session-receipt'|'session-inspect';message:string;actualAgentPresetId?:string}
@@ -240,7 +242,7 @@ function read(row:Record<string,unknown>):TaskRun{
  return {id:row.id,taskId:row.task_id,roleId:row.role_id,taskVersion:row.task_version as number,roleVersion:row.role_version as number,linkVersion:row.link_version as number,sessionId:row.session_id,nativeRequestId:row.native_request_id,state:row.state as string,evidence,stopRequestedAt,...(row.flow_id===null||row.flow_id===undefined?{}:{flowId:row.flow_id as string}),...(agentPresetId===undefined?{}:{agentPresetId}),...(modelPolicy?{modelPolicy}:{}),...(modelPolicyOverride?{modelPolicyOverride:true}:{}),...(permissionMode?{permissionMode}:{}),...(configurationError===undefined?{}:{configurationError}),allowedTools,...(roleSnapshot?{roleSnapshot}:{}),...(lineage?{lineage}:{}),...(argumentRules===undefined?{}:{argumentRules}),skills,knowledge,memory,...(groupContext===undefined?{}:{groupContext}),inputText:row.input_text,createdAt:row.created_at.toISOString()}
 }
 /** 只准备真实执行，不在数据库中假启动模型；宿主发送入口尚需接线。 */
-type RoleGrantPolicy={validate:(rules:TaskToolArgumentRule[],knowledge:RunKnowledge[],context:{db:PoolClient;owner:string;role:DigitalRole})=>void|Promise<void>;recheck:(run:TaskRun,target:TaskExecutionScope,context:{db:PoolClient;owner:string;role:DigitalRole})=>Promise<void>}
+type RoleGrantPolicy={narrow?:(rules:TaskToolArgumentRule[],knowledge:RunKnowledge[],context:{db:PoolClient;owner:string;role:DigitalRole})=>Promise<TaskToolArgumentRule[]>;validate:(rules:TaskToolArgumentRule[],knowledge:RunKnowledge[],context:{db:PoolClient;owner:string;role:DigitalRole})=>void|Promise<void>;recheck:(run:TaskRun,target:TaskExecutionScope,context:{db:PoolClient;owner:string;role:DigitalRole})=>Promise<void>}
 export class TaskRunService{
  readonly pool:Pool;readonly identity:{id:()=>string;now:()=>string};readonly inspect:Inspect;private readonly allowedTools:readonly string[];private readonly argumentRules:TaskToolArgumentRule[]|undefined;private readonly roleGrants:RoleGrantPolicy|undefined;private readonly industryContext:((db:PoolClient,owner:string,taskId:string)=>Promise<RunIndustryContext|undefined>)|undefined;private readonly businessContext:((db:PoolClient,owner:string,task:WorkTask,authorization:{roleId:string;allowedTools:readonly string[];argumentRules?:TaskToolArgumentRule[]})=>Promise<RunBusinessContext|undefined>)|undefined;private readonly ownerPlans:OwnerPlanAuthority|undefined;private readonly planContext:((db:PoolClient,owner:string,taskId:string,completion?:CompletedPlanRunProof,includeMethodSource?:boolean)=>Promise<RunPlanContext|undefined>)|undefined;private readonly industrySkills:((db:PoolClient,owner:string,taskId:string,roleId:string)=>Promise<IndustryRunSkillBindings|undefined>)|undefined;private readonly runReservation:((owner:string,sessionId:string)=>Promise<boolean>)|undefined;private readonly roleMemory:((db:PoolClient,owner:string,target:TaskExecutionScope,role:DigitalRole)=>Promise<RunRoleMemory[]>)|undefined;private readonly groupContext:((db:PoolClient,owner:string,task:WorkTask,role:DigitalRole,continuationReferences?:readonly MessageReference[])=>Promise<RunGroupContext|undefined>)|undefined;private readonly groupTopic:((db:PoolClient,owner:string,groupContext:RunGroupContext)=>Promise<RunGroupTopic|undefined>)|undefined;private readonly onSettled:((owner:string,run:TaskRun)=>Promise<void>)|undefined
  constructor(pool:Pool,identity:{id:()=>string;now:()=>string},inspect:Inspect,policy:{ownerPlans?:OwnerPlanAuthority;allowedTools:readonly string[];argumentRules?:readonly TaskToolArgumentRule[];roleGrants?:RoleGrantPolicy;industryContext?:(db:PoolClient,owner:string,taskId:string)=>Promise<RunIndustryContext|undefined>;businessContext?:(db:PoolClient,owner:string,task:WorkTask,authorization:{roleId:string;allowedTools:readonly string[];argumentRules?:TaskToolArgumentRule[]})=>Promise<RunBusinessContext|undefined>;planContext?:(db:PoolClient,owner:string,taskId:string,completion?:CompletedPlanRunProof,includeMethodSource?:boolean)=>Promise<RunPlanContext|undefined>;industrySkills?:(db:PoolClient,owner:string,taskId:string,roleId:string)=>Promise<IndustryRunSkillBindings|undefined>;runReservation?:(owner:string,sessionId:string)=>Promise<boolean>;roleMemory?:(db:PoolClient,owner:string,target:TaskExecutionScope,role:DigitalRole)=>Promise<RunRoleMemory[]>;groupContext?:(db:PoolClient,owner:string,task:WorkTask,role:DigitalRole,continuationReferences?:readonly MessageReference[])=>Promise<RunGroupContext|undefined>;groupTopic?:(db:PoolClient,owner:string,groupContext:RunGroupContext)=>Promise<RunGroupTopic|undefined>;onSettled?:(owner:string,run:TaskRun)=>Promise<void>}={allowedTools:[]}){this.ownerPlans=policy.ownerPlans;this.pool=pool;this.identity=identity;this.inspect=inspect;this.roleGrants=policy.roleGrants;this.planContext=policy.planContext;this.industryContext=policy.industryContext;this.businessContext=policy.businessContext;this.industrySkills=policy.industrySkills;this.runReservation=policy.runReservation;this.roleMemory=policy.roleMemory;this.groupContext=policy.groupContext;this.groupTopic=policy.groupTopic;this.onSettled=policy.onSettled;this.allowedTools=Object.freeze(toolNames(policy.allowedTools));this.argumentRules=policy.argumentRules===undefined?undefined:readTaskToolArgumentRules(policy.argumentRules);if(this.argumentRules?.some(rule=>!this.allowedTools.includes(rule.name)))throw new WorkError('teloa/invalid-input','参数授权必须属于允许的工具。')}
@@ -286,7 +288,8 @@ private async readVerified(db:PoolClient,owner:string,row:Record<string,unknown>
    if(run.executor?.kind==='owner'){const current=await this.currentOwner(db,owner,row.request_spec,row.task_state_version??undefined);return combineWorkAccessLeases([current.grant.admission,{assertCurrent:()=>{if(stopEpoch(owner,runId)!==capturedStop)throw new WorkError('teloa/forbidden','本人已停止本次执行。')}}])}
    const taskRow=(await db.query('select * from teloa_tasks where owner_id=$1 and id=$2 for share',[owner,run.taskId])).rows[0]
    if(!taskRow||!roleRow)throw new WorkError('teloa/forbidden','工作角色或任务已不可用。')
-   const lease=await this.authorizeRole(db,owner,readStoredTask(taskRow),readStoredRole(roleRow),run.roleSnapshot)
+   const task=readStoredTask(taskRow),role=readStoredRole(roleRow),lease=await this.authorizeRole(db,owner,task,role,run.roleSnapshot)
+   await this.frozenKnowledgeTarget(db,owner,role,run,await this.withExecutionLimits(db,owner,task,role,lease,executionTarget(task,run.sessionId,run.linkVersion,run.taskVersion)))
    const current=()=>{if(stopEpoch(owner,runId)!==capturedStop)throw new WorkError('teloa/forbidden','本人已停止本次执行，不能提交后续输入。')}
    const admission=combineWorkAccessLeases([lease,{assertCurrent:current}]);admission.assertCurrent();return admission
  }
@@ -513,7 +516,8 @@ private async readVerified(db:PoolClient,owner:string,row:Record<string,unknown>
    }
    const groupContext=readStoredRunGroupContext(await this.groupContext?.(db,owner,verified.task,verified.role,JSON.parse(run.inputText).groupContinuation?.references))
    if(JSON.stringify(groupContext)!==JSON.stringify(run.groupContext)){await manage('rollback');return denied}
-   if(run.allowedTools.length)await this.roleGrants?.recheck(run,executionTarget(verified.task,run.sessionId,run.linkVersion,run.taskVersion),{db,owner,role:verified.role})
+   const fixedTarget=await this.frozenKnowledgeTarget(db,owner,verified.role,run,await this.withExecutionLimits(db,owner,verified.task,verified.role,verified.roleAdmission,executionTarget(verified.task,run.sessionId,run.linkVersion,run.taskVersion)))
+   if(run.allowedTools.length)await this.roleGrants?.recheck(run,fixedTarget,{db,owner,role:verified.role})
    verified.roleAdmission?.assertCurrent();await manage('commit');return {allowedTools:run.allowedTools,nativeRequestId:run.nativeRequestId,...(run.argumentRules===undefined?{}:{argumentRules:run.argumentRules})}
   }catch(error){await manage('rollback');throw error}finally{if(!transactionDb)db.release()}
  }
@@ -648,13 +652,14 @@ private async readVerified(db:PoolClient,owner:string,row:Record<string,unknown>
   if(run.state==='withdrawn'||run.state==='configuration_failed'||run.state==='ended'&&input.mode!=='completion')throw new WorkError('teloa/conflict','本次执行已结束。')
   const completion=input.mode==='completion'
   if(completion&&(run.state!=='ended'||run.evidence?.state!=='ended'||run.evidence.reason!=='completed'||run.stopRequestedAt!==null||!positive(stored.task_state_version)||(!run.roleSnapshot&&run.executor?.kind!=='owner')||!run.lineage))throw new WorkError('teloa/conflict','本轮尚不具备可核对的完成证据。')
-  if(run.executor?.kind==='owner'){const current=await this.currentOwner(db,owner,stored.request_spec,completion?stored.task_state_version+1:stored.task_state_version??undefined,completion?run:undefined);current.grant.admission.assertCurrent();return {...executionTarget(current.task,run.sessionId,run.linkVersion,run.taskVersion),knowledgeIds:run.knowledge.map(item=>item.id)}}
+  if(run.executor?.kind==='owner'){const current=await this.currentOwner(db,owner,stored.request_spec,completion?stored.task_state_version+1:stored.task_state_version??undefined,completion?run:undefined);current.grant.admission.assertCurrent();return {...executionTarget(current.task,run.sessionId,run.linkVersion,run.taskVersion),knowledgeIds:run.knowledge.map(item=>item.id),fixedKnowledgeRead:createFixedRunKnowledgeRead(owner,run.id,run.knowledge)}}
   const {task,role,roleAdmission}=await this.current(db,owner,stored.request_spec,completion?stored.task_state_version+1:stored.task_state_version??undefined,undefined,run.roleSnapshot,completion?run:undefined)
   if(completion&&!isDeepStrictEqual(await new WorkLineageService(this.pool,this.identity).readInTransaction(db,owner,{taskId:task.id}),run.lineage))throw new WorkError('teloa/version-conflict','本轮工作归属已变化，请核对原工作。')
   const groupContext=readStoredRunGroupContext(await this.groupContext?.(db,owner,task,role,JSON.parse(run.inputText).groupContinuation?.references))
   if(JSON.stringify(groupContext)!==JSON.stringify(run.groupContext))throw new WorkError('teloa/version-conflict','群任务授权或资料已变化，不能继续使用执行范围。')
   const target=await this.withExecutionLimits(db,owner,task,role,roleAdmission,executionTarget(task,run.sessionId,run.linkVersion,run.taskVersion))
-  roleAdmission?.assertCurrent();return target
+  const frozen=await this.frozenKnowledgeTarget(db,owner,role,run,target)
+  roleAdmission?.assertCurrent();return frozen
  }
  /** 从已保存执行与当前任务关联导出范围，不接受客户端传入业务范围。 */
  async executionScope(owner:string,input:unknown):Promise<TaskExecutionScope>{
@@ -722,7 +727,7 @@ private async readVerified(db:PoolClient,owner:string,row:Record<string,unknown>
     grant.admission.assertCurrent();admission.assertCurrent()
     await db.query("update teloa_tasks set state='running',version=version+1,updated_at=$3 where owner_id=$1 and id=$2",[owner,task.id,this.identity.now()])
     const updated=(await db.query("update teloa_task_runs set state='submitting',task_state_version=$3 where owner_id=$1 and id=$2 returning *",[owner,run.id,task.version+1])).rows[0]
-    const saved=await this.readVerified(db,owner,updated);grant.admission.assertCurrent();admission.assertCurrent();await db.query('commit');return {run:saved,dispatch:true,target:{...executionTarget(task,saved.sessionId,saved.linkVersion,saved.taskVersion),knowledgeIds:saved.knowledge.map(item=>item.id)}}
+    const saved=await this.readVerified(db,owner,updated);grant.admission.assertCurrent();admission.assertCurrent();await db.query('commit');return {run:saved,dispatch:true,target:{...executionTarget(task,saved.sessionId,saved.linkVersion,saved.taskVersion),knowledgeIds:saved.knowledge.map(item=>item.id),fixedKnowledgeRead:createFixedRunKnowledgeRead(owner,saved.id,saved.knowledge)}}
    }
    await assertRunSkillsEnabled(db,owner,run.skills)
    const {task,role,roleAdmission}=await this.current(db,owner,rows.rows[0].request_spec,undefined,undefined,run.roleSnapshot)
@@ -757,7 +762,7 @@ private async readVerified(db:PoolClient,owner:string,row:Record<string,unknown>
    await db.query("update teloa_tasks set state='running',version=version+1,updated_at=$3 where owner_id=$1 and id=$2",[owner,task.id,this.identity.now()])
    admission.assertCurrent()
    const updated=await db.query("update teloa_task_runs set state='submitting',task_state_version=$3 where owner_id=$1 and id=$2 returning *",[owner,run.id,task.version+1])
-   const saved=await this.readVerified(db,owner,updated.rows[0]),target=await this.withExecutionLimits(db,owner,task,role,sendingRoleAdmission,executionTarget(task,saved.sessionId,saved.linkVersion,saved.taskVersion));sendingRoleAdmission.assertCurrent();admission.assertCurrent();await db.query('commit');return {run:saved,dispatch:true,target}
+   const saved=await this.readVerified(db,owner,updated.rows[0]),limits=await this.withExecutionLimits(db,owner,task,role,sendingRoleAdmission,executionTarget(task,saved.sessionId,saved.linkVersion,saved.taskVersion)),target=await this.frozenKnowledgeTarget(db,owner,role,saved,limits);sendingRoleAdmission.assertCurrent();admission.assertCurrent();await db.query('commit');return {run:saved,dispatch:true,target}
   }catch(error){await db.query('rollback');throw error}finally{db.release()}
  }
  private async executionGroupId(db:PoolClient,owner:string,task:WorkTask):Promise<string|null>{
@@ -772,6 +777,14 @@ private async readVerified(db:PoolClient,owner:string,row:Record<string,unknown>
  private async withExecutionLimits(db:PoolClient,owner:string,task:WorkTask,role:DigitalRole,admission:RoleWorkAdmission|undefined,target:TaskExecutionScope):Promise<TaskExecutionScope>{
   if(!admission||role.kind!=='twin'&&admission.snapshot.authorization.kind!=='delegation')return target
   return {...target,groupId:await this.executionGroupId(db,owner,task),memoryViewId:admission.limits.memoryViewId,knowledgeIds:admission.limits.knowledgeIds}
+ }
+ /** 内容换版只影响未来 prepare；在途运行始终使用已固定的实际资源，撤权仍逐次核验。 */
+ private async frozenKnowledgeTarget(db:PoolClient,owner:string,role:DigitalRole,run:TaskRun,target:TaskExecutionScope):Promise<TaskExecutionScope>{
+  const ids=run.knowledge.map(item=>item.id)
+  if(!ids.length&&target.knowledgeIds===undefined&&role.knowledge.length===0)return target
+  const origins=await employeeKnowledgeReferenceOrigins(db,owner,role.id,ids)
+  if(target.knowledgeIds!==undefined&&target.knowledgeIds!==null&&origins.some(id=>!target.knowledgeIds!.includes(id)))throw new WorkError('teloa/forbidden','执行资料超出当前本人确认的范围。')
+  return {...target,knowledgeIds:ids,fixedKnowledgeRead:createFixedRunKnowledgeRead(owner,run.id,run.knowledge)}
  }
  private async authorizeRole(db:PoolClient,owner:string,task:WorkTask,role:DigitalRole,fixed?:RunRoleSnapshot):Promise<RoleWorkAdmission>{
   const row=(await db.query('select execution_authorization from teloa_tasks where owner_id=$1 and id=$2 for share',[owner,task.id])).rows[0]
@@ -792,7 +805,20 @@ private async readVerified(db:PoolClient,owner:string,row:Record<string,unknown>
    const grant=grants.rows[0]?readRoleToolGrant(grants.rows[0]):null
    if(grant&&grant.roleVersion>role.version)throw new WorkError('teloa/storage-corrupt','授权版本高于员工版本。')
    argumentRules=grant?.state==='active'?grant.rules:[]
-   if(knowledge!==undefined)await this.roleGrants.validate(argumentRules,knowledge,{db,owner,role})
+   if(knowledge!==undefined){
+    if(this.roleGrants.narrow){
+     const granted=argumentRules,narrowed=readTaskToolArgumentRules(await this.roleGrants.narrow(structuredClone(granted),knowledge,{db,owner,role}))
+     const expanded=narrowed.some(rule=>{
+      const original=granted.find(item=>item.name===rule.name)
+      if(!original)return true
+      if(rule.workspaceFiles!==undefined||rule.externalHarness!==undefined)return JSON.stringify(rule)!==JSON.stringify(original)
+      return rule.anyArguments===true?original.anyArguments!==true:rule.allowed.some(args=>!taskToolArgumentsAllowed(granted,rule.name,args))
+     })
+     if(expanded)throw new WorkError('teloa/forbidden','内容映射只能收窄原员工工具授权。')
+     argumentRules=narrowed
+    }
+    await this.roleGrants.validate(argumentRules,knowledge,{db,owner,role})
+   }
    allowedTools=toolNames(argumentRules.map(rule=>rule.name))
   }
   if(admission.limits.allowedTools!==null){
@@ -927,9 +953,11 @@ private async readVerified(db:PoolClient,owner:string,row:Record<string,unknown>
    preparation.assertCurrent()
    const memory=readRunRoleMemories(await this.roleMemory?.(db,owner,target,role)??[])
    const selectedKnowledge=roleAdmission.limits.knowledgeIds===null?role.knowledge:role.knowledge.filter(id=>roleAdmission.limits.knowledgeIds!.includes(id))
-   const knowledgeRole={...role,knowledge:selectedKnowledge}
-   const roleKnowledge=readRunKnowledge(await loadKnowledge?.(target,knowledgeRole,db)??[])
-   if(JSON.stringify(roleKnowledge.map(item=>item.id))!==JSON.stringify(selectedKnowledge))throw new WorkError('teloa/conflict','员工知识声明需绑定可用资料ID，不能忽略声明执行。')
+   const effectiveKnowledge=await resolveEmployeeKnowledgeReferences(db,owner,role.id,selectedKnowledge)
+   const knowledgeRole={...role,knowledge:effectiveKnowledge}
+   const knowledgeTarget=target.knowledgeIds===undefined||target.knowledgeIds===null?target:{...target,knowledgeIds:await resolveEmployeeKnowledgeReferences(db,owner,role.id,target.knowledgeIds)}
+   const roleKnowledge=readRunKnowledge(await loadKnowledge?.(knowledgeTarget,knowledgeRole,db)??[])
+   if(JSON.stringify(roleKnowledge.map(item=>item.id))!==JSON.stringify(effectiveKnowledge))throw new WorkError('teloa/conflict','员工知识声明需绑定可用资料ID，不能忽略声明执行。')
    const taskKnowledge=readRunKnowledge(roleAdmission.limits.knowledgeIds?.length===0?[]:await loadTaskKnowledge?.(target,knowledgeRole,db)??[],8)
    if(roleAdmission.limits.knowledgeIds!==null&&taskKnowledge.some(item=>!roleAdmission.limits.knowledgeIds!.includes(item.id)))throw new WorkError('teloa/forbidden','任务资料超出本人确认的执行范围。')
    const knowledge=mergeKnowledge(roleKnowledge,taskKnowledge)

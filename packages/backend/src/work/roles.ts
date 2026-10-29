@@ -5,6 +5,7 @@ import { ensureAutoDreamPlan,type AutoDreamPorts } from './auto-dream-plans.ts'
 import { renewRoleGrants } from './collaboration.ts'
 import {workAccess} from './work-access.ts'
 import {assertRoleKnowledgeReferences} from '../capabilities/resources.ts'
+import {resolveEmployeeKnowledgeReferences} from '../capabilities/employee-knowledge.ts'
 import {assertRoleDelegationsInactive,roleWorkOutstanding} from './role-delegations.ts'
 import {invalidateRoleWorkEligibility} from './twin-execution-consents.ts'
 
@@ -207,7 +208,10 @@ export class RoleService{
   }
   if(role.kind==='employee')await assertEmployeeWorkIdle(client,owner,role)
   // 与创建同一核对：不能把引用不到资料的资料范围保存进岗位。
-  await assertRoleKnowledgeReferences(client,owner,definition.knowledge)
+  const previousKnowledge=new Set(role.knowledge.map(id=>id.toLowerCase())),retainedKnowledge=definition.knowledge.filter(id=>previousKnowledge.has(id.toLowerCase())),addedKnowledge=definition.knowledge.filter(id=>!previousKnowledge.has(id.toLowerCase()))
+  // 仅锁定当前定义里已存在的逻辑身份可按员工当前有效基线核验；新增引用一律严格核对原资源。
+  await assertRoleKnowledgeReferences(client,owner,addedKnowledge)
+  await assertRoleKnowledgeReferences(client,owner,await resolveEmployeeKnowledgeReferences(client,owner,role.id,retainedKnowledge))
   // 旧调用方若没有资料基线，只允许保留当前姓名头像；不能以不变的执行版本覆盖并发身份修改。
   const currentProfile=readRoleProfile({name:role.name,...(role.avatarKey?{avatarKey:role.avatarKey}:{})})
   const profileBaseline=expectedProfile??readRoleProfile({name:definition.name,...(definition.avatarKey?{avatarKey:definition.avatarKey}:{})})

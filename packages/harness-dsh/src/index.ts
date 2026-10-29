@@ -1,3 +1,7 @@
+import {employeeReferenceAliases,registerEmployeeReferenceAliases,narrowEmployeeReferenceRules} from './employee-reference-aliases.ts'
+import {resolveEmployeeKnowledgeReferences} from '@teloa/backend'
+import {createEmployeeKnowledgeHandler,employeeKnowledgeEndpoints} from './employee-knowledge.ts'
+import {registerEmployeeKnowledgeTools} from './employee-knowledge-tools.ts'
 import {ArtifactService,taskArtifactSource,taskArtifactSessions,ArtifactRevisionRequestService,MethodReuseService} from '@teloa/backend'
 import {ConversationBudgetSettingsService} from '@teloa/backend'
 import {captureOwnerRunOrchestration} from './owner-run-orchestration.ts'
@@ -335,7 +339,7 @@ const projectRoot=fileURLToPath(new URL('../../../',import.meta.url))
 const owner='local:teloa-owner'
 const conversationWorkContextEndpoints=['conversations/assistant','work-context/read','work-context/set','work-context/eligibility','conversation-budgets/read','conversation-budgets/configure','work-requests/list','work-requests/status','work-requests/stop','work-requests/resume'] as const
 export const handoffEndpoints=['handoffs/list','handoffs/resolve','handoffs/change'] as const
-const endpointSet=new Set([...externalHarnessEndpoints,...businessWorkEndpoints,...groupWorkLinkEndpoints,...conversationWorkContextEndpoints,...projectEndpoints,...projectContextEndpoints,...projectRuntimeEndpoints,...securityActionEndpoints,...businessSpaceEndpoints,...businessScopeEndpoints,...businessDataEndpoints,...businessBuilderEndpoints,...businessDashboardResourceEndpoints,...businessImportEndpoints,...businessResponsibilityEndpoints,...businessDefinitionEndpoints,businessDashboardShareEndpoint,...businessDashboardEndpoints,...pageCreateDraftEndpoints,...skillEditEndpoints,...businessTaskEndpoints,...githubSourceEndpoints,...marketPluginInstallationEndpoints,...skillUpgradePreviewEndpoints,...skillSelectionEndpoints,...skillAvailabilityEndpoints,...skillInstallationEndpoints,...industryPlanEndpoints,...industryTaskEndpoints,...industryRoleEndpoints,...industryKnowledgeEndpoints,...industryDataSourceEndpoints,...industryExecutionToolEndpoints,...industryMcpConnectionEndpoints,...connectorEndpoints,...industryPluginEndpoints,...managedMcpConnectionEndpoints,...industryLoadEndpoints,...industryPrepareEndpoints,'tasks/attention','work-attention',...planScheduleEndpoints,...planEndpoints,...marketContentEndpoints,...marketCatalogEndpoints,...roleToolGrantEndpoints,...webAccessEndpoints,...taskMaterialEndpoints,...taskRunEndpoints,...taskRunFlowEndpoints,'tasks/context','object-conversations/list','object-conversations/session','object-conversations/change','conversations/create','conversations/read','conversations/ensure','conversations/adopt','conversations/list','conversations/search','session-capabilities/read','copies/create','copies/list','copies/resolve','copies/release','capabilities/read','capabilities/home-skills','resource-use/list','roles/lifecycle',...handoffEndpoints,...resourceEndpoints.filter(endpoint=>!['resources/register-local-material','resources/read-content','resources/prepare-adoption'].includes(endpoint)),...artifactEndpoints,...artifactFileEndpoints,...roleEndpoints,...roleMemoryEndpoints,...roleDailyLogEndpoints,...groupEndpoints,...groupAgentGrantEndpoints,...groupTaskEndpoints,...groupAttachmentEndpoints,...taskEndpoints.filter(endpoint=>endpoint!=='tasks/create-confirmed'),...imChannelEndpoints,...bundledExtensionEndpoints,...retrievalEndpoints,...localModelEndpoints,...modelOptionEndpoints,composerSuggestionEndpoint,'requests/pending/list','requests/pending/recover','requests/pending/ack'])
+const endpointSet=new Set([...employeeKnowledgeEndpoints,...externalHarnessEndpoints,...businessWorkEndpoints,...groupWorkLinkEndpoints,...conversationWorkContextEndpoints,...projectEndpoints,...projectContextEndpoints,...projectRuntimeEndpoints,...securityActionEndpoints,...businessSpaceEndpoints,...businessScopeEndpoints,...businessDataEndpoints,...businessBuilderEndpoints,...businessDashboardResourceEndpoints,...businessImportEndpoints,...businessResponsibilityEndpoints,...businessDefinitionEndpoints,businessDashboardShareEndpoint,...businessDashboardEndpoints,...pageCreateDraftEndpoints,...skillEditEndpoints,...businessTaskEndpoints,...githubSourceEndpoints,...marketPluginInstallationEndpoints,...skillUpgradePreviewEndpoints,...skillSelectionEndpoints,...skillAvailabilityEndpoints,...skillInstallationEndpoints,...industryPlanEndpoints,...industryTaskEndpoints,...industryRoleEndpoints,...industryKnowledgeEndpoints,...industryDataSourceEndpoints,...industryExecutionToolEndpoints,...industryMcpConnectionEndpoints,...connectorEndpoints,...industryPluginEndpoints,...managedMcpConnectionEndpoints,...industryLoadEndpoints,...industryPrepareEndpoints,'tasks/attention','work-attention',...planScheduleEndpoints,...planEndpoints,...marketContentEndpoints,...marketCatalogEndpoints,...roleToolGrantEndpoints,...webAccessEndpoints,...taskMaterialEndpoints,...taskRunEndpoints,...taskRunFlowEndpoints,'tasks/context','object-conversations/list','object-conversations/session','object-conversations/change','conversations/create','conversations/read','conversations/ensure','conversations/adopt','conversations/list','conversations/search','session-capabilities/read','copies/create','copies/list','copies/resolve','copies/release','capabilities/read','capabilities/home-skills','resource-use/list','roles/lifecycle',...handoffEndpoints,...resourceEndpoints.filter(endpoint=>!['resources/register-local-material','resources/read-content','resources/prepare-adoption'].includes(endpoint)),...artifactEndpoints,...artifactFileEndpoints,...roleEndpoints,...roleMemoryEndpoints,...roleDailyLogEndpoints,...groupEndpoints,...groupAgentGrantEndpoints,...groupTaskEndpoints,...groupAttachmentEndpoints,...taskEndpoints.filter(endpoint=>endpoint!=='tasks/create-confirmed'),...imChannelEndpoints,...bundledExtensionEndpoints,...retrievalEndpoints,...localModelEndpoints,...modelOptionEndpoints,composerSuggestionEndpoint,'requests/pending/list','requests/pending/recover','requests/pending/ack'])
 
 type HandoffPort=Pick<HandoffService,'list'|'resolve'|'change'>
 export function createHandoffHandler(ownerId:string,get:()=>Promise<HandoffPort>):(endpoint:string,payload:unknown)=>Promise<unknown>{
@@ -661,7 +665,7 @@ async function applyHost(ctx:Context,projectRoot:string):Promise<void> {
     if(binding.sessionId!==target.sessionId||binding.status!=='ready')throw new WorkError('teloa/forbidden','执行会话身份未就绪。')
     const authorization=taskKnowledgeAuthorization(owner,target,roleScopes)
     const resourcesService=(await resources.database()).service
-    return database?resourcesService.executionKnowledgeInTransaction(database,authorization.actor,authorization.targetScopes,ids,signal):resourcesService.executionKnowledge(authorization.actor,authorization.targetScopes,ids,signal)
+    return database?resourcesService.executionKnowledgeInTransaction(database,authorization.actor,authorization.targetScopes,ids,signal,target.fixedKnowledgeRead):resourcesService.executionKnowledge(authorization.actor,authorization.targetScopes,ids,signal,target.fixedKnowledgeRead)
   }
   // 复核路径上只有 Run 快照的 roleId，岗位自身范围从这里补读（与 roleDailyLog 的 role 读口同写法）。
   // 找不到岗位回 undefined，调用方退回任务范围；这里不抛，读不到岗位不该把整次复核连坐拒掉。
@@ -846,11 +850,12 @@ async function applyHost(ctx:Context,projectRoot:string):Promise<void> {
     // 闸 ① 执行（逐字理由「设置中已关闭网页搜索与读取。」），不能让这里的候选缺失把同一运行的其余工具
     // 一并连坐拒绝（见 D-1）；关掉总开关后带上网授权的员工必须照样准备得起运行，只是跑不出外发。
     // 授权页候选与保存校验仍跟着总开关走，那一支在下面的 `grantCandidates` 里，与这里两条互不相干。
-    validate:async(rules,knowledge,context)=>validateReferenceToolRules(rules,taskRunToolRules([...referenceToolRules(knowledge),...await industryMcpToolRules(context.db,context.owner,context.role.id),...getManagedMcpToolRules().filter((rule:{name:string})=>!isNativeToolName(rule.name)),...webToolRules(true),...await nativePresetToolRules(ctx,context.role.runtimeConfig?.agentPresetId),...await workspaceFileToolRules(ctx)])),
+    narrow:(rules,knowledge,context)=>narrowEmployeeReferenceRules(context.db,context.owner,context.role.id,context.role.knowledge,rules,knowledge),
+    validate:async(rules,knowledge,context)=>validateReferenceToolRules(rules,taskRunToolRules([...referenceToolRules([...knowledge,...(await employeeReferenceAliases(context.db,context.owner,context.role.id,knowledge)).map(alias=>({sourceId:alias.id,sourceVersion:alias.version}))]),...await industryMcpToolRules(context.db,context.owner,context.role.id),...getManagedMcpToolRules().filter((rule:{name:string})=>!isNativeToolName(rule.name)),...webToolRules(true),...await nativePresetToolRules(ctx,context.role.runtimeConfig?.agentPresetId),...await workspaceFileToolRules(ctx)])),
     recheck:async(run,target,context)=>{
       const current=readRunKnowledge(await readExecutionKnowledge(target,run.knowledge.map(item=>item.id),undefined,context.role.scopes,context.db))
       if(JSON.stringify(current)!==JSON.stringify(run.knowledge))throw new WorkError('teloa/version-conflict','执行资料已变化，请重新准备。')
-      validateReferenceToolRules(run.argumentRules??[],taskRunToolRules([...referenceToolRules(current),...await industryMcpToolRules(context.db,context.owner,context.role.id),...getManagedMcpToolRules().filter((rule:{name:string})=>!isNativeToolName(rule.name)),...webToolRules(true),...(ctx.agents.get(brandString<SessionId>(run.sessionId))?nativeToolRules(ctx,ctx.agents.get(brandString<SessionId>(run.sessionId))):await nativePresetToolRules(ctx,run.agentPresetId)),...await workspaceFileToolRules(ctx,ctx.agents.get(brandString<SessionId>(run.sessionId)))]))
+      validateReferenceToolRules(run.argumentRules??[],taskRunToolRules([...referenceToolRules([...current,...(await employeeReferenceAliases(context.db,context.owner,context.role.id,current)).map(alias=>({sourceId:alias.id,sourceVersion:alias.version}))]),...await industryMcpToolRules(context.db,context.owner,context.role.id),...getManagedMcpToolRules().filter((rule:{name:string})=>!isNativeToolName(rule.name)),...webToolRules(true),...(ctx.agents.get(brandString<SessionId>(run.sessionId))?nativeToolRules(ctx,ctx.agents.get(brandString<SessionId>(run.sessionId))):await nativePresetToolRules(ctx,run.agentPresetId)),...await workspaceFileToolRules(ctx,ctx.agents.get(brandString<SessionId>(run.sessionId)))]))
     },
   }})
   const businessEventSource=async(...args:Parameters<ReturnType<typeof businessWorkSourceReader>>)=>{
@@ -2387,6 +2392,7 @@ async function applyHost(ctx:Context,projectRoot:string):Promise<void> {
   const retrievalModelSelectionPath=resolve(runtimeRoot,'model-selection.json')
   const localRetrieval=registerLocalRetrieval(toolRegistrationContext,{
    owner,conversation:id=>service.bySession(owner,id),requestedRoleId:id=>service.requestedRoleId(owner,id),role:roleId=>readRole(owner,roleId),readTaskPolicy:ordinaryTaskPolicy,
+   resolveKnowledge:async role=>resolveEmployeeKnowledgeReferences((await resources.database()).pool,owner,role.id,role.knowledge),
    taskAuthorization:async(sessionId,signal)=>{
     signal.throwIfAborted()
     const runs=await runService(),run=await runs.skillScope(owner,{sessionId})
@@ -2420,6 +2426,22 @@ async function applyHost(ctx:Context,projectRoot:string):Promise<void> {
     },
    },
   })
+  database.employeeKnowledge.setRetrievalProfileReader(()=>localRetrieval.currentProfileHash())
+  const employeeKnowledgeHandler=createEmployeeKnowledgeHandler({service:async()=>(await resources.database()).employeeKnowledge,actor:resources.human,changed:()=>localRetrieval.knowledgeChanged()})
+  const stopEmployeeKnowledgeTools=registerEmployeeKnowledgeTools(toolRegistrationContext,{
+   owner,conversation:id=>service.bySession(owner,id),readTaskPolicy:ordinaryTaskPolicy,
+   requestedRoleId:id=>service.requestedRoleId(owner,id),role:id=>readRole(owner,id),humanActor:resources.human,
+   service:async()=>(await resources.database()).employeeKnowledge,changed:()=>localRetrieval.knowledgeChanged(),
+  })
+  const stopEmployeeReferenceAliases=registerEmployeeReferenceAliases(toolRegistrationContext,{read:async(sessionId,signal)=>{
+   const runs=await runService(),run=await runs.skillScope(owner,{sessionId})
+   if(!run||run.roleId===null)return null
+   const target=await runs.executionScope(owner,{runId:run.id}),current=readRunKnowledge(await readExecutionKnowledge(target,run.knowledge.map(item=>item.id),signal,await readRoleScopes(owner,run.roleId,signal)))
+   if(JSON.stringify(current)!==JSON.stringify(run.knowledge))throw new WorkError('teloa/version-conflict','原执行知识快照已变化。')
+   return {aliases:await employeeReferenceAliases((await resources.database()).pool,owner,run.roleId,current),rules:run.argumentRules??[]}
+  }})
+  resources.beforeDatabaseClose(()=>{stopEmployeeReferenceAliases()})
+  resources.beforeDatabaseClose(()=>{stopEmployeeKnowledgeTools()})
   resources.beforeDatabaseClose(localRetrieval.dispose)
   // 启动对账只在进程内调用（清理失效绑定与其他配置的未完成索引），不暴露为 RPC；失败只记告警，不挡装配。
   const retrievalReconcile=runtimeAdmission.run(()=>localRetrieval.reconcile()).catch(error=>ctx.logger.warn('Teloa 本地检索启动对账未完成：%s',codeOf(error,'teloa/dependency-unavailable')))
@@ -2554,6 +2576,7 @@ async function applyHost(ctx:Context,projectRoot:string):Promise<void> {
      return {accepted:true}
     }
     if((bundledExtensionEndpoints as readonly string[]).includes(endpoint))return bundledExtensionHandler(endpoint,payload)
+    if((employeeKnowledgeEndpoints as readonly string[]).includes(endpoint))return employeeKnowledgeHandler(endpoint,payload)
     if((retrievalEndpoints as readonly string[]).includes(endpoint))return localRetrieval.handle(endpoint,payload,signal)
     if((localModelEndpoints as readonly string[]).includes(endpoint))return localModelsHandler.handle(endpoint,payload,signal)
     if((modelOptionEndpoints as readonly string[]).includes(endpoint))return readDshModelOptions(ctx,payload,signal)

@@ -20,6 +20,7 @@ import {CONVERSATION_DIALOG_MESSAGE_ROWS} from './conversation-dialog.js'
 import {APPROVAL_CARD_MESSAGE_ROWS} from './approval-card.js'
 import {KNOWLEDGE_DIRECTORY_MESSAGE_ROWS} from './knowledge-directory.js'
 import {KNOWLEDGE_DOCUMENT_MESSAGE_ROWS} from './knowledge-document.js'
+import {EMPLOYEE_KNOWLEDGE_MESSAGE_ROWS} from './employee-knowledge.js'
 import {ADOPT_DIALOG_MESSAGE_ROWS} from './adopt-dialog.js'
 import {MARKET_PAGE_MESSAGE_ROWS} from './market-page.js'
 import {MARKET_INDUSTRY_MESSAGE_ROWS} from './market-industry.js'
@@ -275,6 +276,7 @@ export const CORE_PAGE_MESSAGE_ROWS:readonly CorePageMessageRow[] = [
   ...APPROVAL_CARD_MESSAGE_ROWS,
   ...KNOWLEDGE_DIRECTORY_MESSAGE_ROWS,
   ...KNOWLEDGE_DOCUMENT_MESSAGE_ROWS,
+  ...EMPLOYEE_KNOWLEDGE_MESSAGE_ROWS,
   ...ADOPT_DIALOG_MESSAGE_ROWS,
   ...MARKET_PAGE_MESSAGE_ROWS,
   ...MARKET_INDUSTRY_MESSAGE_ROWS,

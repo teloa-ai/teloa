@@ -4,7 +4,7 @@ import type {ResourceActor,ResourceService,MarkdownKnowledgeService,KnowledgeTre
 import {WorkError,taskInput,resourceId,resourceVersion,resourceScopes,resourceTopics,resourceTitle,promptFullTextMaxBytes,knowledgeCategories,isKnowledgeItem,isKnowledgeTree,isKnowledgeTreeMutation,isKnowledgeVersion,isKnowledgeVersionSummary,isPasteKnowledge,isKnowledgeResourceRevision,isWorkResource,isResourceDraft,type KnowledgeItem,type KnowledgeVersionSummary,type PasteKnowledge} from '@teloa/contract'
 import {authorizeConversationInstructionMutation,assertConversationInstructionMutationAuthorization,conversationInstructionMutationRequestId,type ConversationMutationInput,type ConversationInstructionMutationAuthorization} from './conversation-mutation.ts'
 
-export const libraryToolNames=['teloa_library_directory','teloa_library_create_folder','teloa_library_rename','teloa_library_move','teloa_library_save','teloa_library_versions','teloa_library_read_version','teloa_library_apply','teloa_library_withdraw','teloa_library_revise','teloa_library_restore','teloa_resources_create','teloa_resources_update'] as const
+export const libraryToolNames=['teloa_library_directory','teloa_library_create_folder','teloa_library_rename','teloa_library_move','teloa_library_save','teloa_library_versions','teloa_library_read_version','teloa_library_apply','teloa_library_withdraw','teloa_library_revise','teloa_library_restore','teloa_library_revise_standalone','teloa_library_restore_standalone','teloa_resources_create','teloa_resources_update'] as const
 export type LibraryToolsPorts=Pick<ConversationMutationInput,'owner'|'conversation'|'readTaskPolicy'>&{
  /** 可信宿主从当前会话读取范围；模型不能提供 owner 或范围授权。 */
  actor:(sessionId:string,kind:'human'|'agent')=>Promise<ResourceActor>
@@ -12,7 +12,7 @@ export type LibraryToolsPorts=Pick<ConversationMutationInput,'owner'|'conversati
   resources:Pick<ResourceService,'create'|'update'|'apply'|'withdraw'>
   knowledge:Pick<MarkdownKnowledgeService,'list'|'createPaste'|'listVersions'|'readVersion'>
   knowledgeTree:Pick<KnowledgeTreeService,'list'|'createFolder'|'renameNode'|'moveNode'>
-  knowledgeResources:Pick<KnowledgeResourceService,'revise'|'restore'>
+  knowledgeResources:Pick<KnowledgeResourceService,'revise'|'restore'|'reviseStandalone'|'restoreStandalone'>
  }>
 }
 export type LibraryObjectReceipt={schema:'teloa.library-result/v1';ownerId:string;kind:'knowledge'|'knowledge-node'|'work-resource'|'work-resource-draft';id:string;title:string;version:number;state:string;sourceSession:string}
@@ -36,6 +36,8 @@ const definitions=[
  {name:'teloa_library_read_version',description:'按本人当前指令读取一项知识的固定版本正文，须使用 knowledgeId 和明确 version，不能以保存知识替代读取授权。仅限本人普通会话及其范围；整段进模型保留 256 KiB 上限，更大资料使用已授权本地检索；受管任务继续使用岗位已授权读取入口。',parameters:{knowledgeId:field,version}},
  {name:'teloa_library_apply',description:'按本人当前指令提交已经核对的工作资料草案。带 teloa_resources_list 返回的 draftId 和 expectedVersion，复用原提交服务与原生权限审核。提交将生成同一草案对应的可引用资料；不把资料自动加入员工岗位。重复相同已提交版本返回原资料。',parameters:{draftId:field,expectedVersion:version}},
  {name:'teloa_library_withdraw',description:'按本人指令撤回一项工作资料，使用 resourceId 和最新 expectedVersion。旧知识与历史保留，撤回后不可继续新引用。重复相同撤回版本返回原记录。',parameters:{resourceId:field,expectedVersion:version}},
+ {name:'teloa_library_revise_standalone',description:'按本人指令修订尚未提交为工作资料的独立 Markdown 知识。先读目录和固定版本，使用 knowledgeId、expectedKnowledgeVersion 与新完整 markdown；保存新版本并保留历史。已有工作资料投影时须使用 teloa_library_revise。',parameters:{knowledgeId:field,expectedKnowledgeVersion:version,markdown:field}},
+ {name:'teloa_library_restore_standalone',description:'把尚未提交为工作资料的独立知识历史版本恢复为新版本。使用 knowledgeId、expectedKnowledgeVersion、restoreVersion；保留历史，已有工作资料投影时须使用 teloa_library_restore。',parameters:{knowledgeId:field,expectedKnowledgeVersion:version,restoreVersion:version}},
  {name:'teloa_library_revise',description:'修订已提交的 Markdown 知识与对应工作资料。必须同时固定 expectedKnowledgeVersion、resourceId 和 expectedResourceVersion；markdown 为新的完整正文。原服务在一个事务内保存新版本、撤回旧投影并生成新投影；不扩大范围或岗位读取权限。',parameters:{...resourceVersionFields,markdown:field}},
  {name:'teloa_library_restore',description:'将知识历史 restoreVersion 恢复为新的当前版本，同时切换对应工作资料投影。须带当前知识版本、当前 resourceId 与当前资源版本；保留全部历史和原知识身份，不扩大范围或授予读取权限。',parameters:{...resourceVersionFields,restoreVersion:version}},
 ] as const
@@ -111,6 +113,9 @@ export function registerLibraryTools(ctx:Context,ports:LibraryToolsPorts){
    }else if(name==='teloa_library_apply'||name==='teloa_library_withdraw'){
     const resource=name==='teloa_library_apply'?await services.resources.apply(actor,row):await services.resources.withdraw(actor,row)
     if(!isWorkResource(resource)||name==='teloa_library_withdraw'&&resource.id!==row.resourceId)throw bad();own(resource.ownerId,resource.scopeIds);result.resource=resource;receipt('work-resource',resource.id,resource.title,resource.version,resource.status)
+   }else if(name==='teloa_library_revise_standalone'||name==='teloa_library_restore_standalone'){
+    const {expectedKnowledgeVersion,restoreVersion,...fields}=row,input={...fields,expectedVersion:expectedKnowledgeVersion,...(restoreVersion===undefined?{}:{version:restoreVersion}),requestId},knowledge=name==='teloa_library_revise_standalone'?await services.knowledgeResources.reviseStandalone(actor,input):await services.knowledgeResources.restoreStandalone(actor,input)
+    if(!isPasteKnowledge(knowledge)||knowledge.item.id!==row.knowledgeId)throw bad();own(knowledge.item.ownerId,knowledge.item.scopeIds);result.knowledge=knowledgeMetadata(knowledge);result.requestId=requestId;receipt('knowledge',knowledge.item.id,knowledge.item.title,knowledge.item.currentVersion,'saved')
    }else{
     const input={...row,requestId},revision=name==='teloa_library_revise'?await services.knowledgeResources.revise(actor,input):await services.knowledgeResources.restore(actor,input)
     if(!isKnowledgeResourceRevision(revision)||revision.knowledge.item.id!==row.knowledgeId)throw bad();own(revision.knowledge.item.ownerId,revision.knowledge.item.scopeIds);own(revision.resource.ownerId,revision.resource.scopeIds);result.revision={knowledge:knowledgeMetadata(revision.knowledge),resource:revision.resource};result.requestId=requestId;receipt('knowledge',revision.knowledge.item.id,revision.knowledge.item.title,revision.knowledge.item.currentVersion,'active')

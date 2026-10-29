@@ -5,7 +5,10 @@ import {createLocalMaterialRegistration,readLocalMaterialInput,isLocalMaterialRe
 import {isPasteKnowledge,verifyKnowledgeVersionContent,type KnowledgeReviseInput,type KnowledgeRestoreInput,type PasteKnowledge} from '@teloa/contract'
 import {createResourceAdoptionRecovery,type ResourceAdoptionRecovery} from './resource-adoption-recovery.ts'
 import type {WorkbenchNavigationStorage} from './workbench-navigation-state.js'
+import {createEmployeeKnowledgeApi,type EmployeeKnowledgeApi} from './employee-knowledge-api.ts'
 export type ResourceApi={
+  employeeKnowledge?:EmployeeKnowledgeApi;
+  knowledgeEditStorage?:WorkbenchNavigationStorage|undefined;
   registerLocalMaterial?:(input:LocalMaterialRegistrationInput)=>Promise<SourceReference>;
   localMaterialRequests?:LocalMaterialRegistration;
   readContent?:(resource:WorkResource,signal:AbortSignal)=>Promise<{resource:WorkResource;text:string}>;
@@ -34,6 +37,8 @@ type Call=(endpoint:string,payload:unknown,signal?:AbortSignal)=>Promise<unknown
 export function createResourceApi(call:Call,journal?:{read:()=>string|null;write:(value:string)=>void;clear:()=>void},adoptionStorage?:WorkbenchNavigationStorage):ResourceApi {
   const invalid=()=>Error('工作资料服务返回的内容格式不正确。')
   const api:ResourceApi={
+    employeeKnowledge:createEmployeeKnowledgeApi(call,adoptionStorage),
+    knowledgeEditStorage:adoptionStorage,
     async registerLocalMaterial(input){const request=readLocalMaterialInput(input),value=await call('resources/register-local-material',request);if(!isLocalMaterialReference(value,request))throw invalid();return value},
     async readContent(resource,signal){
       signal.throwIfAborted()

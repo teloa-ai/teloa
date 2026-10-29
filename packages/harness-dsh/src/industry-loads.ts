@@ -1,8 +1,8 @@
 import {WorkError,isRecord,readIndustryUpdateChoices,taskInput} from '@teloa/contract'
 import type {IndustryLoadRecord,IndustryLoadPage} from '@teloa/backend'
 
-type Ports={create:(owner:string,input:unknown)=>Promise<unknown>;get:(owner:string,input:unknown)=>Promise<unknown>;list:(owner:string,input:unknown)=>Promise<unknown>;unload:(owner:string,input:unknown)=>Promise<unknown>;upgrade:(owner:string,input:unknown)=>Promise<unknown>}
-export const industryLoadEndpoints=['industry-loads/create','industry-loads/get','industry-loads/list','industry-loads/unload','industry-loads/upgrade'] as const
+type Ports={previewKnowledgeReset?:(owner:string,input:unknown)=>Promise<unknown>;create:(owner:string,input:unknown)=>Promise<unknown>;get:(owner:string,input:unknown)=>Promise<unknown>;list:(owner:string,input:unknown)=>Promise<unknown>;unload:(owner:string,input:unknown)=>Promise<unknown>;upgrade:(owner:string,input:unknown)=>Promise<unknown>}
+export const industryLoadEndpoints=['industry-loads/create','industry-loads/get','industry-loads/list','industry-loads/unload','industry-loads/upgrade','industry-loads/knowledge-reset-preview'] as const
 const uuid=(value:unknown):value is string=>typeof value==='string'&&/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)
 const text=(value:unknown,max:number):value is string=>typeof value==='string'&&!!value.trim()&&value.length<=max
 const positive=(value:unknown):value is number=>Number.isSafeInteger(value)&&Number(value)>0&&Number(value)<=2147483647
@@ -57,8 +57,16 @@ function read(value:unknown,owner:string):IndustryLoadRecord{
 
 export type IndustryLoadUpgradeResult={superseded:IndustryLoadRecord;successor:IndustryLoadRecord}
 export function createIndustryLoadsHandler(owner:string,get:()=>Promise<Ports>){
- return async(method:string,payload:unknown):Promise<IndustryLoadRecord|IndustryLoadPage|IndustryLoadUpgradeResult>=>{
+ return async(method:string,payload:unknown):Promise<IndustryLoadRecord|IndustryLoadPage|IndustryLoadUpgradeResult|{digest:string;documents:unknown[]}>=>{
   if(!text(owner,128))throw new WorkError('teloa/forbidden','需要有效的本人身份。')
+  if(method==='industry-loads/knowledge-reset-preview'){
+   const input=taskInput(payload,['loadId','expectedMappingHash','candidateContentId','candidateContentHash'])
+   if(!uuid(input.loadId)||!hash(input.expectedMappingHash)||(input.candidateContentId===undefined)!==(input.candidateContentHash===undefined)||input.candidateContentId!==undefined&&(!uuid(input.candidateContentId)||!hash(input.candidateContentHash)))throw new WorkError('teloa/invalid-input','知识覆盖预览的包身份或摘要不正确。')
+   const service=await get();if(!service.previewKnowledgeReset)throw new WorkError('teloa/dependency-unavailable','知识覆盖预览服务未接入。')
+   const result=exact(await service.previewKnowledgeReset(owner,payload),['digest','documents'])
+   if(!hash(result.digest)||!Array.isArray(result.documents)||result.documents.some(item=>!isRecord(item)||!uuid(item.roleId)||!uuid(item.resourceId)||!uuid(item.knowledgeId)||!positive(item.bodyVersion)||!hash(item.contentHash)||!text(item.title,200)))throw invalid()
+   return {digest:result.digest,documents:result.documents}
+  }
   if(method==='industry-loads/list'){
    const input=taskInput(payload,['includeUnloaded'])
    if(input.includeUnloaded!==undefined&&typeof input.includeUnloaded!=='boolean')throw new WorkError('teloa/invalid-input','是否包含已卸载加载必须是布尔值。')
@@ -72,7 +80,8 @@ export function createIndustryLoadsHandler(owner:string,get:()=>Promise<Ports>){
    const result=read(await (await get()).get(owner,payload),owner);if(result.id.toLowerCase()!==input.loadId.toLowerCase())throw invalid();return result
   }
   if(method==='industry-loads/create'){
-   const input=taskInput(payload,['requestId','contentId','contentHash','target']),target=taskInput(input.target,['kind','spaceId','name','expectedVersion'])
+   const input=taskInput(payload,['requestId','contentId','contentHash','target','knowledgeResetDigest']),target=taskInput(input.target,['kind','spaceId','name','expectedVersion'])
+   if(input.knowledgeResetDigest!==undefined&&!hash(input.knowledgeResetDigest))throw new WorkError('teloa/invalid-input','知识覆盖确认摘要不正确。')
    if(!uuid(input.requestId)||!uuid(input.contentId)||!hash(input.contentHash)||!uuid(target.spaceId))throw new WorkError('teloa/invalid-input','加载请求身份或来源摘要无效。')
    if(target.kind==='new'){taskInput(target,['kind','spaceId','name']);if(!text(target.name,80))throw new WorkError('teloa/invalid-input','请填写空间名称。')}
    else if(target.kind==='existing'){taskInput(target,['kind','spaceId','expectedVersion']);if(!positive(target.expectedVersion))throw new WorkError('teloa/invalid-input','目标空间版本无效。')}
@@ -89,7 +98,8 @@ export function createIndustryLoadsHandler(owner:string,get:()=>Promise<Ports>){
    return result
   }
   if(method==='industry-loads/upgrade'){
-   const input=taskInput(payload,['requestId','loadId','candidateContentId','expectedMappingHash','choices'])
+   const input=taskInput(payload,['requestId','loadId','candidateContentId','expectedMappingHash','choices','knowledgeResetDigest'])
+   if(input.knowledgeResetDigest!==undefined&&!hash(input.knowledgeResetDigest))throw new WorkError('teloa/invalid-input','知识覆盖确认摘要不正确。')
    if(!uuid(input.requestId)||!uuid(input.loadId)||!uuid(input.candidateContentId)||!hash(input.expectedMappingHash))throw new WorkError('teloa/invalid-input','升级请求身份、候选内容或映射指纹无效。')
    try{readIndustryUpdateChoices(input.choices)}catch{throw new WorkError('teloa/invalid-input','升级处理方式格式不正确。')}
    const result=exact(await (await get()).upgrade(owner,payload),['superseded','successor'])

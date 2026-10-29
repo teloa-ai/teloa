@@ -1,7 +1,7 @@
 import {ArrowUpRight} from 'lucide-react'
 import light from './light-actions.module.css'
 import {isIndustryManifest} from './industry-manifest.ts'
-import {useState} from 'react'
+import {useEffect,useState} from 'react'
 import {IndustryUpdateForm} from './IndustryUpdateForm.js'
 import type {IndustryLoadRecord,IndustryLoadUpgradeInput} from './industry-load-api.js'
 import {compareIndustryUpdate, type IndustryUpdateContext, type IndustryUpdateDiff} from './industry-update.js'
@@ -56,29 +56,46 @@ const resourceKindKeys:Record<IndustryResourceKind,`market.industry.resource.${I
   'business-configuration':'market.industry.resource.business-configuration',
 }
 
-export function IndustryUpdatePreview({item,items,spaces,context,open,loads:records,upgrade,rolesReady,rolesFailed,refreshRoles}:{item:MarketItem;items:readonly MarketItem[];spaces:readonly BusinessScopeLabel[]}&IndustryReviewProps){
+export function IndustryUpdatePreview({item,items,spaces,context,open,loads:records,upgrade,rolesReady,rolesFailed,refreshRoles,hydrate}:{item:MarketItem;items:readonly MarketItem[];spaces:readonly BusinessScopeLabel[];hydrate?:(item:MarketItem)=>Promise<MarketItem>}&IndustryReviewProps){
   const {t}=useI18n()
   const [loadId,setLoadId]=useState('')
   const [candidateId,setCandidateId]=useState(item.id)
+  const [retry,setRetry]=useState(0)
+  const [read,setRead]=useState<{key:string;status:'loading'|'failed'|'ready';baseline?:MarketItem;candidate?:MarketItem}>()
   const manifest=item.manifest
-  if(!isIndustryManifest(manifest))return null
-
-  const compatible=(source:MarketItem)=>isIndustryManifest(source.manifest)&&source.manifest.id===manifest.id&&source.manifest.domain===manifest.domain&&source.manifest.scope===manifest.scope&&!!source.packageContent
-  // 加载记录与基线内容一律按身份对上：加载行记着内容身份与摘要，目录条目里正是同一份内容。
-  const baselineOf=(load:IndustryLoadRecord)=>items.find(row=>row.contentStorage?.contentId===load.contentId&&row.packageContent?.hash===load.contentHash&&compatible(row))
-  const loads=records.filter(load=>load.templateId===manifest.id&&load.domain===manifest.domain&&load.scope===manifest.scope&&!!baselineOf(load))
-  if(!loads.length)return null
-
+  const compatible=(source:MarketItem)=>isIndustryManifest(manifest)&&isIndustryManifest(source.manifest)&&source.manifest.id===manifest.id&&source.manifest.domain===manifest.domain&&source.manifest.scope===manifest.scope
+  // 加载记录先按模板身份显示。目录摘要没有正文时，仍可选择该加载并读取它固定的内容。
+  const loads=isIndustryManifest(manifest)?records.filter(load=>load.templateId===manifest.id&&load.domain===manifest.domain&&load.scope===manifest.scope):[]
   const selected=loads.find(row=>row.id===loadId)
-  const baseline=selected&&baselineOf(selected)
-  const candidate=items.find(row=>row.id===candidateId)
+  const baselineSource=selected&&items.find(row=>row.contentStorage?.contentId===selected.contentId)
+  const candidateSource=items.find(row=>row.id===candidateId)??(candidateId===item.id?item:undefined)
+  const contentHash=(source:MarketItem|undefined)=>source?.packageContent?.hash??(source?.contentStorage?.loaded===false?source.hash:undefined)
+  const readKey=JSON.stringify([item.id,selected?.id,selected?.contentId,selected?.contentHash,selected?.mappingHash,baselineSource?.version,contentHash(baselineSource),candidateSource?.id,candidateSource?.version,candidateSource?.contentStorage?.contentId,contentHash(candidateSource)])
+  useEffect(()=>{setCandidateId(item.id);setLoadId('')},[item.id])
+  useEffect(()=>{
+    if(!selected)return
+    let active=true
+    setRead({key:readKey,status:'loading'})
+    const fixed=async(source:MarketItem|undefined,expectedContentId:string|undefined,expectedHash:string|undefined)=>{
+      if(!source||!compatible(source)||!expectedHash||contentHash(source)!==expectedHash||source.contentStorage&&source.contentStorage.contentId!==expectedContentId)throw Error('source')
+      const value=source.packageContent?source:await hydrate?.(source)
+      if(!value||!compatible(value)||!value.packageContent||value.version!==source.version||value.contentStorage?.contentId!==expectedContentId||value.packageContent.hash!==expectedHash)throw Error('source')
+      return value
+    }
+    void Promise.all([fixed(baselineSource,selected.contentId,selected.contentHash),fixed(candidateSource,candidateSource?.contentStorage?.contentId,contentHash(candidateSource))]).then(([baseline,candidate])=>{if(active)setRead({key:readKey,status:'ready',baseline,candidate})}).catch(()=>{if(active)setRead({key:readKey,status:'failed'})})
+    return()=>{active=false}
+  },[readKey,hydrate,retry])
+  if(!isIndustryManifest(manifest)||!loads.length)return null
+  const currentRead=read?.key===readKey?read:undefined
+  const baseline=currentRead?.status==='ready'?currentRead.baseline:undefined
+  const candidate=currentRead?.status==='ready'?currentRead.candidate:undefined
   const resourceName=(id:string,change:keyof typeof changeKeys)=>{
     const source=change==='removed'?baseline:candidate
     return isIndustryManifest(source?.manifest)?source.manifest.resources.find(row=>row.id===id)?.title||id:id
   }
   let diff:IndustryUpdateDiff|undefined
   let error=''
-  if(selected){
+  if(selected&&currentRead?.status==='ready'){
     try{
       if(!baseline||!candidate)throw Error()
       diff=compareIndustryUpdate(context,selected,baseline,candidate)
@@ -90,7 +107,7 @@ export function IndustryUpdatePreview({item,items,spaces,context,open,loads:reco
   // 已执行的升级方案按身份读回，不靠内容摘要或空间 scope 猜：选中的加载本身就是这份候选内容的继任加载时，
   // 它自带的那段血缘就是那次方案。身份比较与 `compareIndustryUpdate` 一样用严格相等，不做大小写归一。
   // （"血缘指回选中加载"的另一支在默认目录下不可达：被替代的加载不在 `list()` 里。）
-  const saved=selected?.upgrade&&candidate?.contentStorage?.contentId===selected.contentId?selected.upgrade:undefined
+  const saved=selected?.upgrade&&candidateSource?.contentStorage?.contentId===selected.contentId?selected.upgrade:undefined
 
   return <section className={css.sheet} aria-label={t('market.industry.updatePreview.aria')}>
     <h3>{t('market.industry.updatePreview.title')}</h3>
@@ -103,9 +120,11 @@ export function IndustryUpdatePreview({item,items,spaces,context,open,loads:reco
     </label>
     <label>{t('market.industry.updatePreview.candidateLabel')}
       <select aria-label={t('market.industry.updatePreview.candidateAria')} value={candidateId} onChange={event=>setCandidateId(event.target.value)}>
-        {items.filter(compatible).map(source=><option key={source.id} value={source.id}>{source.title} · {source.version} · {source.packageContent!.hash.slice(0,12)}</option>)}
+        {items.filter(compatible).map(source=><option key={source.id} value={source.id}>{source.title} · {source.version} · {contentHash(source)?.slice(0,12)}</option>)}
       </select>
     </label>
+    {selected&&(!currentRead||currentRead.status==='loading')&&<p role="status">{t('market.catalog.solution.loading')}</p>}
+    {selected&&currentRead?.status==='failed'&&<p role="alert">{t('market.content.detailReadFailed')}<button type="button" onClick={()=>setRetry(value=>value+1)}>{t('market.industry.saved.retry.reading')}</button></p>}
     {error&&<p role="alert">{error}</p>}
     {diff&&<>
       <p>{t('market.industry.updatePreview.versionSummary',{baseline:baseline!.version,candidate:candidate!.version,result:t(diff.sameContent?'market.industry.updatePreview.sameContent':'market.industry.updatePreview.differentContent')})}</p>

@@ -13,6 +13,7 @@ import base from './TaskPage.module.css'
 import css from './BusinessShareForm.module.css'
 import {BusinessShareInspection} from './BusinessShareInspection.js'
 import type {BusinessShareInspection as Inspection} from '@teloa/contract'
+import {CompleteBusinessExportForm} from './CompleteBusinessExportForm.js'
 
 type Source=Pick<BusinessShareInput,'objectTypes'|'views'|'actions'|'sources'|'available'>
 type Draft=Pick<BusinessShareInput,'packageId'|'packageVersion'|'title'|'description'|'english'>
@@ -35,6 +36,11 @@ function saveArchive(bytes:Uint8Array,name:string){
  * 因此不会把快照、连接地址或凭据重新暴露成可编辑字段。
  */
 export function BusinessShareForm({scope,api,openMarket,draftKey}:Props){
+ if(api.complete)return <CompleteBusinessExportForm scope={scope} api={api.complete} draftKey={draftKey}/>
+ return <BusinessDeclarationShareForm scope={scope} api={api} openMarket={openMarket} draftKey={draftKey}/>
+}
+
+function BusinessDeclarationShareForm({scope,api,openMarket,draftKey}:Props){
  const {t}=useI18n()
  const alive=useRef(true)
  const [source,setSource]=useState<Source>()
