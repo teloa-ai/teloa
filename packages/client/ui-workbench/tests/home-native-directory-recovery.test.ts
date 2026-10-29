@@ -21,7 +21,7 @@ function wired<T>(find:(node:ts.Node)=>ts.Expression|undefined,ports:Record<stri
  const input={...ports,homeNativeAdoptionRequestId:(homeNative as any).homeNativeAdoptionRequestId}
  return new Function(...Object.keys(input),js)(...Object.values(input)) as T
 }
-const homePort=(name:'create'|'adopt',ports:Record<string,unknown>)=>wired<(id:string)=>Promise<any>>(node=>{
+const homePort=(name:'create'|'adopt'|'isEligible',ports:Record<string,unknown>)=>wired<(id:string,afterAdopt?:boolean)=>Promise<any>>(node=>{
  if(!ts.isNewExpression(node)||node.expression.getText(ast)!=='HomeNativeController')return
  const options=node.arguments?.[0]
  if(options&&ts.isObjectLiteralExpression(options))for(const property of options.properties)if(ts.isPropertyAssignment(property)&&property.name.getText(ast)===name)return property.initializer
@@ -53,7 +53,7 @@ function homeEntry(f:ReturnType<typeof fixture>,sessionId:string,provider?:Initi
  const initialSession=createInitialNativeSessionCoordinator(async()=>({current:{getSnapshot:()=>sessionId as any,subscribe:()=>()=>{}},sessions:()=>sessions as any,isBlank:async()=>true}),lifetime.signal)
  if(provider)initialSession.register(provider)
  const homeSession=new homeNative.HomeNativeController({storage:f.storage,identity:unexpected,isBlank:()=>true,create:homePort('create',f.ports),adopt:homePort('adopt',f.ports)})
- const enter=prepareHomeSession({initialSessionLifetime:lifetime,initialSession,homeSession,requireWorkContext:unexpected,requireActions:unexpected,brandString:(value:string)=>value})
+ const enter=prepareHomeSession({initialSessionLifetime:lifetime,initialSession,homeSession,businessBuilder:{followSession:async()=>{},getSnapshot:()=>({status:'ready',nativeReady:true,checkedSessionId:sessionId,sessionKind:null})},mainSession:{getSnapshot:()=>sessionId},requireWorkContext:unexpected,requireActions:unexpected,brandString:(value:string)=>value})
  return {homeSession,enter:()=>enter(new AbortController().signal)}
 }
 
@@ -137,4 +137,123 @@ test('显式初始提供方的原稿已领养时，认领仍走同一幂等领�
  const home=homeEntry(f,id,async request=>{const proof=await request.waitForCurrent();await f.service.adopt(owner,{sessionId:proof.sessionId,requestId:draftRequest,title:'已有原稿'});return proof.sessionId})
  assert.equal(await home.enter(),id);assert.equal(home.homeSession.owns(id),true)
  assert.equal(f.requests.length,1);assert.equal(f.rows().length,1);assert.equal(f.rows()[0]?.requestId,draftRequest)
+})
+
+for(const kind of ['builder','daily'] as const)for(const explicit of [false,true])test(`冷启动空白${kind}会话另备首页，不认领或改写原业务会话 explicit=${explicit}`,async()=>{
+ const businessId='session-business-'+kind,homeId='session-c2345678-1234-4234-8234-123456789012',f=fixture(homeId)
+ const binding={sessionId:businessId},sessions={binding:()=>binding,using:async(_id:string,_options:unknown,operation:any)=>operation({ready:Promise.resolve(),binding})}
+ const lifetime=new AbortController(),mainSession={getSnapshot:()=>businessId as any,subscribe:()=>()=>{}}
+ const initialSession=createInitialNativeSessionCoordinator(async()=>({current:mainSession,sessions:()=>sessions as any,isBlank:async()=>true}),lifetime.signal)
+ if(explicit)initialSession.register(async request=>(await request.waitForCurrent()).sessionId)
+ const homeSession=new homeNative.HomeNativeController({storage:f.storage,identity:()=>homeId,isBlank:()=>true,create:homePort('create',f.ports),adopt:homePort('adopt',f.ports)})
+ const opened:string[]=[],navigated:string[]=[]
+ const enter=prepareHomeSession({initialSessionLifetime:lifetime,initialSession,homeSession,businessBuilder:{followSession:async()=>{throw Error('已核对的业务不能等待旧预览才恢复首页')},getSnapshot:()=>({status:'ready',nativeReady:true,checkedSessionId:businessId,sessionKind:kind})},mainSession,requireWorkContext:()=>({uiWorkspace:{openSession:(id:string)=>opened.push(id)}}),requireActions:()=>({navigate:(view:string)=>navigated.push(view)}),brandString:(value:string)=>value})
+ assert.equal(await enter(new AbortController().signal),homeId)
+ assert.equal(homeSession.owns(homeId),true);assert.equal(homeSession.owns(businessId),false)
+ assert.deepEqual(f.requests.map(row=>row.sessionId),[homeId]);assert.deepEqual(opened,[homeId]);assert.deepEqual(navigated,['home'])
+ assert.equal(f.storage.getItem('teloa.home-native-adoption/'+businessId),null)
+})
+
+for(const changed of ['connection','native-binding','ownership','ownership-error'] as const)test('初始核空期间'+changed+'变化时不认领、不另建首页，保留重试',async()=>{
+ const sessionId='session-d2345678-1234-4234-8234-123456789012',lifetime=new AbortController()
+ let checked:{status:string;nativeReady:boolean;checkedSessionId:string|undefined;sessionKind:null;error?:unknown}={status:'ready',nativeReady:true,checkedSessionId:sessionId,sessionKind:null},release!:()=>void,claims=0,creates=0
+ const initialSession={prepare:async()=>{await new Promise<void>(resolve=>{release=resolve});return {sessionId,assertCurrent:()=>{},explicit:false}}}
+ const enter=prepareHomeSession({initialSessionLifetime:lifetime,initialSession,homeSession:{claimPrepared:async()=>{claims++;return true},prepare:async()=>{creates++;return 'unexpected-home'}},businessBuilder:{followSession:async()=>{},getSnapshot:()=>checked},mainSession:{getSnapshot:()=>sessionId}})
+ const entering=enter(new AbortController().signal)
+ checked={...checked,...(changed==='connection'?{status:'loading'}:changed==='native-binding'?{nativeReady:false}:changed==='ownership-error'?{error:Error('bySession unavailable')}:{checkedSessionId:undefined})};release()
+ await assert.rejects(entering,/业务归属尚未核对/)
+ assert.equal(claims,0);assert.equal(creates,0)
+})
+
+for(const initiallyUnavailable of [false,true])test('冷启动 current 晚恢复先经公开 using 水合，再核归属后领养；未知归属拒绝写入 unavailable='+initiallyUnavailable,async()=>{
+ const sessionId='session-e2345678-1234-4234-8234-123456789012',f=fixture(sessionId),lifetime=new AbortController()
+ const events:string[]=[],listeners=new Set<()=>void>(),binding={sessionId}
+ let current:string|undefined,hydrated=false,unavailable=initiallyUnavailable,waiting!:()=>void
+ const subscribed=new Promise<void>(resolve=>{waiting=resolve})
+ let checked:{status:'ready';nativeReady:boolean;checkedSessionId:string|null;sessionKind:null;error:unknown|null}={status:'ready',nativeReady:false,checkedSessionId:null,sessionKind:null,error:null}
+ const mainSession={getSnapshot:()=>current as any,subscribe:(listener:()=>void)=>{listeners.add(listener);waiting();return()=>{listeners.delete(listener)}}}
+ const sessions={binding:()=>hydrated?binding:undefined,using:async(id:string,_options:unknown,operation:any)=>{
+  assert.equal(id,sessionId);events.push('hydrate');hydrated=true
+  return operation({ready:Promise.resolve(),binding})
+ }}
+ const initialSession=createInitialNativeSessionCoordinator(async()=>({current:mainSession,sessions:()=>sessions as any,isBlank:async()=>{assert.equal(hydrated,true);events.push('blank');return true}}),lifetime.signal)
+ const businessBuilder={getSnapshot:()=>checked,followSession:async(id:string)=>{
+  assert.equal(id,sessionId);assert.equal(hydrated,true,'不能等待归属核对才开始水合')
+  events.push('follow');checked={status:'ready',nativeReady:true,checkedSessionId:id,sessionKind:null,error:unavailable?Error('bySession unavailable'):null}
+ }}
+ const homeSession=new homeNative.HomeNativeController({storage:f.storage,identity:()=>{throw Error('不应另建首页')},isBlank:()=>true,create:homePort('create',f.ports),adopt:async id=>{events.push('adopt');await homePort('adopt',f.ports)(id)}})
+ const enter=prepareHomeSession({initialSessionLifetime:lifetime,initialSession,homeSession,businessBuilder,mainSession})
+ const entering=enter(new AbortController().signal)
+ await subscribed
+ assert.equal(checked.nativeReady,false);assert.deepEqual(events,[])
+ current=sessionId;for(const listener of listeners)listener()
+ if(initiallyUnavailable){
+  await assert.rejects(entering,/业务归属尚未核对/)
+  assert.deepEqual(events,['hydrate','blank','follow'])
+  assert.equal(homeSession.owns(sessionId),false);assert.equal(f.storage.getItem(draftKey),null)
+  assert.deepEqual(f.requests,[]);assert.deepEqual(f.created,[])
+  unavailable=false;checked={...checked,checkedSessionId:null,error:null}
+  assert.equal(await enter(new AbortController().signal),sessionId)
+ }else assert.equal(await entering,sessionId)
+ assert.deepEqual(events.slice(-4),['hydrate','blank','follow','adopt'])
+ assert.equal(homeSession.owns(sessionId),true);assert.deepEqual(f.requests.map(row=>row.sessionId),[sessionId]);assert.deepEqual(f.created,[])
+})
+
+test('首页已准备后再次进入仍先水合并核对归属，不能复用初次成功跳过未知错误',async()=>{
+ const sessionId='session-f2345678-1234-4234-8234-123456789012',lifetime=new AbortController()
+ let checked:{status:string;nativeReady:boolean;checkedSessionId:string;sessionKind:null;error:unknown|null}={status:'ready',nativeReady:true,checkedSessionId:sessionId,sessionKind:null,error:null},claims=0,creates=0,hydrates=0
+ const enter=prepareHomeSession({initialSessionLifetime:lifetime,initialSession:{prepare:async()=>{hydrates++;return {sessionId,assertCurrent:()=>{},explicit:false}}},homeSession:{claimPrepared:async()=>{claims++;return true},prepare:async()=>{creates++;return 'unexpected-home'}},businessBuilder:{followSession:async()=>{throw Error('归属已有结论，不应重试其失败读取')},getSnapshot:()=>checked},mainSession:{getSnapshot:()=>sessionId}})
+ assert.equal(await enter(new AbortController().signal),sessionId)
+ checked={...checked,error:Error('bySession unavailable')}
+ await assert.rejects(enter(new AbortController().signal),/业务归属尚未核对/)
+ assert.equal(hydrates,2);assert.equal(claims,1);assert.equal(creates,0)
+})
+
+for(const kind of ['builder','daily',null] as const)test('正式首页归属端口使用已核对的当前类型，不为'+kind+'复用错误缓存',async()=>{
+ const sessionId='eligible-current',eligible=homePort('isEligible',{businessBuilder:{getSnapshot:()=>({status:'ready',checkedSessionId:sessionId,sessionKind:kind,error:kind?Error('preview conflict'):null})},businessBuilderApi:{bySession:async()=>{throw Error('不应重复等待已核对业务的预览或归属')}}})
+ assert.equal(await eligible(sessionId),kind===null)
+})
+
+test('正式首页归属端口对非当前缓存重读业务绑定，读取未知不能当作通用会话',async()=>{
+ let result:any={kind:'builder'},unavailable=false;const reads:string[]=[]
+ const eligible=homePort('isEligible',{businessBuilder:{getSnapshot:()=>({status:'ready',checkedSessionId:'different',sessionKind:null,error:null})},businessBuilderApi:{bySession:async({sessionId}:any)=>{reads.push(sessionId);if(unavailable)throw Error('bySession unavailable');return result}}})
+ assert.equal(await eligible('saved-business'),false)
+ result={kind:'daily'};assert.equal(await eligible('saved-daily'),false)
+ result=null;assert.equal(await eligible('saved-general'),true)
+ unavailable=true;await assert.rejects(eligible('saved-unknown'),/bySession unavailable/)
+ assert.deepEqual(reads,['saved-business','saved-daily','saved-general','saved-unknown'])
+})
+
+test('正式归属端口允许新原生会话先接入，再确认业务为空后开放首页',async()=>{
+ const sessionId='session-02345678-1234-4234-8234-123456789012',f=fixture(sessionId),events:string[]=[]
+ const eligible=homePort('isEligible',{businessBuilder:{getSnapshot:()=>({status:'ready',checkedSessionId:'other',sessionKind:null,error:null})},businessBuilderApi:{bySession:async({sessionId:id}:any)=>{
+  assert.equal(id,sessionId)
+  if(!f.rows().some(row=>row.sessionId===id)){events.push('not-bound');throw Object.assign(Error('尚未接入'),{code:'teloa/not-bound'})}
+  events.push('business-null');return null
+ }}})
+ const home=new homeNative.HomeNativeController({storage:f.storage,identity:()=>sessionId,isBlank:()=>true,isEligible:eligible,create:homePort('create',f.ports),adopt:async id=>{events.push('adopt');await homePort('adopt',f.ports)(id)}})
+ assert.equal(await home.prepare(),sessionId);assert.equal(home.owns(sessionId),true)
+ assert.deepEqual(events,['not-bound','adopt','business-null']);assert.equal(f.rows().length,1)
+ assert.deepEqual(f.requests.map(row=>row.sessionId),[sessionId])
+})
+
+for(const phase of ['before','after'])for(const reason of ['forbidden','network'])test('正式归属端口'+phase+'接入遇到'+reason+'仍拒绝开放首页',async()=>{
+ const sessionId='session-12345670-1234-4234-8234-123456789012',f=fixture(sessionId)
+ const failure=reason==='forbidden'?Object.assign(Error('forbidden'),{code:'teloa/forbidden'}):Error('network unavailable')
+ const eligible=homePort('isEligible',{businessBuilder:{getSnapshot:()=>({status:'ready',checkedSessionId:'other',sessionKind:null,error:null})},businessBuilderApi:{bySession:async()=>{
+  if(phase==='after'&&!f.rows().length)throw Object.assign(Error('尚未接入'),{code:'teloa/not-bound'})
+  throw failure
+ }}})
+ const home=new homeNative.HomeNativeController({storage:f.storage,identity:()=>sessionId,isBlank:()=>true,isEligible:eligible,create:homePort('create',f.ports),adopt:homePort('adopt',f.ports)})
+ await assert.rejects(home.prepare(),failure)
+ assert.equal(home.owns(sessionId),false);assert.equal(f.storage.getItem(draftKey),sessionId)
+ assert.equal(f.requests.length,phase==='after'?1:0)
+})
+
+test('正式归属端口在接入后必须重读，当前缓存及重复not-bound都不能替代确认',async()=>{
+ let reads=0
+ const eligible=homePort('isEligible',{businessBuilder:{getSnapshot:()=>({status:'ready',checkedSessionId:'current',sessionKind:null,error:null})},businessBuilderApi:{bySession:async()=>{reads++;throw Object.assign(Error('仍未接入'),{code:'teloa/not-bound'})}}})
+ assert.equal(await eligible('current'),true);assert.equal(reads,0)
+ await assert.rejects(eligible('current',true),{code:'teloa/not-bound'})
+ assert.equal(reads,1)
 })

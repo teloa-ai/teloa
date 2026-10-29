@@ -669,6 +669,16 @@ export async function apply(ctx: Context): Promise<void> {
   const management=new ConversationManagement(()=>work.getDirectorySnapshot().rows)
   const homeSession=new HomeNativeController({
     storage:navigationStorage,identity:()=>crypto.randomUUID(),
+    isEligible:async(id,afterAdopt=false)=>{
+      const state=businessBuilder.getSnapshot()
+      if(!afterAdopt&&state.status==='ready'&&state.checkedSessionId===id&&(!state.error||state.sessionKind!==null))return state.sessionKind===null
+      try{return await businessBuilderApi.bySession({sessionId:id})===null}
+      catch(error){
+        // 新建原生会话尚无工作绑定；adopt 会校验可接入性，接入后再复核业务归属。
+        if(!afterAdopt&&error&&typeof error==='object'&&'code'in error&&error.code==='teloa/not-bound')return true
+        throw error
+      }
+    },
     refresh:()=>requireWorkContext().sessions.refresh(),
     isBlank:id=>{const child=requireWorkContext();return readHomeNativeBlank(child.sessions,brandString<SessionId>(id),binding=>child.conversation.input.for(binding.ctx).state.getSnapshot().queue.some(item=>item.source.kind==='user'&&'rpcId'in item.source))},
     create:async id=>{
@@ -700,10 +710,17 @@ export async function apply(ctx: Context): Promise<void> {
   ctx.on('teloa/initial-native-session/register',initialSession.register)
   const prepareHomeSession=async(signal:AbortSignal)=>{
     const lifetime=AbortSignal.any([signal,initialSessionLifetime.signal])
+    // 尚未装配的原生 binding 先由公开 using 路径只读水合，不能等待依赖该 binding 的归属核对才开始。
+    const proof=await initialSession.prepare(lifetime)
+    lifetime.throwIfAborted()
+    if(businessBuilder.getSnapshot().checkedSessionId!==(mainSession.getSnapshot()??null))await businessBuilder.followSession(mainSession.getSnapshot())
+    lifetime.throwIfAborted()
+    proof?.assertCurrent()
+    const checked=businessBuilder.getSnapshot()
+    if(checked.status!=='ready'||!checked.nativeReady||checked.checkedSessionId!==(mainSession.getSnapshot()??null)||checked.error&&checked.sessionKind===null)throw Error('当前会话业务归属尚未核对，请重试。')
     if(!initialSessionPrepared){
-      const proof=await initialSession.prepare(lifetime)
-      lifetime.throwIfAborted()
-      if(proof&&await homeSession.claimPrepared(proof.sessionId,proof.assertCurrent,proof.explicit)){initialSessionPrepared=true;return proof.sessionId}
+      const businessSession=proof&&checked.checkedSessionId===proof.sessionId&&checked.sessionKind!==null
+      if(proof&&!businessSession&&await homeSession.claimPrepared(proof.sessionId,proof.assertCurrent,proof.explicit)){initialSessionPrepared=true;return proof.sessionId}
       initialSessionPrepared=true
     }
     const id=await homeSession.prepare()

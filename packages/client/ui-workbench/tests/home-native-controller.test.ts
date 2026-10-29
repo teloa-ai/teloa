@@ -205,3 +205,103 @@ test('真实已发送回执退役待用会话，过时blank与迟到回执不能
  controller.accept('s-1');assert.equal(await controller.prepare(),'s-2')
  controller.accept('s-1');assert.equal(await controller.prepare(),'s-2')
 })
+
+for(const kind of ['builder','daily'])for(const warm of [false,true])test('首页缓存误指向'+kind+'时另备独立首页，原业务副本保留 warm='+warm,async()=>{
+ const storage=memory(),old=kind+'-original',created:string[]=[],adopted:string[]=[]
+ storage.setItem('teloa.home-native-session/v1',old);storage.setItem('business-draft:'+old,'原草稿与输入')
+ let eligible=warm
+ const controller=new HomeNativeController({storage,identity:()=> 'home-independent',isBlank:()=>true,isEligible:async id=>id!==old||eligible,create:async id=>{created.push(id);return id},adopt:async id=>{adopted.push(id)}})
+ if(warm){assert.equal(await controller.prepare(),old);created.length=0;adopted.length=0}
+ eligible=false
+ assert.equal(await controller.prepare(),'home-independent')
+ assert.equal(storage.getItem('teloa.home-native-session/v1'),'home-independent')
+ assert.equal(storage.getItem('business-draft:'+old),'原草稿与输入')
+ assert.deepEqual(created,['home-independent']);assert.deepEqual(adopted,['home-independent'])
+ assert.equal(controller.owns(old),false);assert.equal(controller.owns('home-independent'),true)
+})
+
+for(const operation of ['claim','prepare'] as const)test('首页归属读取未知时'+operation+'不改变缓存、不领养业务会话',async()=>{
+ const storage=memory(),adopted:string[]=[],created:string[]=[]
+ storage.setItem('teloa.home-native-session/v1','original')
+ const controller=new HomeNativeController({storage,identity:()=>{throw Error('不应另建')},isBlank:()=>true,isEligible:async()=>{throw Error('bySession unavailable')},create:async id=>{created.push(id);return id},adopt:async id=>{adopted.push(id)}})
+ await assert.rejects(operation==='claim'?controller.claimPrepared('original',()=>{}):controller.prepare(),/bySession unavailable/)
+ assert.equal(storage.getItem('teloa.home-native-session/v1'),'original');assert.deepEqual(adopted,[]);assert.deepEqual(created,[])
+})
+
+for(const stage of ['saved','created'])for(const eligible of [false,true])test('首页'+stage+'归属迟答不能覆盖或领养更新的待用身份 eligible='+eligible,async()=>{
+ const storage=memory(),entered=deferred(),adopted:string[]=[],created:string[]=[];let finish!:(value:boolean)=>void
+ if(stage==='saved')storage.setItem('teloa.home-native-session/v1','original')
+ const result=new Promise<boolean>(resolve=>{finish=resolve})
+ const controller=new HomeNativeController({storage,identity:()=> 'original',isBlank:()=>true,isEligible:async()=>{entered.resolve();return result},create:async id=>{created.push(id);return id},adopt:async id=>{adopted.push(id)}})
+ const preparing=controller.prepare();await entered.promise
+ storage.setItem('teloa.home-native-session/v1','newer');finish(eligible)
+ await assert.rejects(preparing,/身份已变化/)
+ assert.equal(storage.getItem('teloa.home-native-session/v1'),'newer');assert.deepEqual(adopted,[])
+ assert.deepEqual(created,stage==='saved'?[]:['original']);assert.equal(controller.owns('original'),false)
+})
+
+test('初始认领的归属迟答不能改写更新的待用身份',async()=>{
+ const storage=memory(),entered=deferred(),adopted:string[]=[];let finish!:(value:boolean)=>void
+ const result=new Promise<boolean>(resolve=>{finish=resolve})
+ const controller=new HomeNativeController({storage,identity:()=> 'unexpected',isBlank:()=>true,isEligible:async()=>{entered.resolve();return result},create:async id=>id,adopt:async id=>{adopted.push(id)}})
+ const claiming=controller.claimPrepared('original',()=>{});await entered.promise
+ storage.setItem('teloa.home-native-session/v1','newer');finish(false)
+ await assert.rejects(claiming,/身份已变化/)
+ assert.equal(storage.getItem('teloa.home-native-session/v1'),'newer');assert.deepEqual(adopted,[])
+})
+
+for(const stage of ['before-blank','adopt','final-blank'])for(const blank of stage==='adopt'?[true]:[false,true])test('首页恢复'+stage+'迟答不能清新指针或标记旧会话可用 blank='+blank,async()=>{
+ const storage=memory(),entered=deferred(),released=deferred(),adopted:string[]=[],created:string[]=[]
+ if(stage==='before-blank')storage.setItem('teloa.home-native-session/v1','original')
+ const controller=new HomeNativeController({storage,identity:()=> 'original',isEligible:async()=>true,isBlank:async()=>{
+  if(stage!=='adopt'){entered.resolve();await released.promise;return blank}
+  return true
+ },create:async id=>{created.push(id);return id},adopt:async id=>{
+  adopted.push(id);if(stage==='adopt'){entered.resolve();await released.promise}
+ }})
+ const preparing=controller.prepare();await entered.promise
+ storage.setItem('teloa.home-native-session/v1','newer');released.resolve()
+ await assert.rejects(preparing,/身份已变化/)
+ assert.equal(storage.getItem('teloa.home-native-session/v1'),'newer');assert.equal(controller.owns('original'),false)
+ assert.deepEqual(created,stage==='before-blank'?[]:['original']);assert.deepEqual(adopted,stage==='before-blank'?[]:['original'])
+})
+
+test('新接入后才发现业务绑定时退役首页指针并另备空稿，不把业务会话标为ready',async()=>{
+ const storage=memory(),adopted:string[]=[],created:string[]=[],checks:Array<[string,boolean]>=[];let identities=0
+ const controller=new HomeNativeController({storage,identity:()=>++identities===1?'business-candidate':'independent-home',isBlank:()=>true,isEligible:async(id,afterAdopt=false)=>{
+  checks.push([id,afterAdopt]);return !afterAdopt||id!=='business-candidate'
+ },create:async id=>{created.push(id);return id},adopt:async id=>{adopted.push(id)}})
+ assert.equal(await controller.prepare(),'independent-home')
+ assert.equal(controller.owns('business-candidate'),false);assert.equal(controller.owns('independent-home'),true)
+ assert.equal(storage.getItem('teloa.home-native-session/v1'),'independent-home')
+ assert.deepEqual(created,['business-candidate','independent-home']);assert.deepEqual(adopted,['business-candidate','independent-home'])
+ assert.deepEqual(checks,[['business-candidate',false],['business-candidate',true],['independent-home',false],['independent-home',true]])
+})
+
+test('初始认领接入后才发现业务绑定时返回未认领，不开放原业务会话',async()=>{
+ const storage=memory(),adopted:string[]=[]
+ const controller=new HomeNativeController({storage,identity:()=> 'unused',isBlank:()=>true,isEligible:async(_id,afterAdopt=false)=>!afterAdopt,create:async id=>id,adopt:async id=>{adopted.push(id)}})
+ assert.equal(await controller.claimPrepared('business-candidate',()=>{}),false)
+ assert.equal(controller.owns('business-candidate'),false);assert.equal(storage.getItem('teloa.home-native-session/v1'),null)
+ assert.deepEqual(adopted,['business-candidate'])
+})
+
+for(const operation of ['claim','prepare'] as const)test(operation+'接入后的归属读取未知时保留原指针且不标ready',async()=>{
+ const storage=memory(),adopted:string[]=[];storage.setItem('teloa.home-native-session/v1','original')
+ const controller=new HomeNativeController({storage,identity:()=> 'unused',isBlank:()=>true,isEligible:async(_id,afterAdopt=false)=>{if(afterAdopt)throw Error('post-adopt unavailable');return true},create:async id=>id,adopt:async id=>{adopted.push(id)}})
+ await assert.rejects(operation==='claim'?controller.claimPrepared('original',()=>{}):controller.prepare(),/post-adopt unavailable/)
+ assert.equal(storage.getItem('teloa.home-native-session/v1'),'original');assert.equal(controller.owns('original'),false)
+ assert.deepEqual(adopted,['original'])
+})
+
+for(const operation of ['claim','prepare'] as const)for(const eligible of [false,true])test(operation+'接入后归属迟答不能改写新指针 eligible='+eligible,async()=>{
+ const storage=memory(),entered=deferred(),adopted:string[]=[];let finish!:(value:boolean)=>void
+ storage.setItem('teloa.home-native-session/v1','original')
+ const result=new Promise<boolean>(resolve=>{finish=resolve})
+ const controller=new HomeNativeController({storage,identity:()=> 'unused',isBlank:()=>true,isEligible:async(_id,afterAdopt=false)=>{if(!afterAdopt)return true;entered.resolve();return result},create:async id=>id,adopt:async id=>{adopted.push(id)}})
+ const preparing=operation==='claim'?controller.claimPrepared('original',()=>{}):controller.prepare();await entered.promise
+ storage.setItem('teloa.home-native-session/v1','newer');finish(eligible)
+ await assert.rejects(preparing,/身份已变化/)
+ assert.equal(storage.getItem('teloa.home-native-session/v1'),'newer');assert.equal(controller.owns('original'),false)
+ assert.deepEqual(adopted,['original'])
+})

@@ -429,6 +429,7 @@ export function WorkbenchFrame({assistantActivity,assistantChat,groupWorkLinks,e
   const [builderTab,setBuilderTab]=useState<'conversation'|'preview'>('conversation')
   const [builderError,setBuilderError]=useState<string>(),[builderSwitch,setBuilderSwitch]=useState<{token:BusinessNavigationToken;switching:boolean;proceed:()=>void}>()
   const builderVisible=!!builderValue?.binding&&builderValue.binding.kind==='builder'&&(builderValue.binding.sessionId===current||!builderValue.binding.sessionId&&builderState.checkedSessionId===current)&&state.view==='messages'&&state.messageMode==='native'
+  const knownBusinessSession=!!current&&builderState.checkedSessionId===current&&builderState.sessionKind!==null
   const beforeBuilderLeave=async()=>{
     if(!builderVisible||!builderFlow)return true
     const controller=businessBuilder,identity=controller?.getSnapshot(),location=homeCreationLocation(latestState.current)
@@ -442,25 +443,25 @@ export function WorkbenchFrame({assistantActivity,assistantChat,groupWorkLinks,e
   const [assistantActive,setAssistantActive]=useState(()=>{try{return navigationStorage.getItem('teloa.assistant-visible/v1')==='true'}catch{return false}})
   const setCompanionActive=(active:boolean)=>{setAssistantActive(active);try{navigationStorage.setItem('teloa.assistant-visible/v1',String(active))}catch{/* 仅偏好不可写时仍允许本页使用。 */}}
   const homeManagement=useSyncExternalStore(management.subscribe,management.getSnapshot)
-  const [homeSessionId,setHomeSessionId]=useState<string>(),[homeInputError,setHomeInputError]=useState<'restore'|'location'>(),[homeRetry,setHomeRetry]=useState(0)
+  const [homeSessionId,setHomeSessionId]=useState<string>(),[homeInputError,setHomeInputError]=useState<'restore'|'location'|'slow'>(),[homeRetry,setHomeRetry]=useState(0)
   useEffect(()=>{
     if(state.view!=='home')return
     if(!homeManagement.ready){
       // 连接层未就绪时准备器不会启动；同样要有到点恢复态，不能让首页永久显示“正在准备”。
-      const timer=setTimeout(()=>setHomeInputError('restore'),12000)
+      const timer=setTimeout(()=>setHomeInputError('slow'),12000)
       return()=>clearTimeout(timer)
     }
-    if(businessBuilder&&current&&builderState.checkedSessionId!==current)return
-    if(businessBuilder&&builderState.error)return
+    // 准备器先只读水合恢复中的原生会话，归属确认后才允许认领或新建首页。
+    if(businessBuilder&&builderState.error&&!knownBusinessSession)return
     // 业务会话不是首页待用稿；回工作台沿原准备器恢复本人首页，保留业务草案归属。
     const controller=new AbortController()
-    // 数据面整体不可用时，准备器可能永远等不到 ready；到点必须给出可重试的恢复态，不能把“正在准备”当成终态。
+    // 慢连接到点显示可重试态，但仍允许同一有效恢复完成；离开页面或重试才撤销旧准备器。
     const timeout=setTimeout(()=>{
       if(controller.signal.aborted)return
-      setHomeInputError('restore')
-      controller.abort()
+      setHomeInputError('slow')
     },12000)
     setHomeSessionId(undefined);setHomeInputError(undefined)
+    if(knownBusinessSession)setBuilderError(undefined)
     void prepareHomeSession(controller.signal).then(id=>{if(!controller.signal.aborted)setHomeSessionId(id)}).catch(cause=>{if(!controller.signal.aborted)setHomeInputError(cause&&typeof cause==='object'&&cause.code==='teloa/home-location-required'?'location':'restore')}).finally(()=>clearTimeout(timeout))
     return()=>{clearTimeout(timeout);controller.abort()}
   },[state.view,homeRetry,prepareHomeSession,homeManagement.ready,businessBuilder,current,builderState.checkedSessionId,builderState.sessionKind,builderState.error,builderVisible])
@@ -2582,7 +2583,7 @@ export function WorkbenchFrame({assistantActivity,assistantChat,groupWorkLinks,e
         <main id="teloa-main" tabIndex={-1} className={clsx(css.main,nativeMainVisible&&css.conversationMain,objectEmbedded&&css.withObjectPanel,builderVisible&&css.withBuilder,builderVisible&&builderTab==='preview'&&css.builderPreviewSelected)}>
           {nativePanelError&&<p role="alert">{nativePanelError}</p>}
           {builderError&&!businessLedgerHome&&<p role="alert">{builderError}</p>}
-          {!!builderState.error&&!businessLedgerHome&&(state.view==='messages'||state.view==='home')&&<p role="alert">{t('business.builder.error')} <button type="button" onClick={()=>void businessBuilder?.retry()}>{t('common.retry')}</button></p>}
+          {!!builderState.error&&!businessLedgerHome&&(state.view==='messages'||state.view==='home'&&!knownBusinessSession)&&<p role="alert">{t('business.builder.error')} <button type="button" onClick={()=>void businessBuilder?.retry()}>{t('common.retry')}</button></p>}
           {!builderVisible&&conversationVisible&&contextRole&&<CapabilityNotice capability="people"/>}
           {!builderVisible&&conversationVisible&&current&&projectApi.runtime&&<ProjectConversationContext sessionId={current} api={projectApi} resolved={setConversationProject} className={css.objectContext} openProject={project=>openContextBusiness({scope:project.scope as CollaborationScope,section:'projects',id:project.id})} newConversation={(project,mode)=>{void projectConversationActions.create(project,mode,projectRuntimeCopy(locale).newConversation).catch(error=>setServerRecoveryNotice(localizeWorkError(locale,error)))}}/>}
           {!builderVisible&&conversationVisible&&conversationObject&&contextLinked&&(conversationObject.object.kind==='role'&&contextRole

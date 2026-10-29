@@ -45,10 +45,12 @@ const useStore=selector=>selector(useSyncExternalStore(store.subscribe,store.get
 const work=new BindingClient({list:async()=>{if(f.holdVoiceDirectory){f.voicePreparePending=true;await new Promise(resolve=>{f.releaseVoicePrepare=()=>{f.holdVoiceDirectory=false;resolve()}})}return [...rows.values()]},read:async id=>{if(f.holdAssistantOpen){f.assistantReading=true;await new Promise(r=>releaseAssistantOpen=r)}return rows.get(id)},ensure:async id=>{if(f.holdEnsure){f.ensureStarted=true;await new Promise(resolve=>{f.releaseEnsure=()=>{f.holdEnsure=false;resolve()}})}return rows.get(id)},isNativeChild:()=>false,catalog:async()=>({skills:[],tools:[]}),block:()=>{},current:()=>selected,open:id=>{selected=id;if(f.nativeOpenView==='messages')store.actions.openMessages('native');else if(f.nativeOpenView)store.actions.navigate(f.nativeOpenView);for(const l of listeners)l()},adopt:async id=>{if(startup.republishInputOnAdopt&&selected){inputs.set(selected,structuredClone(inputs.get(selected)||emptyInput));f.nativeNotify()}return id},assistant:async p=>{if(f.holdAssistantOpen){f.assistantReading=true;await new Promise(r=>releaseAssistantOpen=r)}let row=[...rows.values()].find(r=>r.purpose==='assistant'||r.title==='Teloa 小松鼠助手');if(!row){f.creates++;if(f.holdCreate)await new Promise(r=>releaseCreate=r);const id=crypto.randomUUID();row={id:crypto.randomUUID(),ownerId:'self',title:'Teloa 小松鼠助手',purpose:'assistant',version:1,status:'ready',sessionId:id,requestedSessionId:id,requestId:crypto.randomUUID(),scopeIds:['general'],createdAt:stamp,...(p.workspaceId?{requestedWorkspaceId:p.workspaceId}:{})};rows.set(id,row)}else{row={...row,purpose:'assistant'};rows.set(row.sessionId,row)}byId[row.sessionId]={...row,displayTitle:row.title};if(f.loseCreate){f.loseCreate=false;throw Error('lost native create response')}return row},create:async p=>{const prior=[...rows.values()].find(row=>row.requestId===p.requestId);if(prior)return prior;f.creates++;if(f.holdCreate)await new Promise(r=>releaseCreate=r);const row={id:crypto.randomUUID(),ownerId:'self',title:p.title||'工作会话',version:1,status:'ready',sessionId:crypto.randomUUID(),requestedSessionId:'fixed',requestId:p.requestId,scopeIds:['general'],createdAt:stamp,...(p.workspaceId?{requestedWorkspaceId:p.workspaceId}:{})};rows.set(row.sessionId,row);byId[row.sessionId]={...row,displayTitle:row.title};if(f.loseCreate){f.loseCreate=false;throw Error('lost native create response')}return row}});
 // 此分支复用真实首页 ownership，避免无条件输出 overview 的槽探针掩盖归属不符。
 const homeSession=new HomeNativeController({storage:sessionStorage,identity:()=>'fixture-home-return',isBlank:()=>true,create:async id=>{f.homeCreates=(f.homeCreates||0)+1;const row={id:crypto.randomUUID(),ownerId:'self',title:'本人首页待用会话',version:1,status:'ready',sessionId:id,requestedSessionId:id,requestId:crypto.randomUUID(),scopeIds:['general'],createdAt:stamp};rows.set(id,row);byId[id]={...row,displayTitle:row.title};return id},adopt:async()=>{}});
-const prepareFrameHome=async signal=>{f.prepares++;if(!startup.realHome)return selected;const id=await homeSession.prepare();signal.throwIfAborted();await work.openSessionResult(id,signal);return id};
+const waitHomeBinding=signal=>new Promise(resolve=>{let off=()=>{};const finish=()=>{off();signal.removeEventListener('abort',finish);resolve()};off=work.subscribe(()=>{if(work.getSnapshot().status==='ready')finish()});signal.addEventListener('abort',finish,{once:true});if(signal.aborted||work.getSnapshot().status==='ready')finish()});
+const prepareFrameHome=async signal=>{f.prepares++;(f.homePrepareSignals??=[]).push(signal);if(startup.coldHomeBootstrap&&!selected)await new Promise(resolve=>{f.releaseHomeCurrent=resolve});if(startup.ensureHandshake){await waitHomeBinding(signal);signal.throwIfAborted();await controller.followSession(selected)}if(f.holdHomePrepare)await new Promise(resolve=>{(f.homePrepareResolvers??=[]).push(resolve);f.releaseHomePrepare=()=>{f.holdHomePrepare=false;f.homePrepareResolvers.splice(0).forEach(resolve=>resolve())}});signal.throwIfAborted();if(startup.hydrateOnHomePrepare){const snapshot=controller.getSnapshot();(f.homePrepareNativeReady??=[]).push(snapshot.nativeReady);(f.homePrepareFacts??=[]).push({hasCurrent:!!selected,checked:snapshot.checkedSessionId===selected,nativeReady:snapshot.nativeReady});f.native(true)}if(!startup.realHome)return selected;const id=await homeSession.prepare();signal.throwIfAborted();await work.openSessionResult(id,signal);return id};
 if(startup.ensureHandshake){const row={id:crypto.randomUUID(),ownerId:'self',title:'首页待用会话',version:1,status:'ready',sessionId:selected,requestedSessionId:selected,scopeIds:['general'],createdAt:stamp};rows.set(selected,row);byId[selected]={...row,displayTitle:row.title};void work.select(selected)}
 const api={recentDaily:async({scope})=>{f.recentReads=(f.recentReads||0)+1;if(f.failRecent)throw Error('recent unavailable');return [...reservations.values()].filter(b=>b.kind==='daily'&&b.scope===scope).at(-1)||null},bySession:async({sessionId})=>{f.bindingReads++;if(startup.ensureHandshake&&work.getSnapshot().status!=='ready')throw Object.assign(Error('not yet bound'),{code:'teloa/not-bound'});if(f.failBinding||f.failBindingAt===f.bindingReads)throw Error('binding transient');return [...reservations.values()].find(b=>b.sessionId===sessionId||b.requestId===rows.get(sessionId)?.requestId)||null},byRequest:async({requestId})=>reservations.get(requestId),reserve:async p=>{if(f.failReserve)throw Object.assign(Error('reservation conflict'),{code:'teloa/conflict'});let b=reservations.get(p.requestId);if(!b){b={...p,...(p.kind==='builder'?{draftId:crypto.randomUUID()}:{}),createdAt:stamp,updatedAt:stamp};reservations.set(p.requestId,b);draft={id:b.draftId,ownerId:'self',scope:'sales',revision:1,baseVersion:0,status:'draft',hash:'a'.repeat(64),createdAt:stamp,updatedAt:stamp,candidate:{format:'teloa.business-configuration/v1',scope:'sales',title:'验收业务',sources:[],definitions:[],pages:[]}}}return b},bind:async p=>{const b={...reservations.get(p.requestId),sessionId:p.sessionId};reservations.set(p.requestId,b);return b},draft:async()=>draft,list:async()=>({items:[...reservations.values()].filter(b=>b.kind==='builder').map(binding=>({binding,draft:{id:binding.draftId,scope:'sales',title:'验收业务',revision:1,status:'draft',updatedAt:stamp}}))}),current:async()=>{f.calls.push('current');return f.formal?formal:null},page:async()=>({mode:'saved',scope:'sales',configurationVersion:1,configurationHash:'a'.repeat(64),page:{kind:'records',definition:pageDefinition,objectType,emptyState:'no-records'}})};
 const pageDefinition={id:'records',title:'客户记录',kind:'records',objectType:'customer',fields:['name'],allowCreate:false,allowEdit:false,allowArchive:false};const objectType={format:'teloa.business-object-type/v1',id:'customer',domain:'sales',version:'1.0.0',title:'客户',unit:'条',lead:'客户',sourceId:'local',fields:[{name:'name',label:'名称',from:'名称',type:'text',required:false}]};const formal={scope:'sales',version:1,hash:'a'.repeat(64),createdAt:stamp,manifest:{format:'teloa.business-configuration/v1',scope:'sales',title:'验收业务',sources:[{sourceId:'local',kind:'local-records'}],definitions:[{kind:'object-type',localId:'customer',version:1,definitionHash:'a'.repeat(64)}],pages:[pageDefinition],homePageId:'records'}};
+f.savedBusinessDraft=()=>structuredClone(draft);f.inputFor=id=>structuredClone(inputs.get(id));f.previewConflict=async()=>{draft={...draft,revision:2,hash:'b'.repeat(64),candidate:{...draft.candidate,pages:[pageDefinition]}};api.preview=async()=>{throw Object.assign(Error('业务配置基线已变化，请重新生成草案。'),{code:'teloa/version-conflict'})};await controller.refreshPreview()};
 const record={scope:'sales',type:'customer',id:'customer-one',version:3,snapshotHash:'b'.repeat(64),title:'客户甲',source:'local',observedAt:stamp,receivedAt:stamp,quality:'complete',summary:'',fields:[]};
 const controller=new BusinessBuilderController({api,work,storage:localStorage,identity:async()=>{if(f.holdIdentity)await new Promise(r=>releaseIdentity=r);if(f.identityFails)throw Error('identity failed');return space.id},subscribeNative:listener=>{nativeListeners.add(listener);return()=>nativeListeners.delete(listener)},contextCall:async(endpoint,p)=>{if(endpoint==='work-context/read')return contexts.get(p.sessionId)||null;const value={sessionId:p.sessionId,scopeId:p.scopeId,roleId:p.roleId,version:1,locked:false};contexts.set(p.sessionId,value);return value},switching:{read:()=>({mainSessionId:selected,bindingSessionId:startup.ensureHandshake?work.getSnapshot().sessionId:selected,bindingReady:f.nativeReady&&(!startup.ensureHandshake||work.getSnapshot().status==='ready'),input:!f.nativeReady?undefined:selected?(inputs.get(selected)||emptyInput):null,pendingSubmissions:[],monitor:undefined})},block:(id,reason)=>{if(reason)f.blocks[id]=reason;else delete f.blocks[id]},watch:()=>()=>{},id:()=>crypto.randomUUID()});
 const management=new ConversationManagement(()=>[...rows.values()]);const managementState={ready:true,baseline:true,archived:[],workspaces:[{workspaceId:'workspace',title:'工作目录',path:'/fixture',sessionIds:[]}]};management.attach({state:()=>managementState,subscribe:()=>()=>{},summary:()=>({title:'会话',running:false,blank:false})});
@@ -108,6 +110,7 @@ before(async()=>{
 after(async()=>{await browser?.close();if(temp)await rm(temp,{recursive:true,force:true})})
 async function mount(t:any,locale='zh-CN',startup:Record<string,unknown>={}){
  const page=await browser.newPage({viewport:{width:1400,height:1000}});page.setDefaultTimeout(5000);const errors:string[]=[];let failFrame!:(error:Error)=>void;const frameError=new Promise<never>((_resolve,reject)=>{failFrame=reject});void frameError.catch(()=>{});page.on('pageerror',(e:Error)=>{errors.push(e.message);failFrame(e)});t.after(async()=>{await page.close();assert.deepEqual(errors,[])})
+ if(startup.clock)await page.clock.install()
  await page.route('**/*',(r:any)=>r.request().isNavigationRequest()?r.fulfill({contentType:'text/html',body:'<html lang="'+locale+'"><body><div id="root"></div></body></html>'}):r.abort())
  await page.goto('https://fixture.invalid');await page.evaluate((value:Record<string,unknown>)=>{if(value.voice)sessionStorage.setItem('teloa.assistant-visible/v1','true');(window as any).frameStartup=value},startup);await page.addStyleTag({content:'*{box-sizing:border-box}body{margin:0;font-family:system-ui}'+styles});await page.addScriptTag({content:script})
  await Promise.race([page.waitForFunction(()=>(window as any).frameFixture.controller.getSnapshot().status==='ready'&&document.querySelector('#teloa-main')!==null),frameError])
@@ -288,7 +291,7 @@ test('Task3 最近会话读取失败可在正式页重试，错误不当空值�
 })
 
 
-for(const previous of ['none','success','failed'])test('R1 全局daily第二次归属读取失败仅保留当前控制器重试 previous='+previous,async t=>{
+for(const previous of ['none','success','failed'])test('R1 全局daily第二次归属读取失败在原业务页仅保留当前控制器重试 previous='+previous,async t=>{
  const page=await mount(t)
  if(previous!=='none'){
   await page.evaluate(()=>{const f=(window as any).frameFixture;f.formal=true;f.openFormal()})
@@ -301,6 +304,8 @@ for(const previous of ['none','success','failed'])test('R1 全局daily第二次�
  await page.getByRole('button',{name:'恢复业务会话',exact:true}).waitFor()
  const before=await page.evaluate(async()=>{const f=(window as any).frameFixture;f.failBindingAt=f.bindingReads+2;await f.controller.retry();return {reads:f.bindingReads,creates:f.creates,recent:f.recentReads||0,current:f.current()}})
  await page.waitForFunction(()=>{const f=(window as any).frameFixture,s=f.controller.getSnapshot();return s.sessionKind==='daily'&&!!s.error&&!!s.daily.getSnapshot().error&&f.blocks[f.current()]==='checking'})
+ assert.equal(await page.locator('#teloa-main').getByRole('alert').count(),0,'已确认的旧业务错误不能污染首页')
+ await page.evaluate(()=>(window as any).frameFixture.navigate('messages'))
  assert.equal(await page.locator('#teloa-main').getByRole('alert').count(),1)
  assert.equal(await page.locator('#teloa-main').getByRole('button',{name:'重试',exact:true}).count(),1)
  await page.locator('#teloa-main').getByRole('button',{name:'重试',exact:true}).click()
@@ -349,6 +354,97 @@ test('真实HomeNative归属：业务草案保留后回工作台显示正文，�
  await page.getByRole('button',{name:'保存业务',exact:true}).waitFor()
  assert.deepEqual(await page.evaluate(()=>{const f=(window as any).frameFixture;return {view:f.state().view,session:f.current(),draft:f.controller.getSnapshot().flow.getSnapshot().binding.draftId,creates:f.creates}}),{view:'messages',...original,creates:1})
  assert.equal(await page.getByRole('textbox',{name:'slot-probe'}).inputValue(),'业务搭建原会话未发送输入')
+})
+
+test('真实Frame业务预览基线冲突后可恢复独立首页，回业务仍保留原草稿和冲突',async t=>{
+ const page=await mount(t,'zh-CN',{realHome:true})
+ await page.getByRole('button',{name:'新建业务',exact:true}).click()
+ await page.getByRole('button',{name:'保存业务',exact:true}).waitFor()
+ await page.getByRole('textbox',{name:'slot-probe'}).fill('基线冲突也要保留的未发送原稿')
+ const original=await page.evaluate(async()=>{const f=(window as any).frameFixture;await f.previewConflict();return {session:f.current(),draft:f.savedBusinessDraft(),input:f.inputFor(f.current())}})
+ await page.waitForFunction(()=>{const s=(window as any).frameFixture.controller.getSnapshot();return s.sessionKind==='builder'&&s.checkedSessionId===(window as any).frameFixture.current()&&s.error?.code==='teloa/version-conflict'})
+ await page.evaluate(()=>{(window as any).frameFixture.holdHomePrepare=true})
+ await page.getByRole('navigation',{name:'主导航',exact:true}).getByRole('button',{name:/工作台/}).click()
+ await page.getByRole('button',{name:'保留草案离开',exact:true}).click()
+ await page.waitForFunction(()=>(window as any).frameFixture.homePrepareResolvers?.length>0)
+ assert.equal(await page.locator('#teloa-main').getByRole('alert').count(),0,'首页正在准备时也不能残留旧业务预览错误')
+ assert.equal(await page.evaluate(()=>(window as any).frameFixture.controller.getSnapshot().error?.code),'teloa/version-conflict','只隔离展示，不清除原业务冲突')
+ await page.evaluate(()=>(window as any).frameFixture.releaseHomePrepare())
+ await page.locator('[data-teloa-home][aria-busy="false"]').waitFor()
+ await page.getByRole('heading',{name:'继续工作',exact:true}).waitFor()
+ assert.equal(await page.locator('#teloa-main').getByRole('alert').count(),0)
+ assert.deepEqual(await page.evaluate(()=>{const f=(window as any).frameFixture;return {session:f.current(),homeCreates:f.homeCreates,creates:f.creates,draft:f.savedBusinessDraft()}}),{session:'fixture-home-return',homeCreates:1,creates:1,draft:original.draft})
+ assert.deepEqual(await page.evaluate((id:string)=>(window as any).frameFixture.inputFor(id),original.session),original.input)
+ await page.getByRole('navigation',{name:'主导航',exact:true}).getByRole('button',{name:'业务',exact:true}).click()
+ await page.getByRole('region',{name:'继续搭建',exact:true}).getByRole('button').filter({hasText:'验收业务'}).click()
+ await page.waitForFunction((id:string)=>{const f=(window as any).frameFixture,s=f.controller.getSnapshot();return f.current()===id&&s.error?.code==='teloa/version-conflict'},original.session)
+ assert.deepEqual(await page.evaluate(()=>{const f=(window as any).frameFixture;return f.savedBusinessDraft()}),original.draft)
+ assert.equal(await page.getByRole('textbox',{name:'slot-probe'}).inputValue(),'基线冲突也要保留的未发送原稿')
+ assert.ok(await page.locator('#teloa-main').getByRole('alert').count()>0)
+})
+
+test('真实Frame业务归属读取失败时首页保留重试，核对成功前不准备或切换会话',async t=>{
+ const page=await mount(t,'zh-CN',{realHome:true})
+ await page.getByRole('button',{name:'新建业务',exact:true}).click()
+ await page.getByRole('button',{name:'保存业务',exact:true}).waitFor()
+ const original=await page.evaluate(async()=>{const f=(window as any).frameFixture;f.failBinding=true;await f.recheck();return f.current()})
+ await page.getByRole('navigation',{name:'主导航',exact:true}).getByRole('button',{name:/工作台/}).click()
+ await page.getByRole('navigation',{name:'工作台',exact:true}).waitFor()
+ await page.locator('#teloa-main').getByRole('alert').waitFor()
+ assert.deepEqual(await page.evaluate(()=>{const f=(window as any).frameFixture,s=f.controller.getSnapshot();return {session:f.current(),kind:s.sessionKind,prepares:f.prepares,homeCreates:f.homeCreates||0}}),{session:original,kind:null,prepares:0,homeCreates:0})
+ await page.evaluate(()=>{(window as any).frameFixture.failBinding=false})
+ await page.locator('#teloa-main').getByRole('button',{name:'重试',exact:true}).click()
+ await page.locator('[data-teloa-home][aria-busy="false"]').waitFor()
+ assert.equal(await page.evaluate(()=>(window as any).frameFixture.current()),'fixture-home-return')
+ assert.equal(await page.locator('#teloa-main').getByRole('alert').count(),0)
+})
+
+test('真实Frame原生绑定晚就绪时允许准备器水合，首页自动恢复而无需手动重试',async t=>{
+ const page=await mount(t,'zh-CN',{realHome:true,hydrateOnHomePrepare:true})
+ await page.getByRole('button',{name:'新建业务',exact:true}).click()
+ await page.getByRole('button',{name:'保存业务',exact:true}).waitFor()
+ const original=await page.evaluate(()=>{const f=(window as any).frameFixture;f.native(false);const s=f.controller.getSnapshot(),before={session:f.current(),checked:s.checkedSessionId,nativeReady:s.nativeReady};f.navigate('home');return before})
+ assert.equal(original.checked,original.session);assert.equal(original.nativeReady,false)
+ await page.locator('[data-teloa-home][aria-busy="false"]').waitFor()
+ assert.equal(await page.evaluate(()=>(window as any).frameFixture.homePrepareNativeReady[0]),false,'准备器必须能够先取得原生binding，不能等待自身水合的结果才启动')
+ assert.equal(await page.evaluate(()=>(window as any).frameFixture.current()),'fixture-home-return')
+ assert.equal(await page.locator('#teloa-main').getByRole('alert').count(),0)
+})
+
+test('真实Frame冷启动 current 晚恢复且归属未核对时仍调用准备器水合，不形成首页等待环',async t=>{
+ const page=await mount(t,'zh-CN',{realHome:true,hydrateOnHomePrepare:true,coldHomeBootstrap:true,nativeReady:false})
+ await page.evaluate(()=>(window as any).frameFixture.navigate('home'))
+ await page.waitForFunction(()=>typeof (window as any).frameFixture.releaseHomeCurrent==='function')
+ await page.evaluate(()=>{const f=(window as any).frameFixture;void f.select('cold-restored-original');f.releaseHomeCurrent()})
+ await page.locator('[data-teloa-home][aria-busy="false"]').waitFor()
+ assert.ok(await page.evaluate(()=>(window as any).frameFixture.homePrepareFacts.some((row:any)=>row.hasCurrent&&!row.checked&&!row.nativeReady)),'恢复的 current 在水合前尚无归属，也必须进入准备器的只读阶段')
+ assert.equal(await page.evaluate(()=>(window as any).frameFixture.current()),'fixture-home-return')
+ assert.equal(await page.locator('#teloa-main').getByRole('alert').count(),0)
+})
+
+for(const action of ['complete','leave','retry'] as const)test('真实Frame首页准备超过提示阈值后'+action+'仍遵循当前导航与重试归属',async t=>{
+ const page=await mount(t,'zh-CN',{realHome:true,clock:true,ensureHandshake:true,sessionId:'slow-original',holdHomePrepare:true})
+ await page.waitForFunction(()=>(window as any).frameFixture.homePrepareResolvers?.length>0)
+ await page.clock.runFor(12001)
+ await page.getByRole('heading',{name:'正在恢复工作台',exact:true}).waitFor()
+ assert.equal(await page.locator('#teloa-main').getByRole('status').filter({hasText:'恢复用时较长，你可以继续等待或重试。'}).count(),1)
+ assert.equal(await page.locator('#teloa-main').getByRole('alert').count(),0,'等待较长属于恢复状态，不应显示失败警报')
+ assert.equal(await page.evaluate(()=>(window as any).frameFixture.homePrepareSignals.at(-1).aborted),false,'提示等待过长不能取消仍有效的安全准备')
+ if(action==='leave')await page.evaluate(()=>(window as any).frameFixture.navigate('tasks'))
+ if(action==='retry'){
+  await page.locator('#teloa-main').getByRole('button',{name:'重试',exact:true}).click()
+  await page.waitForFunction(()=>(window as any).frameFixture.homePrepareResolvers.length>=2)
+ }
+ if(action!=='complete')assert.equal(await page.evaluate(()=>(window as any).frameFixture.homePrepareSignals[0].aborted),true,'离开或显式重试仍须取消旧准备')
+ await page.evaluate(()=>(window as any).frameFixture.releaseHomePrepare())
+ if(action==='leave'){
+  await page.evaluate(()=>Promise.resolve());await page.clock.runFor(1)
+  assert.deepEqual(await page.evaluate(()=>{const f=(window as any).frameFixture;return {view:f.state().view,current:f.current(),homeCreates:f.homeCreates||0}}),{view:'tasks',current:'slow-original',homeCreates:0})
+ }else{
+  await page.locator('[data-teloa-home][aria-busy="false"]').waitFor()
+  assert.deepEqual(await page.evaluate(()=>{const f=(window as any).frameFixture;return {view:f.state().view,current:f.current(),homeCreates:f.homeCreates}}),{view:'home',current:'fixture-home-return',homeCreates:1})
+  assert.equal(await page.locator('#teloa-main').getByRole('alert').count(),0)
+ }
 })
 
 test('原生打开先切到messages：从工作台打开及业务目录继续都完成原草案归属核对',async t=>{
@@ -749,7 +845,8 @@ test('项目本次工作通过真实Frame创建与准备，固定版本保全文
 test('首次工作绑定 实际Frame等待ensure成功才核业务并开放原首页输入',async t=>{
  const page=await mount(t,'zh-CN',{ensureHandshake:true,sessionId:'home-handshake',holdEnsure:true})
  await page.waitForFunction(()=>(window as any).frameFixture.ensureStarted===true)
- assert.deepEqual(await page.evaluate(()=>{const f=(window as any).frameFixture;return [f.bindingReads,f.prepares,f.controller.getSnapshot().error]}),[0,0,null])
+ assert.deepEqual(await page.evaluate(()=>{const f=(window as any).frameFixture;return [f.bindingReads,f.prepares>0,f.controller.getSnapshot().error]}),[0,true,null])
+ assert.equal(await page.evaluate(()=>(window as any).frameFixture.controller.getSnapshot().checkedSessionId),undefined)
  await page.evaluate(()=>(window as any).frameFixture.releaseEnsure())
  await page.waitForFunction(()=>{const f=(window as any).frameFixture;return f.controller.getSnapshot().checkedSessionId==='home-handshake'&&f.prepares>0})
  assert.equal(await page.locator('#teloa-main').getByRole('alert').count(),0)
