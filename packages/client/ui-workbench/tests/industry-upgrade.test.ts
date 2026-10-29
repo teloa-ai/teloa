@@ -104,13 +104,13 @@ async function form(saved?:unknown){
  return {render,submitted}
 }
 
-test('知识更新沿用候选正文，确认后提交固定升级请求，不再落在页面内存里',async()=>{
+test('升级知识默认使用导入内容，其他部分可选，确认后提交五个字段',async()=>{
  const {render,submitted}=await form()
- const initial=render(),selects=nodes(initial).filter(node=>node.type==='select')
- // 知识正文采用已预览候选；关联、入口与行业说明仍分别选择，不能绕过本人确认。
+ const selects=nodes(render()).filter(node=>node.type==='select')
+ // 知识按导入内容替换，不再提供保留旧内容的选择；关联、入口、行业说明仍可逐项选择。
  assert.equal(selects.length,3)
- assert.ok(nodes(initial).some(node=>node.type==='p'&&text(node)==='手册：market.industry.update.useCandidate'))
- assert.equal(nodes(initial).find(node=>node.type==='button'&&node.props.type==='submit')!.props.disabled,true)
+ assert.ok(nodes(render()).some(node=>node.type==='p'&&text(node)==='手册：market.industry.update.useCandidate'))
+ assert.equal(nodes(render()).find(node=>node.type==='button'&&node.props.type==='submit')!.props.disabled,true)
  nodes(render()).filter(node=>node.type==='input'&&node.props.type==='checkbox')[0]!.props.onChange({target:{checked:true}})
  const view=render()
  const submit=nodes(view).find(node=>node.type==='button'&&node.props.type==='submit')!
@@ -210,11 +210,9 @@ test('更新预览挂在持久化加载目录上：按身份认领基线与已�
  // 工作台传的是同一份真实加载目录，比较所需的岗位事实来自持久化的岗位实例。
  assert.match(frame,/industryReview=\{\{loads:savedIndustryLoads,upgrade:upgradeIndustryLoad,rolesReady:industryRoleDirectory==='ready',rolesFailed:industryRoleDirectory==='failed',refreshRoles:\(\)=>\{void loadIndustryRoles\(\)\.catch\(\(\)=>\{\}\)\},context:\{industryRoles,/)
  assert.doesNotMatch(frame,/context:\{loads:tasks\.industryLoads/)
- const updatePreview=marketPage.match(/<IndustryUpdatePreview\b[^>]*\/>/)?.[0]
- assert.ok(updatePreview,'市场必须提供真实更新预览入口')
- for(const contract of ['item={item}','items={props.state.items}','spaces={props.spaces}','{...props.industryReview}','hydrate:props.contentApi.hydrate'])assert.ok(updatePreview.includes(contract),'更新预览缺少调用契约：'+contract)
+ assert.match(marketPage,/<IndustryUpdatePreview item=\{item\} items=\{props\.state\.items\} spaces=\{props\.spaces\} \{\.\.\.props\.industryReview\} \{\.\.\.\(props\.contentApi\?\{hydrate:props\.contentApi\.hydrate\}:\{\}\)\}\/>/)
  // 工作台选择器与比较入口都用加载记录本身。
- assert.match(preview,/records\.filter\(load=>load\.templateId===manifest\.id&&load\.domain===manifest\.domain&&load\.scope===manifest\.scope\)/)
+ assert.match(preview,/const loads=isIndustryManifest\(manifest\)\?records\.filter\(load=>load\.templateId===manifest\.id&&load\.domain===manifest\.domain&&load\.scope===manifest\.scope\):\[\]/)
  assert.match(preview,/const selected=loads\.find\(row=>row\.id===loadId\)/)
  assert.match(preview,/compareIndustryUpdate\(context,selected,baseline,candidate\)/)
  assert.match(preview,/record=\{selected!\}/)
@@ -223,7 +221,7 @@ test('更新预览挂在持久化加载目录上：按身份认领基线与已�
  assert.doesNotMatch(preview,/row\.contentHash===selected\.sourceHash/)
  assert.doesNotMatch(preview,/space\.scope===selected\.spaceId/)
  // 已保存方案只按"选中的就是这份候选内容的继任加载"读回，且与比较入口一样用严格相等，不做大小写归一。
- assert.match(preview,/candidateSource\?\.contentStorage\?\.contentId===selected\.contentId\?selected\.upgrade:undefined/)
+ assert.match(preview,/const saved=selected\?\.upgrade&&candidateSource\?\.contentStorage\?\.contentId===selected\.contentId\?selected\.upgrade:undefined/)
  assert.doesNotMatch(preview,/toLowerCase/)
  // 岗位事实就绪前不给本地修改与提交入口。
  assert.match(preview,/\{!rolesReady\?\(rolesFailed$/m)

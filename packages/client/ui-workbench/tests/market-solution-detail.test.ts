@@ -100,9 +100,7 @@ test('必须保留、只是移位：状态句、已加载入口、其他用法�
  assert.match(industryBranch, /\{draft&&<button type="button" aria-label=\{t\('market\.intent\.view'\)\}/)
  assert.match(industryBranch, /aria-label=\{t\('market\.conversation\.use'\)\}/)
  assert.match(industryBranch, /<IndustryReferences item=\{item\} items=\{props\.state\.items\} save=\{props\.saveResolved\}\/>/)
- const updatePreview=industryBranch.match(/<IndustryUpdatePreview\b[^>]*\/>/)?.[0]
- assert.ok(updatePreview,'来源与版本保留更新预览')
- for(const contract of ['item={item}','items={props.state.items}','spaces={props.spaces}','{...props.industryReview}','hydrate:props.contentApi.hydrate'])assert.ok(updatePreview.includes(contract),'更新预览缺少调用契约：'+contract)
+ assert.match(industryBranch, /<IndustryUpdatePreview item=\{item\} items=\{props\.state\.items\} spaces=\{props\.spaces\} \{\.\.\.props\.industryReview\} \{\.\.\.\(props\.contentApi\?\{hydrate:props\.contentApi\.hydrate\}:\{\}\)\}\/>/)
  assert.match(industryBranch, /<IndustryExport item=\{item\}\/>/)
  assert.match(industryBranch, /\{item\.raw&&<section className=\{css\.sourceSection\}>/)
  assert.match(industryBranch, /SHA-256：\{item\.hash\}/)
@@ -136,10 +134,10 @@ test('同事小卡数量由 solutionMembers 逐个 role 资源生成，与 Indus
  assert.match(industryBranch, /\{members\.map\(member=><span key=\{member\.id\}><StaffAvatar initial=\{member\.initial\} seed=\{member\.seed\} size="md"\/><strong>\{member\.title\}<\/strong><\/span>\)\}/)
 })
 
-test('添加与显式重新导入共用确认面板，不直接绕过 IndustryLoadForm 写入', () => {
- const reload=industryBranch.match(/\{matchingLoads\.length>0&&<button[^\n]*employeeKnowledge\.reset\.reloadPackage[^\n]*<\/button>\}/)?.[0]
- assert.ok(reload,'已有相同版本时必须提供显式重新导入入口')
- assert.match(reload,/onClick=\{\(\)=>setActionPanel\('load'\)\}/)
+test('首次添加与同版本重导入共用核对面板，不绕过 IndustryLoadForm 直接保存', () => {
+ const calls = industryBranch.match(/setActionPanel\('load'\)/g) ?? []
+ assert.equal(calls.length, 2, '首次添加与已安装版本重导入各有一个入口')
+ assert.match(industryBranch,/\{matchingLoads\.length>0&&<button type="button" aria-expanded=\{actionPanel==='load'\} onClick=\{\(\)=>setActionPanel\('load'\)\}>\{t\('employeeKnowledge\.reset\.reloadPackage'\)\}<\/button>\}/)
  assert.doesNotMatch(industryBranch, /props\.industryLoads\.save\(/)
  assert.match(industryBranch, /actionPanel==='load'\?<SolutionLoadPanel \{\.\.\.props\} item=\{item\} close=\{\(\)=>setActionPanel\(null\)\}\/>/)
  assert.match(loadPanel, /<IndustryLoadForm embedded item=\{item\}[^>]*load=\{props\.industryLoads\.save\}/, 'IndustryLoadForm 仍应拿到 save 引用，走它自己的显式核对确认')
