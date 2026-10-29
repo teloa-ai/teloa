@@ -16,7 +16,7 @@ import type {ResourceAdoptionCommand} from './resource-adoption-recovery.js'
 import {ResourceKnowledgeDocument} from './ResourceKnowledgeDocument.js'
 import {StandaloneKnowledgeDocument} from './StandaloneKnowledgeDocument.js'
 import { useDirectoryFocus } from './directory-focus.js'
-import { libraryResourceDirectory,buildEmployeeKnowledgeGroups,localizeKnowledgeRoot,buildKnowledgeDirectoryTree,canGovernKnowledgeNode,defaultKnowledgeSelection,defaultResourceSelection,filterResourceManagerDirectory,knowledgeBreadcrumbs,knowledgeMoveTargets,normalizeResourceSourceSelection,resourceSourceFacts,type KnowledgeDirectoryBranch,type ResourceManagerFilters,type EmployeeKnowledgeGroup,filterEmployeeKnowledgeGroups,listedEmployee,type RoleKnowledgeRef} from './resource-manager-presentation.js'
+import { libraryResourceDirectory,buildEmployeeKnowledgeGroups,localizeKnowledgeRoot,buildKnowledgeDirectoryTree,canGovernKnowledgeNode,defaultKnowledgeSelection,defaultResourceSelection,filterResourceManagerDirectory,knowledgeBreadcrumbs,knowledgeMoveTargets,normalizeResourceSourceSelection,resourceSourceFacts,type KnowledgeDirectoryBranch,type KnowledgeDirectoryPage,type ResourceManagerFilters,type EmployeeKnowledgeGroup,filterEmployeeKnowledgeGroups,listedEmployee,type RoleKnowledgeRef} from './resource-manager-presentation.js'
 import css from './ResourceManager.module.css'
 import {useI18n} from './i18n/provider.js'
 import {localizeWorkError} from './i18n/errors.js'
@@ -229,6 +229,12 @@ const priorApi=useRef(api)
     setEditing(undefined);setSelectedResourceId(undefined);setMobileDetailOpen(false);rememberNavigation({selectedId:undefined,mobileLayer:'directory'})
   },[knowledgeTree,directory,sources,editing?.id,selectedResourceId,selectedNode?.id])
   const openRow=(row:LibraryRow)=>beforeLeave(()=>{recordVisit(row.id);if(row.kind==='knowledge'){formGeneration.current++;setEditing(undefined);setSelectedResourceId(undefined);const node=knowledgeTree?.nodes.find(node=>node.type==='page'&&node.knowledgeId===row.id);setSelectedNodeId(node?.id);setMobileDetailOpen(true);setError(undefined);rememberNavigation({selectedId:node?.id,mobileLayer:'detail'});return}if(row.kind==='draft')select(row as ResourceDraft);else{inspectResource(row as WorkResource);setSelectedNodeId(knowledgeTree?pageNodeFor(row as WorkResource,knowledgeTree,sources)?.id??knowledgeTree.space.rootNodeId:undefined)}setMobileDetailOpen(true);rememberNavigation({selectedId:row.id,mobileLayer:'detail'})})
+  const openSpacePage=(page:KnowledgeDirectoryPage)=>beforeLeave(()=>{
+    const node=knowledgeTree?.nodes.find(node=>node.type==='page'&&node.id===page.id)
+    if(!node)return
+    const resource=page.resourceId?directory.resources.find(resource=>resource.id===page.resourceId):undefined,parentId=node.parentId??knowledgeTree?.space.rootNodeId
+    recordVisit(resource?.id??page.knowledgeId);formGeneration.current++;setKnowledgeContextRole(undefined);setTracking(false);setEditing(undefined);setLibraryView('space');setBrowseNodeId(parentId);setSelectedNodeId(node.id);setSelectedResourceId(resource?.id);setMobileDetailOpen(true);setError(undefined);setNotice(undefined);rememberNavigation({libraryView:'space',browseNodeId:parentId,selectedId:resource?.id??node.id,mobileLayer:'detail'})
+  })
   const changeLibraryView=(view:LibraryView)=>beforeLeave(()=>{formGeneration.current++;setLibraryView(view);setEditing(undefined);setTracking(false);setMobileDetailOpen(false);setSelectedResourceId(undefined);setSelectedNodeId(knowledgeTree?.space.rootNodeId);setDocumentDirty(false);rememberNavigation({libraryView:view,selectedId:undefined,mobileLayer:'directory'})})
   useEffect(()=>{if(navigationState?.libraryView==='retrieval'&&(libraryView!=='retrieval'||navigationState.mobileLayer==='directory'&&mobileDetailOpen))changeLibraryView('retrieval')},[navigationState?.libraryView,navigationState?.mobileLayer,navigationState?.selectedId])
   const spaceResourceIds=new Set(knowledgeTree?.nodes.filter(node=>node.type==='page'&&node.path.includes(browseNodeId??knowledgeTree.space.rootNodeId)).flatMap(node=>node.type==='page'?directory.resources.filter(resource=>pageNodeFor(resource,knowledgeTree,sources)?.id===node.id).map(resource=>resource.id):[]))
@@ -255,6 +261,7 @@ const priorApi=useRef(api)
         query={query}
         selectedNodeId={libraryView==='space'||mobileDetailOpen?selectedNodeId:undefined}
         selectFolder={id=>beforeLeave(()=>{formGeneration.current++;setLibraryView('space');setBrowseNodeId(id);setSelectedNodeId(id);setEditing(undefined);setSelectedResourceId(undefined);setMobileDetailOpen(false);rememberNavigation({libraryView:'space',browseNodeId:id,selectedId:id,mobileLayer:'directory'})})}
+        selectPage={openSpacePage}
         openConversation={prepareMaterials}
         refresh={()=>void refresh()}
         refreshing={loading||busy}
@@ -290,14 +297,14 @@ function KnowledgeGovernance({nodeTitle,action,title,moveParentId,moveTargets,bu
   return <section className={css.governance} aria-label={t('knowledge.manager.manageAria',{name:nodeTitle})}>{!action&&<DetailsMenu className={css.governanceMenu} resetKey={nodeTitle} closeOnSelect><summary aria-label={t('knowledge.manager.manageAria',{name:nodeTitle})}><MoreHorizontal size={18}/></summary><div><button type="button" onClick={startRename}><Pencil size={14}/>{t('knowledge.manager.rename')}</button><button type="button" disabled={!moveTargets.length} onClick={startMove}><FolderInput size={14}/>{t('knowledge.manager.move')}</button></div></DetailsMenu>}{action==='rename'&&<form onSubmit={event=>{event.preventDefault();rename()}}><label>{t('knowledge.manager.name')}<input autoFocus value={title} maxLength={200} required onChange={event=>changeTitle(event.target.value)}/></label><div><button type="button" onClick={cancel}>{t('knowledge.manager.cancel')}</button><button type="submit" disabled={busy||!title.trim()||title.trim()===nodeTitle}>{t('knowledge.manager.rename')}</button></div></form>}{action==='move'&&<form onSubmit={event=>{event.preventDefault();move()}}><label>{t('knowledge.manager.move')}<select autoFocus value={moveParentId} required onChange={event=>changeMoveParent(event.target.value)}>{moveTargets.map(target=><option key={target.id} value={target.id}>{target.label}</option>)}</select></label><div><button type="button" onClick={cancel}>{t('knowledge.manager.cancel')}</button><button type="submit" disabled={busy||!moveParentId}>{t('knowledge.manager.move')}</button></div></form>}</section>
 }
 
-function KnowledgeBranch({branch,selectedNodeId,selectFolder}:{branch:KnowledgeDirectoryBranch;selectedNodeId:string|undefined;selectFolder:(id:string)=>void}){
-  return <details className={css.treeBranch} open><summary data-teloa-entry={branch.id} aria-current={selectedNodeId===branch.id?'page':undefined} onClick={()=>selectFolder(branch.id)}><ChevronDown size={14}/><Folder size={15}/><strong>{branch.title}</strong><small>{branch.count}</small></summary><div className={css.treeGroup}>{branch.children.filter((child):child is KnowledgeDirectoryBranch=>child.type!=='page').map(child=><KnowledgeBranch key={child.id} branch={child} selectedNodeId={selectedNodeId} selectFolder={selectFolder}/>)}</div></details>
+function KnowledgeBranch({branch,selectedNodeId,selectFolder,selectPage}:{branch:KnowledgeDirectoryBranch;selectedNodeId:string|undefined;selectFolder:(id:string)=>void;selectPage:(page:KnowledgeDirectoryPage)=>void}){
+  return <details className={css.treeBranch} open><summary data-teloa-entry={branch.id} aria-current={selectedNodeId===branch.id?'page':undefined} onClick={()=>selectFolder(branch.id)}><ChevronDown size={14}/><Folder size={15}/><strong>{branch.title}</strong><small>{branch.count}</small></summary><div className={css.treeGroup}>{branch.children.map(child=>child.type==='page'?<button key={child.id} type="button" data-teloa-entry={child.id} className={css.treeDocument} aria-current={selectedNodeId===child.id?'page':undefined} onClick={()=>selectPage(child)}><FileText size={14}/><span><strong>{child.title}</strong></span></button>:<KnowledgeBranch key={child.id} branch={child} selectedNodeId={selectedNodeId} selectFolder={selectFolder} selectPage={selectPage}/>)}</div></details>
 }
 
-function WikiKnowledgeTree({tree,query,selectedNodeId,selectFolder,openConversation,refresh,refreshing,creatingFolder,folderTitle,folderTarget,startFolder,cancelFolder,setFolderTitle,createFolder,governance,employeeGroups,batchBusy=false,onEnrollEmployee,onAdoptEmployee,selectedResourceId,selectResource,openArtifact}:{
+function WikiKnowledgeTree({tree,query,selectedNodeId,selectFolder,selectPage,openConversation,refresh,refreshing,creatingFolder,folderTitle,folderTarget,startFolder,cancelFolder,setFolderTitle,createFolder,governance,employeeGroups,batchBusy=false,onEnrollEmployee,onAdoptEmployee,selectedResourceId,selectResource,openArtifact}:{
   query:string
   tree:KnowledgeDirectoryBranch|undefined;selectedNodeId:string|undefined
-  selectFolder:(id:string)=>void;openConversation:()=>void
+  selectFolder:(id:string)=>void;selectPage:(page:KnowledgeDirectoryPage)=>void;openConversation:()=>void
   refresh:()=>void;refreshing:boolean;creatingFolder:boolean;folderTitle:string;folderTarget:string
   startFolder:()=>void;cancelFolder:()=>void;setFolderTitle:(value:string)=>void;createFolder:()=>void
   governance:ReactNode
@@ -310,7 +317,7 @@ function WikiKnowledgeTree({tree,query,selectedNodeId,selectFolder,openConversat
 
     {creatingFolder&&<form className={css.folderForm} onSubmit={event=>{event.preventDefault();createFolder()}}><span>{t('knowledge.manager.folderTarget',{name:folderTarget})}</span><input autoFocus value={folderTitle} maxLength={200} required placeholder={t('knowledge.manager.folderName')} onChange={event=>setFolderTitle(event.target.value)}/><div><button type="button" onClick={cancelFolder}>{t('knowledge.manager.cancel')}</button><button type="submit" disabled={refreshing||!folderTitle.trim()}>{t('knowledge.manager.newFolder')}</button></div></form>}
     <nav className={css.wikiTree} aria-label={t('knowledge.directory')}>
-      {tree&&<KnowledgeBranch branch={tree} selectedNodeId={selectedNodeId} selectFolder={selectFolder}/>}
+      {tree&&<KnowledgeBranch branch={tree} selectedNodeId={selectedNodeId} selectFolder={selectFolder} selectPage={selectPage}/>}
       {count===0&&<div className={css.treeEmpty}><p>{t(query.trim()?'knowledge.manager.searchEmpty':'knowledge.manager.emptyTree')}</p></div>}
       {filterEmployeeKnowledgeGroups(employeeGroups,query).map(group=><details key={group.roleId} className={css.treeBranch} open><summary data-teloa-entry={group.roleId}><ChevronDown size={14}/><Users size={15}/><strong>{group.roleName}</strong><small>{group.resources.length+group.outputs.length}</small></summary><div className={css.treeGroup}>
         {group.resources.some(row=>row.status==='active')&&onAdoptEmployee&&<button type="button" className={css.treeBatch} disabled={batchBusy} onClick={()=>onAdoptEmployee(group)}>{t('roleDelegation.adoptEmployeeBusiness',{count:group.resources.filter(row=>row.status==='active').length})}</button>}
