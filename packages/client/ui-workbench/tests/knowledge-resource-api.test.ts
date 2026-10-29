@@ -13,6 +13,22 @@ const root={id:'root_default',spaceId:space.id,parentId:null,type:'space' as con
 const folder={id:'44444444-4444-4444-8444-444444444444',spaceId:space.id,parentId:root.id,type:'folder' as const,title:'安全运营',siblingOrder:0,path:[root.id,'44444444-4444-4444-8444-444444444444'],createdAt,updatedAt:createdAt}
 const mutation={space:{...space,directoryRevision:2},node:folder}
 
+test('本人业务资料采用只发送原资源固定版本和目标范围，拒绝错误范围与损坏回包',async()=>{
+ const input={requestId:id,targetScope:'business-new',resources:[{id:resource.id,version:resource.version,sourceVersion:resource.sourceVersion}]},draft={...resource,id:folder.id,sourceId:'adopted_'+id,scopeIds:['business-new'],requestId:sourceId,status:'draft' as const},calls:unknown[]=[]
+ const api=createResourceApi(async(endpoint,payload)=>{calls.push([endpoint,payload]);return[draft]})
+ assert.deepEqual(await api.prepareAdoption!(input),[draft]);assert.deepEqual(calls,[['resources/prepare-adoption',input]])
+ for(const value of [[{...draft,scopeIds:['soc']}],[{...draft,sourceId:'industry_old'}],[draft,draft],[],[{...draft,ownerId:''}]])await assert.rejects(createResourceApi(async()=>value).prepareAdoption!(input),/格式/)
+ await assert.rejects(api.prepareAdoption!({...input,targetScope:'general'}),/格式/);assert.equal(calls.length,1)
+})
+test('本人可预览业务采用资料的固定正文，客户端仍核对身份和SHA256摘要',async()=>{
+ const text='# 已采用资料\n\n固定正文',adopted={...resource,sourceId:'adopted_'+id,scopeIds:['business-new'],sourceVersion:createHash('sha256').update(text).digest('hex')},signal=new AbortController().signal,calls:unknown[]=[]
+ const api=createResourceApi(async(endpoint,input)=>{calls.push([endpoint,input]);return {resource:adopted,text}})
+ assert.deepEqual(await api.readContent!(adopted,signal),{resource:adopted,text})
+ assert.deepEqual(calls,[['resources/read-content',{resourceId:adopted.id,expectedVersion:adopted.version,sourceVersion:adopted.sourceVersion}]])
+ await assert.rejects(createResourceApi(async()=>({resource:adopted,text:'篡改正文'})).readContent!(adopted,signal),/格式/)
+ await assert.rejects(createResourceApi(async()=>({resource:{...adopted,scopeIds:['soc']},text})).readContent!(adopted,signal),/格式/)
+})
+
 test('知识版本客户端读取历史，并通过原子端点修订和恢复可引用版本',async()=>{
  const calls:Array<[string,unknown]>=[]
  const api=createResourceApi(async(endpoint,payload)=>{calls.push([endpoint,payload]);if(endpoint==='knowledge/list-versions')return[summary];if(endpoint==='knowledge/read-version')return version;return{knowledge:{item,version},resource}})

@@ -18,6 +18,7 @@ import {getToolResourceProvenance,type ToolResourceProvenance,type ToolResourceS
 import {readCustomMcpDefinition,customMcpDefinitionHash,type CustomMcpDefinition} from './custom-mcp-definition.ts'
 import {bodyPreview} from './skill-http-tool.ts'
 import {isExplicitNativeFullAccess} from './native-auto-review-guard.ts'
+import {readCustomMcpToolReview,type CustomMcpToolReview} from './custom-mcp-tool-review.ts'
 
 export const managedMcpConnectionEndpoints=['mcp-connections/add','mcp-connections/preview-custom','mcp-connections/save-custom','mcp-connections/get-custom','mcp-connections/update-custom','mcp-connections/connect','mcp-connections/authorize-custom','mcp-connections/disconnect','mcp-connections/delete','mcp-connections/list','mcp-connections/get','mcp-connections/oauth-start','mcp-connections/oauth-status'] as const
 
@@ -41,7 +42,7 @@ export type ManagedMcpConnectionRecord={
  /** 安装失败的明确错误码（可重试）；建连失败等其他错误不带 */
  errorCode?:ManagedInstallErrorCode
  /** 已连接时才有工具列表 */
- tools?:{name:string;fullName:string;readOnly:boolean}[]
+ tools?:CustomMcpToolReview[]
  /** 工具只读不代表上游资源范围受到限制。 */
  sourceScopeSupport?:'unsupported'
  custom?:{title:string}
@@ -133,10 +134,19 @@ const installFailureMessages:Record<ManagedInstallErrorCode,string>={
  * 不能进入状态文件、回包或日志。
  */
 export function connectFailureReason(error:unknown):string{
- const text=error instanceof Error?`${error.name} ${(error as {code?:unknown}).code??''} ${error.message}`:String(error)
- if(/\b(401|403)\b|unauthori[sz]ed|forbidden|invalid[_ ]?(token|key|credential)/i.test(text))return '密钥或授权被拒绝：请检查密钥是否正确、授权是否已过期或权限不足。'
- if(/ENOTFOUND|ECONNREFUSED|ECONNRESET|ETIMEDOUT|EAI_AGAIN|timed? ?out|network|fetch failed/i.test(text))return '无法连接到服务：请检查网络或服务是否可用。'
- return '服务返回错误，连接未建立；请稍后重试。'
+ const reason=connectFailureKind(error)
+ if(reason==='mcp-auth-rejected')return '密钥或授权被拒绝：请检查密钥是否正确、认证头和前缀是否匹配、授权是否已过期或权限不足。'
+ if(reason==='mcp-network-unavailable')return '无法连接到服务：请检查网络或服务是否可用。'
+ return '服务返回错误，连接未建立；请核对服务地址与 MCP 协议后重试。'
+}
+/** 只传稳定分类；底层 SDK 经常把 HTTP 状态包在 cause 中，原始信息可能包含凭据。 */
+export function connectFailureKind(error:unknown):'mcp-auth-rejected'|'mcp-network-unavailable'|'mcp-service-error'{
+ const seen=new Set<unknown>(),parts:string[]=[]
+ for(let current=error;current!==undefined&&!seen.has(current)&&seen.size<8;current=current&&typeof current==='object'&&'cause'in current?current.cause:undefined){seen.add(current);if(current instanceof Error)parts.push(`${current.name} ${(current as {code?:unknown}).code??''} ${current.message}`)}
+ const text=parts.join(' ')
+ if(/\b(401|403)\b|unauthori[sz]ed|forbidden|invalid[_ ]?(token|key|credential)/i.test(text))return 'mcp-auth-rejected'
+ if(/ENOTFOUND|ECONNREFUSED|ECONNRESET|ETIMEDOUT|EAI_AGAIN|timed? ?out|timeout|network|fetch failed/i.test(text))return 'mcp-network-unavailable'
+ return 'mcp-service-error'
 }
 
 // ──────────── 凭据管理（ctx.credentials 的 teloa-managed-mcp/* 记录，从不出现在回包/日志） ────────────
@@ -573,18 +583,24 @@ export function createManagedMcpConnectionHandler(
    if(authorization?.kind!=='headers')throw invalid('应用连接缺少本人保存的认证，请重新授权。')
    for(const header of definition.auth.headers){
     const value=values[header.name]
-    if(!value)throw invalid('应用连接缺少本人保存的认证，请重新授权。')
+    if(!value){if(definition.auth.requirement==='any')continue;throw invalid('应用连接缺少本人保存的认证，请重新授权。')}
     headers[header.name]=header.scheme===undefined?value:header.scheme.endsWith('=')?header.scheme+value:header.scheme+' '+value
    }
+   if(!Object.keys(headers).length)throw invalid('应用连接缺少本人保存的认证，请重新授权。')
   }else if(authorization&&authorization.kind!=='none'){
    if(authorization.kind!=='bearer'||!values.bearer)throw invalid('应用连接缺少本人保存的认证，请重新授权。')
    headers.Authorization='Bearer '+values.bearer
   }
   const config:McpClient.Config={transport:'streamable-http',serverName:definition.serverName,url:definition.url,headers,toolCallTimeoutMs:60_000,failOnStartupError:true,maxInstructionBytes:managedMcpMaxInstructionBytes}
-  return activateConnection(conn,config,[],{kind:'mcp',providerId:conn.serverName,name:definition.title},true)
+  let tools:CustomMcpToolReview[]
+  try{tools=await readCustomMcpToolReview(conn.serverName,definition.url,headers,authorization?.readOnlyTools??[])}catch(error){
+   await updateState(runtimeRoot,state=>{const row=state.connections.find(item=>item.id===conn.id);if(row){row.status='error';row.errorMessage=connectFailureReason(error);row.updatedAt=new Date().toISOString();delete row.tools;delete row.errorCode}})
+   throw new WorkError('teloa/dependency-unavailable','自定义 MCP 目录读取失败。',{reason:connectFailureKind(error)})
+  }
+  return activateConnection(conn,config,tools,{kind:'mcp',providerId:conn.serverName,name:definition.title})
  }
 
- async function activateConnection(conn:PersistedConnection,config:McpClient.Config,declared:{name:string;fullName:string;readOnly:boolean}[],source:ToolResourceSource,discover=false):Promise<ManagedMcpConnectionRecord>{
+ async function activateConnection(conn:PersistedConnection,config:McpClient.Config,declared:CustomMcpToolReview[],source:ToolResourceSource,discover=false):Promise<ManagedMcpConnectionRecord>{
   const patch=(apply:(c:PersistedConnection)=>void)=>updateState(runtimeRoot,state=>{const c=state.connections.find(c=>c.id===conn.id);if(c){apply(c);c.updatedAt=new Date().toISOString()}})
   // 先登记再建连：首次同步到写入快照之间、以及之后重同步新增的已声明写工具，都已在审批闸的名单里
   declaredToolsMap.set(conn.serverName,declared)
@@ -600,13 +616,23 @@ export function createManagedMcpConnectionHandler(
    declaredToolsMap.delete(conn.serverName)
    const msg=connectFailureReason(err)
    await patch(c=>{c.status='error';c.errorMessage=msg;delete c.errorCode})
-   throw new WorkError('teloa/dependency-unavailable',`MCP 连接 ${conn.serverName} 启动失败。`)
+   throw new WorkError('teloa/dependency-unavailable',`MCP 连接 ${conn.serverName} 启动失败。`,{reason:connectFailureKind(err)})
   }finally{clearTimeout(timer)}
   liveConnections.set(conn.serverName,fiber)
   if(!epochs.has(conn.serverName))epochs.set(conn.serverName,randomUUID())
   credentialBases.set(conn.serverName,usedCredentialBasis)
   const toolSchemas=ctx.tools.schemas()
-  const tools=declared.filter(t=>toolSchemas.some((s:{name:string})=>s.name===t.fullName))
+  const tools=declared.flatMap(tool=>{
+   const schema=toolSchemas.find(current=>current.name===tool.fullName)
+   if(!schema)return []
+   if(!conn._customDefinition)return [tool]
+   // 核对目录后服务可能更新定义：展示实际注册的参数，并撤下属于旧定义的只读提示。
+   const current={...tool,description:(schema.description??'').slice(0,32_768)}
+   if(JSON.stringify(schema.parameters).length<=131_072)current.inputSchema=schema.parameters as Record<string,unknown>
+   else delete current.inputSchema
+   if((tool.description??'')!==current.description||JSON.stringify(tool.inputSchema)!==JSON.stringify(current.inputSchema))delete current.annotations
+   return [current]
+  })
   connectedToolsMap.set(conn.serverName,tools)
   await patch(c=>{c.status='connected';c.tools=tools;delete c.errorMessage;delete c.errorCode})
   return toRecord({...conn,status:'connected',tools})
@@ -787,7 +813,10 @@ export function createManagedMcpConnectionHandler(
 
   if(endpoint==='mcp-connections/preview-custom'){
    const input=taskInput(payload,['definition']),definition=readCustomMcpDefinition(input.definition)
-   return {schema:'teloa.mcp-preview/v1',definition,definitionHash:customMcpDefinitionHash(definition),authorizationConfigured:false,readiness:'unsaved',next:'保存仅登记无凭据定义；本人授权连接后才访问服务并发现工具。'}
+   const definitionHash=customMcpDefinitionHash(definition),existing=(await loadState(runtimeRoot)).connections.find(item=>item.serverName===definition.serverName)
+   if(existing&&!existing._customDefinition)throw conflict('该服务名已用于其他连接，请更换自定义应用服务名。')
+   const savedDefinitionHash=existing?customMcpDefinitionHash(readCustomMcpDefinition(existing._customDefinition)):undefined
+   return {schema:'teloa.mcp-preview/v1',definition,definitionHash,authorizationConfigured:!!existing&&savedDefinitionHash===definitionHash&&existing._customAuthorization?.definitionHash===definitionHash,...existing?{connection:toRecord(existing),savedDefinitionHash}:{},readiness:existing?.status??'unsaved',next:'核对已保存连接与定义；本人授权连接后才访问服务并发现工具。'}
   }
 
   if(endpoint==='mcp-connections/get-custom'){
@@ -919,7 +948,7 @@ export function createManagedMcpConnectionHandler(
 
   if(endpoint==='mcp-connections/authorize-custom'){
    const input=taskInput(payload,['id','expectedDefinitionHash','credentials','readOnlyTools'])
-   if(!uuid(input.id)||typeof input.expectedDefinitionHash!=='string'||!Array.isArray(input.readOnlyTools)||input.readOnlyTools.length>32||!input.readOnlyTools.every(name=>typeof name==='string'&&/^[A-Za-z0-9_-]{1,128}$/.test(name))||new Set(input.readOnlyTools).size!==input.readOnlyTools.length)throw invalid('应用授权身份或只读工具清单不正确。')
+   if(!uuid(input.id)||typeof input.expectedDefinitionHash!=='string'||!Array.isArray(input.readOnlyTools)||input.readOnlyTools.length>32||!input.readOnlyTools.every(name=>typeof name==='string'&&/^[^\x00-\x20\x7f]{1,128}$/.test(name))||new Set(input.readOnlyTools).size!==input.readOnlyTools.length)throw invalid('应用授权身份或只读工具清单不正确。')
    const found=(await loadState(runtimeRoot)).connections.find(row=>row.id===input.id)
    if(!found?._customDefinition)throw invalid('未找到可授权的本人自定义应用。')
    return locked(found.serverName,async()=>{
@@ -930,7 +959,8 @@ export function createManagedMcpConnectionHandler(
     const proposed=reuse?await slots.read(current.serverName):input.credentials
     const keys=definition.auth?.headers.map(h=>h.name)??(isRecord(proposed)&&Object.keys(proposed).length?['bearer']:[])
     const submitted=taskInput(proposed,keys),credentials:Record<string,string>={}
-    for(const key of keys){const value=submitted[key];if(typeof value!=='string'||!value.trim()||value!==value.trim()||value.length>8192||/[\x00-\x1f\x7f]/.test(value))throw invalid('请通过安全认证控件填写全部有效认证值。');credentials[key]=value}
+    for(const key of keys){const value=submitted[key];if(value===undefined&&definition.auth?.requirement==='any')continue;if(typeof value!=='string'||!value.trim()||value!==value.trim()||value.length>8192||/[\x00-\x1f\x7f]/.test(value))throw invalid('请通过安全认证控件按声明填写有效认证值。');credentials[key]=value}
+    if(definition.auth?.requirement==='any'&&!Object.keys(credentials).length)throw invalid('请通过安全认证控件填写至少一项有效认证值。')
     await slots.assertWritable(current.serverName)
     await releaseClient(current.serverName)
     await slots.replace(current.serverName,credentials)

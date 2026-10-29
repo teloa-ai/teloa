@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import {createHash,randomUUID} from 'node:crypto'
 import {Pool} from './postgres-test-lifecycle.ts'
 import {PostgreSqlContainer,type StartedPostgreSqlContainer} from '@testcontainers/postgresql'
-import {initializeMarketContents,MarketContentStore,type MarketActor,type MarketFileInput} from '../src/market/content-store.ts'
+import {initializeMarketContents,MarketContentStore,normalizeMarketSourceTrust,type MarketActor,type MarketFileInput} from '../src/market/content-store.ts'
 import {createIndustryLoadSource} from '../src/work/industry-load-source.ts'
 import {IndustryLoadService,initializeIndustryLoads} from '../src/work/industry-loads.ts'
 import {useLocalContainerRuntime} from './testcontainers-env.ts'
@@ -47,6 +47,94 @@ before(async()=>{
  await initializeMarketContents(pool)
 },{timeout:180_000})
 after(async()=>{await pool?.end();await container?.stop()})
+
+test('未来本地缺省信任不把ZIP文件名当发布者，重命名去重、版本升级不变信任，显式身份和本人隔离保持',async()=>{
+ const self=actor(),other=actor(),store=new MarketContentStore(pool,identity)
+ const manifest=(version:string)=>({format:'teloa.business-package/v2',id:'local-soc',title:'安全运营',version,domain:'general',scope:'general',description:'本地固定方法',resources:[{id:'triage',kind:'skill',title:'研判方法',version:'1.0.0',required:true,source:{kind:'local',path:'triage/SKILL.md'}}],relations:[],entrypoints:['triage']})
+ const upload=(who:MarketActor,name:string,version='1.3.0',explicitTrust?:ReturnType<typeof trust>)=>store.import(who,{kind:'industry-template',requestId:randomUUID(),source:{kind:'upload',name},manifestPath:'teloa.json',files:[file('teloa.json',JSON.stringify(manifest(version))),file('triage/SKILL.md','# 固定研判正文')],...(explicitTrust?{trust:explicitTrust}:{})})
+ const first=await upload(self,'soc-analyst-1.3.0.zip'),renamed=await upload(self,'renamed-copy.zip'),upgraded=await upload(self,'soc-analyst-1.3.1.zip','1.3.1')
+ assert.equal(first.content.id,renamed.content.id,'同字节改名不新造来源信任身份')
+ assert.equal(first.content.trust.publisher,'本人导入')
+ assert.equal(first.content.trust.signature.status,'unverified')
+ assert.equal(first.content.trust.review.conclusion,'needs-review')
+ assert.equal(first.content.trust.review.summary,'本地上传来源尚未完成签名与兼容审查')
+ assert.deepEqual(first.receipt.source,{kind:'upload',name:'soc-analyst-1.3.0.zip'})
+ assert.deepEqual(renamed.receipt.source,{kind:'upload',name:'renamed-copy.zip'})
+ assert.notEqual(first.content.hash,upgraded.content.hash)
+ assert.equal(first.content.trustHash,upgraded.content.trustHash,'包版本与文件名均不能凭空改变缺省发布者')
+ const a=await upload(self,'same.zip','1.3.0',{...trust('unverified'),publisher:'明确声明的甲'}),b=await upload(self,'same.zip','1.3.0',{...trust('unverified'),publisher:'明确声明的乙'})
+ assert.notEqual(a.content.trustHash,b.content.trustHash)
+ assert.notEqual(a.content.id,b.content.id)
+ assert.equal((await store.get(self,{contentId:a.content.id})).trust.publisher,'明确声明的甲','原固定声明与摘要不被新缺省规则改写')
+ const foreign=await upload(other,'renamed-copy.zip')
+ assert.notEqual(foreign.content.id,first.content.id)
+ await assert.rejects(store.get(other,{contentId:first.content.id}),{code:'teloa/forbidden'})
+})
+
+test('未来原子技能裸导入与浏览器缺省声明一致，来源名称仍保留',async()=>{
+ const self=actor(),store=new MarketContentStore(pool,identity),metadata={id:'local-method',title:'本地方法',version:'1.0.0',categories:[]},files=[file('SKILL.md','# 固定方法')]
+ const first=await store.import(self,{kind:'atomic-skill',requestId:randomUUID(),source:{kind:'upload',name:'method-1.0.0.zip'},metadata,files})
+ const expected={publisher:'本人导入',repository:null,license:{status:'missing'},signature:{status:'unverified',signer:null},compatibility:{teloa:'未声明',dsh:'未声明'},plugins:[],externalCapabilities:[],permissions:[],review:{conclusion:'needs-review',summary:'本地上传来源尚未完成签名与兼容审查'}}
+ assert.deepEqual(first.content.trust,expected)
+ const explicit=await store.import(self,{kind:'atomic-skill',requestId:randomUUID(),source:{kind:'upload',name:'another-name.zip'},metadata,files,trust:expected})
+ assert.equal(explicit.content.id,first.content.id)
+ assert.deepEqual(explicit.receipt.source,{kind:'upload',name:'another-name.zip'})
+})
+
+test('旧版省略trust的原子上传固定快照仅按同人同请求的完整旧规格重放，不改历史或重复创建',async()=>{
+ const self=actor(),other=actor(),store=new MarketContentStore(pool,identity),requestId=randomUUID()
+ const input={kind:'atomic-skill',requestId,source:{kind:'upload',name:'old-method-1.0.0.zip'},metadata:{id:'old-method',title:'原方法',version:'1.0.0',categories:['调查']},files:[file('SKILL.md','# 原方法')]}
+ // 旧版省略 trust 的持久结果与这一准确历史缺省声明相同：request_spec 不保存是否显式传入 trust。
+ // 通过真实服务成功写入等价旧快照，随后使用原裸请求覆盖升级后的重放路径。
+ const legacyTrust=normalizeMarketSourceTrust(undefined,input.source.name),before=await store.import(self,{...input,trust:legacyTrust})
+ const snapshot=async()=>({contents:(await pool.query('select * from teloa_market_contents where owner_id=$1 order by id',[self.ownerId])).rows,files:(await pool.query('select f.* from teloa_market_files f join teloa_market_contents c on c.id=f.content_id where c.owner_id=$1 order by f.path',[self.ownerId])).rows,receipts:(await pool.query('select * from teloa_market_imports where owner_id=$1 order by request_id',[self.ownerId])).rows})
+ const fixed=await snapshot(),replayed=await store.import(self,input)
+ assert.deepEqual(replayed,before)
+ assert.equal(replayed.content.trust.publisher,input.source.name)
+ assert.deepEqual(await snapshot(),fixed)
+ assert.equal(fixed.contents.length,1);assert.equal(fixed.files.length,1);assert.equal(fixed.receipts.length,1)
+ const concurrentPool=new Pool({connectionString:container.getConnectionUri(),max:4,statement_timeout:3000})
+ try{
+  const concurrentStore=new MarketContentStore(concurrentPool,identity)
+  const responses=await Promise.all(Array.from({length:12},(_,index)=>concurrentStore.import(self,index%2===0?input:{...input,trust:legacyTrust})))
+  for(const response of responses)assert.deepEqual(response,before,'旧裸请求与显式原声明并发重放也只返回原回执')
+ }finally{await concurrentPool.end()}
+ assert.deepEqual(await snapshot(),fixed)
+ const changed=[
+  {...input,source:{...input.source,name:'renamed.zip'}},
+  {...input,metadata:{...input.metadata,id:'another-method'}},
+  {...input,metadata:{...input.metadata,title:'新名称'}},
+  {...input,metadata:{...input.metadata,version:'1.0.1'}},
+  {...input,metadata:{...input.metadata,categories:['变更分类']}},
+  {...input,files:[file('SKILL.md','# 修改正文')]},
+  {...input,files:[file('nested/SKILL.md','# 原方法')]},
+  {...input,files:[...input.files,file('notes.md','新增文件')]},
+  {...input,trust:normalizeMarketSourceTrust(undefined,'本人导入')},
+ ]
+ for(const mutation of changed)await assert.rejects(store.import(self,mutation),{code:'teloa/conflict'})
+ assert.deepEqual(await snapshot(),fixed,'所有变更拒绝后原内容、文件和回执逐字段保持不变')
+ const foreign=await store.import(other,input)
+ assert.notEqual(foreign.content.id,before.content.id)
+ assert.equal(foreign.content.trust.publisher,'本人导入','同requestId的其他人仍走未来新缺省来源')
+ await assert.rejects(store.get(other,{contentId:before.content.id}),{code:'teloa/forbidden'})
+})
+
+test('旧版省略trust的行业上传重放保留原回执，清单路径、资源内容及显式信任变动仍拒绝',async()=>{
+ const self=actor(),store=new MarketContentStore(pool,identity),requestId=randomUUID(),manifest={format:'teloa.business-package/v2',id:'old-local-soc',title:'原安全运营',version:'1.3.0',domain:'general',scope:'general',description:'固定方法',resources:[{id:'method',kind:'skill',title:'方法',version:'1.0.0',required:true,source:{kind:'local',path:'method/SKILL.md'}}],relations:[],entrypoints:['method']}
+ const input={kind:'industry-template',requestId,source:{kind:'upload',name:'old-soc-1.3.0.zip'},manifestPath:'teloa.json',files:[file('teloa.json',JSON.stringify(manifest)),file('alternate.json',JSON.stringify(manifest)),file('method/SKILL.md','# 固定方法')],references:[]}
+ const before=await store.import(self,{...input,trust:normalizeMarketSourceTrust(undefined,input.source.name)}),replayed=await store.import(self,input)
+ assert.deepEqual(replayed,before)
+ for(const mutation of [
+  {...input,source:{...input.source,name:'old-soc-1.3.1.zip'}},
+  {...input,manifestPath:'alternate.json'},
+  {...input,files:input.files.map(row=>row.path==='teloa.json'?file(row.path,JSON.stringify({...manifest,version:'1.3.1'})):row)},
+  {...input,files:input.files.map(row=>row.path==='method/SKILL.md'?file(row.path,'# 修改固定方法'):row)},
+  {...input,trust:normalizeMarketSourceTrust(undefined,'本人导入')},
+ ])await assert.rejects(store.import(self,mutation),{code:'teloa/conflict'})
+ const rows=await pool.query('select (select count(*) from teloa_market_contents where owner_id=$1)::int as contents,(select count(*) from teloa_market_imports where owner_id=$1)::int as receipts',[self.ownerId])
+ assert.deepEqual(rows.rows,[{contents:1,receipts:1}])
+ assert.deepEqual(await store.get(self,{contentId:before.content.id}),before.content)
+})
 
 test('v4 公共业务配置在真实内容仓固定同主体字节，跨主体、坏身份及循环拒绝，加载仍待采用',async()=>{
  const self=actor(),store=new MarketContentStore(pool,identity),manifest=dashboardManifest()

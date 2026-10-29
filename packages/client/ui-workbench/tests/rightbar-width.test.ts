@@ -25,7 +25,7 @@ test('宽度契约取 DSH ui-layout 的常量而不是自定值',()=>{
 })
 
 test('轨道占用按现行断点计算，窄屏的导航与目录都是覆盖层不占轨道',()=>{
- assert.equal(navigationTrackWidth(1440),236)
+ assert.equal(navigationTrackWidth(1440),266)
  assert.equal(navigationTrackWidth(1080),0)
  assert.equal(directoryTrackWidth(1680,true),240)
  assert.equal(directoryTrackWidth(1440,true),240)
@@ -36,12 +36,12 @@ test('轨道占用按现行断点计算，窄屏的导航与目录都是覆盖�
 })
 
 test('停靠模式的上限同时受 70% 与中栏 400px 约束',()=>{
- // 1440 - 236 导航 - 240 目录 - 400 中栏 = 564；70% = 1008，取小
- assert.deepEqual(rightbarWidthRange(1440,true),{min:300,max:564})
+ // 1440 - 266 导航 - 240 目录 - 400 中栏 = 534；70% = 1008，取小
+ assert.deepEqual(rightbarWidthRange(1440,true),{min:300,max:534})
  // 关掉会话目录后中栏让出 240
- assert.deepEqual(rightbarWidthRange(1440,false),{min:300,max:804})
+ assert.deepEqual(rightbarWidthRange(1440,false),{min:300,max:774})
  // 窄桌面同样保留中栏 400px 与真实目录列宽
- assert.deepEqual(rightbarWidthRange(1200,true),{min:300,max:324})
+ assert.deepEqual(rightbarWidthRange(1230,true),{min:300,max:324})
  // 视口极窄时下限优先，range 退化成一个点
  assert.deepEqual(rightbarWidthRange(390,false),{min:300,max:300})
 })
@@ -68,15 +68,15 @@ test('偏好无损：视口与会话目录来回切换后宽度能回到原值',
  const preferred=readRightbarWidth({getItem:()=>'700'},1920)
  assert.equal(rightbarTrackWidth(preferred,1920,false),700)
  assert.equal(rightbarTrackWidth(preferred,1600,false),700)
- // 1600 开目录时 1600-236-240-400=724，仍放得下；开关目录不该把偏好磨掉
- assert.equal(rightbarTrackWidth(preferred,1600,true),700)
+ // 1600 开目录时 1600-266-240-400=694，暂时夹取；关目录仍取回本人700px偏好
+ assert.equal(rightbarTrackWidth(preferred,1600,true),694)
  assert.equal(rightbarTrackWidth(preferred,1600,false),700)
- assert.equal(rightbarTrackWidth(preferred,1440,true),564)
+ assert.equal(rightbarTrackWidth(preferred,1440,true),534)
  assert.equal(rightbarTrackWidth(preferred,1920,false),700)
 })
 
 test('窄桌面工作概览按实际可用列宽夹取，不覆盖会话',()=>{
- assert.equal(rightbarTrackWidth(540,1200,true),324)
+ assert.equal(rightbarTrackWidth(540,1230,true),324)
  assert.equal(rightbarTrackWidth(346,768,false),346)
  assert.equal(rightbarTrackWidth(346,740,false),340)
  assert.equal(rightbarTrackWidth(999,860,false),460)
@@ -85,9 +85,9 @@ test('窄桌面工作概览按实际可用列宽夹取，不覆盖会话',()=>{
 
 test('空间不足时 canShow 收起概览，而非返回可覆盖输入的宽度',()=>{
  assert.equal(rightbarCanShow(1440,true,520),true)
- assert.equal(rightbarCanShow(1440,true,565),false)
- assert.equal(rightbarCanShow(1200,true,324),true)
- assert.equal(rightbarCanShow(1200,true,325),false)
+ assert.equal(rightbarCanShow(1440,true,535),false)
+ assert.equal(rightbarCanShow(1230,true,324),true)
+ assert.equal(rightbarCanShow(1230,true,325),false)
  assert.equal(rightbarCanShow(900,true,300),false)
  assert.equal(rightbarCanShow(700,false,300),true)
  assert.equal(rightbarCanShow(699,false,300),false)
@@ -95,12 +95,12 @@ test('空间不足时 canShow 收起概览，而非返回可覆盖输入的宽�
 })
 
 test('打开右栏时目录让出窄桌面空间，963px 不再因差一像素拒绝打开',()=>{
- for(const viewport of [768,900,963,1081,1163,1175]){
+ for(const viewport of [768,900,963,1081,1163,1175,1200,1205]){
   const directory=rightbarDirectoryForOpening(viewport,true)
   assert.equal(directory,false,`${viewport}px 应让出目录空间`)
   assert.equal(rightbarCanShow(viewport,directory,rightbarTrackWidth(9999,viewport,directory)),true)
  }
- for(const viewport of [964,1080,1176,1440,1920])assert.equal(rightbarDirectoryForOpening(viewport,true),true,`${viewport}px 足够时保留目录`)
+ for(const viewport of [964,1080,1206,1440,1920])assert.equal(rightbarDirectoryForOpening(viewport,true),true,`${viewport}px 足够时保留目录`)
  for(const viewport of [390,740,767])assert.equal(rightbarDirectoryForOpening(viewport,true),true,'不改变原生小窗口全屏契约')
  assert.equal(rightbarDirectoryForOpening(963,false),false)
 })
@@ -162,18 +162,18 @@ test('把手只在停靠模式出现',()=>{
 test('向左拖变宽，键盘左右箭头各走 16px，其它按键不改宽度',()=>{
  assert.equal(resizeRightbarWidth(400,-60,1440,true),460)
  assert.equal(resizeRightbarWidth(400,60,1440,true),340)
- assert.equal(resizeRightbarWidth(400,-1000,1440,true),564)
+ assert.equal(resizeRightbarWidth(400,-1000,1440,true),534)
  assert.equal(stepRightbarWidth(400,'ArrowLeft',1440,true),400+RIGHTBAR_KEYBOARD_STEP)
  assert.equal(stepRightbarWidth(400,'ArrowRight',1440,true),400-RIGHTBAR_KEYBOARD_STEP)
  assert.equal(stepRightbarWidth(400,'Enter',1440,true),null)
  // Home/End 直达当前范围两端，Enter 交回组件当作"恢复默认"处理
  assert.equal(stepRightbarWidth(400,'Home',1440,true),300)
- assert.equal(stepRightbarWidth(400,'End',1440,true),564)
+ assert.equal(stepRightbarWidth(400,'End',1440,true),534)
 })
 
 test('clamp 把任何宽度压回当前 range',()=>{
  assert.equal(clampRightbarWidth(10,1440,true),300)
- assert.equal(clampRightbarWidth(9999,1440,true),564)
+ assert.equal(clampRightbarWidth(9999,1440,true),534)
  // 拖拽会产生小数像素，真源必须只保存整数，避免存储与 CSS 变量来回抖动。
  assert.equal(clampRightbarWidth(520.4,1440,true),520)
 })

@@ -19,7 +19,7 @@ export type ConversationWorkDispatchPorts={
  delivery?:TaskRunDeliveryReader['read']
  authorize?:(scopes:readonly string[])=>Promise<void>
  revalidate?:(request:ConversationWorkRequest,target:WorkRequestTarget,signal:AbortSignal)=>Promise<void>
- publish:(status:ConversationWorkStatus,lockSignal:AbortSignal)=>Promise<void>
+ publish:(status:ConversationWorkStatus,lockSignal:AbortSignal)=>Promise<void|boolean>
  reassignment?:(request:ConversationWorkRequest)=>Promise<BusinessReassignmentReceipt|null>
  report?:(requestId:string,code:string)=>void
  now:()=>string
@@ -204,7 +204,7 @@ export class ConversationWorkDispatch{
  /** 新一轮用户明确重试时使用已保存的定义，不能用当前消息再生成一份交办。 */
  async resume(sessionId:string,requestId:string,signal:AbortSignal):Promise<ConversationWorkStatus>{
   signal.throwIfAborted();const request=await this.current(sessionId,requestId),target=request.targets[0]
-  return this.dispatch({requestId:request.requestId,sessionId,messageId:request.messageId,messageSeq:request.messageSeq,kind:request.kind,scope:request.scope,title:request.title,goal:request.goal,...(request.executor?{executor:request.executor}:{}),...(request.sourceText?{sourceText:request.sourceText}:{}),...(request.allBusinesses?{allBusinesses:true}:{}),...(request.reference?{reference:request.reference}:{}),...(request.responsibility?{responsibility:request.responsibility}:{}),...(request.expectedReportTargets?{expectedReportTargets:request.expectedReportTargets}:{}),...(request.kind==='task'&&target?{roleId:target.roleId,expectedRoleVersion:target.roleVersion}:{})},signal,undefined,true)
+  return this.dispatch({requestId:request.requestId,sessionId,messageId:request.messageId,messageSeq:request.messageSeq,kind:request.kind,scope:request.scope,title:request.title,goal:request.goal,...(request.workTokenLimit===undefined?{}:{workTokenLimit:request.workTokenLimit}),...(request.workBudgetPolicy===undefined?{}:{workBudgetPolicy:request.workBudgetPolicy}),...(request.executor?{executor:request.executor}:{}),...(request.sourceText?{sourceText:request.sourceText}:{}),...(request.allBusinesses?{allBusinesses:true}:{}),...(request.reference?{reference:request.reference}:{}),...(request.responsibility?{responsibility:request.responsibility}:{}),...(request.expectedReportTargets?{expectedReportTargets:request.expectedReportTargets}:{}),...(request.kind==='task'&&target?{roleId:target.roleId,expectedRoleVersion:target.roleVersion}:{})},signal,undefined,true)
  }
  async stop(sessionId:string,requestId:string,signal:AbortSignal):Promise<ConversationWorkStatus>{
   signal.throwIfAborted()
@@ -272,7 +272,8 @@ export class ConversationWorkDispatch{
     const status=await this.status(request.sessionId,request.requestId)
     lockSignal.throwIfAborted()
     if(status.counts.waiting)return
-    await this.ports.publish(status,lockSignal);lockSignal.throwIfAborted()
+    const delivered=await this.ports.publish(status,lockSignal);lockSignal.throwIfAborted()
+    if(delivered===false)return
     await this.ports.requests.notified(this.ports.owner,request.requestId)
    })}catch(error){this.ports.report?.(request.requestId,publicFailure(error).code)}
   }

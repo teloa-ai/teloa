@@ -1,14 +1,21 @@
-import {isResourceUsagePage,type ResourceUsagePage} from '@teloa/contract'
+import {isResourceUsagePage,type ResourceUsagePage,isResourceAdoptionInput,type ResourceAdoptionInput} from '@teloa/contract'
 import { isKnowledgeResourceRevision,isKnowledgeTree,isKnowledgeTreeMutation,isKnowledgeVersion,isKnowledgeVersionSummary,isResourceDirectory,isResourceDraft,isWorkResource,isSourceReference,isResourceHistoryPage,type KnowledgeResourceRestoreInput,type KnowledgeResourceReviseInput,type KnowledgeResourceRevision,type KnowledgeTree,type KnowledgeTreeMutation,type KnowledgeVersion,type KnowledgeVersionSummary,type ResourceHistoryPage,type ResourceSpec,type ResourceDirectory,type ResourceDraft,type WorkResource,type SourceReference } from '@teloa/contract'
 import { isResourceRecoveryPage,type ResourceRecoveryPage } from '@teloa/contract'
-import {createLocalMaterialRegistration,readLocalMaterialInput,isLocalMaterialReference,isIndustryMaterialSourceId,isLocalMaterialSourceId,type LocalMaterialRegistrationInput,type LocalMaterialRegistration} from './local-material-registration.ts'
+import {createLocalMaterialRegistration,readLocalMaterialInput,isLocalMaterialReference,isIndustryMaterialSourceId,isLocalMaterialSourceId,isAdoptedMaterialSourceId,type LocalMaterialRegistrationInput,type LocalMaterialRegistration} from './local-material-registration.ts'
 import {isPasteKnowledge,verifyKnowledgeVersionContent,type KnowledgeReviseInput,type KnowledgeRestoreInput,type PasteKnowledge} from '@teloa/contract'
+import {createResourceAdoptionRecovery,type ResourceAdoptionRecovery} from './resource-adoption-recovery.ts'
+import type {WorkbenchNavigationStorage} from './workbench-navigation-state.js'
+import {createEmployeeKnowledgeApi,type EmployeeKnowledgeApi} from './employee-knowledge-api.ts'
 export type ResourceApi={
+  employeeKnowledge?:EmployeeKnowledgeApi;
+  knowledgeEditStorage?:WorkbenchNavigationStorage|undefined;
   registerLocalMaterial?:(input:LocalMaterialRegistrationInput)=>Promise<SourceReference>;
   localMaterialRequests?:LocalMaterialRegistration;
   readContent?:(resource:WorkResource,signal:AbortSignal)=>Promise<{resource:WorkResource;text:string}>;
   directory():Promise<ResourceDirectory>;sources():Promise<SourceReference[]>;
   create(input:ResourceSpec & {requestId:string}):Promise<ResourceDraft>;
+  prepareAdoption?:(input:ResourceAdoptionInput)=>Promise<ResourceDraft[]>;
+  adoptionRecovery?:(identity:{ownerId:string;spaceId:string})=>ResourceAdoptionRecovery;
   update(input:ResourceSpec & {draftId:string;expectedVersion:number}):Promise<ResourceDraft>;
   apply(draft:ResourceDraft):Promise<WorkResource>;withdraw(resource:WorkResource):Promise<WorkResource>;
   candidates(sessionId:string,signal:AbortSignal):Promise<WorkResource[]>;
@@ -27,20 +34,22 @@ export type ResourceApi={
   moveKnowledgeNode(input:{requestId:string;nodeId:string;parentId:string;expectedDirectoryRevision:number;position?:number}):Promise<KnowledgeTreeMutation>;
 }
 type Call=(endpoint:string,payload:unknown,signal?:AbortSignal)=>Promise<unknown>
-export function createResourceApi(call:Call,journal?:{read:()=>string|null;write:(value:string)=>void;clear:()=>void}):ResourceApi {
+export function createResourceApi(call:Call,journal?:{read:()=>string|null;write:(value:string)=>void;clear:()=>void},adoptionStorage?:WorkbenchNavigationStorage):ResourceApi {
   const invalid=()=>Error('工作资料服务返回的内容格式不正确。')
   const api:ResourceApi={
+    employeeKnowledge:createEmployeeKnowledgeApi(call,adoptionStorage),
+    knowledgeEditStorage:adoptionStorage,
     async registerLocalMaterial(input){const request=readLocalMaterialInput(input),value=await call('resources/register-local-material',request);if(!isLocalMaterialReference(value,request))throw invalid();return value},
     async readContent(resource,signal){
       signal.throwIfAborted()
-      if(!isWorkResource(resource)||resource.status!=='active'||!(isLocalMaterialSourceId(resource.sourceId)||isIndustryMaterialSourceId(resource.sourceId)))throw invalid()
+      if(!isWorkResource(resource)||resource.status!=='active'||!(isLocalMaterialSourceId(resource.sourceId)||isIndustryMaterialSourceId(resource.sourceId)||isAdoptedMaterialSourceId(resource.sourceId)))throw invalid()
       const value=await call('resources/read-content',{resourceId:resource.id,expectedVersion:resource.version,sourceVersion:resource.sourceVersion},signal)
       signal.throwIfAborted()
       if(!value||typeof value!=='object'||Array.isArray(value)||Object.keys(value).length!==2||!('resource' in value)||!('text' in value)||!isWorkResource(value.resource)||typeof value.text!=='string')throw invalid()
       const current=value.resource,keys=['id','ownerId','title','sourceId','sourceVersion','scopeIds','version','status','createdAt','updatedAt'] as const
       if(Object.keys(current).length!==keys.length||keys.some(key=>key==='scopeIds'?JSON.stringify(current.scopeIds)!==JSON.stringify(resource.scopeIds):current[key]!==resource[key]))throw invalid()
       const bytes=new TextEncoder().encode(value.text)
-      if(bytes.byteLength>128*1024)throw invalid()
+      if(bytes.byteLength>(isAdoptedMaterialSourceId(resource.sourceId)?2*1024*1024:128*1024))throw invalid()
       const hash=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',bytes)),byte=>byte.toString(16).padStart(2,'0')).join('')
       signal.throwIfAborted()
       if(hash!==resource.sourceVersion)throw invalid()
@@ -49,6 +58,7 @@ export function createResourceApi(call:Call,journal?:{read:()=>string|null;write
     async directory(){const value=await call('resources/list',{});if(!isResourceDirectory(value))throw invalid();return value},
     async sources(){const value=await call('resources/sources',{});if(!Array.isArray(value)||!value.every(isSourceReference))throw invalid();return value},
     async create(input){const value=await call('resources/create',input);if(!isResourceDraft(value))throw invalid();return value},
+    async prepareAdoption(input){if(!isResourceAdoptionInput(input))throw invalid();const value=await call('resources/prepare-adoption',input);if(!Array.isArray(value)||value.length!==input.resources.length||!value.every(row=>isResourceDraft(row)&&isAdoptedMaterialSourceId(row.sourceId)&&row.scopeIds.length===1&&row.scopeIds[0]===input.targetScope)||new Set(value.map(row=>row.id)).size!==value.length||value.some(row=>row.ownerId!==value[0].ownerId))throw invalid();return value},
     async update(input){const value=await call('resources/update',input);if(!isResourceDraft(value))throw invalid();return value},
     async apply(draft){const value=await call('resources/apply',{draftId:draft.id,expectedVersion:draft.version});if(!isWorkResource(value))throw invalid();return value},
     async withdraw(resource){const value=await call('resources/withdraw',{resourceId:resource.id,expectedVersion:resource.version});if(!isWorkResource(value))throw invalid();return value},
@@ -68,5 +78,7 @@ export function createResourceApi(call:Call,journal?:{read:()=>string|null;write
     async moveKnowledgeNode(input){const value=await call('knowledge/move-node',input);if(!isKnowledgeTreeMutation(value)||value.node.id!==input.nodeId||value.node.parentId!==input.parentId)throw invalid();return value},
   }
   api.localMaterialRequests=createLocalMaterialRegistration(api,journal)
+  const adoptions=new Map<string,ResourceAdoptionRecovery>()
+  api.adoptionRecovery=identity=>{const key=JSON.stringify(identity);let controller=adoptions.get(key);if(!controller){controller=createResourceAdoptionRecovery({prepareAdoption:input=>api.prepareAdoption!(input),apply:api.apply,directory:api.directory},identity,adoptionStorage);adoptions.set(key,controller)}return controller}
   return api
 }

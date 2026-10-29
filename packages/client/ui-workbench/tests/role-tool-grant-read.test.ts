@@ -41,3 +41,29 @@ test('暂停员工12/30引用真实读取编辑候选，原保存入口可操作
   assert.equal(options.props.candidates.rules[0].allowed.length,count);assert.equal(options.props.disabled,false)
  }
 })
+
+test('现有授权回显勾选；增删从完整当前集合起步，最后一项取消仍保留空草稿',async()=>{
+ const read={name:'read',allowed:[],workspaceFiles:'default-workspace'},web={name:'web_search',allowed:[],anyArguments:true}
+ const current={roleVersion:3,grant:{roleId,roleVersion:2,state:'active',rules:[read],createdAt:'2026-10-28T00:00:00.000Z'}}
+ const api=createRoleToolGrantApi(async endpoint=>endpoint==='role-tools/get'?current:{roleVersion:3,rules:[read,web]},{read:()=>null,write:()=>{},clear:()=>{}})
+ const render=mount({role:{id:roleId,kind:'employee',state:'paused',version:3},api,resources:{directory:async()=>({resources:[]})},changed:()=>{}})
+ render();await tick();let view=render()
+ const options=()=>nodes(view).find(node=>typeof node.type==='function'&&node.type.name==='RoleToolGrantOptions')!
+ const readKey=grantPresentation.roleToolGrantSelectionKey(read as never),webKey=grantPresentation.roleToolGrantSelectionKey(web as never)
+ assert.deepEqual(options().props.selected,[readKey])
+ options().props.toggle(webKey,true);view=render();assert.deepEqual(options().props.selected,[readKey,webKey])
+ options().props.toggle(readKey,false);view=render();assert.deepEqual(options().props.selected,[webKey])
+ options().props.toggle(webKey,false);view=render();assert.deepEqual(options().props.selected,[])
+ assert.ok(nodes(view).some(node=>node.children.includes('roleDelegation.toolReplacement')))
+ assert.equal(nodes(view).find(node=>node.type==='button'&&node.children.includes('roleGrant.save'))?.props.disabled,true)
+})
+test('未知有限参数即使被旧授权或伪造UI回调选中也阻止保存，明确移除后只保留可核对项',async()=>{
+ const known={name:'read',allowed:[],workspaceFiles:'default-workspace'},unknown={name:'mcp__future__query',allowed:[{query:'unknown'}]},calls:unknown[]=[]
+ const api=createRoleToolGrantApi(async(endpoint,payload)=>{if(endpoint==='role-tools/change'){calls.push(payload);throw Error('not expected')};return endpoint==='role-tools/get'?{roleVersion:3,grant:{roleId,roleVersion:3,state:'active',rules:[known,unknown],createdAt:'2026-10-28T00:00:00.000Z'}}:{roleVersion:3,rules:[known,unknown]}},{read:()=>null,write:()=>{},clear:()=>{}})
+ const render=mount({role:{id:roleId,kind:'employee',state:'paused',version:3},api,resources:{directory:async()=>({resources:[]})},changed:()=>{}})
+ render();await tick();let view=render();let save=nodes(view).find(node=>node.type==='button'&&node.children.includes('roleGrant.save'))!;assert.equal(save.props.disabled,true);await save.props.onClick();assert.equal(calls.length,0)
+ const remove=nodes(view).find(node=>node.type==='button'&&node.children.includes('roleDelegation.reviewAvailableTools'))!;remove.props.onClick();view=render()
+ const options=nodes(view).find(node=>typeof node.type==='function'&&node.type.name==='RoleToolGrantOptions')!;assert.deepEqual(options.props.selected,[grantPresentation.roleToolGrantSelectionKey(known as never)])
+ save=nodes(view).find(node=>node.type==='button'&&node.children.includes('roleGrant.save'))!;assert.equal(save.props.disabled,false)
+ options.props.toggle(grantPresentation.roleToolGrantSelectionKey(unknown,unknown.allowed[0]!),true);view=render();save=nodes(view).find(node=>node.type==='button'&&node.children.includes('roleGrant.save'))!;assert.equal(save.props.disabled,true);await save.props.onClick();assert.equal(calls.length,0)
+})

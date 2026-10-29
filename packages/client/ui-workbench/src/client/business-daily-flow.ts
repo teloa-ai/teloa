@@ -1,7 +1,7 @@
 import {WorkError,isRecord,readBusinessConversationReserve,readBusinessConversationBinding,readBusinessConversationSession,type BusinessConversationBinding,type BusinessConversationReserve} from '@teloa/contract'
 import type {BindingClient} from './binding-client.ts'
 import type {BusinessBuilderApi} from './business-builder-api.ts'
-import {checkBusinessBuilderSwitch,switchDecision,type BusinessBuilderSwitchPort,type BusinessBuilderSwitchSnapshot} from './business-builder-flow.ts'
+import {checkBusinessBuilderSwitch,switchDecision,sameBusinessInput,type BusinessBuilderSwitchPort,type BusinessBuilderSwitchSnapshot} from './business-builder-flow.ts'
 import {createHomeContextApi} from './home-native-controller.ts'
 type Storage=Pick<globalThis.Storage,'getItem'|'setItem'|'removeItem'>
 type DailyRequest=BusinessConversationReserve&{kind:'daily';scope:string}
@@ -108,12 +108,12 @@ export class BusinessDailyFlow{
  private location(epoch:number,approved:DailyApproval){return epoch===this.epoch&&this.ports.mayOpen?.()!==false&&this.ports.switching.read().mainSessionId===approved.mainSessionId}
  private canOpen(epoch:number,approved:DailyApproval){
   const current=this.ports.switching.read()
-  return epoch===this.epoch&&this.ports.mayOpen?.()!==false&&current.mainSessionId===approved.mainSessionId&&switchDecision(current,approved.allowDraft&&current.input===approved.input)==='ready'
+  return epoch===this.epoch&&this.ports.mayOpen?.()!==false&&current.mainSessionId===approved.mainSessionId&&switchDecision(current,approved.allowDraft&&sameBusinessInput(current.input,approved.input))==='ready'
  }
  private async guard(epoch:number,approved:DailyApproval){
   const decision=await checkBusinessBuilderSwitch(this.ports.switching,approved.allowDraft)
   const current=this.ports.switching.read()
-  const reason=!this.location(epoch,approved)||approved.allowDraft&&current.input!==approved.input?'changed':decision==='ready'?switchDecision(current,approved.allowDraft):decision
+  const reason=!this.location(epoch,approved)||approved.allowDraft&&!sameBusinessInput(current.input,approved.input)?'changed':decision==='ready'?switchDecision(current,approved.allowDraft):decision
   if(reason!=='ready')throw new WorkError('teloa/conflict','请先处理当前会话的待发送内容或恢复状态。',{reason})
   return approved
  }

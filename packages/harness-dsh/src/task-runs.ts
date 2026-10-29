@@ -1,5 +1,5 @@
 import {prepareOwnerRun} from './owner-run-admission.ts'
-import {WorkError,taskInput,taskRunOriginInput} from '@teloa/contract'
+import {WorkError,taskInput,taskRunOriginInput,taskRunReadinessInput,type TaskRunReadiness} from '@teloa/contract'
 import {readEmployeeApiModel,readEmployeeApiPermissionMode,type EmployeeModelSelection,type EmployeePermissionMode} from '../../sdk/contract.mjs'
 import type {DigitalRole,WebAccessEntry,TaskRunModelStatus,TaskRunOrigin} from '@teloa/contract'
 import {TaskRunPresetError,type ConversationService,type ConversationTaskIdentity,type ObjectConversationService,type TaskExecutionScope,type TaskRun,type TaskRunService,type TaskRunSkillDatabase,type TaskRunSubagent} from '@teloa/backend'
@@ -7,8 +7,8 @@ import {assertSafeTaskRunRetry} from './task-run-retry-proof.ts'
 import {workRequestChildId} from '@teloa/backend'
 import {TaskRunDriver,type TaskRunPorts} from './task-run-driver.ts'
 import type {TaskRunDeliveryReader} from './task-run-delivery-status.ts'
-export const taskRunEndpoints=['task-runs/retry','task-runs/origin','task-runs/list','task-runs/prepare','task-runs/start','task-runs/reconcile','task-runs/stop','task-runs/withdraw','task-runs/subagents/recover'] as const
-type TaskRunMutationEndpoint=Exclude<typeof taskRunEndpoints[number],'task-runs/list'|'task-runs/origin'>
+export const taskRunEndpoints=['task-runs/retry','task-runs/readiness','task-runs/origin','task-runs/list','task-runs/prepare','task-runs/start','task-runs/reconcile','task-runs/stop','task-runs/withdraw','task-runs/subagents/recover'] as const
+type TaskRunMutationEndpoint=Exclude<typeof taskRunEndpoints[number],'task-runs/list'|'task-runs/origin'|'task-runs/readiness'>
 export type TaskKnowledgeLoader=(target:TaskExecutionScope,role:DigitalRole,database:TaskRunSkillDatabase,signal:AbortSignal)=>Promise<TaskRun['knowledge']>
 /** `admitRun` 在 prepare 写入 Run 的同一事务内执行容量准入；拒绝即不建 Run，调用方按原请求下次再准备。 */
 type RunAdmission=NonNullable<Parameters<TaskRunService['prepare']>[7]>
@@ -38,12 +38,20 @@ export function createTaskRunHandler(owner:string,get:()=>Promise<TaskRunService
   }))
   return (Array.isArray(value)?attached:attached[0]!) as T
  }
+ function handle(endpoint:'task-runs/readiness',payload:unknown,signal:AbortSignal,parentIdentity?:ConversationTaskIdentity):Promise<TaskRunReadiness>
  function handle(endpoint:'task-runs/origin',payload:unknown,signal:AbortSignal,parentIdentity?:ConversationTaskIdentity):Promise<TaskRunOrigin>
  function handle(endpoint:'task-runs/list',payload:unknown,signal:AbortSignal,parentIdentity?:ConversationTaskIdentity):Promise<TaskRun[]>
  function handle(endpoint:TaskRunMutationEndpoint,payload:unknown,signal:AbortSignal,parentIdentity?:ConversationTaskIdentity):Promise<TaskRun>
- function handle(endpoint:string,payload:unknown,signal:AbortSignal,parentIdentity?:ConversationTaskIdentity):Promise<TaskRun|TaskRun[]|TaskRunOrigin>
- async function handle(endpoint:string,payload:unknown,signal:AbortSignal,parentIdentity?:ConversationTaskIdentity):Promise<TaskRun|TaskRun[]|TaskRunOrigin>{
+ function handle(endpoint:string,payload:unknown,signal:AbortSignal,parentIdentity?:ConversationTaskIdentity):Promise<TaskRun|TaskRun[]|TaskRunOrigin|TaskRunReadiness>
+ async function handle(endpoint:string,payload:unknown,signal:AbortSignal,parentIdentity?:ConversationTaskIdentity):Promise<TaskRun|TaskRun[]|TaskRunOrigin|TaskRunReadiness>{
   if(!taskRunEndpoints.some(known=>known===endpoint))throw new WorkError('teloa/not-found','未提供此执行接口。')
+  if(endpoint==='task-runs/readiness'){
+   const input=taskRunReadinessInput(payload);if(parentIdentity)throw new WorkError('teloa/invalid-input','准备检查不接受执行身份。')
+   const service=await get(),source=await service.conversationParent(owner,{taskId:input.taskId})
+   if(source)throw new WorkError('teloa/conflict','此执行归属原交办，请从原交办核对或继续。',{reason:'conversation-work-parent'})
+   const target=await service.preparationTarget(owner,input);signal.throwIfAborted()
+   return {schema:'teloa.task-run-readiness/v1',taskId:target.taskId,taskVersion:target.taskVersion,ready:true}
+  }
   if(endpoint==='task-runs/origin'){
    const target=taskRunOriginInput(payload);if(parentIdentity)throw new WorkError('teloa/invalid-input','来源读口不接受执行身份。')
    const source=await(await get()).origin(owner,target);signal.throwIfAborted();return source
@@ -98,9 +106,9 @@ export function createTaskRunHandler(owner:string,get:()=>Promise<TaskRunService
   if(prepareOptions?.model){if(!ports.checkModel)throw new WorkError('teloa/unavailable','宿主尚未配置模型目录核对能力。');await ports.checkModel(prepareOptions.model,signal)}
   if(endpoint==='task-runs/prepare'){
    managed?.beforeCreate?.(oneClick?'task-run-'+String(prepareInput!.requestId):String(prepareInput!.sessionId))
-   if(!oneClick)return withSubagents(await prepare(payload,undefined,prepareOptions))
+   if(!oneClick){const {permissionMode:_permissionMode,model:_model,...identity}=prepareInput!;return withSubagents(await prepare(identity,undefined,prepareOptions))}
    if(!managed||!ports.resolvePreset)throw new WorkError('teloa/unavailable','运行专用会话准备能力未配置。')
-   const command=prepareInput!,sessionId='task-run-'+String(command.requestId),previous=await service.request(owner,command)
+   const command=prepareInput!,sessionId='task-run-'+String(command.requestId),previous=await service.request(owner,{requestId:command.requestId,taskId:command.taskId,expectedTaskVersion:command.expectedTaskVersion})
    if(previous){if(previous.state==='configuration_failed')await managed.conversations.failRunReservation(owner,{requestId:command.requestId,sessionId});return withSubagents(previous)}
    const reservation=await managed.conversations.runReservation(owner,{requestId:command.requestId})
    if(reservation?.status==='failed'||reservation&&(!reservation.run||reservation.sessionId!==sessionId||reservation.run.taskId!==command.taskId||reservation.run.taskVersion!==command.expectedTaskVersion))throw new WorkError('teloa/storage-corrupt','运行专用会话预约与固定准备请求不一致。')

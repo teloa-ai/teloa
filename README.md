@@ -293,12 +293,12 @@ Bring your own model service and API key. Model usage is billed by your provider
 **0.2.3 improves everyday collaboration:** conversations, groups, tasks and projects use one results sidebar, with a list-to-reading flow, preserved versions and drafts, and direct access to saved conversation results. Employee collaboration invitations and marketplace/detail layouts are more compact. Verified completed group replies no longer prevent the task directory from loading.
 
 - **Projects and project memory:** dedicated project conversations, briefs, rules, relevant materials and sourced memories in model context, with review and withdrawal controls.
-- **Knowledge and local models:** selected local Markdown files, indexes and cited retrieval; separately prepare embedding models or manage local chat models with Ollama. Retrieved excerpts may reach your chosen remote chat model.
+- **Knowledge and local models:** edit knowledge in the library or through the platform DSH agent's knowledge tools, with version history, conflict recovery and current index status. Editing bundled material creates a copy for the selected employee; active tasks keep their fixed version. Reimporting or updating a package uses the imported content, warns before overwriting local edits and resets that package's knowledge history. Separately prepare embedding models or manage local chat models with Ollama. Retrieved excerpts may reach your chosen remote chat model.
 - **Employees, teams and collaboration:** complete team resources, separate employee conversations, group-stream replies and topics, explicit mentions, and sourced employee experience through Auto Dream.
 - **Tasks and deliverables:** Markdown task descriptions, contextual drafts, approvals, versioned results and feedback-driven revisions; reusable methods can become skills or paused plan drafts.
 - **Voice and the companion:** local transcription, voice messages and calls, three speech providers, continuous playback and MiniMax bilingual voice lists with preview.
 - **Execution and files:** temporary execution teams, Workflow/PTC/explicit Ralph, native Codex and Claude Code / Claude Agent integrations and file previews; optional browser/desktop tools remain separately configured and authorized.
-- **Business and apps:** natural-language business drafts, approved record changes and accepted-result links, cleaner dashboard pages, and current marketplace/app terminology.
+- **Business and apps:** natural-language business drafts, approved record changes and accepted-result links, cleaner dashboard pages, and complete ZIP exports with current employees, knowledge, skills, templates and business definitions for reimport. Configure accounts and execution permissions in the destination environment.
 
 This overview covers the release’s capabilities and improvements; not all of them are newly introduced. Read the [full update and configuration boundaries](https://docs.teloa.ai/en/changelog/) before upgrading.
 
@@ -409,6 +409,8 @@ See the [installation guide](https://docs.teloa.ai/en/start/quickstart) and [loc
 3. Open its conversation and make a specific request, such as: “Summarize these files, cite the sources, and list what is still uncertain.”
 4. For work that needs tracking, create or approve a task. Follow actual progress, handle requests in **Needs your attention**, and review the deliverable.
 5. Organize related work in a business or project, then add a dashboard or schedule as needed.
+
+Manual conversations on the home page and in employee chats are not subject to work limits. Scheduled work, API work, and tasks explicitly delegated for background execution use work limits: adjust token, round, concurrency, and rolling 24-hour model-time limits in plan configuration or **Work limits** in task details, or select **Unlimited** for each resource. Increasing limits keeps active work running; lowering a limit invalidates its earlier execution permission. Work and owner limits both apply, and recorded usage is retained. Unlimited does not remove tool permissions, approvals, manual stopping, retry limits, or no-progress protection.
 
 ## What you can do
 

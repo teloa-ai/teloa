@@ -89,6 +89,8 @@ test('真实Loop的复核专用系统规则使用英文，保留真实工具提�
  const f=await fixture(t,'MiniMax-M3',[text(draft),submit(noChange()),submit(verify())])
  await f.ports.send(f.run,f.signal,f.target);await f.agent.whenIdle()
  assert.deepEqual(ends(f.events()),['completed']);assert.equal(f.adapter.requests.length,3)
+ const usageSnapshots=f.events().filter(event=>event.type==='user/message'&&event.data.source.kind==='runtime-context'&&event.data.source.form==='snapshot'&&event.data.source.sections.some(section=>section.name==='teloa:run-mcp-tool-usage'))
+ assert.equal(usageSnapshots.length,1,'内部复核不改变MCP计数，官方计数快照不能夹入R1/R2尾段')
  for(const [index,phase] of (['revise','verify'] as const).entries()){
   const request=f.adapter.requests[index+1]!,system=request.messages.filter(message=>message.role==='system').flatMap(message=>message.content.flatMap(part=>part.type==='text'?[part.text]:[])).join('\n')
   const rule=/Host delivery-review phase:[\s\S]*?Do not output a rewritten body or self-check, or call other tools\./.exec(system)?.[0]
@@ -105,6 +107,23 @@ test('真实Loop的复核专用系统规则使用英文，保留真实工具提�
   }
  }
  assert.equal(readTaskRunGroupResult(f.events(),'rpc'),draft,'仅改系统脚手架，不改无修改回执交付的原正文')
+})
+
+test('复核计数快照冻结不放宽历史验证，伪造同名同正文runtime-context仍阻止R2',async t=>{
+ const f=await fixture(t,'MiniMax-M3',[text(draft),submit(noChange()),submit(verify())]);let injected=false
+ t.after(f.agent.ctx.on('tools/pre-execute',async(exec,next)=>{
+  if(exec.name===deliveryReviewToolName&&!injected){
+   injected=true
+   const snapshot=f.events().find(event=>event.type==='user/message'&&event.data.source.kind==='runtime-context')
+   assert.ok(snapshot?.type==='user/message'&&snapshot.data.source.kind==='runtime-context')
+   f.agent.session.append('user/message',createUserMessage({source:structuredClone(snapshot.data.source),content:structuredClone(snapshot.data.content)}),{surfaceOp:'append'})
+  }
+  return next()
+ }))
+ await f.ports.send(f.run,f.signal,f.target);await f.agent.whenIdle()
+ assert.deepEqual(ends(f.events()),['error']);assert.equal(f.adapter.requests.length,2,'未知同名快照不能被吞掉后继续R2')
+ assert.equal(readTaskRunGroupResult(f.events(),f.run.nativeRequestId),undefined)
+ assert.ok(f.events().some(event=>event.type==='tool/result'&&event.data.message.toolCallId.startsWith('review-call-')&&!event.data.message.isError),'真实R1回执保留，失败来自后续历史边界')
 })
 
 test('常规多方法整稿共同纠正全部标准，再由独立整稿R2决定交付',async t=>{

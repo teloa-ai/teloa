@@ -1,7 +1,7 @@
 import type {Context} from '@deepseek-ai/cordis'
 import {defineTool,type PreToolDecision,type ToolExecution} from '@deepseek-ai/dsh-tools'
 import {WorkError,isRecord,readEmbeddingPreparationState,readRetrievalSearchResult,retrievalEndpoints,retrievalLimits,taskInput,embeddingProviderIds,embeddingProviderForCatalog,type EmbeddingProviderId,type EmbeddingDownloadSource,type EmbeddingPreparationState,type EmbeddingVariant} from '@teloa/contract'
-import type {Embedder,ResourceActor,RetrievalIndexService} from '@teloa/backend'
+import type {Embedder,ResourceActor,RetrievalIndexService,FixedRunKnowledgeRead} from '@teloa/backend'
 import type {TaskToolPolicyReader} from './task-tool-guard.ts'
 import {captureRetrievalPreparation,sameRetrievalPreparation,readRetrievalPrepareInput,readRetrievalPreparationDetails,type RetrievalPreparationDetails} from '@teloa/contract'
 import {retrievalCitationPath,type DigitalRole} from '@teloa/contract'
@@ -30,8 +30,9 @@ export type LocalRetrievalPorts={
  /** 员工普通单聊的岗位身份与员工资料清单；普通会话两者都为空/未绑定。 */
  requestedRoleId:(sessionId:string)=>Promise<string|null>
  role:(roleId:string)=>Promise<DigitalRole|null>
+ resolveKnowledge?:(role:DigitalRole)=>Promise<readonly string[]>
  /** 受管任务的主体、目标范围与可信资料许可；普通会话不调，空许可不得回落全部资料。 */
- taskAuthorization:(sessionId:string,signal:AbortSignal)=>Promise<{actor:ResourceActor;targetScopes:string[];knowledgeIds?:readonly string[]|null}>
+ taskAuthorization:(sessionId:string,signal:AbortSignal)=>Promise<{actor:ResourceActor;targetScopes:string[];knowledgeIds?:readonly string[]|null;fixedKnowledgeRead?:FixedRunKnowledgeRead}>
  /** 本人主体（含全部已登记范围）：只用于界面端点，模型工具永远拿不到它。 */
  humanActor:()=>Promise<ResourceActor>
  retrieval:()=>Promise<Pick<RetrievalIndexService,'search'|'enroll'|'remove'|'status'|'buildPending'|'reconcile'>>
@@ -267,7 +268,7 @@ export function registerLocalRetrieval(ctx:Context,ports:LocalRetrievalPorts){
   exec.signal.throwIfAborted()
   // 本人普通会话：先核对是否绑定了员工；员工单聊按岗位业务范围与员工资料清单检索，不能沿用 general 占位范围。
   if(policy===null){
-   const role=await roleRetrievalAuthorization(sessionId,{owner:ports.owner,requestedRoleId:ports.requestedRoleId,role:ports.role})
+   const role=await roleRetrievalAuthorization(sessionId,{owner:ports.owner,requestedRoleId:ports.requestedRoleId,role:ports.role,...(ports.resolveKnowledge?{resolveKnowledge:ports.resolveKnowledge}:{})})
    if(role)return role
    // 非员工普通会话（含 IM 私聊）保持原会话绑定范围，不另扩大。
    return {actor:{ownerId:ports.owner,kind:'agent',scopeIds:[...binding.scopeIds]},targetScopes:[...binding.scopeIds]}
@@ -283,7 +284,7 @@ export function registerLocalRetrieval(ctx:Context,ports:LocalRetrievalPorts){
   output:{schema:{type:'string'},render:(_args,value)=>[{type:'text',text:value}]},
   execute:async(args,exec)=>{
    await waitForSelection()
-   const input=searchInput(args),{actor,targetScopes,knowledgeIds}=await subject(exec)
+   const input=searchInput(args),{actor,targetScopes,knowledgeIds,fixedKnowledgeRead}=await subject(exec)
    // 授权核验之后才取模型：未就绪不推理、不准备。
    const embedder=requireEmbedder()
    const generation=selectionGeneration
@@ -296,7 +297,7 @@ export function registerLocalRetrieval(ctx:Context,ports:LocalRetrievalPorts){
     await waitBuild(exec.signal)
    }
    if(generation!==selectionGeneration)throw new WorkError('teloa/conflict','本地检索模型已变化，请重试。')
-   const result=await retrieval.search(actor,targetScopes,input,embedder,exec.signal,knowledgeIds)
+   const result=await retrieval.search(actor,targetScopes,input,embedder,exec.signal,knowledgeIds,fixedKnowledgeRead)
    if(generation!==selectionGeneration)throw new WorkError('teloa/conflict','本地检索模型已变化，请重试。')
    exec.signal.throwIfAborted()
    const verified=readRetrievalSearchResult(result)
@@ -400,6 +401,15 @@ export function registerLocalRetrieval(ctx:Context,ports:LocalRetrievalPorts){
    }
    case 'retrieval-model/select':return selectModel(payload,signal)
    case 'retrieval/status':taskInput(payload,[]);return status()
+   case 'retrieval/search':{
+    const input=searchInput(payload),embedder=requireEmbedder()
+    return ports.admit(async()=>{
+     const {retrieval,actor}=await mutationContext(signal)
+     assertActive(signal)
+     // 本人界面试搜仅用服务端主体范围；不接受客户端身份、资料或范围参数。
+     return readRetrievalSearchResult(await retrieval.search(actor,[...actor.scopeIds],input,embedder,signal))
+    })
+   }
    case 'retrieval/cancel':taskInput(payload,[]);await Promise.all([setAutoPaused(true),cancelBuild()]);return status()
    case 'retrieval/enroll':{
     const {retrieval,actor}=await mutationContext(signal)
@@ -432,6 +442,9 @@ export function registerLocalRetrieval(ctx:Context,ports:LocalRetrievalPorts){
  return {
   handle,
   building,
+  currentProfileHash:()=>selectionKnown&&!selectionError&&!changing?profileHash():null,
+  /** 知识内容已提交后只唤醒既有后台索引队列；模型未就绪时保持真实 stale。 */
+  knowledgeChanged:()=>{lastAutoKey='';void pauseLoaded.then(()=>{if(!autoPaused)startBuild({retryFailed:false})})},
   /** 宿主启动对账：等本人模型选择加载后清理失效绑定，合法旧模型的就绪索引保留。 */
   reconcile:async()=>{
    await waitForSelection()

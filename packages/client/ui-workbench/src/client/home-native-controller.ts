@@ -1,6 +1,6 @@
 type Storage={getItem(key:string):string|null;setItem(key:string,value:string):void;removeItem(key:string):void}
 /** create 只建立或恢复原生会话；adopt 以已持久化的同一领养请求把待用会话加入工作目录，须幂等。 */
-type HomePort={storage:Storage;identity:()=>string;isBlank:(id:string)=>boolean|undefined|Promise<boolean|undefined>;create:(id:string)=>Promise<string>;adopt:(id:string)=>Promise<void>;refresh?:()=>Promise<void>}
+type HomePort={storage:Storage;identity:()=>string;isBlank:(id:string)=>boolean|undefined|Promise<boolean|undefined>;isEligible?:(id:string,afterAdopt?:boolean)=>Promise<boolean>;create:(id:string)=>Promise<string>;adopt:(id:string)=>Promise<void>;refresh?:()=>Promise<void>}
 const draftKey='teloa.home-native-session/v1'
 const uuid=/^[a-f0-9]{8}-[a-f0-9]{4}-[1-5][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i
 
@@ -22,7 +22,7 @@ export class HomeNativeController{
  private ready:string|undefined
  constructor(port:HomePort){this.port=port}
  owns(sessionId:string){return this.ready===sessionId&&this.port.storage.getItem(draftKey)===sessionId}
- /** 只退役已经有真实用户回执的待用身份；迟到回执不能清掉新草稿。 */
+ /** 只退役匹配的待用身份；原生正文及业务归属不变，迟到回执不能清掉新草稿。 */
  accept(sessionId:string){if(this.port.storage.getItem(draftKey)!==sessionId)return;this.port.storage.removeItem(draftKey);if(this.ready===sessionId)this.ready=undefined}
  /** 只认领真实核空且仍是当前作用域的初始会话，不创建、复制或改写原生输入。 */
  async claimPrepared(sessionId:string,assertCurrent:()=>void,explicit=false):Promise<boolean>{
@@ -34,6 +34,8 @@ export class HomeNativeController{
   const blank=await this.port.isBlank(sessionId)
   unchanged()
   if(blank!==true)return false
+  if(await this.port.isEligible?.(sessionId)===false){unchanged();return false}
+  unchanged()
   // 先领养再认领：失败即不认领，首页不开放该会话；下次进入首页以同一领养请求重试。
   try{await this.port.adopt(sessionId)}catch(error){
    unchanged()
@@ -41,7 +43,9 @@ export class HomeNativeController{
    if(error&&typeof error==='object'&&'code'in error&&['teloa/binding-pending','teloa/session-not-adoptable'].includes(String(error.code)))return false
    throw error
   }
+  const eligible=await this.port.isEligible?.(sessionId,true)
   unchanged()
+  if(eligible===false)return false
   this.port.storage.setItem(draftKey,sessionId);this.ready=sessionId
   return true
  }
@@ -51,15 +55,28 @@ export class HomeNativeController{
    await this.port.refresh?.()
    for(;;){
     let id=this.port.storage.getItem(draftKey)
+    if(id){
+     const eligible=await this.port.isEligible?.(id)
+     if(this.port.storage.getItem(draftKey)!==id)throw Error('待用会话身份已变化，请重试。')
+     if(eligible===false){this.accept(id);id=null}
+    }
     const before=id?await this.port.isBlank(id):undefined
+    if(id&&this.port.storage.getItem(draftKey)!==id)throw Error('待用会话身份已变化，请重试。')
     if(id&&before===false){this.accept(id);id=null}
     if(!id){id=this.port.identity();this.port.storage.setItem(draftKey,id);this.ready=undefined}
     if(this.ready===id){if(before!==true)throw Error('待用会话历史尚未核对，请重试。');return id}
     const actual=await this.port.create(id)
     if(actual!==id)throw Error('待用会话身份不一致，已停止接入。')
+    const eligible=await this.port.isEligible?.(actual)
+    if(this.port.storage.getItem(draftKey)!==actual)throw Error('待用会话身份已变化，请重试。')
+    if(eligible===false){this.accept(actual);continue}
     await this.port.adopt(actual)
+    const adoptedEligible=await this.port.isEligible?.(actual,true)
+    if(this.port.storage.getItem(draftKey)!==actual)throw Error('待用会话身份已变化，请重试。')
+    if(adoptedEligible===false){this.accept(actual);continue}
     // 创建也可能是在恢复已存在的相同身份；消息加载前不能把它开放为新草稿。
     const blank=await this.port.isBlank(actual)
+    if(this.port.storage.getItem(draftKey)!==actual)throw Error('待用会话身份已变化，请重试。')
     if(blank===false){this.accept(actual);continue}
     if(blank!==true)throw Error('待用会话历史尚未核对，请重试。')
     this.ready=actual;return actual

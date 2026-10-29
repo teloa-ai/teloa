@@ -1,0 +1,13 @@
+.fields{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,230px),1fr));gap:14px 20px;min-width:0;max-width:1120px;width:100%;box-sizing:border-box;margin:0;padding:12px 0 16px;border:0;border-bottom:1px solid var(--teloa-border)}
+.fields>legend{padding:0;font-weight:var(--teloa-weight-medium);font-size:var(--teloa-font-control)}
+.field{min-width:0;display:flex;flex-direction:column;gap:7px;font-size:var(--teloa-font-control);line-height:1.6}
+.heading{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;min-width:0}
+.heading>span{min-width:0;flex:1;overflow-wrap:anywhere}
+.heading>select{flex:none;width:auto!important;max-width:45%;padding:4px 7px!important;font-size:var(--teloa-font-caption)!important}
+.value{min-width:0;display:flex;flex-direction:column;gap:5px}
+.value>label{position:absolute;clip-path:inset(50%);width:1px;height:1px;overflow:hidden;white-space:nowrap}
+.value input,.recovery input{width:100%;font-variant-numeric:tabular-nums}
+.unlimited{margin:0!important;color:var(--teloa-muted);font-size:var(--teloa-font-caption)!important;line-height:1.6!important}
+.invalid{color:var(--teloa-danger,var(--teloa-text));font-size:var(--teloa-font-caption);overflow-wrap:anywhere}
+.fields :focus-visible{outline:2px solid var(--teloa-focus);outline-offset:2px}
+@media(max-width:520px){.fields{grid-template-columns:minmax(0,1fr)}.field input,.heading>select{font-size:16px!important}}

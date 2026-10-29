@@ -1,6 +1,6 @@
 import {isIndustryManifest} from './industry-manifest.ts'
 import type { IndustryContent } from './industry-directory.ts'
-import { inspectIndustryContent, type IndustryInspection } from './industry-content.ts'
+import { inspectIndustryContent, industrySkillPreviewMessage, type IndustryInspection } from './industry-content.ts'
 import type { IndustryResourceKind } from './industry-manifest.ts'
 import type { MarketItem } from './market-preview.ts'
 import {canonicalMarketItemId,mergeMarketItems,sameMarketItem} from './market-item-identity.ts'
@@ -54,7 +54,7 @@ export async function resolveIndustryReferences(item:MarketItem,items:readonly M
   const source=sources[0]!
   if(source.atomicSkill){
    const skill=source.atomicSkill,root=skill.entryPath.slice(0,skill.entryPath.lastIndexOf('/')+1)
-   const inspection:IndustryInspection={id:skill.id,state:'pending',message:'技能内容已读取，格式和运行条件待检查。',definition:{kind:'skill',text:skill.text,files:skill.files.map(file=>({path:file.path.slice(root.length),hash:file.hash,size:file.bytes.length}))}}
+   const inspection:IndustryInspection={id:skill.id,state:'pending',message:industrySkillPreviewMessage,definition:{kind:'skill',text:skill.text,files:skill.files.map(file=>({path:file.path.slice(root.length),hash:file.hash,size:file.bytes.length}))}}
    return {...match,sourceKind:'atomic-skill',kind:'skill',version:skill.version,inspection,sourcePath:skill.entryPath,sourceFiles:structuredClone(skill.files)}
   }
   if(!isIndustryManifest(source.manifest)||!source.packageContent)throw Error('引用来源尚未读取。')

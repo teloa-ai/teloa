@@ -2,6 +2,7 @@ import type { Pool } from 'pg'
 import {initializeMarkdownKnowledge} from './markdown-knowledge.ts'
 import {initializeKnowledgeResources} from './knowledge-resources.ts'
 import {initializeRetrievalIndex} from './retrieval-index.ts'
+import {initializeEmployeeKnowledge} from './employee-knowledge.ts'
 export async function initializeResources(pool:Pool):Promise<void>{
   const client=await pool.connect()
   try{
@@ -27,6 +28,20 @@ export async function initializeResources(pool:Pool):Promise<void>{
         refs jsonb not null check(jsonb_typeof(refs)='array'), created_at timestamptz not null,
         unique(session_id,message_id)
       );
+      create table if not exists teloa_resource_adoptions (
+        owner_id text not null, request_id uuid not null, position integer not null check(position>=0),
+        request_spec jsonb not null check(jsonb_typeof(request_spec)='object'),
+        source_id text not null unique, draft_id uuid not null unique references teloa_resource_drafts(id),
+        target_scope text not null, origin jsonb not null check(jsonb_typeof(origin)='object'),
+        origin_source text not null, source_version text not null check(source_version ~ '^[a-f0-9]{64}$'),
+        content text not null, bytes integer not null check(bytes>0 and bytes<=2097152), created_at timestamptz not null,
+        primary key(owner_id,request_id,position)
+      );
+      create or replace function teloa_reject_resource_adoption_mutation() returns trigger language plpgsql as $$
+      begin raise exception 'resource adoption origins are immutable'; end $$;
+      drop trigger if exists teloa_resource_adoptions_immutable on teloa_resource_adoptions;
+      create trigger teloa_resource_adoptions_immutable before update or delete on teloa_resource_adoptions
+      for each row execute function teloa_reject_resource_adoption_mutation();
       create table if not exists teloa_resource_reads (
         id uuid primary key, snapshot_id uuid not null references teloa_message_snapshots(id),
         outcome text not null check(outcome in ('provided','failed')),
@@ -39,6 +54,7 @@ export async function initializeResources(pool:Pool):Promise<void>{
   await initializeKnowledgeResources(pool)
   // 本地检索索引外键指向 teloa_resources，随资料底座一起建。
   await initializeRetrievalIndex(pool)
+  await initializeEmployeeKnowledge(pool)
   await pool.query(`
     create table if not exists teloa_conversation_knowledge_operations(
       owner_id text not null,request_id uuid not null,command_hash text not null check(command_hash ~ '^[a-f0-9]{64}$'),command_spec jsonb not null check(jsonb_typeof(command_spec)='object'),

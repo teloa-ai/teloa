@@ -117,6 +117,7 @@ export function installResidentModelBudget(ctx:Context,options:Options):()=>void
   if(!request.sessionId){yield* next();return}
   const run=await options.resolveRun(request.sessionId)
   const routing=run?null:await options.resolveRouting?.(request.sessionId)
+  // 首页和员工单聊的手动对话没有 Task/Run 或后台路由来源，不使用自动工作的累计额度。
   if(!run&&!routing){yield* next();return}
   if(run&&(!run.roleSnapshot&&run.executor?.kind!=='owner'||!run.lineage))throw new WorkError('teloa/conflict','历史任务需要建立新的受控执行，不能自动重放。')
   const position=nativeInput.modelPosition(request)
@@ -154,7 +155,7 @@ export function installResidentModelBudget(ctx:Context,options:Options):()=>void
   let claim:Awaited<ReturnType<WorkRetryService['claim']>>|undefined,reservationId:string|undefined,usage:number|null=null,finished=false,outputSeen=false,failure:LlmFailure|undefined,dispatched=false,finish:ModelFinish|undefined,streamActivitySeen=false
   try{
    await retries.register(owner,{runId:run.id,operationId})
-   claim=await retries.claim(owner,{operationId,requestId:randomUUID(),expectedGeneration:controlled.control.generation})
+   claim=await reserveOrExplain(()=>retries.claim(owner,{operationId,requestId:randomUUID(),expectedGeneration:controlled.control.generation}))
    if(!claim.dispatch)throw new WorkError('teloa/conflict','原模型操作已经完成，不能重复派发。')
    const reserve={budgetAccountId:run.lineage.budgetAccountId,controlGeneration:controlled.control.generation,modelRequestId:claim.modelRequestId,kind:'retry' as const,tokens,rounds:0}
    const reservation=await reserveOrExplain(()=>budgets.reserve(owner,reserve))

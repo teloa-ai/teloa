@@ -1,0 +1,10 @@
+.settings{border-block-end:1px solid var(--teloa-border);padding:8px 16px;flex-shrink:0;min-inline-size:0;font-size:var(--teloa-font-control);color:var(--teloa-text)}
+.settings>summary{cursor:pointer;inline-size:fit-content;max-inline-size:100%;padding-block:5px;font-weight:500}
+.settings>summary:focus-visible{outline:2px solid var(--teloa-focus);outline-offset:3px;border-radius:3px}
+.body{max-block-size:50vh;overflow:auto;overscroll-behavior:contain;padding-block:10px;scrollbar-gutter:stable;max-inline-size:72ch;overflow-wrap:anywhere}
+.body p{margin:0 0 12px;line-height:1.6}.status{font-weight:500}
+.confirm{display:flex;align-items:flex-start;gap:8px;margin-block:16px;line-height:1.6}.confirm input{margin-block-start:4px;flex:none}
+.actions{display:flex;flex-wrap:wrap;gap:8px}.actions button{min-block-size:36px;padding:6px 12px;white-space:normal}
+.body button{font:inherit;color:var(--teloa-text);background:var(--teloa-surface);border:1px solid var(--teloa-border);border-radius:7px;cursor:pointer}
+.body button:hover{background:var(--teloa-hover)}.body button:disabled{opacity:.45;cursor:not-allowed}.body :focus-visible{outline:2px solid var(--teloa-focus);outline-offset:2px}
+@media(max-width:600px){.settings{padding-inline:12px}.body{max-block-size:55vh}}

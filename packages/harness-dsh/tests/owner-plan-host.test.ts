@@ -16,6 +16,7 @@ import {taskRunToolRules,webToolRules,validateReferenceToolRules} from '../src/r
 import {nativeToolRules} from '../src/native-tool-access.ts'
 import {workspaceFileToolRules} from '../src/workspace-file-access.ts'
 import {ownerExternalHarnessToolRules,validateOwnerToolRules} from '../src/external-harness-policy.ts'
+import {captureOwnerRunOrchestration} from '../src/owner-run-orchestration.ts'
 import type {TaskRunPorts} from '../src/task-run-driver.ts'
 type PoolClient=Parameters<OwnerPlanAuthority['verifySource']>[0]
 
@@ -28,7 +29,7 @@ async function fixture(t:TestContext,expectedSource:OwnerPlanSource=source,run?:
  const routeSchema=z.object({provider:z.string(),model:z.string(),reasoningEffort:z.string().optional()}).transform(value=>readModelReference(value))
  ctx.sessionProjections.register({key:'modelSelection',stateSchema:z.object({lastUsed:routeSchema.nullable(),pending:routeSchema.nullable()}),stateVersion:1,init:()=>({lastUsed:null,pending:route}),apply:(state,event)=>event.type==='model/selection'?{...state,pending:event.data}:state,wire:{viewSchema:z.object({lastUsed:routeSchema.nullable(),next:routeSchema.nullable()}),view:state=>({lastUsed:state.lastUsed,next:state.pending??state.lastUsed})}})
  ctx.provide('sessionController',{resolveAgent:async()=>({agent}),modelCatalog:async()=>({default:{provider:'wrong-global',model:'never'}})} as never)
- ctx.provide('agentPresets',{resolve:async(id:string)=>({id}),serviceFor:()=>undefined} as never)
+ ctx.provide('agentPresets',{resolve:async(id:string)=>({id}),serviceFor:()=>undefined,acquireScope:async(id:string)=>{assert.equal(id,'teloa-standard');return {key:agent,async [Symbol.asyncDispose](){}}}} as never)
  const executions:string[]=[]
  for(const name of ['read','write','edit','get_goal','subagent_codex','subagent_claude_code','web_search','web_fetch'])ctx.tools.register(defineTool({name,description:name,parameters:{},output:{schema:{type:'string'},render:(_args:unknown,result:string)=>[{type:'text' as const,text:result}]},execute:async()=>{executions.push(name);return 'not expected'}}))
  ctx.provide('goals',{} as never)
@@ -53,7 +54,18 @@ test('capture 固定原会话真实模型/预设与现有工具规则，不以�
  assert.ok(result.policy.argumentRules?.some(r=>r.name==='write'&&r.workspaceFiles==='default-workspace'));assert.ok(result.policy.argumentRules?.some(r=>r.name==='get_goal'&&r.anyArguments))
  assert.ok(result.policy.argumentRules?.some(r=>r.name==='subagent_claude_code'&&r.externalHarness==='owner-general'&&r.anyArguments===undefined))
  assert.equal(JSON.stringify(result.policy).includes('wrong-global'),false);result.admission.assertCurrent()
+ for(const name of ['workflow','ralph','run_code'])assert.equal(result.policy.allowedTools.includes(name),false,name+' 不在真实预设和Agent交集中')
  f.agent.session.append('model/selection',{...f.route,model:'changed'});assert.throws(()=>result.admission.assertCurrent(),{code:'teloa/version-conflict'})
+ assert.deepEqual(f.adapter.requests,[]);assert.deepEqual(f.executions,[])
+})
+test('本人计划冻结真实可用编排且最终admission拒绝未选工具面的后续变化',async t=>{
+ const f=await fixture(t)
+ const register=(name:string)=>f.ctx.tools.register(defineTool({name,description:name,parameters:{},output:{schema:{type:'string'},render:(_args:unknown,result:string)=>[{type:'text' as const,text:result}]},execute:async()=>{throw Error('not expected')}}))
+ register('workflow')
+ const result=await f.authority.capture(owner,{requestId,fields,source,configuration,intent:'save-paused'},f.db)
+ assert.ok(result.policy.allowedTools.includes('workflow'));assert.equal(result.policy.allowedTools.includes('run_code'),false);result.admission.assertCurrent()
+ register('ralph')
+ assert.throws(()=>result.admission.assertCurrent(),{code:'teloa/version-conflict'})
  assert.deepEqual(f.adapter.requests,[]);assert.deepEqual(f.executions,[])
 })
 test('异步模型准备期间换来源模型拒绝，未知模型来源与创造模式不猜默认',async t=>{
@@ -99,7 +111,7 @@ test('正式 index 的本人计划准备回调保原 allowlist/rules，不追加
  let expression:ts.Expression|undefined
  const visit=(node:ts.Node)=>{if(ts.isBinaryExpression(node)&&node.left.getText(file)==='runPorts.prepareOwnerPolicy')expression=node.right;ts.forEachChild(node,visit)};visit(file);assert.ok(expression)
  const f=await fixture(t),original=completedSource();let planned:unknown={allowedTools:original.allowedTools,argumentRules:original.argumentRules,modelPolicy:original.modelPolicy,agentPresetId:original.agentPresetId},materials:unknown[]=[],knowledge:unknown[]=[],knowledgeReads=0
- const values={ctx:f.ctx,owner,brandString:(id:string)=>id,WorkError,taskRunToolRules,nativeToolRules,workspaceFileToolRules,webToolRules,validateReferenceToolRules,ownerExternalHarnessToolRules,validateOwnerToolRules,realpathSync,runService:async()=>({preparationTarget:async()=>({ownerPlanPolicy:planned})}),taskMaterialService:async()=>({list:async()=>materials}),readRunKnowledge:(value:unknown)=>value,readExecutionKnowledge:async()=>{knowledgeReads++;return knowledge}}
+ const values={ctx:f.ctx,owner,brandString:(id:string)=>id,WorkError,taskRunToolRules,nativeToolRules,workspaceFileToolRules,webToolRules,validateReferenceToolRules,ownerExternalHarnessToolRules,validateOwnerToolRules,captureOwnerRunOrchestration,realpathSync,runService:async()=>({preparationTarget:async()=>({ownerPlanPolicy:planned})}),taskMaterialService:async()=>({list:async()=>materials}),readRunKnowledge:(value:unknown)=>value,readExecutionKnowledge:async()=>{knowledgeReads++;return knowledge}}
  const body=ts.transpileModule('const callback='+expression.getText(file),{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.ESNext}}).outputText
  const callback=new Function(...Object.keys(values),body+';return callback')(...Object.values(values)) as NonNullable<TaskRunPorts['prepareOwnerPolicy']>
  const target={taskId:manualSource.taskId,taskVersion:2,sessionId:f.agent.session.id,linkVersion:1,scope:'general'},signal=AbortSignal.timeout(5000)
@@ -125,7 +137,7 @@ async function ownerPreparation(f:Awaited<ReturnType<typeof fixture>>,planned:()
  const text=await readFile(new URL('../src/index.ts',import.meta.url),'utf8'),file=ts.createSourceFile('index.ts',text,ts.ScriptTarget.Latest,true,ts.ScriptKind.TS)
  let expression:ts.Expression|undefined
  const visit=(node:ts.Node)=>{if(ts.isBinaryExpression(node)&&node.left.getText(file)==='runPorts.prepareOwnerPolicy')expression=node.right;ts.forEachChild(node,visit)};visit(file);assert.ok(expression)
- const values={ctx:f.ctx,owner,brandString:(id:string)=>id,WorkError,taskRunToolRules,nativeToolRules,workspaceFileToolRules,webToolRules,validateReferenceToolRules,ownerExternalHarnessToolRules,validateOwnerToolRules,realpathSync,runService:async()=>({preparationTarget:async()=>({ownerPlanPolicy:planned()})}),taskMaterialService:async()=>({list:async()=>[]}),readRunKnowledge:(value:unknown)=>value,readExecutionKnowledge:async()=>[]}
+ const values={ctx:f.ctx,owner,brandString:(id:string)=>id,WorkError,taskRunToolRules,nativeToolRules,workspaceFileToolRules,webToolRules,validateReferenceToolRules,ownerExternalHarnessToolRules,validateOwnerToolRules,captureOwnerRunOrchestration,realpathSync,runService:async()=>({preparationTarget:async()=>({ownerPlanPolicy:planned()})}),taskMaterialService:async()=>({list:async()=>[]}),readRunKnowledge:(value:unknown)=>value,readExecutionKnowledge:async()=>[]}
  const body=ts.transpileModule('const callback='+expression.getText(file),{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.ESNext}}).outputText
  return new Function(...Object.keys(values),body+';return callback')(...Object.values(values)) as NonNullable<TaskRunPorts['prepareOwnerPolicy']>
 }

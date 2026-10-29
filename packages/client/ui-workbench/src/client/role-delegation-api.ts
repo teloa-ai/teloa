@@ -1,3 +1,4 @@
+import {roleKnowledgeMaxReferences} from '@teloa/contract'
 import type {RoleWorkAuthorization,RoleWorkDelegation,TwinExecutionConsent} from '@teloa/contract'
 import {recoveryStorageError} from './recovery-error.ts'
 
@@ -15,7 +16,7 @@ const uuid=(value:unknown):value is string=>typeof value==='string'&&/^[a-f0-9]{
 const version=(value:unknown):value is number=>Number.isSafeInteger(value)&&Number(value)>0&&Number(value)<=2147483647
 const text=(value:unknown,max:number):value is string=>typeof value==='string'&&value===value.trim()&&value.length>0&&value.length<=max&&!/[\x00-\x1f\x7f]/.test(value)
 const stamp=(value:unknown):value is string=>{if(typeof value!=='string')return false;const date=new Date(value);return Number.isFinite(date.getTime())&&date.toISOString()===value}
-const list=(value:unknown,ids=false):string[]=>{if(!Array.isArray(value)||value.length>100||value.some(item=>ids?!uuid(item):!text(item,160))||new Set(value).size!==value.length)return fail();return [...value]}
+const list=(value:unknown,ids=false,max=256):string[]=>{if(!Array.isArray(value)||value.length>max||value.some(item=>ids?!uuid(item):!text(item,160))||new Set(value).size!==value.length)return fail();return [...value]}
 function authorization(value:unknown):RoleWorkAuthorization{
  const row=exact(value,['kind','taskId','taskContentVersion','delegationId','delegationVersion'])
  if(row.kind==='task'&&Object.keys(row).length===3&&uuid(row.taskId)&&version(row.taskContentVersion))return {kind:'task',taskId:row.taskId,taskContentVersion:row.taskContentVersion}
@@ -25,7 +26,7 @@ function authorization(value:unknown):RoleWorkAuthorization{
 function fields(value:unknown):RoleDelegationFields{
  const row=exact(value,['scope','allowedTools','knowledgeIds','memoryViewId','groupIds','safeRecovery'])
  if(!text(row.scope,80)||row.memoryViewId!==null&&!uuid(row.memoryViewId)||typeof row.safeRecovery!=='boolean')return fail()
- return {scope:row.scope,allowedTools:list(row.allowedTools),knowledgeIds:list(row.knowledgeIds,true),memoryViewId:row.memoryViewId as string|null,groupIds:list(row.groupIds,true),safeRecovery:row.safeRecovery}
+ return {scope:row.scope,allowedTools:list(row.allowedTools),knowledgeIds:list(row.knowledgeIds,true,roleKnowledgeMaxReferences),memoryViewId:row.memoryViewId as string|null,groupIds:list(row.groupIds,true,30),safeRecovery:row.safeRecovery}
 }
 export function readRoleWorkDelegation(value:unknown):RoleWorkDelegation{
  try{const row=exact(value,['id','ownerId','roleId','roleVersion','version','state','scope','allowedTools','knowledgeIds','memoryViewId','groupIds','safeRecovery','createdAt','updatedAt']);if(!uuid(row.id)||!text(row.ownerId,128)||!uuid(row.roleId)||!version(row.roleVersion)||!version(row.version)||!['active','pausing','paused','ending','ended'].includes(String(row.state))||!stamp(row.createdAt)||!stamp(row.updatedAt)||row.updatedAt<row.createdAt)return fail();return {id:row.id,ownerId:row.ownerId,roleId:row.roleId,roleVersion:row.roleVersion,version:row.version,state:row.state as RoleWorkDelegation['state'],...fields(Object.fromEntries(['scope','allowedTools','knowledgeIds','memoryViewId','groupIds','safeRecovery'].map(key=>[key,row[key]]))),createdAt:row.createdAt,updatedAt:row.updatedAt}}catch{return fail(true)}

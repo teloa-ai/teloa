@@ -10,6 +10,17 @@ test('连接回包明确区分工具只读与尚未提供的资源范围约束',
  assert.throws(()=>readManagedMcpConnectionRecord({...record('connected'),sourceScopeSupport:'trusted-by-readonly'}))
 })
 
+test('自定义应用预览保留已保存版本，工具核对信息严格校验而不接收凭据',async()=>{
+ const definition={schema:'teloa.mcp-server/v1',serverName:'review',title:'核对服务',transport:'streamable-http',url:'https://example.test/mcp',auth:{kind:'headers',requirement:'any',headers:[{name:'Authorization',scheme:'Bearer'},{name:'X-API-Key'}]}} as const
+ const tool={name:'audit.events.list',fullName:'mcp__review__audit_events_list_123456789abc',readOnly:false,description:'查询审计事件',inputSchema:{type:'object',properties:{query:{type:'string'}}},annotations:{readOnlyHint:true,destructiveHint:false}},connection={...record('connected'),tools:[tool]}
+ const response={schema:'teloa.mcp-preview/v1',definition,definitionHash:'b'.repeat(64),savedDefinitionHash:'a'.repeat(64),authorizationConfigured:false,connection}
+ const api=(value:unknown)=>createManagedMcpConnectionApi(async()=>value)
+ const preview=await api(response).previewCustom(definition as never)
+ assert.equal(preview.savedDefinitionHash,'a'.repeat(64));assert.deepEqual(preview.connection?.tools,[tool])
+ for(const change of [{annotations:{readOnlyHint:'true'}},{annotations:{secret:'credential'}},{inputSchema:[]},{credentials:{key:'must-reject'}}])assert.throws(()=>readManagedMcpConnectionRecord({...connection,tools:[{...tool,...change}]}),/格式不正确/)
+ await assert.rejects(()=>api({...response,savedDefinitionHash:'stale'}).previewCustom(definition as never))
+})
+
 test('受管 MCP 连接 API：readRecord 接受 pending-oauth，未知状态仍拒绝',async()=>{
  const api=(value:unknown)=>createManagedMcpConnectionApi(async()=>value)
  assert.deepEqual(await api(record('pending-oauth')).get(id),record('pending-oauth'))

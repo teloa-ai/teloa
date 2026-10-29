@@ -95,12 +95,16 @@ export function createTaskRunBackground(ctx:Context,links:TaskRunRuntimeLinks,ad
   },
   async state(run:TextBinding):Promise<{outstanding:boolean;interrupted:boolean;ownerOnly?:true;reviewOnly?:true;cancelled?:true}>{
    bind(run)
-   const agent=ctx.agents.get(SessionId(run.sessionId))
-   const jobs=ctx.jobs.list(SessionId(run.sessionId)).filter(job=>job.owner===run.sessionId)
-   for(const job of jobs)record(job)
-   await pending.get(run.sessionId)
+   for(const job of ctx.jobs.list(SessionId(run.sessionId)).filter(job=>job.owner===run.sessionId))record(job)
+   const flushed=pending.get(run.sessionId)
+   await flushed
    if(failed.has(run.sessionId))throw new WorkError('teloa/storage-corrupt','后台工作归属记录未写入，请核对执行。')
    const {all,rows}=await journal(run)
+   if(failed.has(run.sessionId))throw new WorkError('teloa/storage-corrupt','后台工作归属记录未写入，请核对执行。')
+   // 关联读取期间官方 Job 可登记或收口，初轮也可结束；不能混用等待前的 Job 与等待后的会话。
+   const agent=ctx.agents.get(SessionId(run.sessionId)),jobs=ctx.jobs.list(SessionId(run.sessionId)).filter(job=>job.owner===run.sessionId)
+   // 新写入未必在本次关联快照里，暂保留 active，下一次完整核对；这不授予任何执行许可。
+   const journalChanged=pending.get(run.sessionId)!==flushed
    const external=all.filter(row=>row.kind==='external')
    if(external.some(row=>row.runId!==run.id||row.sessionId!==run.sessionId||row.payload.requestId!==run.nativeRequestId))throw new WorkError('teloa/storage-corrupt','外部工作归属记录与执行不一致。')
    const externalLive=external.some(row=>row.payload.runtimeId===runtimeId&&['reserved','running','stopping'].includes(row.payload.status))
@@ -109,7 +113,7 @@ export function createTaskRunBackground(ctx:Context,links:TaskRunRuntimeLinks,ad
    const stoppedAt=typeof run.stopRequestedAt==='string'?Date.parse(run.stopRequestedAt):NaN
    const cancelled=(typeof run.stopRequestedAt==='string'&&ctx.get('teloaNativeInput')?.input.hasCancelledJobCompletion(run.sessionId)===true)||jobs.some(job=>job.status==='killed'&&job.finishedAt!==undefined&&job.finishedAt>=stoppedAt&&rows.some(row=>row.payload.record==='job'&&row.payload.runtimeId===runtimeId&&row.payload.jobId===job.id))
    const reviewOnly=jobs.length===0&&run.executor?.kind==='owner'&&run.stopRequestedAt===null&&run.groupContext===undefined&&run.flowId===undefined&&Array.isArray(run.allowedTools)&&Array.isArray(run.skills)&&onlyOldOwner(run,all,runtimeId)
-   return {outstanding:externalLive||completionPending||jobs.some(job=>live(job.status)&&rows.some(row=>row.payload.record==='job'&&row.payload.runtimeId===runtimeId&&row.payload.jobId===job.id))||agent?.status==='running'||(agent?.inbox.nextTurn.length??0)>0||(agent?.inbox.nextStep.length??0)>0,interrupted,...(cancelled?{cancelled:true as const}:{}),...(jobs.length===0&&isOwnerOnlyTextRun(run,all,runtimeId)?{ownerOnly:true as const}:{}),...(reviewOnly?{reviewOnly:true as const}:{})}
+   return {outstanding:journalChanged||externalLive||completionPending||jobs.some(job=>live(job.status)&&rows.some(row=>row.payload.record==='job'&&row.payload.runtimeId===runtimeId&&row.payload.jobId===job.id))||agent?.status==='running'||(agent?.inbox.nextTurn.length??0)>0||(agent?.inbox.nextStep.length??0)>0,interrupted,...(cancelled?{cancelled:true as const}:{}),...(jobs.length===0&&isOwnerOnlyTextRun(run,all,runtimeId)?{ownerOnly:true as const}:{}),...(reviewOnly?{reviewOnly:true as const}:{})}
   },
   async cancel(run:Binding,signal:AbortSignal):Promise<void>{
    bind(run);signal.throwIfAborted();ctx.get('teloaNativeInput')?.input.cancelJobCompletions(run.sessionId);await pending.get(run.sessionId)

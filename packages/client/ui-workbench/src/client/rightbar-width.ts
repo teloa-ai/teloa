@@ -20,7 +20,8 @@ const docked=(viewportWidth:number)=>viewportWidth>=RIGHTBAR_DOCKED_MIN_VIEWPORT
 
 export function navigationTrackWidth(viewportWidth:number):number{
  // 1080 及以下主导航是 position:fixed 的抽屉，不占列宽。
- return viewportWidth<=1080?0:236
+ // 桌面取 WorkbenchFrame 实际 266px 轨道；沿用旧 236px 会把中栏少算 30px。
+ return viewportWidth<=1080?0:266
 }
 
 export function directoryTrackWidth(viewportWidth:number,directoryOpen:boolean):number{

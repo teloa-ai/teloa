@@ -19,6 +19,7 @@ import {knowledgeSearchToolName} from '../src/local-retrieval.ts'
 import {readFileSync} from 'node:fs'
 import {parse} from 'yaml'
 import {businessChangeSetToolNames} from '../src/business-change-set-tools.ts'
+import {createPublicReferenceCatalog} from '../../mcp-reference/src/local.ts'
 
 test('文件工具只能接收真实候选的工作目录范围，不能伪造任意参数或路径授权',()=>{
  const candidates=['read','write','edit'].map(name=>({name,allowed:[],workspaceFiles:'default-workspace' as const}))
@@ -82,13 +83,13 @@ test('执行态委派工具固定为前台一次性，并给普通会话委派�
 test('整工具授权允许明确列出的委派与外发工具，资料规则仍逐对校验来源版本',()=>{
  // 委派描述、团队消息和外发查询参数不可枚举；默认仍不授予任何岗位。
  assert.ok(roleGrantToolNames.includes(subagentTaskToolName));assert.deepEqual(unconstrainedGrantToolNames,[subagentTaskToolName,...teamDelegationTools,...orchestrationTools,...externalEgressTools,...nativeGrantToolNames,...businessResultToolNames,...businessChangeSetToolNames,knowledgeSearchToolName])
- const available=referenceToolRules([{sourceId:'one',sourceVersion:'v1'}] as ResourceContext['contents'])
+ const available=referenceToolRules([{sourceId:'workbench',sourceVersion:'v1'}] as ResourceContext['contents'])
  const delegation={name:subagentTaskToolName,anyArguments:true as const,allowed:[]}
  validateReferenceToolRules([delegation],taskRunToolRules([]))
- validateReferenceToolRules([delegation,{name:referenceReadTool,allowed:[{id:'one',version:'v1'}]}],available)
+ validateReferenceToolRules([delegation,{name:referenceReadTool,allowed:[{id:'workbench',version:'v1'}]}],available)
  for(const name of [referenceReadTool,...mcpResourceTools,'unknown'])assert.throws(()=>validateReferenceToolRules([{name,anyArguments:true,allowed:[]}],available),{code:'teloa/forbidden'})
  for(const allowed of [[],[{}],[{task:'fixed'}]])assert.throws(()=>validateReferenceToolRules([{name:subagentTaskToolName,allowed}],available),{code:'teloa/forbidden'})
- assert.throws(()=>validateReferenceToolRules([delegation,{name:referenceReadTool,allowed:[{id:'one',version:'v2'}]}],available),{code:'teloa/forbidden'})
+ assert.throws(()=>validateReferenceToolRules([delegation,{name:referenceReadTool,allowed:[{id:'workbench',version:'v2'}]}],available),{code:'teloa/forbidden'})
 })
 test('行业 MCP 只接受服务端给出的冻结完整工具名，不放大为服务器通配授权',()=>{
  const active={name:'mcp__alert_vendor__lookup_alert',anyArguments:true as const,allowed:[]}
@@ -102,14 +103,28 @@ test('行业 MCP 只接受服务端给出的冻结完整工具名，不放大为
 test('行业知识正文不冒充公共参考MCP可读取来源',()=>{
  const industry={sourceId:'industry_11111111-1111-4111-8111-111111111111_22222222-2222-4222-8222-222222222222',sourceVersion:'v1'}
  assert.deepEqual(referenceToolRules([industry] as ResourceContext['contents']),[])
- const mixed=referenceToolRules([industry,{sourceId:'public-one',sourceVersion:'v2'}] as ResourceContext['contents'])
- assert.deepEqual(mixed,[{name:referenceReadTool,allowed:[{id:'public-one',version:'v2'}]},{name:'list_mcp_resources',allowed:[{server:referenceServerName}]},{name:'list_mcp_resource_templates',allowed:[{server:referenceServerName}]}])
+ const mixed=referenceToolRules([industry,{sourceId:'workbench',sourceVersion:'v2'}] as ResourceContext['contents'])
+ assert.deepEqual(mixed,[{name:referenceReadTool,allowed:[{id:'workbench',version:'v2'}]},{name:'list_mcp_resources',allowed:[{server:referenceServerName}]},{name:'list_mcp_resource_templates',allowed:[{server:referenceServerName}]}])
+})
+test('采用/本机/知识来源不产生公共MCP假候选；实际公共Catalog仍按本人选中来源及固定版本准入',async()=>{
+ const catalog=createPublicReferenceCatalog(),references=(await catalog.list()).references,publicSource=references[0]!,privateSources=['adopted_11111111-1111-4111-8111-111111111111','local_material_11111111-1111-4111-8111-111111111111','knowledge_11111111-1111-4111-8111-111111111111','unknown-public-source'].map(sourceId=>({sourceId,sourceVersion:'a'.repeat(64)}))
+ assert.deepEqual(referenceToolRules(privateSources),[])
+ const unbounded={name:referenceReadTool,anyArguments:true as const,allowed:[]};assert.throws(()=>validateReferenceToolRules([unbounded],[unbounded]),{code:'teloa/forbidden'})
+ for(const source of privateSources){
+  const forged={name:referenceReadTool,allowed:[{id:source.sourceId,version:source.sourceVersion}]}
+  assert.throws(()=>validateReferenceToolRules([forged],[forged]),{code:'teloa/forbidden'},'即使错误候选重现，校验仍不能把私有来源交给公共server')
+  await assert.rejects(catalog.read(source.sourceId,source.sourceVersion),{code:'reference/not-found'})
+ }
+ const actual={sourceId:publicSource.id,sourceVersion:publicSource.version},available=referenceToolRules([...privateSources,actual])
+ assert.deepEqual(available[0],{name:referenceReadTool,allowed:[{id:publicSource.id,version:publicSource.version}]})
+ validateReferenceToolRules([available[0]!],available);assert.equal((await catalog.read(publicSource.id,publicSource.version)).version,publicSource.version)
+ const unselected=references.find(row=>row.id!==publicSource.id)!;assert.throws(()=>validateReferenceToolRules([{name:referenceReadTool,allowed:[{id:unselected.id,version:unselected.version}]}],available),{code:'teloa/forbidden'})
 })
 test('复用参考MCP并固定成对来源版本，拒绝其他工具及拼接参数',()=>{
- const available=referenceToolRules([{sourceId:'one',sourceVersion:'v1'},{sourceId:'two',sourceVersion:'v2'},{sourceId:'one',sourceVersion:'v1'}] as ResourceContext['contents'])
+ const available=referenceToolRules([{sourceId:'workbench',sourceVersion:'v1'},{sourceId:'capabilities',sourceVersion:'v2'},{sourceId:'workbench',sourceVersion:'v1'}] as ResourceContext['contents'])
  assert.equal(available[0]?.allowed.length,2)
- validateReferenceToolRules([{name:referenceReadTool,allowed:[{version:'v1',id:'one'}]}],available)
- for(const rule of [{name:'write',allowed:[{}]},{name:referenceReadTool,allowed:[{id:'one',version:'v2'}]},{name:referenceReadTool,allowed:[{id:'one',version:'v1',path:'extra'}]},{name:referenceReadTool,allowed:[]}])assert.throws(()=>validateReferenceToolRules([rule],available),{code:'teloa/forbidden'})
+ validateReferenceToolRules([{name:referenceReadTool,allowed:[{version:'v1',id:'workbench'}]}],available)
+ for(const rule of [{name:'write',allowed:[{}]},{name:referenceReadTool,allowed:[{id:'workbench',version:'v2'}]},{name:referenceReadTool,allowed:[{id:'workbench',version:'v1',path:'extra'}]},{name:referenceReadTool,allowed:[]}])assert.throws(()=>validateReferenceToolRules([rule],available),{code:'teloa/forbidden'})
 })
 test('授权接口固定本人，拒绝自报身份，候选查询先核对岗位归属',async()=>{
  let read=0,write=0,candidates=0
@@ -129,7 +144,7 @@ test('只有实际给出 subagent_task 候选时才随候选回包说明委派�
  assert.deepEqual(await withTask('role-tools/candidates',{roleId:'role'}),{roleVersion:3,rules:[{name:subagentTaskToolName,anyArguments:true,allowed:[]}],delegation:{maxDepth:2,maxPerRun:9}})
 })
 test('岗位可授权列举类资源工具，读取类因无法枚举 uri 仍不可授权',()=>{
- const available=referenceToolRules([{sourceId:'one',sourceVersion:'v1'}] as ResourceContext['contents'])
+ const available=referenceToolRules([{sourceId:'workbench',sourceVersion:'v1'}] as ResourceContext['contents'])
  // 规则名允许集已放开三个资源工具，不再靠硬编码工具名挡住；能否授权改由候选参数决定。
  for(const name of mcpResourceListTools)validateReferenceToolRules([{name,allowed:[{server:referenceServerName}]}],available)
  // 其他 server、多余参数、以及必带 uri 的读取工具都没有候选，一律拒绝。

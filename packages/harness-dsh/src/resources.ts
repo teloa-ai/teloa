@@ -17,7 +17,7 @@ import {resolveTeloaRuntime} from './runtime-paths.ts'
 import {securityEnv} from './launch-env.ts'
 import {readSessionEvents} from './session-events.ts'
 
-export const resourceEndpoints=['resources/register-local-material','resources/read-content','resources/sources','resources/list','resources/candidates','resources/create','resources/update','resources/apply','resources/withdraw','resources/recovery','resources/history','resources/usage','knowledge/tree','knowledge/create-folder','knowledge/rename-node','knowledge/move-node','knowledge/list-versions','knowledge/read-version','knowledge/revise-resource','knowledge/restore-resource','knowledge/revise-standalone','knowledge/restore-standalone']
+export const resourceEndpoints=['resources/register-local-material','resources/read-content','resources/sources','resources/list','resources/candidates','resources/create','resources/update','resources/prepare-adoption','resources/apply','resources/withdraw','resources/recovery','resources/history','resources/usage','knowledge/tree','knowledge/create-folder','knowledge/rename-node','knowledge/move-node','knowledge/list-versions','knowledge/read-version','knowledge/revise-resource','knowledge/restore-resource','knowledge/revise-standalone','knowledge/restore-standalone']
 const empty=(value:unknown)=>{if(!isRecord(value)||Object.keys(value).length)throw new WorkError('teloa/invalid-input','此查询不接受其他参数。')}
 export function registerResources(ctx:Context,projectRoot:string,owner:string,conversations:ConversationService,readHistory:(sessionId:string)=>Promise<Session>,localMaterialPorts?:AuthorizedLocalMaterialPorts){
   // 运行目录与部署形态只认启动时继承的进程环境（launch-env.ts）：决定数据库口令文件位置与数据库主机白名单。
@@ -70,6 +70,7 @@ export function registerResources(ctx:Context,projectRoot:string,owner:string,co
       case 'resources/candidates':return candidates(sessionInput(payload))
       case 'resources/create':return service.create(humanActor,payload)
       case 'resources/update':return service.update(humanActor,payload)
+      case 'resources/prepare-adoption':return service.prepareAdoption(humanActor,payload)
       case 'resources/apply':return service.apply(humanActor,payload)
       case 'resources/withdraw':return service.withdraw(humanActor,payload)
       case 'knowledge/tree':return knowledgeTree.list(humanActor,payload)

@@ -1,10 +1,11 @@
 import {createHash} from 'node:crypto'
-import type {Pool} from 'pg'
+import type {Pool,PoolClient} from 'pg'
 import {WorkError,isRecord,isResourceSpec,type ResourceDraft,type ResourceSpec,type WorkResource} from '@teloa/contract'
 import type {ResourceActor,ResourceSourceCatalog} from '../capabilities/resources.ts'
 import type {IndustryLoadService} from './industry-loads.ts'
 import type {ResourceService} from '../capabilities/resources.ts'
 import {industryReferenceId} from '../capabilities/industry-reference-catalog.ts'
+import {replaceEmployeeKnowledgeImportBaselineInTransaction} from '../capabilities/employee-knowledge.ts'
 
 export type IndustryKnowledgeInstance={id:string;ownerId:string;loadId:string;itemInstanceId:string;itemLocalId:string;title:string;scope:string;sourceId:string;sourceVersion:string;revision:number;state:'pending'|'active'|'withdrawn'|'failed';resource:WorkResource|null;failure:{code:string;message:string}|null;createdAt:string;updatedAt:string}
 export type IndustryKnowledgePage={items:IndustryKnowledgeInstance[]}
@@ -60,9 +61,19 @@ export class IndustryKnowledgeService{
   if(value.draftId&&!draft)throw corrupt()
   if(draft&&(draft.ownerId!==value.ownerId||draft.requestId!==value.downstreamRequestId||draft.id!==value.draftId&&value.draftId!==null||digest({title:draft.title,sourceId:draft.sourceId,sourceVersion:draft.sourceVersion,scopeIds:draft.scopeIds})!==value.digest||draft.status==='draft'&&draft.version!==1||draft.status==='applied'&&(draft.version!==2||!draft.resourceId)||value.resourceId!==null&&draft.resourceId!==value.resourceId))throw corrupt()
   const resourceId=value.resourceId??draft?.resourceId
-  if(resourceId){const resource=await this.resources.getResource(ownerActor,{resourceId});if(resource.ownerId!==value.ownerId||resource.title!==value.title||resource.sourceId!==value.sourceId||resource.sourceVersion!==value.sourceVersion||JSON.stringify(resource.scopeIds)!==JSON.stringify([value.scope]))throw corrupt();return {...this.base(value),state:resource.status,resource,failure:null}}
+  if(resourceId){const resource=await this.resources.getResource(ownerActor,{resourceId});if(resource.ownerId!==value.ownerId||resource.title!==value.title||resource.sourceId!==value.sourceId||resource.sourceVersion!==value.sourceVersion||JSON.stringify(resource.scopeIds)!==JSON.stringify([value.scope]))throw corrupt();const client=await this.pool.connect();try{await client.query('begin');await this.advanceBaseline(client,value,resource);await client.query('commit')}catch(error){await client.query('rollback');throw error}finally{client.release()}return {...this.base(value),state:resource.status,resource,failure:null}}
   if(value.phase==='failed')return {...this.base(value),state:'failed',resource:null,failure:{code:value.failureCode!,message:value.failureMessage!}}
   return {...this.base(value),state:'pending',resource:null,failure:null}
+ }
+ private async advanceBaseline(client:PoolClient,value:Stored,resource:WorkResource,requireActive=false):Promise<void>{
+  if(resource.status!=='active')return
+  const load=(await client.query('select supersedes,reloads,status from teloa_industry_loads where owner_id=$1 and id=$2 for share',[value.ownerId,value.loadId])).rows[0]
+  if(load?.status!=='active'){if(requireActive)throw new WorkError('teloa/conflict','行业包已卸载或被替代，不能继续接入新版知识。');return}
+  const previous=load?.supersedes??load?.reloads
+  if(!previous)return
+  const origins=(await client.query(`select k.resource_id from teloa_industry_load_items i join teloa_industry_knowledge_instances k on k.owner_id=$1 and k.item_instance_id=coalesce(i.carried_from,i.instance_id) where i.load_id=$2 and i.local_id=$3 and i.kind='knowledge' and k.resource_id is not null`,[value.ownerId,previous,value.itemLocalId])).rows
+  if((await client.query("select to_regclass('teloa_employee_knowledge_retirements') as present")).rows[0]?.present!=null)origins.push(...(await client.query('select distinct removed_resource_id as resource_id from teloa_employee_knowledge_retirements where owner_id=$1 and load_id=any($2::uuid[]) and local_id=$3',[value.ownerId,[previous,value.loadId],value.itemLocalId])).rows)
+  for(const origin of origins)await replaceEmployeeKnowledgeImportBaselineInTransaction(client,value.ownerId,{previousResourceId:origin.resource_id,resourceId:resource.id,now:this.identity.now()})
  }
  private base(value:Stored){return {id:value.id,ownerId:value.ownerId,loadId:value.loadId,itemInstanceId:value.itemInstanceId,itemLocalId:value.itemLocalId,title:value.title,scope:value.scope,sourceId:value.sourceId,sourceVersion:value.sourceVersion,revision:value.revision,createdAt:value.createdAt,updatedAt:value.updatedAt}}
  private async update(value:Stored,fields:{phase:Stored['phase'];draft?:ResourceDraft;resourceId?:string;failure?:{code:string;message:string}}):Promise<Stored>{
@@ -82,7 +93,7 @@ export class IndustryKnowledgeService{
    value=await this.update(value,{phase:'applying',draft})
    let resource:WorkResource
    if(draft.status==='applied')resource=await this.resources.getResource(ownerActor,{resourceId:draft.resourceId!})
-   else resource=await this.resources.apply(ownerActor,{draftId:draft.id,expectedVersion:draft.version})
+   else resource=await this.resources.apply(ownerActor,{draftId:draft.id,expectedVersion:draft.version},(client,resource)=>this.advanceBaseline(client,value,resource,true))
    value=await this.update(value,{phase:'applying',draft,resourceId:resource.id})
    return this.project(value)
   }catch(error){
@@ -97,7 +108,7 @@ export class IndustryKnowledgeService{
   const prior=(await this.pool.query('select * from teloa_industry_knowledge_requests where owner_id=$1 and request_id=$2',[ownerId,data.requestId])).rows[0]
   if(prior){this.receiptTarget(prior,requestSpec);if(!uuid(prior.instance_id))throw corrupt();let value:Stored;try{value=await this.row(ownerId,prior.instance_id)}catch{throw corrupt()}this.verifyReceipt(prior,value,requestSpec);return this.coordinate(value)}
   const load=await this.loads.get(ownerId,{loadId:requestSpec.loadId}),item=load.items.find(row=>row.instanceId.toLowerCase()===requestSpec.itemInstanceId)
-  if(!item||item.kind!=='knowledge'||await this.loads.storedItemStatus(this.pool,ownerId,item.instanceId)!=='pending-adapter')throw new WorkError('teloa/conflict','目标不是可实例化的行业知识。')
+  if(!item||item.kind!=='knowledge'||item.carriedFrom&&item.status!=='pending-adapter'||await this.loads.storedItemStatus(this.pool,ownerId,item.instanceId)!=='pending-adapter')throw new WorkError('teloa/conflict','目标不是可实例化的行业知识。')
   const existing=(await this.pool.query('select * from teloa_industry_knowledge_instances where owner_id=$1 and load_id=$2 and item_instance_id=$3',[ownerId,requestSpec.loadId,requestSpec.itemInstanceId])).rows[0]
   if(existing){const value=this.stored(existing),saved=this.fullRequest(value);await this.pool.query('insert into teloa_industry_knowledge_requests(owner_id,request_id,request_spec,instance_id) values($1,$2,$3,$4) on conflict(owner_id,request_id) do nothing',[ownerId,data.requestId,JSON.stringify(saved),value.id]);const receipt=(await this.pool.query('select * from teloa_industry_knowledge_requests where owner_id=$1 and request_id=$2',[ownerId,data.requestId])).rows[0];this.receiptTarget(receipt,requestSpec);this.verifyReceipt(receipt,value,requestSpec);return this.coordinate(value)}
   const scope=load.space.scope;const sourceId=industryReferenceId(load.id,item.instanceId),ownerActor=actor(ownerId,scope),reference=(await this.sources.list({actor:ownerActor})).references.find(row=>row.id===sourceId);if(!reference)throw new WorkError('teloa/source-unavailable','行业知识固定来源当前不可用。')

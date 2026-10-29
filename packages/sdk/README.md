@@ -53,3 +53,9 @@ const valid = await verifyWebhook({body: rawBody, secret: signingSecret, timesta
 ```
 
 回调不跟随重定向，单次上限10秒，最多5次自动尝试；失败可在工作台查看并重新投递。CloudEvents 只规定信封，投递记录和重试由 Teloa 实现。重启恢复队列、游标、结果及待投递事件。远程服务使用 HTTPS；本机回环验收可用 HTTP。
+
+### 受理后的执行条件与页面续办
+
+`202` 表示请求与任务已经保存。若员工没有执行工具、执行许可不足或配置版本已变化，工作会明确返回 `failed`，`error` 分别为 `execution_tools_required`、`execution_forbidden`、`execution_configuration_changed`。宿主的暂时派发故障保留原请求并重试，`error=dispatch_unavailable`；恢复后清除该原因。原运行因重启或人工控制暂停时，返回 `waiting` 和 `execution_paused`；在原运行核对恢复前不会自动启动。不要为未知结果另建工作。
+
+本人可以在任务详情的“原 API 工作”中核对状态、打开本轮原会话，或在终态提交同一工作的后续轮次。每轮保留独立任务、执行会话与成果；续办沿用原集成、员工固定版本、业务范围、权限与模型配置。撤销或过期的集成不能从页面绕过限制。配置变化后需要重新授权；不会自动升级旧凭据。

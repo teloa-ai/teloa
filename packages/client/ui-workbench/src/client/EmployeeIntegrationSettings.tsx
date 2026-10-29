@@ -1,4 +1,5 @@
 import {useEffect,useRef,useState} from 'react'
+import {useBusinessScopes} from './business-scope-context.js'
 import {roleSupportsScope} from '@teloa/contract'
 import {useI18n} from './i18n/provider.js'
 import type {EmployeeIntegrationApi,IntegrationIssue} from './employee-integration-api.js'
@@ -9,6 +10,7 @@ import css from './EmployeeIntegrationSettings.module.css'
 const copy=(locale:string,cn:string,tw:string,en:string)=>locale==='zh-CN'?cn:locale.startsWith('zh')?tw:en
 export const employeeIntegrationSettingsTitle=(locale:string)=>copy(locale,'员工对外调用','員工對外呼叫','Employee integrations')
 export function EmployeeIntegrationSettings({api}:{api:EmployeeIntegrationApi}){
+ const scopeNames=useBusinessScopes()
  const {locale}=useI18n(),c=(cn:string,tw:string,en:string)=>copy(locale,cn,tw,en)
  const [directory,setDirectory]=useState<Awaited<ReturnType<typeof api.list>>>(),[error,setError]=useState<string>(),[busy,setBusy]=useState(false)
  const [employeeId,setEmployeeId]=useState(''),[scope,setScope]=useState('general'),[name,setName]=useState(''),[execute,setExecute]=useState(false),[cancel,setCancel]=useState(false),[concurrent,setConcurrent]=useState(1),[days,setDays]=useState(30),[webhook,setWebhook]=useState('')
@@ -35,7 +37,7 @@ export function EmployeeIntegrationSettings({api}:{api:EmployeeIntegrationApi}){
     {!role&&<p>{c('先添加并启用一名职责完整的员工。','請先加入並啟用一位職責完整的員工。','Add and enable an employee with complete responsibilities first.')}</p>}
     <label>{c('员工','員工','Employee')}<select value={employeeId} disabled={busy} onChange={event=>setEmployeeId(event.target.value)}>{directory.employees.map(row=><option key={row.id} value={row.id}>{row.name}</option>)}</select></label>
     <label>{c('名称（可选）','名稱（可選）','Name (optional)')}<input value={name} maxLength={80} disabled={busy} onChange={event=>setName(event.target.value)}/></label>
-    <label>{c('业务范围','業務範圍','Business scope')}<select value={scope} disabled={busy} onChange={event=>setScope(event.target.value)}>{scopes.map(value=><option key={value} value={value}>{value==='general'?c('通用工作','一般工作','General work'):value}</option>)}</select></label>
+    <label>{c('业务范围','業務範圍','Business scope')}<select value={scope} disabled={busy} onChange={event=>setScope(event.target.value)}>{scopes.map(value=><option key={value} value={value}>{value==='general'?c('通用工作','一般工作','General work'):(scopeNames[value]??value)+' · '+value}</option>)}</select></label>
     <p>{c('可读取此集成获准的员工，以及由此集成创建的工作与成果。','可讀取此集成獲准的員工，以及由此集成建立的工作與成果。','Can read the granted employee and work/results created by this integration.')}</p>
     <label className={css.check}><input type="checkbox" checked={execute} disabled={busy} onChange={event=>setExecute(event.target.checked)}/>{c('允许发起和继续员工工作（消耗本人模型额度）','允許發起及繼續員工工作（使用本人模型額度）','Allow starting and continuing work (uses your model credits)')}</label>
     <label className={css.check}><input type="checkbox" checked={cancel} disabled={busy} onChange={event=>setCancel(event.target.checked)}/>{c('允许请求停止此集成的工作','允許請求停止此集成的工作','Allow cancellation requests for this integration’s work')}</label>
@@ -44,7 +46,7 @@ export function EmployeeIntegrationSettings({api}:{api:EmployeeIntegrationApi}){
     <p>{c('回调只发送工作状态和成果版本。创建后固定地址；修改需重新授权。员工配置变化后，旧凭据不能发起新一轮工作。','回呼只發送工作狀態與成果版本。建立後固定網址；修改須重新授權。員工設定改變後，舊憑據不能發起新一輪工作。','Callbacks contain work state and result version. Changing the endpoint or employee configuration requires a new grant.')}</p>
     <button type="submit" className={css.primary} disabled={busy||!role}>{c('创建凭据','建立憑據','Create key')}</button>
    </form>
-   <div className={css.list}>{directory.items.map(item=>{const active=!item.revokedAt&&Date.parse(item.expiresAt)>Date.now(),employee=directory.employees.find(role=>role.id===item.employeeId);return <article key={item.id}><h3>{item.name}</h3><p>{employee?.name??c('员工暂不可用','員工暫時無法使用','Employee unavailable')} · {item.scope==='general'?c('通用工作','一般工作','General work'):item.scope} · {c('配置版本','設定版本','Configuration version')} {item.employeeVersion}</p><p>{active?c('有效至','有效至','Valid until')+' '+new Date(item.expiresAt).toLocaleString(locale):c('已失效','已失效','Inactive')}{active&&employee?.version!==item.employeeVersion?' · '+c('配置已变化，需重新授权','設定已改變，須重新授權','Configuration changed; create a new grant'):''}</p>
+   <div className={css.list}>{directory.items.map(item=>{const active=!item.revokedAt&&Date.parse(item.expiresAt)>Date.now(),employee=directory.employees.find(role=>role.id===item.employeeId);return <article key={item.id}><h3>{item.name}</h3><p>{employee?.name??c('员工暂不可用','員工暫時無法使用','Employee unavailable')} · {item.scope==='general'?c('通用工作','一般工作','General work'):(scopeNames[item.scope]??item.scope)+' · '+item.scope} · {c('配置版本','設定版本','Configuration version')} {item.employeeVersion}</p><p>{active?c('有效至','有效至','Valid until')+' '+new Date(item.expiresAt).toLocaleString(locale):c('已失效','已失效','Inactive')}{active&&employee?.version!==item.employeeVersion?' · '+c('配置已变化，需重新授权','設定已改變，須重新授權','Configuration changed; create a new grant'):''}</p>
     <div className={css.actions}>{active&&<><button type="button" disabled={busy} onClick={()=>setConfirm({id:item.id,kind:'rotate'})}>{c('轮换密钥','輪換密鑰','Rotate key')}</button><button type="button" disabled={busy} onClick={()=>setConfirm({id:item.id,kind:'revoke'})}>{c('撤销','撤銷','Revoke')}</button></>}{item.webhookUrl&&<button type="button" onClick={()=>setDeliveryId(item.id)}>{c('投递记录','投遞紀錄','Deliveries')}</button>}</div>
     {confirm?.id===item.id&&<div><p>{confirm.kind==='rotate'?c('轮换后旧密钥立即失效，已有工作仍保留。','輪換後舊密鑰立即失效，現有工作仍會保留。','The old key stops working immediately; existing work is retained.'):c('撤销将阻止新请求、未派发队列与后续回调。已经执行的工作请在工作台停止。','撤銷會阻止新請求、未派發佇列及後續回呼。已執行的工作請在工作台停止。','Revoking stops new requests, queued dispatch and future callbacks. Stop accepted work separately in the workbench.')}</p><button type="button" disabled={busy} onClick={()=>void run(async()=>{if(confirm.kind==='rotate')receive(await api.rotate(item.id));else await api.revoke(item.id);setConfirm(undefined)})}>{confirm.kind==='rotate'?c('确认轮换','確認輪換','Confirm rotation'):c('确认撤销','確認撤銷','Confirm revocation')}</button><button type="button" onClick={()=>setConfirm(undefined)}>{c('取消','取消','Cancel')}</button></div>}
    </article>})}</div>

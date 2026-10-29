@@ -24,7 +24,7 @@ export function createPlanPreview(preview:PageCreateDraftPreview,t:TeloaTranslat
  const body=readPageCreatePlanDraft(JSON.parse(preview.draft.body)),configuration='kind' in body
  const fields='kind'in body?body.fields:body.definition,work=body.work,budget=work.budget
  const owner='kind'in body?false:'executor'in body.definition
- const duration=t(budget.maxElapsedMs%60000===0?'create.plan.preview.minutes':'create.plan.preview.seconds',{value:budget.maxElapsedMs%60000===0?budget.maxElapsedMs/60000:budget.maxElapsedMs/1000})
+ const duration=budget.maxElapsedMs===null?t('planWork.budget.unlimited'):t(budget.maxElapsedMs%60000===0?'create.plan.preview.minutes':'create.plan.preview.seconds',{value:budget.maxElapsedMs%60000===0?budget.maxElapsedMs/60000:budget.maxElapsedMs/1000})
  const money=budget.money===null?t('create.plan.preview.moneyNone'):t('create.plan.preview.money',{currency:budget.money.currency,units:budget.money.maxMinorUnits})
  const completion=t(work.completion.kind==='manual'?'create.plan.preview.manual':work.completion.verifier==='system-digest'?'create.plan.preview.digest':'create.plan.preview.materialCheck')
  const notification='kind'in body?undefined:body.definition.notificationPolicy
@@ -52,7 +52,7 @@ export function createPlanPreview(preview:PageCreateDraftPreview,t:TeloaTranslat
    {path:t('continuous.detail.dataScope'),value:fields?.dataScope??t('create.plan.preview.inheritData')},
    {path:t('continuous.detail.delivery'),value:(fields?.delivery??t('create.plan.preview.inheritDelivery'))+'\n'+group},
    {path:t('continuous.detail.trigger'),value:work.triggers.map(trigger=>triggerText(trigger,t)).join('\n')},
-   {path:t('create.plan.preview.budget'),value:t('create.plan.preview.limits',{tokens:budget.maxTokens,rounds:budget.maxGoalRounds,duration,concurrent:budget.maxConcurrent,retries:budget.maxRetries,stagnation:budget.stagnationRounds})+'\n'+money},
+   {path:t('create.plan.preview.budget'),value:t('create.plan.preview.limits',{tokens:budget.maxTokens??t('planWork.budget.unlimited'),rounds:budget.maxGoalRounds??t('planWork.budget.unlimited'),duration,concurrent:budget.maxConcurrent??t('planWork.budget.unlimited'),retries:budget.maxRetries,stagnation:budget.stagnationRounds})+'\n'+money},
    {path:t('create.plan.preview.handling'),value:[completion,t(work.overlap==='forbid'?'create.plan.preview.noOverlap':'create.plan.preview.independent'),t('create.plan.preview.missed'),t(work.safeRecovery?'create.plan.preview.safeRecovery':'create.plan.preview.manualRecovery')].join('；')},
    {path:t('continuous.form.notificationPolicy'),value:notification?t(`continuous.form.notification.${notification}`):t('create.plan.preview.inheritNotification')},
   ],

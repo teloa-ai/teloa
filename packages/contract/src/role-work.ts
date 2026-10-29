@@ -8,7 +8,8 @@ export type TwinExecutionConsent={schema:'teloa.twin-execution-consent/v1';id:st
 export type RoleWorkDelegation={id:string;ownerId:string;roleId:string;roleVersion:number;version:number;state:'active'|'pausing'|'paused'|'ending'|'ended';scope:string;allowedTools:string[];knowledgeIds:string[];memoryViewId:string|null;groupIds:string[];safeRecovery:boolean;createdAt:string;updatedAt:string}
 export type RoleMemoryView={id:string;ownerId:string;roleId:string;roleVersion:number;groupId:string;version:number;entries:{memoryId:string;memoryVersion:number;contentSha256:string}[];createdAt:string}
 export type RunRoleSnapshot={schema:'teloa.run-role/v2';id:string;version:number;kind:DigitalRole['kind'];name:string;scopes:string[];duty:string;dataScope:string;executionScope:string;skills:string[];knowledge:string[];responsibility:RoleResponsibility;runtimeConfig?:RoleRuntimeConfig;authorization:RoleWorkAuthorization;twinConsent:{id:string;version:number}|null}
-export type WorkBudgetPolicy={maxGoalRounds:number;maxTokens:number;maxElapsedMs:number;maxConcurrent:number;maxRetries:number;stagnationRounds:number;money:{currency:string;maxMinorUnits:number}|null}
+/** 四项资源上限的 null 明确表示不限；重试与无进展保护始终有限。 */
+export type WorkBudgetPolicy={maxGoalRounds:number|null;maxTokens:number|null;maxElapsedMs:number|null;maxConcurrent:number|null;maxRetries:number;stagnationRounds:number;money:{currency:string;maxMinorUnits:number}|null}
 
 const uuid=(v:unknown):v is string=>typeof v==='string'&&/^[a-f0-9]{8}-[a-f0-9]{4}-[1-5][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i.test(v)
 const positive=(v:unknown):v is number=>Number.isSafeInteger(v)&&(v as number)>0

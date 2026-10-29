@@ -331,7 +331,7 @@ export class PlanOccurrenceService{
   const budget=(await db.query('select policy from teloa_work_budget_accounts where owner_id=$1 and id=$2 for share',[owner,definition.budgetAccountId])).rows[0]
   if(!budget||!same(budget.policy,definition.budget))throw new WorkError('teloa/conflict','长期工作额度设置已变化，请重新核对。')
   const usage=(await db.query("select coalesce(sum(case when state='settled' then actual_tokens else reserved_tokens end),0) as tokens,coalesce(sum(reserved_rounds),0) as rounds,count(*) filter(where (state='reserved' or state='unknown' and elapsed_terminal is null) and reserved_tokens>0) as concurrent from teloa_work_budget_reservations where owner_id=$1 and budget_account_id=$2 and state<>'released'",[owner,definition.budgetAccountId])).rows[0]
-  if(Number(usage.tokens)>=definition.budget.maxTokens||Number(usage.rounds)>=definition.budget.maxGoalRounds||Number(usage.concurrent)>=definition.budget.maxConcurrent)throw new WorkError('teloa/conflict','长期工作累计额度已用完。')
+  if(definition.budget.maxTokens!==null&&Number(usage.tokens)>=definition.budget.maxTokens||definition.budget.maxGoalRounds!==null&&Number(usage.rounds)>=definition.budget.maxGoalRounds||definition.budget.maxConcurrent!==null&&Number(usage.concurrent)>=definition.budget.maxConcurrent)throw new WorkError('teloa/conflict','长期工作累计额度已用完。')
   let businessEvent:RunPlanEventContext|undefined
   if(event.schema==='teloa.work-event/v2'){
    if(!this.verifyEvent)throw new WorkError('teloa/source-unavailable','业务事件宿主复核入口不可用。')

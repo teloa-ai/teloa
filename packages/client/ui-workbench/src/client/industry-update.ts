@@ -42,7 +42,7 @@ export function compareIndustryUpdate(context:IndustryUpdateContext,load:Industr
   if(definition?.kind!=='role')return []
   const next=newInspections.get(item.localId)?.definition
   const kindChanged=next?.kind==='role'&&next.fields.kind!==definition.fields.kind
-  const instance=context.industryRoles.find(row=>row.loadId===load.id&&row.itemInstanceId===item.instanceId)
+  const instance=context.industryRoles.find(row=>row.loadId===load.id&&row.itemInstanceId===item.instanceId)??(item.carriedFrom?context.industryRoles.find(row=>row.itemInstanceId===item.carriedFrom):undefined)
   const role=instance?.role
   if(!instance||!role)return [{id:item.instanceId,roleId:undefined,name:item.title,fields:['missing'],state:'missing',kindChanged}]
   const expected={...definition.fields,scopes:[load.space.scope],skills:[],knowledge:instance.knowledge.map(row=>row.resourceId)}

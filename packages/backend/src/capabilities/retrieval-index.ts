@@ -1,3 +1,4 @@
+import type {FixedRunKnowledgeRead} from './fixed-run-knowledge-read.ts'
 import {endianness} from 'node:os'
 import type {Pool,PoolClient} from 'pg'
 import {WorkError,isRecord,isResourceSpec,readRetrievalSearchResult,resourceScopes,retrievalLimits,type ResourceSpec,type RetrievalCoverage,type RetrievalSearchResult} from '@teloa/contract'
@@ -128,14 +129,24 @@ function candidate(row:Record<string,unknown>):Candidate{
  if(row.index_id!==null&&(typeof row.index_id!=='string'||!['building','ready','failed'].includes(String(row.state))||!Number.isSafeInteger(row.chunk_count)))throw corrupt()
  return {resourceId:row.id,version:row.revision as number,spec:{title:spec.title,sourceId:spec.sourceId,sourceVersion:spec.sourceVersion,scopeIds:[...spec.scopeIds]},indexId:row.index_id as string|null,state:row.index_id===null?null:row.state as Candidate['state'],chunkCount:row.index_id===null?null:row.chunk_count as number}
 }
-const candidateSql=(lock:boolean)=>`
+const candidateSql=(lock:boolean,employeeKnowledge=false)=>`
  select r.id,r.revision,r.spec,i.id as index_id,i.state,i.chunk_count
  from teloa_retrieval_enrollments e
  join teloa_resources r on r.owner_id=e.owner_id and r.status='active' and r.spec->>'sourceId'=e.source_id
  left join teloa_retrieval_indexes i on i.owner_id=r.owner_id and i.resource_id=r.id and i.resource_version=r.revision
   and i.source_id=e.source_id and i.source_version=r.spec->>'sourceVersion' and i.scope_ids=r.spec->'scopeIds'
   and i.profile_hash=$2 and i.chunker=$3
- where e.owner_id=$1 and ($4::uuid[] is null or r.id=any($4::uuid[])) order by r.id${lock?' for share of r':''}`
+ where e.owner_id=$1 and ($4::uuid[] is null or r.id=any($4::uuid[]))${employeeKnowledge?`
+  and ($4::uuid[] is not null or not exists(select 1 from teloa_employee_knowledge_versions ev
+   join teloa_employee_knowledge_bindings eb on eb.owner_id=ev.owner_id and eb.role_id=ev.role_id and eb.origin_document_id=ev.origin_document_id
+   where ev.owner_id=r.owner_id and ev.resource_id=r.id and ev.resource_id<>eb.origin_resource_id and eb.head_resource_id<>r.id))
+  and ($4::uuid[] is not null or not exists(select 1 from teloa_employee_knowledge_source_retirements ed where ed.owner_id=r.owner_id and ed.source_id=r.spec->>'sourceId' and ed.source_version=r.spec->>'sourceVersion'))
+  and ($4::uuid[] is not null or not exists(select 1 from teloa_employee_knowledge_archives ea where ea.owner_id=r.owner_id and r.spec->>'sourceId'='knowledge_'||ea.knowledge_id::text))
+  and not exists(select 1 from teloa_employee_knowledge_versions ev
+   join teloa_employee_knowledge_bindings eb on eb.owner_id=ev.owner_id and eb.role_id=ev.role_id and eb.origin_document_id=ev.origin_document_id
+   join teloa_resources eo on eo.id=eb.origin_resource_id and eo.owner_id=eb.owner_id
+   join teloa_resources eh on eh.id=eb.head_resource_id and eh.owner_id=eb.owner_id
+   where ev.owner_id=r.owner_id and ev.resource_id=r.id and ev.resource_id<>eb.origin_resource_id and (eo.status<>'active' or eh.status<>'active'))`:''} order by r.id${lock?' for share of r':''}`
 
 export class RetrievalIndexService{
  private readonly pool:Pool
@@ -151,7 +162,8 @@ export class RetrievalIndexService{
  }
  private lockOwner(client:PoolClient,ownerId:string){return client.query('select pg_advisory_xact_lock(hashtextextended($1,0))',[JSON.stringify(['retrieval-index',ownerId])])}
  private async candidates(client:PoolClient,ownerId:string,profileHash:string|null,lock=false,knowledgeIds:readonly string[]|null=null):Promise<Candidate[]>{
-  return (await client.query(candidateSql(lock),[ownerId,profileHash,retrievalChunker,knowledgeIds])).rows.map(candidate)
+  const employeeKnowledge=Boolean((await client.query("select to_regclass('teloa_employee_knowledge_versions') as relation")).rows[0]?.relation)
+  return (await client.query(candidateSql(lock,employeeKnowledge),[ownerId,profileHash,retrievalChunker,knowledgeIds])).rows.map(candidate)
  }
  private async embed(embedder:Embedder,kind:'query'|'passage',texts:string[],signal:AbortSignal):Promise<Float32Array[]>{
   let vectors:unknown
@@ -360,7 +372,7 @@ export class RetrievalIndexService{
   * 当前绑定下索引就绪的资料。暴力余弦取 top-K，再在同一事务内经 ResourceService 回读有界摘录。
   * 范围外资料既不进入 searched 也不进入 pending。
   */
- async search(actor:ResourceActor,targetScopes:string[],input:unknown,embedder:Embedder,signal:AbortSignal,knowledgeIds:readonly string[]|null=null):Promise<RetrievalSearchResult>{
+ async search(actor:ResourceActor,targetScopes:string[],input:unknown,embedder:Embedder,signal:AbortSignal,knowledgeIds:readonly string[]|null=null,fixedKnowledgeRead?:FixedRunKnowledgeRead):Promise<RetrievalSearchResult>{
   authorizeResourceActor(actor)
   // limit 只认缺省（undefined）：null 不是缺省，按格式错误拒绝（审查 LOW-3）。
   const row=exact(input,['query','limit']),query=row.query,limit=row.limit===undefined?defaultLimit:row.limit
@@ -387,7 +399,7 @@ export class RetrievalIndexService{
    const {coverage,ready}=split(visible(await this.candidates(client,actor.ownerId,embedder.profileHash,true,permitted)))
    const loaded=await this.vectors(client,ready.map(row=>({id:row.indexId!,chunkCount:row.chunkCount!})))
    const top=rankRetrievalVectors(queryVector!,ready.map(row=>({row,index:loaded.get(row.indexId!)!})),limit)
-   const excerpts=await this.resources.readExcerptsInTransaction(client,actor,targetScopes,top.map(hit=>({resourceId:hit.row.resourceId,resourceVersion:hit.row.version,sourceVersion:hit.row.spec.sourceVersion,chars:[hit.chunk.start,hit.chunk.end]})))
+   const excerpts=await this.resources.readExcerptsInTransaction(client,actor,targetScopes,top.map(hit=>({resourceId:hit.row.resourceId,resourceVersion:hit.row.version,sourceVersion:hit.row.spec.sourceVersion,chars:[hit.chunk.start,hit.chunk.end]})),fixedKnowledgeRead)
    return readRetrievalSearchResult({coverage,results:excerpts.map(({excerpt},index)=>{
     const hit=top[index]!
     return {resourceId:hit.row.resourceId,resourceVersion:hit.row.version,title:hit.row.spec.title,sourceId:hit.row.spec.sourceId,sourceVersion:hit.row.spec.sourceVersion,lines:[hit.chunk.startLine,hit.chunk.endLine],chars:[hit.chunk.start,hit.chunk.end],heading:hit.chunk.heading,score:hit.score,excerpt}

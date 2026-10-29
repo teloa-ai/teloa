@@ -33,6 +33,9 @@ test('普通目标默认保存通用任务草稿，同调用重放原ID且不交
  assert.equal(a.isError,false,JSON.stringify(a));assert.equal(b.isError,false,JSON.stringify(b));assert.equal(read(a).task.id,read(b).task.id);assert.equal(read(a).task.state,'ready');assert.equal(read(a).task.scope,'general');assert.equal(read(a).executionStarted,false);assert.equal('assignee' in e.writes[0],false);assert.equal(e.writes[0].requestId,e.writes[1].requestId)
  assert.equal((await e.call('teloa_task_configuration_create',{...args,business:'不存在的业务'})).isError,true)
  assert.equal((await e.call('teloa_task_configuration_create',{...args,scope:'SOC'})).isError,true)
+ const description=e.ctx.tools.schemas(e.agent).find(row=>row.name==='teloa_task_configuration_create')!.description
+ assert.match(description,/先读取 teloa_work_directory，再通过 teloa_work_dispatch/)
+ assert.match(description,/不能复用本草稿.*批准后会创建并开始工作/)
 })
 test('创建回包丢后群改名归档或任务改名，原调用恢复不可变v1且选择变化拒绝',async t=>{
  let changed=false

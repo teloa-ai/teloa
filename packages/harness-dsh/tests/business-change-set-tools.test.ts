@@ -109,3 +109,34 @@ test('准备工具的模型可见参数即本地记录批次协议：真实失�
  assert.equal((await call({...shaped,scope:'other'})).isError,true)
  assert.equal((await call({operations:[{operation:'edit',type:'customer',fields:[{name:'stage',value:'已联系'}]}]})).isError,true);assert.equal(seen.length,1)
 })
+
+test('原生prepare公开日期与长度协议，失败给出可修正原因且不回显字段原值',async t=>{
+ const {assertBusinessRecordFieldValue}=await import('@teloa/backend')
+ const {readBusinessChangeSetPrepare}=await import('@teloa/contract')
+ const ctx=new Context();for(const plugin of [LlmRuntime,SystemPrompt,ToolRuntime,SessionStore,SessionProjectionRegistry,AgentRegistry])await ctx.plugin(plugin);await ctx.plugin(AgentLoop,{agents:[]});t.after(()=>ctx.fiber.dispose())
+ const {agent}=await ctx.agents.create({sessionId:SessionId('value-rules-'+randomUUID()),agentOptions:{provider:'test',model:'test'}})
+ agent.session.append('turn/start',{turn:0} as never);agent.session.append('user/message',createUserMessage({source:{kind:'user'},content:[{type:'text',text:'准备一条业务记录'}]}),{surfaceOp:'append'})
+ let prepared=0,approvals=0
+ const ports:BusinessChangeSetToolsPorts={owner:'owner',conversation:async sessionId=>({ownerId:'owner',sessionId,status:'ready'}),readTaskPolicy:async()=>null,isRoleConversation:async()=>false,isTaskConversation:async()=>false,binding:async()=>undefined,context:async sessionId=>({sessionId,scopeId:'sales',roleId:null,version:1,locked:false}),scopes:async()=>[{scope:'sales',title:'销售'}],changes:{
+  prepare:async(_actor,input)=>{
+   const batch=readBusinessChangeSetPrepare(input),op=batch.operations[0]!
+   assert.ok(op.operation==='create')
+   for(const field of [{name:'observed',label:'告警时间',from:'时间',type:'datetime' as const,required:true},{name:'detail',label:'告警正文',from:'正文',type:'text' as const,required:true}])assertBusinessRecordFieldValue(field,op.fields.find(value=>value.name===field.name)?.value)
+   prepared++;return {id:randomUUID(),revision:1,digest:'d'.repeat(64)} as Awaited<ReturnType<BusinessChangeSetToolsPorts['changes']['prepare']>>
+  },get:async()=>{throw Error('unused')},apply:async()=>{throw Error('不得采用')},
+ }}
+ module.registerBusinessChangeSetTools(ctx,ports)
+ ctx.provide('approval',{request:async()=>{approvals++;return 'rejected'}})
+ const schema=ctx.tools.schemas(agent).find(item=>item.name==='teloa_business_change_prepare')!,advertised=JSON.stringify(schema)
+ for(const required of ['2000','4000','UTF-16','YYYY-MM-DDTHH:mm:ss.sssZ','2026-10-28T15:11:38.000Z','不能只改后缀'])assert.ok(advertised.includes(required),required)
+ const call=(date:string,detail:string)=>ctx.tools.execute({name:'teloa_business_change_prepare',arguments:{operations:[{operation:'create',type:'alert',title:'告警',summary:'',fields:[{name:'observed',value:date},{name:'detail',value:detail}]}]},callId:ToolCallId(randomUUID()),agent,signal:new AbortController().signal})
+ const invalidDate='2026-10-28T23:11:38+08:00',dateResult=await call(invalidDate,'PRIVATE-SHORT-TEXT')
+ assert.equal(dateResult.isError,true);assert.match(JSON.stringify(dateResult),/YYYY-MM-DDTHH:mm:ss.sssZ/);assert.match(JSON.stringify(dateResult),/2026-10-28T15:11:38.000Z/);assert.ok(!JSON.stringify(dateResult).includes(invalidDate));assert.ok(!JSON.stringify(dateResult).includes('PRIVATE-SHORT-TEXT'))
+ for(const length of [4345,2447]){
+  const result=await call('2026-10-28T15:11:38.000Z','PRIVATE-LONG-TEXT-'+ '密'.repeat(length-18)),text=JSON.stringify(result)
+  assert.equal(result.isError,true);assert.ok(text.includes(String(length)));assert.ok(text.includes('2000'));assert.ok(!text.includes('PRIVATE-LONG-TEXT-'))
+ }
+ assert.equal(prepared,0);assert.equal(approvals,0)
+ const corrected=await call('2026-10-28T15:11:38.000Z','保留必要事实的正文')
+ assert.equal(corrected.isError,false,JSON.stringify(corrected));assert.equal(prepared,1);assert.equal(approvals,0)
+})

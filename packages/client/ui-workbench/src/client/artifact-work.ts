@@ -10,13 +10,23 @@ export type ArtifactWorkChange=
   |{type:'follow';id:string;artifact:ArtifactRef;goal:string;now:string}
   |{type:'review';artifact:ArtifactRef;expectedTaskVersion:number;now:string}
   |{type:'link';artifact:ArtifactRef;object:Extract<ArtifactSourceRef,{kind:'object'}>;now:string}
+/** 空行是正文格式，不是成果段落配额；长报告按相邻段落分组，保留全部正文。 */
+function artifactBodySections(body:string){
+  const paragraphs=body.split(/\n\s*\n/),groupSize=Math.ceil(paragraphs.length/40)
+  const sections:{id:string;title:string;text:string}[]=[]
+  for(let offset=0;offset<paragraphs.length;offset+=groupSize){
+    const number=sections.length+1
+    sections.push({id:'section-'+number,title:'段落 '+number,text:paragraphs.slice(offset,offset+groupSize).join('\n\n')})
+  }
+  return sections
+}
 export function changeArtifactWork(state:TaskPreview,command:ArtifactWorkChange,conversation?:ArtifactConversation):TaskPreview{
   if(command.type==='create'){
     const source=resolveArtifactSource(state,command.source,conversation)
     if(sourceStamp(source)!==command.expectedSource)throw Error('来源已变化，请核对当前来源后保留草稿继续。')
     if(command.id.startsWith('task-result:')||command.id.startsWith('run-result:')||state.artifacts.some(item=>item.id===command.id))throw Error('产物编号冲突。')
     if(command.body.length>16000)throw Error('工作成果不能超过 16000 字。')
-    const artifact=createArtifact({id:command.id,source,title:command.title,sections:(command.body.trim()||(command.files?.length?'文件快照：'+command.files.map(file=>file.path).join('、'):'')).split(/\n\s*\n/).map((body,index)=>({id:'section-'+(index+1),title:'段落 '+(index+1),text:body})),note:command.messages?.length?'本人整理工作成果；保留明确选取的原消息与图片身份':'本人整理工作成果；未自动提取历史',now:command.now,...(command.messages?{messages:command.messages}:{}),...(command.files?{files:command.files}:{})})
+    const artifact=createArtifact({id:command.id,source,title:command.title,sections:artifactBodySections(command.body.trim()||(command.files?.length?'文件快照：'+command.files.map(file=>file.path).join('、'):'')),note:command.messages?.length?'本人整理工作成果；保留明确选取的原消息与图片身份':'本人整理工作成果；未自动提取历史',now:command.now,...(command.messages?{messages:command.messages}:{}),...(command.files?{files:command.files}:{})})
     return {...state,artifacts:[...state.artifacts,artifact]}
   }
   const artifact=state.artifacts.find(item=>item.id===(command.type==='change'?command.id:command.artifact.id))

@@ -5,8 +5,12 @@ import type {MarketItem} from './market-preview.ts'
 import type {MarketContentApi} from './market-content-api.ts'
 import type {BusinessShareSource} from './business-share-source.ts'
 import {assertBusinessShareInspection,inspectBusinessShareContent,type BusinessShareInspection} from '@teloa/contract'
+import {buildCompleteBusinessPackage,type CompleteBusinessPackageInput,type CompleteBusinessPackageResult} from './complete-business-package.ts'
+import type {CompleteBusinessSource} from './complete-business-source.ts'
+export type CompleteBusinessExportPreview=CompleteBusinessPackageResult&{inspection:BusinessShareInspection}
 
 export type BusinessShareApi={
+ complete?:{source:CompleteBusinessSource;plan:(input:CompleteBusinessPackageInput)=>Promise<CompleteBusinessExportPreview>;download:(item:MarketItem,expectedDigest:string,purpose:string)=>Promise<{bytes:Uint8Array;name:string}>}
  source:BusinessShareSource
  plan:(input:BusinessShareInput)=>Promise<{item:MarketItem;excluded:BusinessShareExclusion[];inspection:BusinessShareInspection}>
  inspect:(item:MarketItem,purpose:string)=>Promise<BusinessShareInspection>
@@ -23,8 +27,19 @@ export function businessSharePublicationNotice(english:BusinessShareInput['engli
 export function businessShareEnglishResourceNotice(english:BusinessShareInput['english']):'source-title-fallback'|undefined{return english?'source-title-fallback':undefined}
 export function businessShareExclusionText(item:BusinessShareExclusion):string{return item.localId+'：'+item.reason}
 
-export function createBusinessShareApi(source:BusinessShareSource,market:MarketContentApi):BusinessShareApi{
+export function createBusinessShareApi(source:BusinessShareSource,market:MarketContentApi,complete?:CompleteBusinessSource):BusinessShareApi{
  return {
+  ...(complete?{complete:{source:complete,async plan(input:CompleteBusinessPackageInput){
+   const result=await buildCompleteBusinessPackage(input)
+   const inspection=await inspectBusinessShareContent({files:result.item.packageContent!.files,purpose:input.description},{allowBinaryAssets:true})
+   if(inspection.findings.length)throw Error('业务包包含疑似凭据，请修改来源后重新生成预览。')
+   return {...result,inspection}
+  },async download(item:MarketItem,expectedDigest:string,purpose:string){
+   const fixed=structuredClone(item)
+   if(!fixed.packageContent)throw Error('请先读取完整业务包。')
+   await assertBusinessShareInspection({files:fixed.packageContent.files,purpose},expectedDigest,{allowBinaryAssets:true})
+   return exportIndustryArchive(fixed)
+  }}}:{}),
   source,
   async plan(input){
    const packaged=planBusinessSharePackage(input)

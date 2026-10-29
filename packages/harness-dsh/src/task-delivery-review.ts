@@ -801,8 +801,13 @@ function replayVerificationRound(source:object,text:string,revision:Record<strin
 }
 
 /** 存活复核租约的提交闸：每个 agent 至多一份；只由租约登记与释放（释放只删自己那一份）。 */
-type ReviewSubmissionGate=Readonly<{definition:ToolDefinition;accepting:()=>boolean}>
+type ReviewSubmissionGate=Readonly<{definition:ToolDefinition;accepting:()=>boolean;reviewing:()=>boolean}>
 const reviewSubmissionGates=new WeakMap<object,ReviewSubmissionGate>()
+/** 只查询本 agent 的存活复核阶段；不授予工具执行或历史替换许可。 */
+export function isDeliveryReviewInProgress(agent:Pick<Agent,'ctx'|'session'>):boolean{
+ const gate=reviewSubmissionGates.get(agent)
+ return !!gate&&gate.reviewing()&&agent.ctx.tools.get(deliveryReviewToolName,agent)===gate.definition
+}
 /**
  * 任务工具闸的精确准入：仅当调用方 agent 持有存活复核租约、该租约正在接收本单元唯一一次提交，且执行的就是该租约在
  * 本 agent 作用域登记的同一工具定义时为真。不按名称前缀放行，不改岗位授权清单，其他 agent、旧请求或租约释放后一律为假。
@@ -958,7 +963,7 @@ export function leaseTaskDeliveryReview(agent:Pick<Agent,'ctx'|'session'>,lease:
   const registered=agent.ctx.tools.get(deliveryReviewToolName,agent)
   if(!registered)throw new WorkError('teloa/unavailable','交付复核回执未能登记。')
   submitTool=registered
-  const gate:ReviewSubmissionGate={definition:registered,accepting}
+  const gate:ReviewSubmissionGate={definition:registered,accepting,reviewing}
   reviewSubmissionGates.set(agent,gate)
   releases.push(()=>{if(reviewSubmissionGates.get(agent)===gate)reviewSubmissionGates.delete(agent)})
  }

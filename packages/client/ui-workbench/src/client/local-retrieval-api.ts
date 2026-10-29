@@ -1,4 +1,4 @@
-import {isRecord,resourceTitle,embeddingProviderIds,readEmbeddingPreparationState,readRetrievalPreparationDetails,readRetrievalPrepareInput,WorkError,type EmbeddingProviderId,type EmbeddingDownloadSource,type EmbeddingPreparationState,type RetrievalPreparationDetails,type RetrievalPreparationExpected} from '@teloa/contract'
+import {readRetrievalSearchResult,isRecord,resourceTitle,embeddingProviderIds,readEmbeddingPreparationState,readRetrievalPreparationDetails,readRetrievalPrepareInput,WorkError,type EmbeddingProviderId,type EmbeddingDownloadSource,type EmbeddingPreparationState,type RetrievalPreparationDetails,type RetrievalPreparationExpected} from '@teloa/contract'
 
 export type RetrievalProvider={id:string;location:'host-local';catalogId:string;catalogVersion:string;profileHash:string;variant:'fp32'|'int8'|'ollama';totalMemoryBytes:number;memoryRisk:boolean;preparation:EmbeddingPreparationState;preparationDetails?:RetrievalPreparationDetails}
 export type RetrievalModelStatus={enabled:boolean;provider:RetrievalProvider|null;building:boolean;guidance:string|null;selectedProviderId?:EmbeddingProviderId}
@@ -49,6 +49,7 @@ export function createLocalRetrievalApi(call:(endpoint:string,payload:unknown,si
   cancelPreparation:(signal?:AbortSignal,providerId?:EmbeddingProviderId)=>model('retrieval-model/cancel',signal,providerId),
   select:async(providerId:EmbeddingProviderId,profileHash:string,signal?:AbortSignal)=>readRetrievalModelStatus(await call('retrieval-model/select',{providerId,profileHash},signal)),
   status:(signal?:AbortSignal)=>index('retrieval/status',{},signal),
+  search:async(query:string,signal?:AbortSignal)=>readRetrievalSearchResult(await call('retrieval/search',{query,limit:8},signal)),
   enroll:(sourceId:string,signal?:AbortSignal)=>index('retrieval/enroll',{sourceIds:[sourceId]},signal),
   remove:(sourceId:string,signal?:AbortSignal)=>index('retrieval/remove',{sourceIds:[sourceId]},signal),
   reindex:(signal?:AbortSignal)=>index('retrieval/reindex',{},signal),

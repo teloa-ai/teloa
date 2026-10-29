@@ -5,7 +5,7 @@ import type {BusinessWorkSourceRef} from '@teloa/contract'
 import type {Pool,PoolClient} from 'pg'
 import {
  WorkError,businessScopeKeyRule,isBusinessScopeKey,isRecord,evaluateJsonPath,usesBusinessTaskResultContext,nextBusinessSyncOccurrence,readBusinessSyncRun,
- businessDashboardLimits,businessSourceMappingLimits,businessSyncTriggers,
+ businessDashboardLimits,businessSourceMappingLimits,businessSyncTriggers,businessRecordValueLimits,
  businessObjectTypeV2LegacyShape,
  type BusinessObjectTypeDefinition,type BusinessSourceMappingDefinition,type BusinessSyncRun,type BusinessSyncStatus,type WorkErrorCode,
 } from '@teloa/contract'
@@ -60,6 +60,14 @@ function valueText(value:unknown,max:number):string|undefined{
  const cleaned=clean(raw,max)
  return cleaned||undefined
 }
+/** 员工成果是本人可复核的正文：只验证完整原值，不能沿外部同步的清洗路径静默截断或抹掉换行。 */
+function roleResultText(value:unknown,field:string,max:number):string|undefined{
+ if(value===undefined||value===null)return undefined
+ const raw=typeof value==='object'?JSON.stringify(value):String(value)
+ if(raw.length>max)throw new WorkError('teloa/invalid-input','成果字段「'+field+'」长度为 '+raw.length+'，最多 '+max+'（按 UTF-16 代码单元计）；未写入，请精简该字段，完整报告可保存在工作成果中。',{reason:'field-value-too-long',field,actualLength:raw.length,maxLength:max,lengthUnit:'utf16-code-units'})
+ if(raw!==raw.trim()||/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/.test(raw))throw new WorkError('teloa/invalid-input','成果字段「'+field+'」不能包含首尾空白或不允许的控制字符；内部换行和制表符可保留，未写入。',{reason:'field-value-format',field})
+ return raw||undefined
+}
 function sourceLabel(mapping:BusinessSourceMappingDefinition):string{
  const source=mapping.source
  return clean(source.kind==='business-data-port'?source.sourceId:source.kind==='mcp-tool'?source.serverName+'/'+source.tool:'role-result',120)
@@ -80,7 +88,8 @@ export function mapSourceItem(mapping:BusinessSourceMappingDefinition,objectType
  if(!isRecord(item))return {skipped:'not-object'}
  const values=new Map<string,string>()
  for(const {path,field} of mapping.mapping){
-  const value=valueText(evaluateJsonPath(item,path),field==='summary'?4000:2000)
+  const input=evaluateJsonPath(item,path),limit=field==='title'?businessRecordValueLimits.title:field==='summary'?businessRecordValueLimits.summary:businessRecordValueLimits.field
+  const value=mapping.source.kind==='role-result'?roleResultText(input,field,objectType.fields.some(declaration=>declaration.name===field)?Math.min(limit,businessRecordValueLimits.field):limit):valueText(input,field==='summary'?4000:2000)
   if(value!==undefined)values.set(field,value)
  }
  const keys=mapping.primaryKey.map(key=>values.get(key))
@@ -99,7 +108,7 @@ export function mapSourceItem(mapping:BusinessSourceMappingDefinition,objectType
  return {
   snapshot:{
    scope:mapping.domain,type:objectType.id,id,
-   title:clean(values.get('title')??parts.join(' · '),240)||id,
+   title:(mapping.source.kind==='role-result'?roleResultText(values.get('title')??parts.join(' · '),'title',businessRecordValueLimits.title):clean(values.get('title')??parts.join(' · '),240))||id,
    source:sourceLabel(mapping),observedAt,receivedAt:capturedAt,
    quality:objectType.fields.every(field=>!field.required||values.has(field.name))?'complete':'missing',
    summary:values.get('summary')??'',fields,

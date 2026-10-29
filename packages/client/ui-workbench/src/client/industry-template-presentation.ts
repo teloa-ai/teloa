@@ -1,5 +1,5 @@
 import type {LocalizedMetadataResolution} from '@teloa/contract'
-import type {IndustryInspection} from './industry-content.js'
+import {isIndustrySkillPreview,type IndustryInspection} from './industry-content.ts'
 import type {IndustryManifest,IndustryResource} from './industry-manifest.js'
 import {resolveMarketLocalizedMetadata} from './market-locale-metadata.ts'
 
@@ -47,8 +47,9 @@ const destinationByKind:Partial<Record<IndustryResource['kind'],string>>={
 }
 const resourceDestinations=['员工','资料','技能','市场 · 扩展','任务','自动化','业务空间 · 数据','业务空间 · 执行','业务空间 · 台账'] as const
 
-export function describeIndustryInspection(inspection:Pick<IndustryInspection,'state'|'message'>|undefined):IndustryInspectionPresentation{
+export function describeIndustryInspection(inspection:Pick<IndustryInspection,'state'|'message'>&Partial<Pick<IndustryInspection,'definition'>>|undefined):IndustryInspectionPresentation{
   if(!inspection)return {label:'内容待读取',tone:'neutral'}
+  if(isIndustrySkillPreview(inspection))return {label:'原文可预览',tone:'neutral'}
   switch(inspection.state){
     case 'parsed':return {label:'内容可预览',tone:'ready'}
     case 'pending':return {label:'等待适配',tone:'pending'}

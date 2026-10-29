@@ -3,7 +3,7 @@ import {BusinessRecordFlow} from './business-record-flow.ts'
 import type {BusinessRecordApi} from './business-record-api.ts'
 import {WorkError,type BusinessConversationBinding} from '@teloa/contract'
 import {BusinessDailyFlow,type BusinessDailyOpenOptions} from './business-daily-flow.ts'
-import {checkBusinessBuilderSwitch,switchDecision,BusinessBuilderFlow,type BusinessBuilderSwitchSnapshot,type BusinessBuilderSwitchPort} from './business-builder-flow.ts'
+import {checkBusinessBuilderSwitch,switchDecision,sameBusinessInput,BusinessBuilderFlow,type BusinessBuilderSwitchSnapshot,type BusinessBuilderSwitchPort} from './business-builder-flow.ts'
 import type {BusinessBuilderApi} from './business-builder-api.ts'
 import type {BindingClient} from './binding-client.ts'
 
@@ -68,7 +68,7 @@ export class BusinessBuilderController{
  }
  /** 只容许本次可信打开进入捕获时固定的原生页；用户先导航或换来源不能借此续办。 */
  private validLocation(n:Navigation){const location=this.navigation?.location();return n.location===location||n.openedSession!==undefined&&n.openedSession===this.ports.switching.read().mainSessionId&&n.nativeLocation!==undefined&&n.nativeLocation===location}
- private validNavigation(n:Navigation,afterOpen=false){const s=this.ports.switching.read();return !n.signal?.aborted&&n.current?.()!==false&&n.epoch===this.epoch&&this.validLocation(n)&&(afterOpen&&s.mainSessionId!==n.session||s.mainSessionId===n.session&&s.input===n.input)}
+ private validNavigation(n:Navigation,afterOpen=false){const s=this.ports.switching.read();return !n.signal?.aborted&&n.current?.()!==false&&n.epoch===this.epoch&&this.validLocation(n)&&(afterOpen&&s.mainSessionId!==n.session||s.mainSessionId===n.session&&sameBusinessInput(s.input,n.input))}
  private token(token:BusinessNavigationToken){const n=this.tokens.get(token);if(!n||!this.validNavigation(n))throw changed();return n}
  approveNavigation(token:BusinessNavigationToken){const n=this.token(token);if(n.approved)throw changed();n.approved=true}
  private async action<T>(token:BusinessNavigationToken|undefined,run:(approved:boolean)=>Promise<T>,builderTarget?:(result:T)=>string|undefined):Promise<T>{

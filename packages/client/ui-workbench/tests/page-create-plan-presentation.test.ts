@@ -47,6 +47,9 @@ test('计划紧凑摘要读取完整正式正文，不依赖已截断字段表�
   const configured=createPlanPreview({...preview,draft:{entity:'plan',body:JSON.stringify({kind:'configure-work',planId:raw.source.artifactId,expectedVersion:7,expectedConfigVersion:5,work:raw.work,intent:'save-paused'})}},t)
   assert.ok(configured.references.some(row=>row.value===raw.source.artifactId))
   assert.ok(configured.references.some(row=>row.value.includes('7')&&row.value.includes('5')))
+  const unlimited={...raw,work:{...raw.work,budget:{...raw.work.budget,maxTokens:null,maxGoalRounds:null,maxElapsedMs:null,maxConcurrent:null}}}
+  const unlimitedSummary=createPlanPreview({...preview,draft:{entity:'plan',body:JSON.stringify(unlimited)}},t),budgetText=unlimitedSummary.fields.find(row=>row.path===t('create.plan.preview.budget'))?.value??''
+  assert.equal(budgetText.split(t('planWork.budget.unlimited')).length-1,4,'四项不限逐项显示，不把null显示成0')
 
  }
  assert.equal(preview.draft.body,body);assert.equal(JSON.stringify(raw),before)

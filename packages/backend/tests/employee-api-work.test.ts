@@ -19,6 +19,7 @@ import {EmployeeApiWebhooks} from '../src/work/employee-api-webhooks.ts'
 import {WorkLineageService} from '../src/work/work-lineage.ts'
 import {testRoleResponsibility} from './role-test-fixture.ts'
 import type {TaskRun} from '../src/work/task-runs.ts'
+import {WorkError} from '@teloa/contract'
 import {verifyWebhook} from '../../sdk/index.mjs'
 import {EmployeeApiError} from '../../sdk/contract.mjs'
 
@@ -38,11 +39,12 @@ async function fixture(permissions=['read','execute','cancel'],webhookUrl?:strin
  await pool.query("update teloa_roles set state='active' where id=$1",[role.id])
  const issued=await keys.create(owner,{name:'业务系统',employeeId:role.id,expectedEmployeeVersion:role.version,scope:'general',permissions,maxConcurrent:2,expiresInDays:30,...webhookUrl?{webhookUrl}:{}}),identity=await keys.authenticate(issued.apiKey)
  const runs=new Map<string,TaskRun>(),calls:string[]=[],checks:{permissionMode:string;model:{provider:string;model:string}|null}[]=[],prepares:{requestId:string;permissionMode?:string;model?:{provider:string;model:string}}[]=[]
- let waiting=false,checkError:Error|undefined,resultText='FIXED-RESULT-'+role.id
+ let waiting=false,checkError:Error|undefined,prepareError:Error|undefined,resultText='FIXED-RESULT-'+role.id
  const runById=(id:string)=>[...runs.values()].find(run=>run.id===id)!
  const runtime:EmployeeApiRuntime={
   check:async options=>{checks.push(options);if(checkError)throw checkError},
   prepare:async(owner,input)=>{
+   if(prepareError)throw prepareError
    calls.push('prepare:'+input.requestId);prepares.push(input)
    let run=runs.get(input.requestId)
    if(!run){
@@ -81,9 +83,52 @@ async function fixture(permissions=['read','execute','cancel'],webhookUrl?:strin
    await pool.query("update teloa_task_runs set state='ended',evidence=$3 where owner_id=$1 and id=$2",[owner,run.id,JSON.stringify(run.evidence)])
   }
  }
- return {owner,role,keys,issued,identity,secrets,secretPort,runs,calls,checks,prepares,setCheckError:(error:Error|undefined)=>{checkError=error},setResult:(value:string)=>{resultText=value},setWaiting:(value:boolean)=>{waiting=value},work:new EmployeeApiWorkService(pool,keys,runtime,owner,clock),complete}
+ return {runtime,owner,role,keys,issued,identity,secrets,secretPort,runs,calls,checks,prepares,setPrepareError:(error:Error|undefined)=>{prepareError=error},setCheckError:(error:Error|undefined)=>{checkError=error},setResult:(value:string)=>{resultText=value},setWaiting:(value:boolean)=>{waiting=value},work:new EmployeeApiWorkService(pool,keys,runtime,owner,clock),complete}
 }
 const next=()=>{now=new Date(now.getTime()+3000)}
+test('受理后缺少执行工具或权限明确失败，事件保留原因，不无限排队',async()=>{
+ for(const [failure,code] of [[new WorkError('teloa/conflict','不可执行',{reason:'role-run-no-execution-tools'}),'execution_tools_required'],[new WorkError('teloa/forbidden','不可执行'),'execution_forbidden']] as const){
+  const f=await fixture();f.setPrepareError(failure)
+  const saved=await f.work.command(f.identity,'start',randomUUID(),{employeeId:f.role.id,input:'核对'})
+  await f.work.tick(AbortSignal.timeout(5000),()=>{})
+  const current=await f.work.get(f.identity,saved.id)
+  assert.equal(current.state,'failed');assert.equal(current.error,code)
+  const events=await f.work.events(f.identity,saved.id);assert.equal(events.items.at(-1)?.event.data.error,code)
+  assert.equal(f.runs.size,0)
+  // 人工修正条件后沿原 work 继续，新一轮不能继承失败轮的30秒/长退避时间。
+  await pool.query("update teloa_employee_api_work set next_check_at=$2 where id=$1",[saved.id,new Date(clock().getTime()+3600000)])
+  f.setPrepareError(undefined)
+  await f.work.command(f.identity,'continue',randomUUID(),{expectedVersion:current.version,input:'条件已修正，继续核对'},saved.id)
+  await f.work.tick(AbortSignal.timeout(5000));assert.equal((await f.work.get(f.identity,saved.id)).state,'running')
+ }
+})
+test('暂时派发失败公开等待原因，同一幂等请求恢复后清除原因',async()=>{
+ const f=await fixture();f.setPrepareError(Error('temporary host failure, no secrets in response'))
+ const saved=await f.work.command(f.identity,'start',randomUUID(),{employeeId:f.role.id,input:'核对'})
+ await f.work.tick(AbortSignal.timeout(5000),()=>{})
+ assert.equal((await f.work.get(f.identity,saved.id)).state,'queued');assert.equal((await f.work.get(f.identity,saved.id)).error,'dispatch_unavailable')
+ now=new Date(now.getTime()+31000);f.setPrepareError(undefined)
+ await f.work.tick(AbortSignal.timeout(5000));const current=await f.work.get(f.identity,saved.id)
+ assert.equal(current.state,'running');assert.equal(current.error,null);assert.equal(f.prepares.length,1)
+})
+test('本人页面按真实Task读取API工作并幂等续办，跨本人和伪造关联被拒绝且不泄露密钥',async()=>{
+ const f=await fixture(),saved=await f.work.command(f.identity,'start',randomUUID(),{employeeId:f.role.id,input:'第一轮'})
+ const taskId=(await pool.query('select task_id from teloa_employee_api_rounds where work_id=$1',[saved.id])).rows[0].task_id
+ let view=await f.work.forOwnerTask(f.owner,{taskId});assert.equal(view?.work.id,saved.id);assert.equal(view?.canContinue,false);assert.equal(view?.sessionId,null)
+ assert.doesNotMatch(JSON.stringify(view),/apiKey|tokenHash|token_hash|ownerId/)
+ await assert.rejects(f.work.forOwnerTask('other-owner',{taskId}),{code:'teloa/forbidden'})
+ assert.equal(await f.work.forOwnerTask(f.owner,{taskId:randomUUID()}),null)
+ await f.work.tick(AbortSignal.timeout(5000));await f.complete();next();await f.work.tick(AbortSignal.timeout(5000))
+ view=await f.work.forOwnerTask(f.owner,{taskId});assert.equal(view?.canContinue,true);assert.ok(view?.sessionId)
+ const command={taskId,workId:saved.id,requestId:randomUUID(),expectedVersion:view!.work.version,input:'继续核对'}
+ const one=await f.work.continueOwnerTask(f.owner,command),two=await f.work.continueOwnerTask(f.owner,command)
+ assert.equal(one?.work.id,saved.id);assert.equal(two?.work.round,2);assert.notEqual(one?.currentTaskId,taskId)
+ assert.equal((await pool.query('select count(*)::int n from teloa_employee_api_rounds where work_id=$1',[saved.id])).rows[0].n,2)
+ await assert.rejects(f.work.continueOwnerTask(f.owner,{...command,workId:randomUUID()}),{code:'teloa/forbidden'})
+ await f.keys.revoke(f.owner,{id:f.identity.id})
+ assert.equal((await f.work.forOwnerTask(f.owner,{taskId}))?.canContinue,false)
+ await assert.rejects(f.work.continueOwnerTask(f.owner,{...command,requestId:randomUUID(),expectedVersion:one!.work.version}),{code:'unauthorized'})
+})
 test('高熵集成密钥只存摘要，员工与权限隔离、轮换、过期及撤销不授予工具',async()=>{
  const f=await fixture(['read'])
  assert.equal((await f.work.employees(f.identity)).items[0]?.id,f.role.id)
@@ -229,4 +274,40 @@ test('CloudEvents固定事件ID、HMAC原始正文、失败重试、人工重投
  const event=(await f.work.events(f.identity,work.id)).items[0]!.event
  await pool.query("update teloa_employee_api_deliveries set state='failed' where event_id=$1",[event.id]);assert.equal((await hooks.retry(f.owner,event.id)).retried,true)
  await f.keys.revoke(f.owner,{id:f.identity.id});await hooks.tick(AbortSignal.timeout(5000));assert.equal((await hooks.list(f.owner,f.identity.id))[0]!.state,'cancelled');assert.equal(attempts.length,2)
+})
+
+
+test('首次派发在start内迅速完成时仍能交付同一轮，不因内存run_id落后退回queued',async()=>{
+ const f=await fixture(),start=f.runtime.start
+ f.runtime.start=async(...args)=>{const run=await start(...args);await f.complete();return run}
+ const saved=await f.work.command(f.identity,'start',randomUUID(),{employeeId:f.role.id,input:'快速返回固定结果'})
+ await f.work.tick(AbortSignal.timeout(5000))
+ const current=await f.work.get(f.identity,saved.id)
+ assert.equal(current.state,'succeeded')
+ assert.equal(current.error,null)
+ assert.equal(f.runs.size,1)
+ assert.equal((await f.work.result(f.identity,saved.id)).text,'FIXED-RESULT-'+f.role.id)
+})
+
+
+test('原工作控制暂停时API等待原Run，不自动恢复；本人恢复后下次tick沿原Run继续',async()=>{
+ const f=await fixture(),start=f.runtime.start
+ let paused=true,starts=0
+ f.runtime.start=async(...args)=>{if(paused)throw new WorkError('teloa/forbidden','内部控制状态',{reason:'work-control-inactive'});starts++;return start(...args)}
+ const saved=await f.work.command(f.identity,'start',randomUUID(),{employeeId:f.role.id,input:'等待本人恢复'})
+ await f.work.tick(AbortSignal.timeout(5000),()=>{})
+ const waiting=await f.work.get(f.identity,saved.id),run=[...f.runs.values()][0]!
+ assert.equal(waiting.state,'waiting');assert.equal(waiting.error,'execution_paused')
+ assert.equal(run.state,'prepared');assert.equal(starts,0)
+ const taskId=(await pool.query('select task_id from teloa_employee_api_rounds where work_id=$1',[saved.id])).rows[0].task_id
+ assert.equal((await f.work.forOwnerTask(f.owner,{taskId}))?.sessionId,run.sessionId)
+ now=new Date(now.getTime()+31000)
+ await f.work.tick(AbortSignal.timeout(5000),()=>{})
+ assert.equal((await f.work.get(f.identity,saved.id)).state,'waiting');assert.equal(starts,0);assert.equal(f.prepares.length,1)
+ // 只模拟本人已通过既有控制恢复入口恢复，不调用API自动恢复。
+ paused=false;now=new Date(now.getTime()+31000)
+ await f.work.tick(AbortSignal.timeout(5000))
+ const resumed=await f.work.get(f.identity,saved.id)
+ assert.equal(resumed.state,'running');assert.equal(resumed.error,null);assert.equal(starts,1)
+ assert.equal(f.prepares.length,1);assert.equal([...f.runs.values()][0]!.id,run.id)
 })

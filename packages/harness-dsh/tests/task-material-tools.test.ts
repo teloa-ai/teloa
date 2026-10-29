@@ -27,6 +27,7 @@ const read=(r:any)=>JSON.parse(r.content.filter((b:any)=>b.type==='text').map((b
 test('按中文名称把真实资料引用加到同一原任务，版本内部固定，技能和执行状态不变',async t=>{
  const e=await setup();t.after(()=>e.ctx.fiber.dispose());const before=read(await e.call('teloa_task_materials_read',{task:args.task}));assert.equal(before.materials.length,0);assert.equal(before.candidates[0].title,resource.title)
  const r=await e.call('teloa_task_materials_add',args);assert.equal(r.isError,false,JSON.stringify(r));const saved=read(r);assert.equal(saved.task.id,id);assert.equal(saved.task.version,2);assert.deepEqual(saved.task.skills,[]);assert.equal(saved.executionStarted,false);assert.equal(saved.material.resourceId,resourceId);assert.deepEqual(e.writes[0],{requestId:e.writes[0].requestId,taskId:id,expectedTaskVersion:1,resourceId,expectedResourceVersion:1});assert.equal(read(await e.call('teloa_task_materials_read',{task:args.task})).materials[0].resourceId,resourceId)
+ assert.match(e.ctx.tools.schemas(e.agent).find(row=>row.name==='teloa_task_materials_add')!.description,/recordRef 不是资料.*teloa_work_dispatch\.reference/)
 })
 test('同调用重放从原持久回执恢复；任务改名、资料撤回不改变原引用，也不能换参数',async t=>{
  const e=await setup();t.after(()=>e.ctx.fiber.dispose());const first=await e.call('teloa_task_materials_add',args);assert.equal(first.isError,false,JSON.stringify(first));e.setTask({...initial,title:'已改任务名',version:9});e.setResources([{...resource,title:'已改资料名',status:'withdrawn' as any,version:2}])

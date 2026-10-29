@@ -1,5 +1,5 @@
 import {isIndustryManifest} from './industry-manifest.ts'
-import {readBusinessDefinitionBody,type BusinessDefinitionKind} from '@teloa/contract'
+import {readBusinessDefinitionBody,readBusinessObjectTypeDefinition,type BusinessDefinitionKind} from '@teloa/contract'
 import type {BusinessShareDeclaration,BusinessShareInput} from './business-share-package.js'
 import type {BusinessCustomizationApi} from './business-customization-api.js'
 import type {IndustryLoadRecord} from './industry-load-api.js'
@@ -13,7 +13,7 @@ import type {MarketContentApi} from './market-content-api.js'
  */
 export type BusinessShareSource={read:(scope:string)=>Promise<Pick<BusinessShareInput,'objectTypes'|'views'|'actions'|'sources'|'available'>>}
 
-type SourcePorts={customization:BusinessCustomizationApi;market:MarketContentApi;loads:()=>readonly IndustryLoadRecord[]}
+type SourcePorts={customization:BusinessCustomizationApi;market:MarketContentApi;loads:()=>readonly IndustryLoadRecord[];includeTemplates?:boolean}
 type DeclarationSets={objectTypes:BusinessShareDeclaration[];views:BusinessShareDeclaration[];actions:BusinessShareDeclaration[]}
 
 const key=(kind:BusinessDefinitionKind,id:string)=>kind+'\0'+id
@@ -29,9 +29,9 @@ const add=(target:DeclarationSets,kind:BusinessDefinitionKind,row:BusinessShareD
 }
 
 /** 将市场固定内容投影成「声明正文 + 可用连接件」，而不是从台账结果倒推声明。 */
-export function createBusinessShareSource({customization,market,loads}:SourcePorts):BusinessShareSource{
+export function createBusinessShareSource({customization,market,loads,includeTemplates=true}:SourcePorts):BusinessShareSource{
  return {async read(scope){
-  const active=loads().filter(load=>load.status==='active'&&load.scope===scope&&load.space.scope===scope)
+  const active=includeTemplates?loads().filter(load=>load.status==='active'&&load.scope===scope&&load.space.scope===scope):[]
   const [directory,items]=await Promise.all([customization.directory({scope}),market.list()])
   const byContentId=new Map(items.flatMap(item=>item.contentStorage?.contentId?[ [item.contentStorage.contentId,item] as const ]:[]))
   const declarations:DeclarationSets={objectTypes:[],views:[],actions:[]}
@@ -59,6 +59,7 @@ export function createBusinessShareSource({customization,market,loads}:SourcePor
    let body:unknown
    try{body=JSON.parse(draft.body)}catch{throw Error('当前本地声明正文不是有效 JSON。')}
    add(declarations,entry.kind,declaration(entry.kind,body))
+   if(!includeTemplates&&entry.kind==='object-type'){const value=readBusinessObjectTypeDefinition(body);sources.set(value.sourceId,{sourceId:value.sourceId})}
   }
   const available={
    /**

@@ -1,4 +1,4 @@
-.document{min-width:0;max-width:1240px;margin:0 auto}
+.document{container-name:teloa-knowledge-document;container-type:inline-size;box-sizing:border-box;width:100%;min-width:0;max-width:1240px;margin:0 auto}
 .documentHeader{display:flex;align-items:flex-start;justify-content:space-between;gap:24px;margin-bottom:18px}
 .titleBlock{min-width:0}
 .titleBlock>span{display:block;color:var(--teloa-muted);font-size:var(--teloa-font-caption);line-height:1.4}
@@ -60,8 +60,48 @@
 .historyHint{margin:0;padding:11px 12px;border-top:1px solid var(--teloa-border);background:var(--teloa-subtle);color:var(--teloa-muted);font-size:var(--teloa-font-caption);line-height:1.55}
 .loading,.unavailable p{color:var(--teloa-muted);font-size:var(--teloa-font-control);line-height:1.7}
 .unavailable{padding:8px 0}
+.employeeScope{margin:4px 0 0;color:var(--teloa-muted);font-size:var(--teloa-font-control);line-height:1.5;overflow-wrap:anywhere}
+.employeeEntry{display:flex;align-items:center;flex-wrap:wrap;gap:10px;margin:0 0 18px;padding:12px 0;border-bottom:1px solid var(--teloa-border);min-width:0}
+.employeeEntry label{display:flex;align-items:center;flex-wrap:wrap;gap:8px;min-width:0;color:var(--teloa-muted);font-size:var(--teloa-font-caption)}
+.employeeEntry select{box-sizing:border-box;max-width:100%;min-width:140px;min-height:36px;padding:6px 9px;border:1px solid var(--teloa-border);border-radius:7px;background:var(--teloa-surface);color:var(--teloa-text);font:inherit}
+.employeeEntry p{margin:0;color:var(--teloa-muted);font-size:var(--teloa-font-caption);line-height:1.6}
+.employeeEntry button,.editRecovery button,.editStatus button,.editMessage button{display:inline-flex;align-items:center;justify-content:center;gap:6px;min-height:36px;padding:7px 11px;border:1px solid var(--teloa-border);border-radius:8px;background:var(--teloa-surface);color:var(--teloa-text);font:inherit;font-size:var(--teloa-font-caption);cursor:pointer}
+.employeeEntry button:hover:not(:disabled),.editRecovery button:hover:not(:disabled),.editStatus button:hover:not(:disabled){background:var(--teloa-subtle)}
+.employeeEntry button:disabled,.editRecovery button:disabled,.editStatus button:disabled{opacity:.45;cursor:default}
+.employeeEntry button:focus-visible,.employeeEntry select:focus-visible,.editRecovery button:focus-visible,.editStatus button:focus-visible,.latestBody summary:focus-visible{outline:2px solid var(--teloa-text);outline-offset:2px}
+.editMessage{display:flex;align-items:center;flex-wrap:wrap;gap:10px;margin:10px 0;color:var(--teloa-muted);font-size:var(--teloa-font-control);line-height:1.6;overflow-wrap:anywhere}
+.editRecovery{display:flex;align-items:center;flex-wrap:wrap;justify-content:space-between;gap:10px;margin:12px 0;padding:12px;border:1px solid var(--teloa-border);border-radius:8px;background:var(--teloa-subtle)}
+.editRecovery p{flex:1;min-width:min(100%,240px);margin:0;font-size:var(--teloa-font-control);line-height:1.6}
+.editStatus{display:flex;align-items:center;flex-wrap:wrap;gap:8px 18px;margin:12px 0;color:var(--teloa-muted);font-size:var(--teloa-font-caption);line-height:1.5}
+.latestBody{margin-top:18px}.latestBody summary{padding:10px 0;cursor:pointer;font-size:var(--teloa-font-control)}
+.resetConfirmation{margin:18px 0;padding:16px 0;border-block:1px solid var(--teloa-border);min-width:0}.resetConfirmation h4{margin:0 0 8px;font-size:var(--teloa-font-body)}.resetConfirmation p{margin:0;font-size:var(--teloa-font-control);line-height:1.7;color:var(--teloa-muted)}.resetConfirmation ul{max-height:240px;overflow:auto;list-style:none;padding:0;margin:12px 0}.resetConfirmation li{display:flex;align-items:baseline;justify-content:space-between;gap:12px;padding:8px 0;border-bottom:1px solid var(--teloa-border);font-size:var(--teloa-font-caption)}.resetConfirmation li strong{min-width:0;overflow-wrap:anywhere;font-weight:var(--teloa-weight-medium)}.resetConfirmation li span{flex:none;color:var(--teloa-muted)}.resetConfirmation .documentActions{flex-wrap:wrap}
 .documentActions button:focus-visible,.more>summary:focus-visible,.versionList>button:focus-visible,.historicalNotice button:focus-visible{outline:2px solid var(--teloa-text);outline-offset:2px}
 @media(max-width:980px){.bodyWithInspector{grid-template-columns:1fr}.history{margin-top:0}.versionList{grid-template-columns:repeat(2,minmax(0,1fr));max-height:none}.versionList>button{border-right:1px solid var(--teloa-border)}.versionList>button:nth-child(2n){border-right:0}}
 @media(max-width:760px){.documentHeader{gap:14px;flex-direction:column}.documentActions{justify-content:flex-start;flex-wrap:wrap;width:100%}.documentActions button{min-height:42px}.titleBlock h2{font-size:var(--teloa-font-dialog)!important;font-weight:var(--teloa-weight-heading);line-height:var(--teloa-leading-heading)}.historicalNotice{align-items:flex-start;flex-direction:column}.historicalNotice button{min-height:42px}.versionList{grid-template-columns:1fr}.versionList>button{min-height:60px;border-right:0}.more{margin-left:auto}}
 
 .history{border:0;border-left:1px solid var(--teloa-border);border-radius:0;background:transparent}.history>section{padding:12px}.history>section h3{font-size:14px;font-weight:500;margin:0 0 10px}.history>section h3:not(:first-child){margin-top:24px}
+
+@container teloa-knowledge-document (max-width:980px){
+ .bodyWithInspector{grid-template-columns:minmax(0,1fr)}
+ .history{margin-top:0;border-left:0;border-top:1px solid var(--teloa-border)}
+ .versionList{grid-template-columns:repeat(2,minmax(0,1fr));max-height:none}
+ .versionList>button{border-right:1px solid var(--teloa-border)}
+ .versionList>button:nth-child(2n){border-right:0}
+}
+@container teloa-knowledge-document (max-width:760px){
+ .documentHeader{gap:14px;flex-direction:column}
+ .documentActions{justify-content:flex-start;flex-wrap:wrap;width:100%}
+ .documentActions button{min-height:42px}
+ .titleBlock h2{font-size:var(--teloa-font-dialog)!important;font-weight:var(--teloa-weight-heading);line-height:var(--teloa-leading-heading)}
+ .historicalNotice{align-items:flex-start;flex-direction:column}
+ .historicalNotice button{min-height:42px}
+ .versionList{grid-template-columns:1fr}
+ .versionList>button{min-height:60px;border-right:0}
+ .more{margin-left:auto}
+ .canvas>section[aria-label]>header{align-items:flex-start;flex-wrap:wrap;padding:7px 8px}
+ .canvas>section[aria-label]>header>span{align-self:center}
+ .canvas [role=toolbar]{width:100%;max-width:100%;flex-wrap:wrap;padding-top:5px;border-top:1px solid var(--teloa-border)}
+ .canvas [role=toolbar] button{min-width:36px;min-height:36px}
+ .canvas textarea,.canvas article[role=tabpanel]{min-height:360px;padding:20px}
+ .canvas>section[aria-label]>footer{flex-wrap:wrap}
+}

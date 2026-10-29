@@ -58,6 +58,14 @@ test('离开草案有三种明确结果，保留不新建会话，继续不导�
  const stay=flow.requestLeave();assert.equal(flow.getSnapshot().leaveConfirmation,true);flow.decideLeave('continue');assert.equal(await stay,false)
  const keep=flow.requestLeave();flow.decideLeave('keep');assert.equal(await keep,true);assert.equal(flow.getSnapshot().draft!.id,draftId);assert.equal(f.writes.length,writes)
 })
+test('保存成功立即投影applied并结算同一草案的离开意图，不依赖额外宿主事件',async()=>{
+ const f=fixture(),flow=f.make();await flow.start({});await flow.preview()
+ const leave=flow.requestLeave();assert.equal(flow.getSnapshot().leaveConfirmation,true)
+ await flow.save()
+ assert.equal(flow.getSnapshot().phase,'saved');assert.equal(flow.getSnapshot().draft!.status,'applied')
+ assert.equal(flow.getSnapshot().leaveConfirmation,false);assert.equal(await leave,true)
+ assert.equal(await flow.requestLeave(),true);assert.equal(await flow.requestLeave(),true)
+})
 test('等待离开确认时宿主退役或草案revision改变会结算false，旧决定不能导航新绑定',async()=>{
  const f=fixture(),flow=f.make();await flow.start({})
  const pending=flow.requestLeave();flow.leave();assert.equal(await pending,false);assert.equal(flow.getSnapshot().leaveConfirmation,false)

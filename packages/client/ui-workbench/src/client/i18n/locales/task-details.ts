@@ -1,4 +1,12 @@
 export const TASK_DETAIL_MESSAGE_ROWS = [
+ ["taskExecution.readiness.checking", "正在核对执行条件", "正在核對執行條件", "Checking execution requirements"],
+ ["taskExecution.readiness.blocked", "执行条件尚未满足", "執行條件尚未滿足", "Execution requirements are not met"],
+ ["taskExecution.readiness.unavailable", "暂时无法核对执行条件，请点击刷新后重试。", "暫時無法核對執行條件，請按重新整理後重試。", "Execution requirements could not be checked. Refresh and retry."],
+ ["taskExecution.readiness.unassigned", "请先为任务选择负责人。", "請先為任務選擇負責人。", "Assign this task before preparing a run."],
+ ["taskExecution.readiness.state", "当前任务状态不能准备新执行，请先核对审批、待补充事项或原执行记录。", "目前任務狀態不能準備新執行，請先核對審批、待補充事項或原執行記錄。", "This task cannot prepare a new run in its current state. Review approvals, missing information and existing runs."],
+ ["taskExecution.readiness.active", "已有尚未结束的执行，请先核对原运行。", "已有尚未結束的執行，請先核對原執行。", "A run is still open. Review it before preparing another."],
+ ["taskExecution.readiness.pending", "原准备请求尚待核对，请先核对或丢弃原请求。", "原準備請求尚待核對，請先核對或捨棄原請求。", "A preparation request is awaiting confirmation. Review or discard that request first."],
+ ["taskExecution.readiness.permission", "请在员工详情核对本业务的执行委托、工具和群授权；若负责人版本已变更，重新确认任务负责人。", "請在員工詳情核對本業務的執行委託、工具及群組授權；若負責人版本已變更，請重新確認任務負責人。", "In the employee details, review this business execution delegation, tool permissions and group permissions. Reconfirm the task assignee if the employee version changed."],
   ['error.deliveryReviewRequired','尚无完整可核对成果。请打开原执行记录核对后重新交办。','尚無完整可核對成果。請開啟原執行記錄核對後重新交辦。','A fully reviewed result is not available. Open the original execution record to review it, then submit the task again.'],
   ['task.form.createExample','例如：整理已有资料，列出待确认事项，给我一份 Markdown 摘要。','例如：整理已有資料，列出待確認事項，提供一份 Markdown 摘要。','Example: Review the available materials, list open questions, and prepare a Markdown summary.'],
   ['task.form.options','更多选项','更多選項','More options'],

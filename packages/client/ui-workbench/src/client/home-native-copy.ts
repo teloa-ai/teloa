@@ -7,6 +7,8 @@ const copy={
  failed:['业务上下文尚未核对，请重试后发送。','Work context is unconfirmed. Retry before sending.'],
  retry:['重试','Retry'],reload:['重新加载工作台','Reload workspace'],reloadHelp:['连接恢复后重新加载即可继续。','Reload once the connection is back to continue.'],preparing:['正在准备输入…','Preparing the composer…'],
  restoreFailed:['暂时无法恢复工作台','Unable to restore your workspace'],
+ restoreSlow:['正在恢复工作台','Restoring your workspace'],
+ restoreSlowHelp:['恢复用时较长，你可以继续等待或重试。','This is taking longer than usual. You can keep waiting or try again.'],
  restoreHelp:['请重试，继续刚才的工作。','Try again to continue where you left off.'],
  locationTitle:['选择工作位置','Choose a work location'],
  locationHelp:['为新工作选择一个目录后即可开始。','Choose a directory to start this new work.'],

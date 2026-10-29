@@ -1,3 +1,4 @@
+import {previewEmployeeKnowledgeImportResetInTransaction,confirmEmployeeKnowledgeImportResetInTransaction,stageEmployeeKnowledgeImportBaselinesInTransaction,cancelEmployeeKnowledgeImportBaselinesInTransaction,retireEmployeeKnowledgeImportDocumentsInTransaction} from '../capabilities/employee-knowledge.ts'
 import {lockBusinessConfiguration} from './business-configuration-lock.ts'
 import {BusinessConfigurationStore} from './business-configuration-store.ts'
 import type {Pool,PoolClient} from 'pg'
@@ -105,16 +106,17 @@ const newerVersion=(candidate:string,current:string)=>{
 }
 const mappingHash=(items:readonly {localId:string;instanceId:string}[])=>createHash('sha256').update(JSON.stringify(items.map(item=>[item.localId,item.instanceId.toLowerCase()]).sort(([a],[b])=>a!<b!?-1:a!>b!?1:0))).digest('hex')
 
-type Input={requestId:string;contentId:string;contentHash:string;target:{kind:'new';spaceId:string;name:string}|{kind:'existing';spaceId:string;expectedVersion:number};spec:Record<string,unknown>}
+type Input={requestId:string;contentId:string;contentHash:string;knowledgeResetDigest?:string;target:{kind:'new';spaceId:string;name:string}|{kind:'existing';spaceId:string;expectedVersion:number};spec:Record<string,unknown>}
 function input(ownerId:string,value:unknown):Input{
- owner(ownerId);const row=exact(value,['requestId','contentId','contentHash','target']),target=exact(row.target,['kind','spaceId','name','expectedVersion'])
+ owner(ownerId);const row=exact(value,['requestId','contentId','contentHash','target','knowledgeResetDigest']),target=exact(row.target,['kind','spaceId','name','expectedVersion'])
+ if(row.knowledgeResetDigest!==undefined&&!hash(row.knowledgeResetDigest))throw invalid()
  if(!uuid(row.requestId)||!uuid(row.contentId)||!hash(row.contentHash)||!uuid(target.spaceId))throw invalid()
  let normalized:Input['target']
  if(target.kind==='new'){exact(target,['kind','spaceId','name']);if(!text(target.name,80))throw invalid();normalized={kind:'new',spaceId:target.spaceId.toLowerCase(),name:target.name.trim()}}
  else if(target.kind==='existing'){exact(target,['kind','spaceId','expectedVersion']);if(!positive(target.expectedVersion))throw invalid();normalized={kind:'existing',spaceId:target.spaceId.toLowerCase(),expectedVersion:target.expectedVersion}}
  else throw invalid()
- const contentId=row.contentId.toLowerCase(),spec={contentId,contentHash:row.contentHash,target:normalized}
- return {requestId:row.requestId.toLowerCase(),contentId,contentHash:row.contentHash,target:normalized,spec}
+ const contentId=row.contentId.toLowerCase(),spec={contentId,contentHash:row.contentHash,target:normalized,...(row.knowledgeResetDigest===undefined?{}:{knowledgeResetDigest:row.knowledgeResetDigest})}
+ return {requestId:row.requestId.toLowerCase(),contentId,contentHash:row.contentHash,target:normalized,spec,...(row.knowledgeResetDigest===undefined?{}:{knowledgeResetDigest:row.knowledgeResetDigest as string})}
 }
 type ResolvedIndustryLoadSourceSnapshot=IndustryLoadSourceSnapshot&{scope:string}
 function sourceSnapshot(value:unknown):ResolvedIndustryLoadSourceSnapshot{
@@ -144,7 +146,10 @@ export async function initializeIndustryLoads(pool:Pool):Promise<void>{
  await pool.query(`
  select pg_advisory_xact_lock(hashtextextended('teloa-industry-loads-schema:'||current_schema(),0));
  create table if not exists teloa_industry_loads(id uuid primary key,owner_id text not null,content_id uuid not null,content_hash text not null check(content_hash ~ '^[0-9a-f]{64}$'),template_id text not null,template_version text not null,template_title text not null,domain text not null,scope text not null,description text not null,source_snapshot jsonb not null check(jsonb_typeof(source_snapshot)='object'),space_id uuid not null,space_version integer not null check(space_version>0),mapping_hash text check(mapping_hash ~ '^[0-9a-f]{64}$'),relations jsonb not null check(jsonb_typeof(relations)='array'),entrypoints jsonb not null check(jsonb_typeof(entrypoints)='array'),created_at timestamptz not null,foreign key(space_id,owner_id) references teloa_business_spaces(id,owner_id));
- create unique index if not exists teloa_industry_loads_source_identity on teloa_industry_loads(owner_id,space_id,content_id,content_hash);
+ alter table teloa_industry_loads add column if not exists status text not null default 'active';
+ -- 历史加载保留；同一内容只能有一条生效加载，卸载后可建立新的加载代次。
+ drop index if exists teloa_industry_loads_source_identity;
+ create unique index teloa_industry_loads_source_identity on teloa_industry_loads(owner_id,space_id,content_id,content_hash) where status='active';
  -- 先建立新身份索引，再按列集移除旧约束；不依赖 PostgreSQL 自动截短后的名称，不改既有加载与映射。
  do $migration$ declare previous record; begin
   for previous in select c.conname from pg_constraint c where c.conrelid='teloa_industry_loads'::regclass and c.contype='u'
@@ -163,6 +168,7 @@ export async function initializeIndustryLoads(pool:Pool):Promise<void>{
  alter table teloa_industry_loads drop constraint if exists teloa_industry_loads_status_check;
  alter table teloa_industry_loads add constraint teloa_industry_loads_status_check check(status in ('active','unloaded','superseded'));
  create table if not exists teloa_industry_load_unload_requests(owner_id text not null,request_id uuid not null,request_spec jsonb not null check(jsonb_typeof(request_spec)='object'),load_id uuid not null references teloa_industry_loads(id),primary key(owner_id,request_id));
+ alter table teloa_industry_loads add column if not exists reloads uuid references teloa_industry_loads(id);
  alter table teloa_industry_loads add column if not exists supersedes uuid references teloa_industry_loads(id);
  alter table teloa_industry_load_items add column if not exists carried_from uuid;
  create table if not exists teloa_industry_load_upgrade_requests(owner_id text not null,request_id uuid not null,request_spec jsonb not null check(jsonb_typeof(request_spec)='object'),load_id uuid not null references teloa_industry_loads(id),successor_load_id uuid not null references teloa_industry_loads(id),primary key(owner_id,request_id));
@@ -200,11 +206,13 @@ export class IndustryLoadService{
   if(!row)throw new WorkError('teloa/forbidden','行业模板加载记录不存在或不属于当前本人。')
   if(row.owner_id!==ownerId)throw new WorkError('teloa/forbidden','行业模板加载记录不存在或不属于当前本人。')
   const itemRows=(await db.query('select * from teloa_industry_load_items where load_id=$1 order by local_id',[loadId])).rows
+  const reloadSource=row.reloads===null?undefined:(await db.query('select owner_id,content_id,content_hash,space_id,status,source_snapshot from teloa_industry_loads where id=$1',[row.reloads])).rows[0]
   const planRow=(await db.query('select choices,diff_digest,created_at from teloa_industry_upgrade_plans where owner_id=$1 and successor_load_id=$2',[ownerId,loadId])).rows[0]
   // 沿用项的实例挂在被替代的加载上，因此按实例身份（全表唯一）而不是按加载查询，两类身份一次取齐。
   const instanceStates=await this.instanceStates(db,ownerId,itemRows.flatMap(item=>[item.instance_id,item.carried_from]).filter((value):value is string=>uuid(value)))
   try{
    const snapshot=sourceSnapshot(row.source_snapshot)
+   if(row.reloads!==null&&(!uuid(row.reloads)||row.supersedes!==null||!reloadSource||reloadSource.owner_id!==row.owner_id||reloadSource.content_id!==row.content_id||reloadSource.content_hash!==row.content_hash||!same(sourceSnapshot(reloadSource.source_snapshot),snapshot)||reloadSource.space_id!==row.space_id||reloadSource.status!=='unloaded'))throw Error()
    if(!loadStatuses.includes(row.status)||(row.status==='unloaded')!==(row.unloaded_at!==null))throw Error()
    // 继任血缘三件事同生共死：`supersedes` 指向的旧加载、它的模板版本与那次升级的计划，缺一即视为记录损坏。
    const superseded=row.supersedes===null?undefined:row.supersedes
@@ -212,7 +220,7 @@ export class IndustryLoadService{
    if(superseded!==undefined&&(!uuid(superseded)||!semver(row.superseded_version)||!hash(planRow.diff_digest)))throw Error()
    const upgrade:IndustryLoadUpgrade|undefined=superseded===undefined?undefined:{loadId:superseded,templateVersion:row.superseded_version,choices:readIndustryUpdateChoices(planRow.choices),diffDigest:planRow.diff_digest,createdAt:stamp(planRow.created_at)}
    if(!uuid(row.id)||!uuid(row.content_id)||!hash(row.content_hash)||row.template_id!==snapshot.templateId||row.template_version!==snapshot.templateVersion||row.template_title!==snapshot.title||row.domain!==snapshot.domain||row.scope!==snapshot.scope||row.description!==snapshot.description||!uuid(row.space_id)||!positive(row.space_version)||!positive(row.current_space_version)||row.current_space_version<row.space_version||!text(row.space_name,80)||!Array.isArray(row.relations)||!Array.isArray(row.entrypoints))throw Error()
-   const items:IndustryLoadItem[]=itemRows.map(item=>{if(!id(item.local_id)||!uuid(item.instance_id)||!kinds.includes(item.kind)||!text(item.title,120)||!semver(item.version)||typeof item.required!=='boolean'||!['pending-adapter','skipped'].includes(item.status)||item.required&&item.status==='skipped')throw Error();if(item.carried_from!==null&&(superseded===undefined||!uuid(item.carried_from)))throw Error();return {localId:item.local_id,instanceId:item.instance_id,kind:item.kind,title:item.title,version:item.version,required:item.required,status:item.status,...(item.carried_from===null?{}:{carriedFrom:item.carried_from})}})
+   const items:IndustryLoadItem[]=itemRows.map(item=>{if(!id(item.local_id)||!uuid(item.instance_id)||!kinds.includes(item.kind)||!text(item.title,120)||!semver(item.version)||typeof item.required!=='boolean'||!['pending-adapter','skipped'].includes(item.status)||item.required&&item.status==='skipped')throw Error();if(item.carried_from!==null&&(superseded===undefined&&!uuid(row.reloads)||!uuid(item.carried_from)))throw Error();return {localId:item.local_id,instanceId:item.instance_id,kind:item.kind,title:item.title,version:item.version,required:item.required,status:item.status,...(item.carried_from===null?{}:{carriedFrom:item.carried_from})}})
    const carried=items.flatMap(item=>item.carriedFrom?[item.carriedFrom]:[]);if(new Set(carried).size!==carried.length)throw Error()
    const byLocal=new Map(items.map(item=>[item.localId,item])),byInstance=new Set(items.map(item=>item.instanceId));if(byLocal.size!==items.length||byInstance.size!==items.length||items.length!==snapshot.resources.length||row.mapping_hash!==mappingHash(items))throw Error()
    for(const expected of snapshot.resources){const actual=byLocal.get(expected.localId);if(!actual||actual.kind!==expected.kind||actual.title!==expected.title||actual.version!==expected.version||actual.required!==expected.required||actual.status!==(expected.available?'pending-adapter':'skipped'))throw Error()}
@@ -273,6 +281,9 @@ export class IndustryLoadService{
    await db.query('insert into teloa_industry_load_requests values($1,$2,$3,$4)',[ownerId,data.requestId,JSON.stringify(data.spec),loadId])
    const result=await this.read(db,ownerId,loadId)
    if(result.contentId!==data.contentId||result.contentHash!==data.contentHash||result.space.id!==data.target.spaceId)throw corrupt()
+   const reload=(await db.query('select reloads from teloa_industry_loads where owner_id=$1 and id=$2',[ownerId,result.id])).rows[0]?.reloads
+   const resetLoad=reload?await this.read(db,ownerId,reload):result
+   await this.resetKnowledgeForImport(db,ownerId,resetLoad,{id:data.contentId,hash:data.contentHash},data.knowledgeResetDigest,data.requestId,now)
    await db.query('commit');return result
   }catch(error){await db.query('rollback');throw error}finally{db.release()}
  }
@@ -314,13 +325,14 @@ export class IndustryLoadService{
    if(space&&space.name!==data.target.name)throw new WorkError('teloa/conflict','业务空间身份已用于其他名称。')
   }else if(!space)throw new WorkError('teloa/forbidden','目标业务空间不存在或不属于当前本人。')
   else if(space.version!==data.target.expectedVersion)throw new WorkError('teloa/version-conflict','目标业务空间版本已变化。')
-  const duplicate=space&&(await db.query('select id,status from teloa_industry_loads where owner_id=$1 and space_id=$2 and content_id=$3 and content_hash=$4',[ownerId,data.target.spaceId,data.contentId,data.contentHash])).rows[0]
+  const duplicate=space&&(await db.query("select id,status from teloa_industry_loads where owner_id=$1 and space_id=$2 and content_id=$3 and content_hash=$4 order by (status='active') desc,space_version desc,created_at desc,id desc limit 1",[ownerId,data.target.spaceId,data.contentId,data.contentHash])).rows[0]
   if(duplicate){
-   // 同一固定内容身份与摘要在同一空间只有一条加载行。已卸载或已被替代的那条不能复活：
-   // 复用它会让"新加载"既不在目录里、又拒绝一切实例写入，因此两条重复路径都直接拒绝。
-   if(duplicate.status!=='active')throw new WorkError('teloa/conflict','同一内容已在此业务空间加载过，并已卸载或被升级替代，不能再次加载。')
-   if(options.duplicate==='reject')throw new WorkError('teloa/conflict','候选版本已加载到该业务空间，不能再作为继任加载。')
-   return duplicate.id as string
+   if(duplicate.status==='superseded')throw new WorkError('teloa/conflict','同一内容已被升级替代，请使用当前版本或在升级页面核对版本。')
+   if(duplicate.status==='active'){
+    if(options.duplicate==='reject')throw new WorkError('teloa/conflict','候选版本已加载到该业务空间，不能再作为继任加载。')
+    return duplicate.id as string
+   }
+   if(options.duplicate==='reject')throw new WorkError('teloa/conflict','候选版本曾被卸载，请重新加载后核对升级。')
   }
   if(space&&data.target.kind==='new')throw new WorkError('teloa/conflict','业务空间已存在；加载其他版本须按当前空间版本提交。')
   if(!space)space=(await db.query('insert into teloa_business_spaces(id,owner_id,name,description,version,created_at,updated_at) values($1,$2,$3,$4,1,$5,$5) returning *',[data.target.spaceId,ownerId,newName!,snapshot.description,now])).rows[0]
@@ -328,13 +340,49 @@ export class IndustryLoadService{
   // 加载成功即把模板 `scope` 登记为业务范围标签（规格 §3.3）：与加载行同一事务，加载写不成标签也不会留下。
   // 标题优先用模板标题，超过标签上限就退回 `scope` 本身。同一 `scope` 重复加载时登记幂等，不改已有标题与来源。
   await BusinessScopeService.ensure(db,ownerId,{scope:snapshot.scope,title:snapshot.title.length<=80?snapshot.title:snapshot.scope,kind:'domain',spaceId:space.id})
+  // 新代次不复活旧加载或旧请求；已保留且仍有效的员工、资料沿用原对象。
+  // 连接与授权在卸载时已解除，必须重新确认，不随重装复活。
+  const reloaded=duplicate?.status==='unloaded'?await this.read(db,ownerId,duplicate.id):undefined
+  const carriedFrom=options.carriedFrom??new Map(reloaded?.items.filter(item=>['role','knowledge'].includes(item.kind)&&item.status==='active').map(item=>[item.localId,item.carriedFrom??item.instanceId]))
   const loadId=this.identity.id();if(!uuid(loadId))throw invalid()
   const mapping=new Map(snapshot.resources.map(item=>[item.localId,this.identity.id()]));if([...mapping.values()].some(value=>!uuid(value)))throw invalid()
   const relations=snapshot.relations.map(link=>({kind:link.kind,from:mapping.get(link.from)!,to:mapping.get(link.to)!})),entrypoints=snapshot.entrypoints.map(local=>mapping.get(local)!)
   const digest=mappingHash([...mapping].map(([localId,instanceId])=>({localId,instanceId})))
-  await db.query('insert into teloa_industry_loads(id,owner_id,content_id,content_hash,template_id,template_version,template_title,domain,scope,description,source_snapshot,space_id,space_version,mapping_hash,relations,entrypoints,created_at,supersedes) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)',[loadId,ownerId,data.contentId,data.contentHash,snapshot.templateId,snapshot.templateVersion,snapshot.title,snapshot.domain,snapshot.scope,snapshot.description,JSON.stringify(snapshot),space.id,space.version,digest,JSON.stringify(relations),JSON.stringify(entrypoints),now,options.supersedes??null])
-  for(const item of snapshot.resources)await db.query('insert into teloa_industry_load_items(load_id,local_id,instance_id,kind,title,version,required,status,carried_from) values($1,$2,$3,$4,$5,$6,$7,$8,$9)',[loadId,item.localId,mapping.get(item.localId),item.kind,item.title,item.version,item.required,item.available?'pending-adapter':'skipped',options.carriedFrom?.get(item.localId)??null])
+  await db.query('insert into teloa_industry_loads(id,owner_id,content_id,content_hash,template_id,template_version,template_title,domain,scope,description,source_snapshot,space_id,space_version,mapping_hash,relations,entrypoints,created_at,supersedes,reloads) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)',[loadId,ownerId,data.contentId,data.contentHash,snapshot.templateId,snapshot.templateVersion,snapshot.title,snapshot.domain,snapshot.scope,snapshot.description,JSON.stringify(snapshot),space.id,space.version,digest,JSON.stringify(relations),JSON.stringify(entrypoints),now,options.supersedes??null,reloaded?.id??null])
+  for(const item of snapshot.resources)await db.query('insert into teloa_industry_load_items(load_id,local_id,instance_id,kind,title,version,required,status,carried_from) values($1,$2,$3,$4,$5,$6,$7,$8,$9)',[loadId,item.localId,mapping.get(item.localId),item.kind,item.title,item.version,item.required,item.available?'pending-adapter':'skipped',carriedFrom.get(item.localId)??null])
   return loadId
+ }
+ private async knowledgeResetTarget(db:PoolClient,ownerId:string,load:IndustryLoadRecord):Promise<{originResourceIds:string[]}>{
+  const tables=await this.present(db,['teloa_industry_knowledge_instances'])
+  if(!tables.has('teloa_industry_knowledge_instances'))return {originResourceIds:[]}
+  const holders=load.items.filter(item=>item.kind==='knowledge').map(item=>item.carriedFrom??item.instanceId)
+  const rows=(await db.query('select resource_id from teloa_industry_knowledge_instances where owner_id=$1 and item_instance_id=any($2::uuid[]) and resource_id is not null',[ownerId,holders])).rows
+  return {originResourceIds:[...new Set(rows.map(row=>String(row.resource_id)))]}
+ }
+ private async knowledgeResetPlan(db:PoolClient,ownerId:string,load:IndustryLoadRecord,candidate:{id:string;hash:string}){
+  const target=await this.knowledgeResetTarget(db,ownerId,load),plan=await previewEmployeeKnowledgeImportResetInTransaction(db,ownerId,target)
+  const digest=createHash('sha256').update(JSON.stringify({schema:'teloa.industry-knowledge-reset/v1',loadId:load.id,mappingHash:load.mappingHash,baselineContentHash:load.contentHash,candidateContentId:candidate.id,candidateContentHash:candidate.hash,documentsDigest:plan.digest})).digest('hex')
+  return {target,rawDigest:plan.digest,plan:{digest,documents:plan.documents}}
+ }
+ private async resetKnowledgeForImport(db:PoolClient,ownerId:string,load:IndustryLoadRecord,candidate:{id:string;hash:string},expectedDigest:string|undefined,resetId:string,now:string):Promise<void>{
+  const current=await this.knowledgeResetPlan(db,ownerId,load,candidate)
+  if(expectedDigest===undefined){if(current.plan.documents.length)throw new WorkError('teloa/conflict','本包知识有本地修改；请确认以导入内容覆盖，并清空本包知识编辑历史。',{reason:'employee-knowledge-reset-required',knowledgeReset:current.plan});return}
+  if(current.plan.digest!==expectedDigest)throw new WorkError('teloa/version-conflict','包内容、资源映射或本地知识已变化，请重新预览覆盖范围。',{reason:'employee-knowledge-reset-required',knowledgeReset:current.plan})
+  try{await confirmEmployeeKnowledgeImportResetInTransaction(db,ownerId,{...current.target,expectedDigest:current.rawDigest,resetId,now})}catch(error){
+   if(!(error instanceof WorkError)||error.code!=='teloa/version-conflict')throw error
+   const latest=await this.knowledgeResetPlan(db,ownerId,load,candidate)
+   throw new WorkError('teloa/version-conflict','确认期间包关联知识又有修改，请重新核对覆盖范围。',{reason:'employee-knowledge-reset-required',knowledgeReset:latest.plan})
+  }
+ }
+ async previewKnowledgeReset(ownerId:string,value:unknown){
+  owner(ownerId);const row=exact(value,['loadId','expectedMappingHash','candidateContentId','candidateContentHash'])
+  if(!uuid(row.loadId)||!hash(row.expectedMappingHash)||(row.candidateContentId===undefined)!==(row.candidateContentHash===undefined)||row.candidateContentId!==undefined&&(!uuid(row.candidateContentId)||!hash(row.candidateContentHash)))throw invalid()
+  const load=await this.get(ownerId,{loadId:row.loadId})
+  if(load.mappingHash!==row.expectedMappingHash||load.status==='superseded')throw new WorkError('teloa/version-conflict','行业包映射已变化，请重新核对。')
+  const candidate={id:row.candidateContentId===undefined?load.contentId:(row.candidateContentId as string).toLowerCase(),hash:row.candidateContentHash===undefined?load.contentHash:row.candidateContentHash as string}
+  const snapshot=await this.source.read(ownerId,candidate.id,candidate.hash)
+  if(snapshot.templateId!==load.templateId||snapshot.scope!==undefined&&snapshot.scope!==load.scope)throw new WorkError('teloa/invalid-input','覆盖确认的候选包与当前加载不一致。')
+  const db=await this.pool.connect();try{await db.query('begin');const current=await this.read(db,ownerId,load.id);if(current.mappingHash!==load.mappingHash)throw new WorkError('teloa/version-conflict','加载映射已变化。');const result=(await this.knowledgeResetPlan(db,ownerId,current,candidate)).plan;await db.query('commit');return result}catch(error){await db.query('rollback');throw error}finally{db.release()}
  }
  async get(ownerId:string,value:unknown):Promise<IndustryLoadRecord>{owner(ownerId);const row=exact(value,['loadId']);if(!uuid(row.loadId))throw invalid();const db=await this.pool.connect();try{await db.query('begin isolation level repeatable read read only');const result=await this.read(db,ownerId,row.loadId);await db.query('commit');return result}catch(error){await db.query('rollback');throw error}finally{db.release()}}
  async getInTransaction(db:PoolClient,ownerId:string,value:unknown):Promise<IndustryLoadRecord>{owner(ownerId);const row=exact(value,['loadId']);if(!uuid(row.loadId))throw invalid();return this.read(db,ownerId,row.loadId)}
@@ -442,6 +490,7 @@ export class IndustryLoadService{
    const blocked=await this.blockers(db,ownerId,loadId,present)
    if(blocked.length)throw new WorkError('teloa/conflict','存在进行中的计划执行或运行，暂不能卸载。',{blockers:blocked})
    await retireIndustryLoadInTransaction(db,ownerId,loadId,now,{present,plans:this.plans,identity:this.identity,note:'模板已卸载',dependency:'持续计划服务尚未接入，不能卸载仍在生效的行业计划。'})
+   await cancelEmployeeKnowledgeImportBaselinesInTransaction(db,ownerId,loadId,now)
    await db.query("update teloa_industry_loads set status='unloaded',unloaded_at=$3 where id=$1 and owner_id=$2",[loadId,ownerId,now])
    await db.query('insert into teloa_industry_load_unload_requests values($1,$2,$3,$4)',[ownerId,requestId,JSON.stringify(spec),loadId])
    const result=await this.read(db,ownerId,loadId);await db.query('commit');return result
@@ -455,12 +504,13 @@ export class IndustryLoadService{
   * `candidate`/新增资源留作继任加载上的待接入项，由既有各类 `instantiate` 建立新实例；`skip` 与 `keep` 不写。
   */
  async upgrade(ownerId:string,value:unknown):Promise<{superseded:IndustryLoadRecord;successor:IndustryLoadRecord}>{
-  owner(ownerId);const row=exact(value,['requestId','loadId','candidateContentId','choices','expectedMappingHash'])
+  owner(ownerId);const row=exact(value,['requestId','loadId','candidateContentId','choices','expectedMappingHash','knowledgeResetDigest'])
+  if(row.knowledgeResetDigest!==undefined&&!hash(row.knowledgeResetDigest))throw invalid()
   if(!uuid(row.requestId)||!uuid(row.loadId)||!uuid(row.candidateContentId)||!hash(row.expectedMappingHash))throw invalid()
   let choices:IndustryUpdateChoices
   try{choices=readIndustryUpdateChoices(row.choices)}catch{throw invalid()}
   const requestId=row.requestId.toLowerCase(),loadId=row.loadId.toLowerCase(),candidateContentId=row.candidateContentId.toLowerCase()
-  const spec={loadId,candidateContentId,expectedMappingHash:row.expectedMappingHash,choices}
+  const spec={loadId,candidateContentId,expectedMappingHash:row.expectedMappingHash,choices,...(row.knowledgeResetDigest===undefined?{}:{knowledgeResetDigest:row.knowledgeResetDigest as string})}
   const query='select *,request_spec=$3::jsonb as same_request from teloa_industry_load_upgrade_requests where owner_id=$1 and request_id=$2'
   const replay=async(db:PoolClient,receipt:Record<string,unknown>):Promise<{superseded:IndustryLoadRecord;successor:IndustryLoadRecord}>=>{
    if(!receipt.same_request)throw new WorkError('teloa/conflict','同一升级请求不能更换目标加载、候选内容或处理方式。')
@@ -487,6 +537,7 @@ export class IndustryLoadService{
   if(diff.kindChanges.length)throw new WorkError('teloa/invalid-input','同一资源标识的类型发生变化，需换用新资源标识单独迁移。')
   const problem=industryUpdateChoiceProblem(diff,choices)
   if(problem)throw new WorkError('teloa/invalid-input',problem)
+  for(const item of diff.resources.filter(item=>item.kind==='knowledge'&&(item.change==='changed'||item.change==='added'))){if(choices.resources[item.id]!=='candidate')throw new WorkError('teloa/invalid-input','包内知识以导入版本为准，不能保留旧知识覆盖。')}
   const roleInstances=new Set(current.items.filter(item=>item.kind==='role').map(item=>item.instanceId.toLowerCase()))
   for(const key of Object.keys(choices.roles))if(!roleInstances.has(key.toLowerCase()))throw new WorkError('teloa/invalid-input','员工处理方式指向的员工不属于本次加载。')
   const snapshot=sourceSnapshot(await this.source.read(ownerId,candidateContentId,candidate.hash));scopeLabel(snapshot.scope)
@@ -538,7 +589,19 @@ export class IndustryLoadService{
    const present=await this.present(db,[...detachTables,'teloa_skill_install_usages','teloa_plan_occurrences','teloa_plans','teloa_industry_plan_sources','teloa_tasks','teloa_task_runs','teloa_task_run_skill_refs'])
    const blocked=await this.blockers(db,ownerId,loadId,present)
    if(blocked.length)throw new WorkError('teloa/conflict','存在进行中的计划执行或运行，暂不能升级。',{blockers:blocked})
+   if((await db.query("select to_regclass('teloa_employee_knowledge_import_transitions') as present")).rows[0]?.present!=null&&(await db.query("select 1 from teloa_employee_knowledge_import_transitions where owner_id=$1 and load_id=$2 and state='pending' limit 1",[ownerId,loadId])).rowCount)throw new WorkError('teloa/conflict','当前包知识尚在接入，请先重试完成资料接入或卸载当前包，再升级。',{reason:'employee-knowledge-import-pending'})
+   await this.resetKnowledgeForImport(db,ownerId,current,{id:candidateContentId,hash:candidate.hash},spec.knowledgeResetDigest,requestId,now)
    const successorId=await this.insert(db,ownerId,{contentId:candidateContentId,contentHash:candidate.hash,target:{kind:'existing',spaceId:current.space.id,expectedVersion:current.space.version}},snapshot,now,{duplicate:'reject',supersedes:loadId,carriedFrom})
+   const awaitingKnowledge={...current,items:current.items.filter(item=>item.kind==='knowledge'&&!carriedFrom.has(item.localId)&&snapshot.resources.some(next=>next.kind==='knowledge'&&next.localId===item.localId&&next.available)&&!['skip','detach'].includes(choices.resources[item.localId]??'candidate'))}
+   const pendingKnowledge=await this.knowledgeResetTarget(db,ownerId,awaitingKnowledge)
+   if((await this.present(db,['teloa_employee_knowledge_retirements'])).has('teloa_employee_knowledge_retirements')){
+    const restoring=(await db.query('select distinct removed_resource_id from teloa_employee_knowledge_retirements where owner_id=$1 and load_id=$2 and local_id=any($3::text[])',[ownerId,current.id,snapshot.resources.filter(item=>item.kind==='knowledge'&&item.available).map(item=>item.localId)])).rows
+    pendingKnowledge.originResourceIds=[...new Set([...pendingKnowledge.originResourceIds,...restoring.map(row=>String(row.removed_resource_id))])]
+   }
+   await stageEmployeeKnowledgeImportBaselinesInTransaction(db,ownerId,{previousResourceIds:pendingKnowledge.originResourceIds,loadId:successorId,now})
+   const removedKnowledge=current.items.filter(item=>item.kind==='knowledge'&&!snapshot.resources.some(next=>next.kind==='knowledge'&&next.localId===item.localId)),removedResources=[]
+   for(const item of removedKnowledge){const ids=await this.knowledgeResetTarget(db,ownerId,{...current,items:[item]});for(const resourceId of ids.originResourceIds)removedResources.push({resourceId,localId:item.localId})}
+   await retireEmployeeKnowledgeImportDocumentsInTransaction(db,ownerId,{previousLoadId:current.id,loadId:successorId,resources:removedResources,now})
    await db.query('insert into teloa_industry_upgrade_plans values($1,$2,$3,$4,$5,$6)',[ownerId,loadId,successorId,JSON.stringify(choices),digest,now])
    await db.query("update teloa_industry_loads set status='superseded' where id=$1 and owner_id=$2",[loadId,ownerId])
    for(const target of detachTargets)if(present.has(target.table))await detachIndustryInstanceByItem(db,target.table,ownerId,target.itemInstanceId,now)

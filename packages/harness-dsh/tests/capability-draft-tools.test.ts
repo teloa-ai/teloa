@@ -98,7 +98,7 @@ test('非本人会话、子代理和任务会话不能创建或配置能力',asy
 
 test('MCP工具固定路由，保存同调用重试身份稳定，多调用不碰撞且不收凭据',async t=>{
  const e=await runtime();t.after(()=>e.ctx.fiber.dispose())
- const definition=readCustomMcpDefinition({schema:'teloa.mcp-server/v1',serverName:'test',title:'测试服务',transport:'streamable-http',url:'https://example.com/mcp'}),expectedDefinitionHash=customMcpDefinitionHash(definition)
+ const definition=readCustomMcpDefinition({schema:'teloa.mcp-server/v1',serverName:'test',title:'测试服务',transport:'streamable-http',url:'http://example.com/mcp'}),expectedDefinitionHash=customMcpDefinitionHash(definition)
  for(const callId of ['one','two','one'])assert.equal((await e.call('teloa_mcp_save',{definition,expectedDefinitionHash},callId)).isError,false)
  const payloads=e.calls.map(call=>call.payload as {requestId:string})
  assert.equal(e.calls[0]?.endpoint,'mcp-connections/save-custom');assert.notEqual(payloads[0]?.requestId,payloads[1]?.requestId);assert.equal(payloads[0]?.requestId,payloads[2]?.requestId)
@@ -107,6 +107,10 @@ test('MCP工具固定路由，保存同调用重试身份稳定，多调用不�
  assert.equal((await e.call('teloa_mcp_save',{definition,expectedDefinitionHash:'b'.repeat(64)})).isError,true)
  assert.equal(e.calls.length,before)
  for(const [name,args,endpoint] of [['teloa_mcp_connection_connect',{id:installationId},'mcp-connections/connect'],['teloa_mcp_list',{},'mcp-connections/list'],['teloa_mcp_get',{id:installationId},'mcp-connections/get-custom'],['teloa_mcp_disconnect',{id:installationId},'mcp-connections/disconnect'],['teloa_mcp_update',{id:installationId,definition,expectedDefinitionHash},'mcp-connections/update-custom']] as const){assert.equal((await e.call(name,args)).isError,false);assert.equal(e.calls.at(-1)?.endpoint,endpoint)}
+ const description=e.ctx.tools.schemas(e.agent).find(schema=>schema.name==='teloa_mcp_preview')!.description??''
+ assert.match(description,/任意主机的 HTTP 或 HTTPS/);assert.doesNotMatch(description,/远程地址使用 HTTPS|回环可用 HTTP/)
+ assert.equal((await e.call('teloa_mcp_preview',{definition})).isError,false)
+ assert.deepEqual(e.calls.at(-1),{endpoint:'mcp-connections/preview-custom',payload:{definition}})
 })
 
 test('既有目录与自定义 MCP 工具在同一 Context 注册，保持各自连接参数',async t=>{

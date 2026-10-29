@@ -241,6 +241,13 @@ test('回流被当前业务授权拒绝时不标notified，后续恢复可重试
  f.ports.publish=async()=>{throw new WorkError('teloa/forbidden','业务已撤权')};await f.dispatch.deliver();assert.equal(f.calls.includes('notified'),false)
  f.ports.publish=async()=>{f.calls.push('publish')};await f.dispatch.deliver();assert.deepEqual(f.calls,['publish','notified'])
 })
+test('本人会话仍活动时不标notified，闲置并持久化到会话后才完成通知',async()=>{
+ const f=fixture();f.setRequest({...request,targets:request.targets.map(x=>({...x,unavailable:'paused' as const}))})
+ f.ports.publish=async()=>{f.calls.push('queued');return false}
+ await f.dispatch.deliver();assert.deepEqual(f.calls,['queued'])
+ f.ports.publish=async()=>{f.calls.push('delivered');return true}
+ await f.dispatch.deliver();assert.deepEqual(f.calls,['queued','delivered','notified'])
+})
 test('新报告resume只带已持久确认名单；旧无名单字段请求维持原spec兼容',async()=>{
  for(const modern of [true,false]){
   const f=fixture(),targets=request.targets
@@ -374,4 +381,25 @@ test('本人completed但正式复核未过：候选仍可读，显式原卡只�
  await f.dispatch.resume('origin',requestId,signal)
  await f.dispatch.resume('origin',requestId,signal)
  assert.equal(runs.length,2);assert.equal(f.calls.filter(call=>call==='task-runs/retry').length,1);assert.deepEqual(runs[0],original)
+})
+
+
+test('恢复自定义token上限原请求保留冻结额度，不通过resume重新配置账户',async()=>{
+ const f=fixture();f.setRequest({...request,workTokenLimit:6_000_000})
+ let replay:unknown
+ f.ports.requests.reserve=async(_owner,input)=>{replay=input;return f.stored}
+ await f.dispatch.resume('origin',requestId,new AbortController().signal)
+ assert.equal((replay as {workTokenLimit:number}).workTokenLimit,6_000_000)
+ assert.equal(f.calls.filter(call=>call==='create').length,1)
+ await f.dispatch.resume('origin',requestId,new AbortController().signal)
+ assert.equal(f.calls.filter(call=>call==='create').length,1)
+})
+
+
+test('恢复完整不限额度原请求保留父冻结策略，不转换默认值或重置账户',async()=>{
+ const f=fixture(),workBudgetPolicy={maxTokens:null,maxGoalRounds:null,maxConcurrent:null,maxElapsedMs:null,maxRetries:0,stagnationRounds:3,money:null};f.setRequest({...request,workBudgetPolicy})
+ let replay:unknown;f.ports.requests.reserve=async(_owner,input)=>{replay=input;return f.stored}
+ await f.dispatch.resume('origin',requestId,new AbortController().signal)
+ assert.deepEqual((replay as {workBudgetPolicy:unknown}).workBudgetPolicy,workBudgetPolicy)
+ assert.equal(Object.hasOwn(replay as object,'workTokenLimit'),false)
 })

@@ -810,7 +810,7 @@ test('受管 MCP 写工具（执行态）：岗位授权清单含写工具时仍
 test('第三方客户端报错里带出凭据时：记录与恢复日志只给固定说明，失败实例被释放',async t=>{
  const {connectFailureReason,createManagedMcpConnectionHandler:create}=await import('../src/managed-mcp-connections.ts')
  const secret='sk-leak-9f8e7d6c5b4a'
- const fixed=['密钥或授权被拒绝：请检查密钥是否正确、授权是否已过期或权限不足。','无法连接到服务：请检查网络或服务是否可用。','服务返回错误，连接未建立；请稍后重试。']
+ const fixed=['密钥或授权被拒绝：请检查密钥是否正确、认证头和前缀是否匹配、授权是否已过期或权限不足。','无法连接到服务：请检查网络或服务是否可用。','服务返回错误，连接未建立；请核对服务地址与 MCP 协议后重试。']
  for(const raw of [`401 Unauthorized: Authorization: Bearer ${secret}`,`getaddrinfo ENOTFOUND host?key=${secret}`,`upstream said ${secret}`]){
   const reason=connectFailureReason(new Error(raw))
   assert.ok(fixed.includes(reason),reason);assert.ok(!reason.includes(secret))

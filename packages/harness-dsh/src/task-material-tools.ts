@@ -16,7 +16,7 @@ export const taskMaterialToolNames=['teloa_task_materials_read','teloa_task_mate
 const field={type:'string',required:true} as const
 const definitions=[
  {name:taskMaterialToolNames[0],description:'按名称回读本人原任务已固定的资料引用及当前会话可用的同业务资料候选，不读取正文、不添加或执行。资料与技能分别管理，不能把资料名称存成skills。重名时模型用目录中的内部taskId核对，不让用户提供ID或版本。',parameters:{task:field,taskId:{type:'string'}}},
- {name:taskMaterialToolNames[1],description:'按本人当前指令把一份真实资料加到同一原任务。task和material为显示名称；重名时模型从真实目录用taskId或materialId定位，不要求用户填写ID或版本。请求、任务及资料版本由宿主固定，沿原生审批；只添加固定资料引用，不改skills、负责人或业务，不执行任务，不授予其他员工权限。结果未知先用read回读，不能换请求重复添加；同调用重放只恢复原添加回执，当前可用性另行回读。',parameters:{task:field,taskId:{type:'string'},material:field,materialId:{type:'string'}}},
+ {name:taskMaterialToolNames[1],description:'按本人当前指令把一份真实 WorkResource 资料加到同一原任务。业务告警等对象的 recordRef 不是资料，不能在此绑定；员工对象交办直接使用 teloa_work_dispatch.reference，不先建无员工任务。task和material为显示名称；重名时模型从真实目录用taskId或materialId定位，不要求用户填写ID或版本。请求、任务及资料版本由宿主固定，沿原生审批；只添加固定资料引用，不改skills、负责人或业务，不执行任务，不授予其他员工权限。结果未知先用read回读，不能换请求重复添加；同调用重放只恢复原添加回执，当前可用性另行回读。',parameters:{task:field,taskId:{type:'string'},material:field,materialId:{type:'string'}}},
 ] as const
 const bad=()=>new WorkError('teloa/invalid-host-response','任务资料目录或回执与本人原对象不一致。')
 function name(value:unknown,max:number):string{if(typeof value!=='string'||!value.trim()||value.length>max)throw new WorkError('teloa/invalid-input','请提供原任务和资料名称。');return value.trim()}

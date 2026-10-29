@@ -15,6 +15,10 @@ const reservationStates=new WeakMap<Pool,Map<string,{state:BudgetReservation['st
 /** 默认有限；本人可在工作设置确认新额度。闲置等待不消耗模型 token；耗时上限按滚动窗口计，不是终身累计。 */
 export const defaultWorkBudgetPolicy:WorkBudgetPolicy=Object.freeze({maxGoalRounds:32,maxTokens:2_000_000,maxElapsedMs:21_600_000,maxConcurrent:4,maxRetries:3,stagnationRounds:3,money:null})
 const ownerPolicy:WorkBudgetPolicy={...defaultWorkBudgetPolicy,maxTokens:8_000_000,maxConcurrent:8}
+/** 只放宽资源和停止保护时，既有请求仍在原批准边界内；收紧必须撤销活动许可。 */
+function preservesBudgetLease(before:WorkBudgetPolicy,after:WorkBudgetPolicy):boolean{
+ return before.money===null&&after.money===null&&(['maxGoalRounds','maxTokens','maxElapsedMs','maxConcurrent'] as const).every(key=>after[key]===null||before[key]!==null&&after[key]>=before[key])&&after.maxRetries>=before.maxRetries&&after.stagnationRounds>=before.stagnationRounds
+}
 type ReserveInput={budgetAccountId:string;controlGeneration:number;modelRequestId:string;kind:BudgetReservation['kind'];tokens:number;rounds:number}
 type SettleInput={reservationId:string;modelRequestId:string;provider?:string|null;providerRequestId:string|null;tokens:number|null;moneyMinorUnits:number|null;currency:string|null;receiptId:string}
 export type RunBudgetTerminal={schema:'teloa.work-budget-terminal/v1';runId:string;sessionId:string;nativeRequestId:string;turn:number;messageSeq:number;endSeq:number;turnEndSeq:number;terminalKind:'turn/end'|'session/end-seed';endedAt:string}
@@ -49,7 +53,7 @@ export class WorkBudgetService{
  private invalidate(owner:string,id:string){epochs.get(this.pool)!.set(owner+'\0'+id,this.epoch(owner,id)+1)}
  private remember(r:BudgetReservation,invalidate=false){const states=reservationStates.get(this.pool)!,key=r.ownerId+'\0'+r.id,prior=states.get(key);states.set(key,{state:r.state,epoch:(prior?.epoch??0)+(invalidate?1:0)});return r}
  private async ownerPolicy(db:PoolClient,owner:string){const row=(await db.query('select policy,version from teloa_owner_work_budgets where owner_id=$1',[owner])).rows[0];return {policy:row?readWorkBudgetPolicy(row.policy):ownerPolicy,version:row?.version??1}}
- private assertCapacity(stats:{tokens:number;rounds:number;concurrent:number;elapsed:number},policy:WorkBudgetPolicy,tokens=0,rounds=0,scope:'work'|'owner'='work'){if(stats.tokens+tokens>policy.maxTokens)throw exhausted('tokens',scope);if(stats.rounds+rounds>policy.maxGoalRounds)throw exhausted('rounds',scope);if(tokens>0&&stats.concurrent>=policy.maxConcurrent)throw exhausted('concurrent',scope);if(stats.elapsed>=policy.maxElapsedMs)throw exhausted('elapsed',scope)}
+ private assertCapacity(stats:{tokens:number;rounds:number;concurrent:number;elapsed:number},policy:WorkBudgetPolicy,tokens=0,rounds=0,scope:'work'|'owner'='work'){if(policy.maxTokens!==null&&stats.tokens+tokens>policy.maxTokens)throw exhausted('tokens',scope);if(policy.maxGoalRounds!==null&&stats.rounds+rounds>policy.maxGoalRounds)throw exhausted('rounds',scope);if(policy.maxConcurrent!==null&&tokens>0&&stats.concurrent>=policy.maxConcurrent)throw exhausted('concurrent',scope);if(policy.maxElapsedMs!==null&&stats.elapsed>=policy.maxElapsedMs)throw exhausted('elapsed',scope)}
  private async lock(db:PoolClient,owner:string,id:string){
   if(!identity(owner)||!uuid(id))throw invalid()
   // 本人总额先锁，再锁职责账户；所有孩子和续轮同序，不能并行透支。
@@ -68,7 +72,7 @@ export class WorkBudgetService{
   const a=taskInput(input,['requestId','budgetAccountId','expectedVersion','policy']),policy=readWorkBudgetPolicy(a.policy)
   if(!uuid(a.requestId)||!uuid(a.budgetAccountId)||!integer(a.expectedVersion)||a.expectedVersion<1)throw invalid()
   if(policy.money!==null)throw new WorkError('teloa/invalid-input','目前使用 token 和轮次额度；尚无可靠费用计价，不设置金额保证。')
-  const db=await this.pool.connect();try{await db.query('begin');const {row}=await this.lock(db,owner,a.budgetAccountId)
+  const db=await this.pool.connect();try{await db.query('begin');const {row,policy:previousPolicy}=await this.lock(db,owner,a.budgetAccountId)
    const prior=(await db.query('select * from teloa_work_budget_changes where owner_id=$1 and request_id=$2',[owner,a.requestId])).rows[0]
    if(prior){if(!isDeepStrictEqual(prior.request,a))throw new WorkError('teloa/conflict','原额度请求已保存其他设置。');await db.query('commit');return prior.result}
    if(row.version!==a.expectedVersion)throw new WorkError('teloa/version-conflict','工作额度已变化，请核对新版本。')
@@ -76,7 +80,7 @@ export class WorkBudgetService{
    const result={budgetAccountId:a.budgetAccountId,version:row.version+1,policy}
    await db.query('update teloa_work_budget_accounts set policy=$3,version=version+1 where owner_id=$1 and id=$2',[owner,a.budgetAccountId,JSON.stringify(policy)])
    await db.query('insert into teloa_work_budget_changes values($1,$2,$3,$4)',[owner,a.requestId,JSON.stringify(a),JSON.stringify(result)])
-   lease.assertCurrent();await db.query('commit');this.invalidate(owner,a.budgetAccountId);return result
+   lease.assertCurrent();await db.query('commit');if(!preservesBudgetLease(previousPolicy,policy))this.invalidate(owner,a.budgetAccountId);return result
   }catch(e){await db.query('rollback');throw e}finally{db.release()}
  }
  /** 本人累计上限与职责上限分别可见、可配置，不把默认值变成隐藏终身门槛。 */
@@ -89,7 +93,7 @@ export class WorkBudgetService{
    const current=await this.ownerPolicy(db,owner);if(current.version!==a.expectedVersion)throw new WorkError('teloa/version-conflict','本人累计额度已变化。')
    const lease=await authorizeOwnerWork(this.authority,owner,{requestId:a.requestId,roleId:a.requestId,operation:'confirm'}),result={version:current.version+1,policy}
    lease.assertCurrent();await db.query('insert into teloa_owner_work_budgets(owner_id,policy,version) values($1,$2,$3) on conflict(owner_id) do update set policy=excluded.policy,version=excluded.version',[owner,JSON.stringify(policy),result.version])
-   await db.query('insert into teloa_work_budget_changes values($1,$2,$3,$4)',[owner,a.requestId,JSON.stringify(a),JSON.stringify(result)]);lease.assertCurrent();await db.query('commit');this.invalidate(owner,'owner');return result
+   await db.query('insert into teloa_work_budget_changes values($1,$2,$3,$4)',[owner,a.requestId,JSON.stringify(a),JSON.stringify(result)]);lease.assertCurrent();await db.query('commit');if(!preservesBudgetLease(current.policy,policy))this.invalidate(owner,'owner');return result
   }catch(e){await db.query('rollback');throw e}finally{db.release()}
  }
  async readOwner(owner:string){if(!identity(owner))throw invalid();const db=await this.pool.connect();try{await db.query('begin');await db.query('select pg_advisory_xact_lock(hashtextextended($1,0))',['teloa/work-budget/'+owner]);const policy=await this.ownerPolicy(db,owner),used=await this.stats(db,owner,null);await db.query('commit');return {...policy,usedTokens:used.tokens,usedRounds:used.rounds,concurrent:used.concurrent,usedElapsedMs:used.elapsed,moneyMinorUnits:null}}catch(e){await db.query('rollback');throw e}finally{db.release()}}
@@ -112,8 +116,8 @@ export class WorkBudgetService{
    where r.owner_id=$1 and ($2::uuid is null or l.budget_account_id=$2) and r.state not in ('ended','withdrawn','configuration_failed')`,[owner,account])).rows[0]?.n)
   const accountStats=await this.stats(db,owner,budgetAccountId),ownerStats=await this.stats(db,owner,null)
   this.assertCapacity(accountStats,policy);this.assertCapacity(ownerStats,total.policy,0,0,'owner')
-  if(Math.max(accountStats.concurrent,await activeRuns(budgetAccountId))>=policy.maxConcurrent)throw exhausted('concurrent')
-  if(Math.max(ownerStats.concurrent,await activeRuns(null))>=total.policy.maxConcurrent)throw exhausted('concurrent','owner')
+  if(policy.maxConcurrent!==null&&Math.max(accountStats.concurrent,await activeRuns(budgetAccountId))>=policy.maxConcurrent)throw exhausted('concurrent')
+  if(total.policy.maxConcurrent!==null&&Math.max(ownerStats.concurrent,await activeRuns(null))>=total.policy.maxConcurrent)throw exhausted('concurrent','owner')
  }
  async admitRunStart(owner:string,budgetAccountId:string):Promise<void>{
   const db=await this.pool.connect()

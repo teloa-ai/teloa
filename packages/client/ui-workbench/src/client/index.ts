@@ -73,6 +73,7 @@ import {createIndustryRoleApi} from './industry-role-api.js'
 import {createIndustryTaskApi} from './industry-task-api.js'
 import {createIndustryPlanApi} from './industry-plan-api.js'
 import {createSkillInstallApi} from './skill-install-api.js'
+import {createSkillSelectionApi} from './skill-selection-api.js'
 import {createMarketPluginInstallApi} from './market-plugin-install-api.js'
 import {readSavedPlan} from './plan-api.js'
 import {createRoleToolGrantApi} from './role-tool-grant-api.js'
@@ -189,7 +190,7 @@ import {createSnapshotStore} from '@deepseek-ai/dsh-client-store'
 import {ConversationOverviewTab,ConversationOverviewTitle,ConversationOverviewEntry,CONVERSATION_OVERVIEW_KIND,CONVERSATION_OVERVIEW_TAB_ID} from './ConversationOverviewTab.js'
 import {isToolResourceUseSnapshot,readExternalHarnessWorkView} from '@teloa/contract'
 import { createArtifactFileApi } from './artifact-files.js'
-import { unwrapWorkRpcResult } from './work-rpc-result.js'
+import { unwrapWorkRpcResult,createRejectedWorkRpcCall } from './work-rpc-result.js'
 import {ProducedFileCards} from './ProducedFileCards.js'
 import {previewProducedFileNatively} from './produced-file-preview.js'
 import type { InputTriggerServiceContract } from '@deepseek-ai/dsh-client-ui-input-trigger/client'
@@ -311,7 +312,7 @@ export async function apply(ctx: Context): Promise<void> {
     return ()=>{off();dispose()}
   },'teloa: 本人显示资料与原宿主同步')
   const securityActionApi=createSecurityActionApi(async(endpoint,payload,signal)=>{const result=await callWithReceipt(endpoint,payload,signal);if(!result.ok)throw Object.assign(Error(result.error.message),{rejected:true,code:result.error.code});return result.value},Object.fromEntries(securityActionCommands.map(command=>{const key='teloa.security-action.'+command+'/v1';return [command,journal(key)]})),'local:teloa-owner')
-  const taskRunApi=createTaskRunApi(async(endpoint,payload)=>{const result=await callWithReceipt(endpoint,payload);if(!result.ok)throw Object.assign(Error(result.error.message),{rejected:true,code:result.error.code,details:result.error.details});return result.value},journal('teloa.task-run-prepare/v1'),journal('teloa.flow-command/v1'))
+  const taskRunApi=createTaskRunApi(async(endpoint,payload)=>{const result=await callWithReceipt(endpoint,payload);if(!result.ok)throw Object.assign(Error(result.error.message),{rejected:true,code:result.error.code,details:result.error.details});return result.value},journal('teloa.task-run-prepare/v1'),journal('teloa.flow-command/v1'),journal('teloa.employee-work-continuation/v1'))
   const taskRunChat=new TaskRunChatPresentationDirectory(taskRunApi.chatPresentation)
   ctx.effect(()=>{
     const off=[connection.state.subscribe(taskRunChat.invalidate),connection.generation.subscribe(taskRunChat.invalidate)]
@@ -346,7 +347,7 @@ export async function apply(ctx: Context): Promise<void> {
   const homeContextApi=createHomeContextApi(call,localStorage)
   const isHomeAssistantContext=async(id:string,signal?:AbortSignal)=>{const value=await call('work-context/eligibility',{sessionId:id},signal);if(!value||typeof value!=='object'||!('sessionId'in value)||value.sessionId!==id||!('eligible'in value)||typeof value.eligible!=='boolean')throw Error('会话身份核对失败。');return value.eligible}
   const localRetrievalApi=createLocalRetrievalApi(call)
-  const resourceApi=createResourceApi(async(endpoint,payload,signal)=>{const result=await callWithReceipt(endpoint,payload,signal);if(!result.ok)throw Object.assign(Error(result.error.message),{rejected:true,code:result.error.code});return result.value},journal('teloa.local-material-command/v1'))
+  const resourceApi=createResourceApi(async(endpoint,payload,signal)=>{const result=await callWithReceipt(endpoint,payload,signal);if(!result.ok)throw Object.assign(Error(result.error.message),{rejected:true,code:result.error.code,details:result.error.details});return result.value},journal('teloa.local-material-command/v1'),applicationPresentation.getNavigationStorageScope()===undefined?localStorage:navigationStorage)
   const artifactChanges=createSnapshotStore(0)
   const artifactApi=createArtifactApi(async(method,payload)=>{
     const value=await call(method,payload)
@@ -373,7 +374,7 @@ export async function apply(ctx: Context): Promise<void> {
   ctx.slots.inject('settings.section',()=>ctx.slots.register({name:'settings.section',id:'teloa-hardware-devices',order:10,label:()=>hardwareDevicesCopy(requireI18n().getSnapshot().locale,'title'),inject:()=>({api:hardwareDevicesApi})},HardwareDevicesSettings))
   const employeeVoiceApi=createEmployeeVoiceApi(call)
   const marketContentApi=createMarketContentApi(async(endpoint,payload)=>{const result=await callWithReceipt(endpoint,payload);if(!result.ok)throw Object.assign(Error(result.error.message),{rejected:true,code:result.error.code});return result.value},journal('teloa.market-content-import/v1'),()=>crypto.randomUUID(),journal('teloa.market-import-github/v1'))
-  const marketCatalogCall=async(endpoint:string,payload:unknown)=>{const result=await callWithReceipt(endpoint,payload);if(!result.ok)throw Object.assign(Error(result.error.message),{rejected:true,code:result.error.code});return result.value}
+  const marketCatalogCall=createRejectedWorkRpcCall(callWithReceipt)
   const marketCatalogApi:MarketCatalogApi={...createMarketCatalogApi(marketCatalogCall),reviews:createMarketReviewsApi(marketCatalogCall)}
   const skillSecretsApi=createSkillSecretsApi(async(endpoint,payload)=>{const result=await callWithReceipt(endpoint,payload);if(!result.ok)throw Object.assign(Error(result.error.message),{rejected:true,code:result.error.code});return result.value})
   const githubSourceApi=createGithubSourceApi(async(endpoint,payload)=>{const result=await callWithReceipt(endpoint,payload);if(!result.ok)throw Object.assign(Error(result.error.message),{rejected:true,code:result.error.code});return result.value},journal('teloa.github-source/v1'))
@@ -387,7 +388,8 @@ export async function apply(ctx: Context): Promise<void> {
   const industryRoleApi=createIndustryRoleApi(async(endpoint,payload)=>{const result=await callWithReceipt(endpoint,payload);if(!result.ok)throw Object.assign(Error(result.error.message),{rejected:true,code:result.error.code});return result.value},journal('teloa.industry-role/v1'))
   const industryTaskApi=createIndustryTaskApi(async(endpoint,payload)=>{const result=await callWithReceipt(endpoint,payload);if(!result.ok)throw Object.assign(Error(result.error.message),{rejected:true,code:result.error.code});return result.value},journal('teloa.industry-task/v1'))
   const industryPlanApi=createIndustryPlanApi(async(endpoint,payload)=>{const result=await callWithReceipt(endpoint,payload);if(!result.ok)throw Object.assign(Error(result.error.message),{rejected:true,code:result.error.code});return result.value},journal('teloa.industry-plan/v1'),readSavedPlan)
-  const skillInstallApi=createSkillInstallApi(async(endpoint,payload)=>{const result=await callWithReceipt(endpoint,payload);if(!result.ok)throw Object.assign(Error(result.error.message),{rejected:true,code:result.error.code});return result.value},journal('teloa.skill-install/v1'))
+  const skillInstallCall=createRejectedWorkRpcCall(callWithReceipt)
+  const skillInstallApi=createSkillInstallApi(skillInstallCall,journal('teloa.skill-install/v1'),createSkillSelectionApi(skillInstallCall,journal('teloa.skill-selection/v1')))
   const marketPluginInstallApi=createMarketPluginInstallApi(async(endpoint,payload)=>{const result=await callWithReceipt(endpoint,payload);if(!result.ok)throw Object.assign(Error(result.error.message),{rejected:true,code:result.error.code});return result.value},journal('teloa.market-plugin-install/v1'))
   const skillUpgradeApi=createSkillUpgradeApi(async(endpoint,payload)=>{const result=await callWithReceipt(endpoint,payload);if(!result.ok)throw Object.assign(Error(result.error.message),{rejected:true,code:result.error.code});return result.value},journal('teloa.skill-upgrade/v1'))
   const skillAvailabilityApi=createSkillAvailabilityApi(async(endpoint,payload)=>{const result=await callWithReceipt(endpoint,payload);if(!result.ok)throw Object.assign(Error(result.error.message),{rejected:true,code:result.error.code});return result.value},journal('teloa.skill-availability/v1'))
@@ -667,6 +669,16 @@ export async function apply(ctx: Context): Promise<void> {
   const management=new ConversationManagement(()=>work.getDirectorySnapshot().rows)
   const homeSession=new HomeNativeController({
     storage:navigationStorage,identity:()=>crypto.randomUUID(),
+    isEligible:async(id,afterAdopt=false)=>{
+      const state=businessBuilder.getSnapshot()
+      if(!afterAdopt&&state.status==='ready'&&state.checkedSessionId===id&&(!state.error||state.sessionKind!==null))return state.sessionKind===null
+      try{return await businessBuilderApi.bySession({sessionId:id})===null}
+      catch(error){
+        // 新建原生会话尚无工作绑定；adopt 会校验可接入性，接入后再复核业务归属。
+        if(!afterAdopt&&error&&typeof error==='object'&&'code'in error&&error.code==='teloa/not-bound')return true
+        throw error
+      }
+    },
     refresh:()=>requireWorkContext().sessions.refresh(),
     isBlank:id=>{const child=requireWorkContext();return readHomeNativeBlank(child.sessions,brandString<SessionId>(id),binding=>child.conversation.input.for(binding.ctx).state.getSnapshot().queue.some(item=>item.source.kind==='user'&&'rpcId'in item.source))},
     create:async id=>{
@@ -698,10 +710,17 @@ export async function apply(ctx: Context): Promise<void> {
   ctx.on('teloa/initial-native-session/register',initialSession.register)
   const prepareHomeSession=async(signal:AbortSignal)=>{
     const lifetime=AbortSignal.any([signal,initialSessionLifetime.signal])
+    // 尚未装配的原生 binding 先由公开 using 路径只读水合，不能等待依赖该 binding 的归属核对才开始。
+    const proof=await initialSession.prepare(lifetime)
+    lifetime.throwIfAborted()
+    if(businessBuilder.getSnapshot().checkedSessionId!==(mainSession.getSnapshot()??null))await businessBuilder.followSession(mainSession.getSnapshot())
+    lifetime.throwIfAborted()
+    proof?.assertCurrent()
+    const checked=businessBuilder.getSnapshot()
+    if(checked.status!=='ready'||!checked.nativeReady||checked.checkedSessionId!==(mainSession.getSnapshot()??null)||checked.error&&checked.sessionKind===null)throw Error('当前会话业务归属尚未核对，请重试。')
     if(!initialSessionPrepared){
-      const proof=await initialSession.prepare(lifetime)
-      lifetime.throwIfAborted()
-      if(proof&&await homeSession.claimPrepared(proof.sessionId,proof.assertCurrent,proof.explicit)){initialSessionPrepared=true;return proof.sessionId}
+      const businessSession=proof&&checked.checkedSessionId===proof.sessionId&&checked.sessionKind!==null
+      if(proof&&!businessSession&&await homeSession.claimPrepared(proof.sessionId,proof.assertCurrent,proof.explicit)){initialSessionPrepared=true;return proof.sessionId}
       initialSessionPrepared=true
     }
     const id=await homeSession.prepare()

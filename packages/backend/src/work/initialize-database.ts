@@ -4,6 +4,7 @@ import {initializeEmployeeApiWork} from './employee-api-work.ts'
 import {initializeWorkControl} from './work-control.ts'
 import {initializeWorkRecovery} from './work-recovery.ts'
 import {initializeWorkBudgets} from './work-budget.ts'
+import {initializeConversationBudgetSettings} from './conversation-budget-settings.ts'
 import {initializeGroupRoutingOutbox} from './group-routing-outbox.ts'
 import {initializeGroupRoutingAttempts} from './group-routing-attempts.ts'
 import {initializeGroupWorkInputs} from './group-work-inputs.ts'
@@ -193,6 +194,7 @@ export async function initializeTeloaDatabase(pool:Pool,options:{businessSqlSecr
  await initializeWorkControl(pool)
  await initializeWorkRecovery(pool)
  await initializeWorkBudgets(pool)
+ await initializeConversationBudgetSettings(pool)
  await initializeGroupRoutingOutbox(pool)
  await initializeGroupRoutingAttempts(pool)
  await initializeGroupWorkInputs(pool)

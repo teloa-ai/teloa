@@ -1,8 +1,8 @@
 import type {KnowledgeTree,ResourceDirectory,ResourceDraft,SourceReference,WorkResource} from '@teloa/contract'
 import {isLocalMaterialSourceId} from './local-material-registration.ts'
-export type LibraryView='mine'|'recent'|'star'|'local'|'space'
+export type LibraryView='mine'|'recent'|'star'|'local'|'retrieval'|'space'
 export type LibraryPreferences={recent:{id:string;at:number}[];favorites:string[]}
-export type LibraryRow=((ResourceDraft|WorkResource)&{kind:'draft'|'resource';location:string;knowledgeVersion?:number|undefined;visitedAt?:number|undefined})|{kind:'knowledge';id:string;title:string;sourceId:string;sourceVersion:string;version:number;knowledgeVersion:number;status:'saved';location:string;visitedAt?:number|undefined}
+export type LibraryRow=((ResourceDraft|WorkResource)&{kind:'draft'|'resource';location:string;knowledgeVersion?:number|undefined;visitedAt?:number|undefined})|{kind:'knowledge';id:string;title:string;sourceId:string;sourceVersion:string;version:number;knowledgeVersion:number;status:'saved';location:string;scopeIds?:readonly string[];visitedAt?:number|undefined}
 const empty=():LibraryPreferences=>({recent:[],favorites:[]})
 const validId=(value:unknown):value is string=>typeof value==='string'&&value.length>0&&value.length<=200
 export function libraryPreferenceKey(ownerId:string,spaceId:string){return 'teloa.library/v1/'+encodeURIComponent(ownerId)+'/'+encodeURIComponent(spaceId)}
@@ -30,7 +30,7 @@ export function libraryRows(directory:ResourceDirectory,sources:SourceReference[
   const knowledge=source.knowledge,node=options.tree?.nodes.find(node=>node.type==='page'&&node.knowledgeId===knowledge?.knowledgeId)
   if(!knowledge||!node||knowledge.workspaceId!==options.tree?.space.workspaceId||directory.resources.some(row=>sources.find(value=>value.id===row.sourceId)?.knowledge?.knowledgeId===knowledge.knowledgeId||row.sourceId==='knowledge_'+knowledge.knowledgeId))continue
   const location=node.path.slice(0,-1).map(id=>options.tree?.nodes.find(value=>value.id===id)?.title).filter(Boolean).join(' / ')
-  rows.push({kind:'knowledge',id:knowledge.knowledgeId,title:node.title,sourceId:source.id,sourceVersion:source.version,version:knowledge.knowledgeVersion,knowledgeVersion:knowledge.knowledgeVersion,status:'saved',location,visitedAt:recent.get(knowledge.knowledgeId)})
+  rows.push({kind:'knowledge',id:knowledge.knowledgeId,title:node.title,sourceId:source.id,sourceVersion:source.version,version:knowledge.knowledgeVersion,knowledgeVersion:knowledge.knowledgeVersion,status:'saved',location,scopeIds:[...knowledge.scopeIds],visitedAt:recent.get(knowledge.knowledgeId)})
  }
  return rows.filter(row=>(view!=='local'||isLocalMaterialSourceId(row.sourceId))&&(view!=='recent'||recent.has(row.id))&&(view!=='star'||preferences.favorites.includes(row.id))&&(view!=='space'||(row.kind==='knowledge'?options.knowledgeIds?.has(row.id):resourceIds?.has(row.id)))&&(!needle||[row.title,row.location].some(value=>value.toLocaleLowerCase().includes(needle)))).sort((a,b)=>view==='recent'?(b.visitedAt??0)-(a.visitedAt??0):a.title.localeCompare(b.title))
 }

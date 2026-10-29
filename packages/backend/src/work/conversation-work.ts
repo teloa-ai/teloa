@@ -2,7 +2,7 @@ import {revokeOwnerWorkLeases} from './owner-work-epochs.ts'
 import {initializeConversationWorkRequests,workRequestChildId,lockConversationTaskChild,assertConversationTaskChildUnoccupied} from './conversation-work-task-protection.ts'
 export {workRequestChildId} from './conversation-work-task-protection.ts'
 import type {Pool,PoolClient} from 'pg'
-import {WorkError,businessObjectReference,roleSupportsScope,taskDefinition,taskInput,type BusinessObjectReference} from '@teloa/contract'
+import {WorkError,readWorkTokenLimit,readWorkBudgetPolicy,businessObjectReference,roleSupportsScope,taskDefinition,taskInput,type BusinessObjectReference,type WorkBudgetPolicy} from '@teloa/contract'
 import {assertBusinessScopeRegistered} from './business-scopes.ts'
 import {readStoredRole} from './roles.ts'
 import {BusinessResponsibilityService} from './business-responsibility.ts'
@@ -16,8 +16,8 @@ export type ConversationWorkContext={sessionId:string;scopeId:string;roleId:stri
 export type WorkRequestTarget={roleId:string;roleVersion:number;name:string;scope:string;unavailable:null|'paused'|'retired'}
 export type WorkResponsibilitySnapshot={version:number;roleId:string|null}
 export type WorkRequestFailure={code:string;message:string}
-export type ConversationWorkRequest={requestId:string;sessionId:string;messageId:string;messageSeq:number;kind:'task'|'report';executor?:'general';scope:string;title:string;goal:string;sourceText?:string;responsibility?:WorkResponsibilitySnapshot;expectedReportTargets?:WorkRequestTarget[];allBusinesses?:true;targets:WorkRequestTarget[];failures:Record<string,WorkRequestFailure>;reference?:BusinessObjectReference;stoppedAt:string|null;createdAt:string}
-export type ConversationWorkReserveInput={requestId:string;sessionId:string;messageId:string;messageSeq:number;kind:'task'|'report';executor?:'general';scope:string;title:string;goal:string;sourceText?:string;responsibility?:WorkResponsibilitySnapshot;expectedReportTargets?:WorkRequestTarget[];allBusinesses?:true;roleId?:string;expectedRoleVersion?:number;reference?:BusinessObjectReference}
+export type ConversationWorkRequest={requestId:string;sessionId:string;messageId:string;messageSeq:number;kind:'task'|'report';executor?:'general';workTokenLimit?:number|null;workBudgetPolicy?:WorkBudgetPolicy;scope:string;title:string;goal:string;sourceText?:string;responsibility?:WorkResponsibilitySnapshot;expectedReportTargets?:WorkRequestTarget[];allBusinesses?:true;targets:WorkRequestTarget[];failures:Record<string,WorkRequestFailure>;reference?:BusinessObjectReference;stoppedAt:string|null;createdAt:string}
+export type ConversationWorkReserveInput={requestId:string;sessionId:string;messageId:string;messageSeq:number;kind:'task'|'report';executor?:'general';workTokenLimit?:number|null;workBudgetPolicy?:WorkBudgetPolicy;scope:string;title:string;goal:string;sourceText?:string;responsibility?:WorkResponsibilitySnapshot;expectedReportTargets?:WorkRequestTarget[];allBusinesses?:true;roleId?:string;expectedRoleVersion?:number;reference?:BusinessObjectReference}
 type Inspect=(owner:string,sessionId:string)=>Promise<{ownerId:string;sessionId:string;status:string;submitted:boolean}>
 export type ConversationWorkGuardOperation={kind:'read'|'freeze'|'reserve'}|{kind:'set';scopeId:string;roleId:string|null;hasContext:boolean}
 export type ConversationWorkPreparedGuard=(db:PoolClient,operation:ConversationWorkGuardOperation)=>Promise<void>
@@ -25,6 +25,14 @@ export type ConversationWorkGuard=(owner:string,sessionId:string)=>Promise<Conve
 const uuid=(v:unknown):v is string=>typeof v==='string'&&/^[a-f0-9]{8}-[a-f0-9]{4}-[1-5][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i.test(v)
 const session=(v:unknown):v is string=>typeof v==='string'&&/^[a-zA-Z0-9_-]{1,128}$/.test(v)
 const positive=(v:unknown):v is number=>Number.isSafeInteger(v)&&Number(v)>0
+export const conversationWorkInstructionLimit=7400
+/** 审批前与最终预约使用同一完整原指令边界；不得截短本人输入后交办。 */
+export function assertConversationWorkInstruction(sourceText:unknown,goal:string):void{
+ if(sourceText===undefined)return
+ if(typeof sourceText!=='string'||!sourceText.trim())throw new WorkError('teloa/invalid-input','完整原指令格式不正确。')
+ const actualLength=sourceText.length+goal.length
+ if(actualLength>conversationWorkInstructionLimit)throw new WorkError('teloa/invalid-input',`完整原指令与任务目标合计 ${actualLength} 个 UTF-16 代码单元，超过本次交办上限 ${conversationWorkInstructionLimit}；请将长材料保存为已授权资料，在新的精简本人指令中引用后重新交办。仅缩短目标不能删除原指令。尚未创建任务。`,{reason:'work-instruction-too-long',actualLength,maxLength:conversationWorkInstructionLimit,lengthUnit:'utf16-code-units'})
+}
 const corrupt=()=>new WorkError('teloa/storage-corrupt','会话交办记录损坏，请先核对原请求。')
 function actor(owner:string){if(typeof owner!=='string'||!owner.trim()||owner.length>128)throw new WorkError('teloa/forbidden','需要有效的本人身份。')}
 function location(owner:string,input:unknown,request=false){actor(owner);const row=taskInput(input,request?['sessionId','requestId']:['sessionId']);if(!session(row.sessionId)||request&&!uuid(row.requestId))throw new WorkError('teloa/invalid-input','会话或交办请求身份不正确。');return {sessionId:row.sessionId,requestId:typeof row.requestId==='string'?row.requestId.toLowerCase():row.requestId as string}}
@@ -58,14 +66,17 @@ function reportTargets(input:unknown):WorkRequestTarget[]{
  return rows
 }
 function reserveInput(input:unknown):ConversationWorkReserveInput{
- const row=taskInput(input,['requestId','sessionId','messageId','messageSeq','kind','executor','scope','title','goal','roleId','expectedRoleVersion','reference','allBusinesses','sourceText','responsibility','expectedReportTargets'])
+ const row=taskInput(input,['requestId','sessionId','messageId','messageSeq','kind','executor','scope','title','goal','roleId','expectedRoleVersion','reference','allBusinesses','sourceText','responsibility','expectedReportTargets','workTokenLimit','workBudgetPolicy'])
  const fields=taskDefinition({title:row.title,goal:row.goal,scope:row.scope})
  if(!uuid(row.requestId)||!session(row.sessionId)||typeof row.messageId!=='string'||!row.messageId||row.messageId.length>200||!Number.isSafeInteger(row.messageSeq)||Number(row.messageSeq)<0||!['task','report'].includes(String(row.kind)))throw new WorkError('teloa/invalid-input','交办来源或类型不正确。')
+ const workTokenLimit=row.workTokenLimit===undefined?undefined:readWorkTokenLimit(row.workTokenLimit),workBudgetPolicy=row.workBudgetPolicy===undefined?undefined:readWorkBudgetPolicy(row.workBudgetPolicy)
+ if(workBudgetPolicy!==undefined&&(workTokenLimit!==undefined||row.kind!=='task'||workBudgetPolicy.money!==null))throw new WorkError('teloa/invalid-input','单次交办的完整额度不能与 token 上限同时填写，且必须保留无金额保证。')
+ if(workTokenLimit!==undefined&&row.kind!=='task')throw new WorkError('teloa/invalid-input','只有单次交办可以预设本次工作 token 上限。')
  const general=row.executor==='general'
  if(row.executor!==undefined&&!general||general&&(row.kind!=='task'||fields.scope!=='general'||row.roleId!==undefined||row.expectedRoleVersion!==undefined||row.reference!==undefined||row.responsibility!==undefined))throw new WorkError('teloa/invalid-input','通用交办必须明确选择通用执行，不能混入员工、业务归属或对象授权。')
  if(!general&&(row.kind==='task'? !uuid(row.roleId)||!positive(row.expectedRoleVersion):row.roleId!==undefined||row.expectedRoleVersion!==undefined||row.reference!==undefined))throw new WorkError('teloa/invalid-input','明确交办需要真实负责人及版本，汇报集合由服务端固定。')
  if(row.allBusinesses!==undefined&&(row.allBusinesses!==true||row.kind!=='report'||fields.scope!=='general'))throw new WorkError('teloa/invalid-input','跨业务汇报必须明确选择全部业务，并由通用工作承载协调。')
- if(row.sourceText!==undefined&&(typeof row.sourceText!=='string'||!row.sourceText.trim()||row.sourceText.length+fields.goal.length>7400))throw new WorkError('teloa/invalid-input','完整原指令与任务目标超过本次交办上限，请将长材料保存为资料后引用。')
+ assertConversationWorkInstruction(row.sourceText,fields.goal)
  let responsibility:WorkResponsibilitySnapshot|undefined
  if(row.responsibility!==undefined){
   const selected=taskInput(row.responsibility,['version','roleId'])
@@ -76,7 +87,7 @@ function reserveInput(input:unknown):ConversationWorkReserveInput{
  if(expectedReportTargets&&row.kind!=='report')throw new WorkError('teloa/invalid-input','只有汇报请求可以固定员工名单。')
  const reference=row.reference===undefined?undefined:businessObjectReference(row.reference)
  if(reference&&reference.scope!==fields.scope)throw new WorkError('teloa/invalid-input','调查事件与责任业务不一致。')
- return {requestId:row.requestId.toLowerCase(),sessionId:row.sessionId,messageId:row.messageId,messageSeq:Number(row.messageSeq),kind:row.kind as 'task'|'report',scope:fields.scope,title:fields.title,goal:fields.goal,...(general?{executor:'general'}:{}),...(row.sourceText===undefined?{}:{sourceText:row.sourceText as string}),...(row.allBusinesses===true?{allBusinesses:true}:{}),...(row.kind==='task'&&!general?{roleId:(row.roleId as string).toLowerCase(),expectedRoleVersion:Number(row.expectedRoleVersion)}:{}),...(reference?{reference}:{}),...(responsibility?{responsibility}:{}),...(expectedReportTargets?{expectedReportTargets}:{})}
+ return {requestId:row.requestId.toLowerCase(),sessionId:row.sessionId,messageId:row.messageId,messageSeq:Number(row.messageSeq),kind:row.kind as 'task'|'report',scope:fields.scope,title:fields.title,goal:fields.goal,...(workTokenLimit===undefined?{}:{workTokenLimit}),...(workBudgetPolicy===undefined?{}:{workBudgetPolicy}),...(general?{executor:'general'}:{}),...(row.sourceText===undefined?{}:{sourceText:row.sourceText as string}),...(row.allBusinesses===true?{allBusinesses:true}:{}),...(row.kind==='task'&&!general?{roleId:(row.roleId as string).toLowerCase(),expectedRoleVersion:Number(row.expectedRoleVersion)}:{}),...(reference?{reference}:{}),...(responsibility?{responsibility}:{}),...(expectedReportTargets?{expectedReportTargets}:{})}
 }
 export function readStoredConversationWorkRequest(row:Record<string,unknown>):ConversationWorkRequest{
  try{
@@ -91,7 +102,7 @@ export function readStoredConversationWorkRequest(row:Record<string,unknown>):Co
   if(input.expectedReportTargets&&JSON.stringify(input.expectedReportTargets)!==JSON.stringify(reportTargets(targets)))throw Error()
   const failures=taskInput(row.failures,input.executor==='general'?['general']:targets.map(target=>target.roleId)) as Record<string,WorkRequestFailure>
   for(const failure of Object.values(failures)){taskInput(failure,['code','message']);if(typeof failure.code!=='string'||!/^teloa\/[a-z0-9-]+$/.test(failure.code)||typeof failure.message!=='string'||!failure.message.trim()||failure.message.length>1000)throw Error()}
-  return {requestId:input.requestId,sessionId:input.sessionId,messageId:input.messageId,messageSeq:input.messageSeq,kind:input.kind,scope:input.scope,title:input.title,goal:input.goal,...(input.executor?{executor:input.executor}:{}),...(input.sourceText?{sourceText:input.sourceText}:{}),...(input.allBusinesses?{allBusinesses:true}:{}),targets,failures,...(input.reference?{reference:input.reference}:{}),...(input.responsibility?{responsibility:input.responsibility}:{}),...(input.expectedReportTargets?{expectedReportTargets:input.expectedReportTargets}:{}),stoppedAt:row.stopped_at===null?null:(row.stopped_at as Date).toISOString(),createdAt:row.created_at.toISOString()}
+  return {requestId:input.requestId,sessionId:input.sessionId,messageId:input.messageId,messageSeq:input.messageSeq,kind:input.kind,scope:input.scope,title:input.title,goal:input.goal,...(input.workTokenLimit===undefined?{}:{workTokenLimit:input.workTokenLimit}),...(input.workBudgetPolicy===undefined?{}:{workBudgetPolicy:input.workBudgetPolicy}),...(input.executor?{executor:input.executor}:{}),...(input.sourceText?{sourceText:input.sourceText}:{}),...(input.allBusinesses?{allBusinesses:true}:{}),targets,failures,...(input.reference?{reference:input.reference}:{}),...(input.responsibility?{responsibility:input.responsibility}:{}),...(input.expectedReportTargets?{expectedReportTargets:input.expectedReportTargets}:{}),stoppedAt:row.stopped_at===null?null:(row.stopped_at as Date).toISOString(),createdAt:row.created_at.toISOString()}
  }catch{throw corrupt()}
 }
 export type ConversationWorkReservationPrepared={

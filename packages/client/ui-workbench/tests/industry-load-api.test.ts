@@ -6,6 +6,23 @@ const requestId='12345678-1234-4234-8234-123456789012',contentId='22345678-1234-
 const input={requestId,contentId,contentHash:hash,target:{kind:'new' as const,spaceId,name:' 安全运营 '}}
 const record={id:loadId,ownerId:'owner',contentId,contentHash:hash,templateId:'security-template',templateVersion:'1.2.0',templateTitle:'安全模板',domain:'security',scope:'SOC',description:'安全工作资源',targetVersion:1,space:{id:spaceId,name:'安全运营',version:1,scope:'SOC'},items:[{localId:'analyst',instanceId:roleId,kind:'role',title:'分析岗位',version:'1.0.0',required:true,status:'pending-adapter'},{localId:'optional-skill',instanceId:skillId,kind:'skill',title:'可选 Skill',version:'1.0.0',required:false,status:'skipped'}],relations:[],entrypoints:[roleId],createdAt:'2026-09-12T00:00:00.000Z',mappingHash:'b'.repeat(64),status:'active'}
 
+test('包知识覆盖确认绑定原请求，未知结果恢复保留已确认digest',async()=>{
+ let raw:string|null=null,fail=true;const calls:unknown[]=[],journal={read:()=>raw,write:(value:string)=>{raw=value},clear:()=>{raw=null}},confirmed={...input,knowledgeResetDigest:'c'.repeat(64)}
+ const call=async(method:string,payload:unknown)=>{calls.push([method,payload]);if(fail){fail=false;throw Error('结果未知')}return record}
+ await assert.rejects(createIndustryLoadApi(call,journal).create(confirmed))
+ const api=createIndustryLoadApi(call,journal);assert.equal(api.pending()?.knowledgeResetDigest,confirmed.knowledgeResetDigest)
+ await assert.rejects(api.create({...confirmed,knowledgeResetDigest:'d'.repeat(64)}),/原请求/)
+ await api.recover();assert.deepEqual(calls[0],calls[1]);assert.equal(raw,null)
+ await assert.rejects(createIndustryLoadApi(async()=>record).create({...input,knowledgeResetDigest:'invalid'}),/格式/)
+})
+test('知识覆盖预览固定加载映射及候选内容，拒绝异常清单',async()=>{
+ const preview={digest:hash,documents:[{roleId,resourceId:skillId,knowledgeId:contentId,bodyVersion:2,contentHash:hash,title:'本地调查手册'}]},target={loadId,expectedMappingHash:record.mappingHash,candidateContentId:contentId,candidateContentHash:hash},calls:unknown[]=[]
+ assert.deepEqual(await createIndustryLoadApi(async(method,payload)=>{calls.push([method,payload]);return preview}).previewKnowledgeReset(target),preview)
+ assert.deepEqual(calls,[['industry-loads/knowledge-reset-preview',target]])
+ for(const bad of [{...preview,digest:'bad'},{...preview,documents:[{...preview.documents[0],bodyVersion:0}]},{...preview,documents:[...preview.documents,...preview.documents]}])await assert.rejects(createIndustryLoadApi(async()=>bad).previewKnowledgeReset(target))
+ await assert.rejects(createIndustryLoadApi(async()=>preview).previewKnowledgeReset({loadId,expectedMappingHash:hash,candidateContentId:contentId}))
+})
+
 const modelDependency={catalogId:'teloa.model.sensevoice',version:'1.0.0',usage:'speech-to-text',required:true}
 test('v3 加载记录保留模型依赖，非法资源类型或非固定声明不能被静默丢弃',async()=>{
  const withModel={...record,items:[{...record.items[1],status:'pending-adapter',modelDependencies:[modelDependency]}],entrypoints:[skillId]}
@@ -50,6 +67,13 @@ test('创建失败保留完整固定请求，恢复重放同一参数且成功�
  await assert.rejects(createIndustryLoadApi(call,journal).create(input),/连接断开/)
  const api=createIndustryLoadApi(call,journal);assert.deepEqual(api.pending(),{...input,target:{...input.target,name:'安全运营'}})
  assert.deepEqual(await api.recover(),record);assert.deepEqual(calls[0],calls[1]);assert.equal(raw,null)
+})
+
+test('已安装但待本人关联的技能入口保持严格语义，不可冒充其他资源或就绪状态',async()=>{
+ const row={itemInstanceId:skillId,kind:'skill',title:'调查方法',state:'needs-user',step:null,entry:'skill-link'}
+ const readiness={loadId,status:'active',title:'调查',version:'1.3.1',digest:hash,counts:{ready:0,auto:0,needsUser:1,optional:0,pending:0},rows:[row]}
+ assert.deepEqual(await createIndustryLoadApi(async()=>readiness).readiness(loadId),readiness)
+ for(const change of [{kind:'role'},{state:'ready'},{step:'skill'}])await assert.rejects(createIndustryLoadApi(async()=>({...readiness,rows:[{...row,...change}]})).readiness(loadId),/格式/)
 })
 
 test('同一待核对请求不能更换来源或目标，日志写失败时不调用服务',async()=>{

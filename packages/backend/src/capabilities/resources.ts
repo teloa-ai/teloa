@@ -3,9 +3,12 @@ import { ReferenceError,type ReferenceCatalog } from '@teloa/mcp-reference/catal
 import { WorkError,isRecord,promptFullTextMaxBytes,isResourceSpec,isResourceDraft,isWorkResource,resourceId,resourceScopes,resourceVersion,retrievalLimits,type ResourceSpec,type ResourceDraft,type WorkResource,type ResourceReference,type ResourceDirectory,type MessageResourceSnapshot,type ResourceContext,type SourceReference } from '@teloa/contract'
 import { normalizeRetrievalText } from './retrieval-chunker.ts'
 import {roleKnowledgeMaxReferences} from '@teloa/contract'
+import {createHash} from 'node:crypto'
+import {isResourceAdoptionInput,type ResourceAdoptionInput} from '@teloa/contract'
+import {assertFixedRunKnowledgeReadInTransaction,type FixedRunKnowledgeRead} from './fixed-run-knowledge-read.ts'
 export type ResourceActor={ownerId:string;kind:'human'|'agent';scopeIds:string[]}
 /** 来源适配器只接收服务端主体；事务内读取复用连接，避免嵌套借用耗尽连接池。 */
-export type ResourceSourceContext={actor:ResourceActor;client?:PoolClient;scopeIds?:string[]}
+export type ResourceSourceContext={actor:ResourceActor;client?:PoolClient;scopeIds?:string[];fixedKnowledgeRead?:FixedRunKnowledgeRead;resourceId?:string}
 export interface ResourceSourceCatalog {
   list(context?:ResourceSourceContext):Promise<{schema:'teloa.reference-list/v1';references:SourceReference[]}>
   read(id:string,version:string,context?:ResourceSourceContext):ReturnType<ReferenceCatalog['read']>
@@ -18,6 +21,7 @@ const specKeys=['title','sourceId','sourceVersion','scopeIds']
 const badInput=()=>new WorkError('teloa/invalid-input','资源请求格式不正确或包含未知字段。')
 const corrupt=()=>new WorkError('teloa/storage-corrupt','资源存储内容不符合合同，已停止读取。')
 const same=(a:unknown,b:unknown)=>JSON.stringify(a)===JSON.stringify(b)
+const sameAdoption=(stored:unknown,command:ResourceAdoptionInput)=>isResourceAdoptionInput(stored)&&stored.requestId===command.requestId&&stored.targetScope===command.targetScope&&stored.resources.length===command.resources.length&&stored.resources.every((ref,index)=>ref.id===command.resources[index]?.id&&ref.version===command.resources[index]?.version&&ref.sourceVersion===command.resources[index]?.sourceVersion)
 const stableId=(v:unknown):v is string=>typeof v==='string'&&/^[a-zA-Z0-9_-]{1,128}$/.test(v)
 /** Markdown 来源的合法大小写别名指向同一 UUID；其他来源标识仍逐字比较。 */
 const knowledgeSourceId=(sourceId:string):string|undefined=>{
@@ -50,7 +54,9 @@ export async function assertRoleKnowledgeReferences(db:Pick<PoolClient,'query'>,
  const references=[...new Set(ids.filter((id):id is string=>typeof id==='string'&&resourceId(id)).map(id=>id.toLowerCase()))]
  if(!references.length)return
  if((await db.query("select to_regclass('teloa_resources') as present")).rows[0]?.present==null)return
- const rows=(await db.query('select id from teloa_resources where owner_id=$1 and id=any($2::uuid[])',[ownerId,references])).rows.map(row=>String(row.id).toLowerCase())
+ const archives=(await db.query("select to_regclass('teloa_employee_knowledge_archives') as present")).rows[0]?.present!=null
+ const rows=(await db.query(`select r.id from teloa_resources r where r.owner_id=$1 and r.id=any($2::uuid[])${archives?` and not exists(select 1 from teloa_employee_knowledge_archives a where a.owner_id=r.owner_id and r.spec->>'sourceId'='knowledge_'||a.knowledge_id::text)
+  and not exists(select 1 from teloa_employee_knowledge_source_retirements d where d.owner_id=r.owner_id and d.source_id=r.spec->>'sourceId' and d.source_version=r.spec->>'sourceVersion')`:''}`,[ownerId,references])).rows.map(row=>String(row.id).toLowerCase())
  const missing=references.filter(id=>!rows.includes(id))
  if(!missing.length)return
  const listed=missing.slice(0,5).join('、'),remainder=missing.length>5?' 等':''
@@ -100,11 +106,12 @@ export class ResourceService {
     catch(error){await client.query('rollback').catch(()=>{});if(error instanceof WorkError)throw error;throw new WorkError('teloa/storage-unavailable','资源事务未完成，请检查数据库连接与结构。')}
     finally{client.release()}
   }
-  private async source(value:ResourceSpec,actor:ResourceActor,client:PoolClient):Promise<string>{
-    try{return (await this.sources.read(value.sourceId,value.sourceVersion,{actor,client,scopeIds:value.scopeIds})).text}
+  private async source(value:ResourceSpec,actor:ResourceActor,client:PoolClient,fixedKnowledgeRead?:FixedRunKnowledgeRead,resourceId?:string):Promise<string>{
+    if((await client.query("select to_regclass('teloa_employee_knowledge_source_retirements') as present")).rows[0]?.present!=null&&(await client.query('select 1 from teloa_employee_knowledge_source_retirements where owner_id=$1 and source_id=$2 and source_version=$3',[actor.ownerId,value.sourceId,value.sourceVersion])).rowCount)await assertFixedRunKnowledgeReadInTransaction(client,fixedKnowledgeRead,actor.ownerId,resourceId,value.sourceId,value.sourceVersion)
+    try{return (await this.sources.read(value.sourceId,value.sourceVersion,{actor,client,scopeIds:value.scopeIds,...(fixedKnowledgeRead?{fixedKnowledgeRead}:{}),...(resourceId?{resourceId}:{})})).text}
     catch(error){if(error instanceof WorkError)throw error;if(error instanceof ReferenceError&&error.code==='reference/version-conflict')throw new WorkError('teloa/version-conflict','来源内容已变化，请核对新版本后重新提交资料。');throw new WorkError('teloa/source-unavailable','资料来源当前不可读取。')}
   }
-  async sourceDirectory(actor:ResourceActor){authorizeResourceActor(actor);try{return (await this.sources.list({actor})).references}catch(error){if(error instanceof WorkError)throw error;throw new WorkError('teloa/source-unavailable','受控资料来源当前不可读取。')}}
+  async sourceDirectory(actor:ResourceActor){authorizeResourceActor(actor);try{const references=(await this.sources.list({actor})).references;if((await this.pool.query("select to_regclass('teloa_employee_knowledge_source_retirements') as present")).rows[0]?.present==null)return references;const removed=(await this.pool.query('select source_id,source_version from teloa_employee_knowledge_source_retirements where owner_id=$1',[actor.ownerId])).rows;return references.filter(ref=>!removed.some(row=>row.source_id===ref.id&&row.source_version===ref.version))}catch(error){if(error instanceof WorkError)throw error;throw new WorkError('teloa/source-unavailable','受控资料来源当前不可读取。')}}
   /** 宿主已确认的长期资料监听专用；不接受浏览器给出的版本或正文，不扩大原授权范围。 */
   async refreshAuthorizedLocalVersionInTransaction(client:PoolClient,actor:ResourceActor,id:string):Promise<WorkResource>{
     authorizeResourceActor(actor)
@@ -131,6 +138,38 @@ export class ResourceService {
       if(!isResourceSpec(row.request_spec))throw corrupt()
       if(!same(spec(row.request_spec),value))throw new WorkError('teloa/conflict','同一请求 ID 不能创建另一份资源草案。')
       return draftRow(row)
+    })
+  }
+  /** 本人主动把可读原资料固定版本采用到另一已登记业务；原资料、来源及索引保持独立。 */
+  async prepareAdoption(actor:ResourceActor,input:unknown):Promise<ResourceDraft[]>{
+    if(!isResourceAdoptionInput(input))throw badInput()
+    authorizeResourceActor(actor,actor.ownerId,[input.targetScope],true)
+    const command:ResourceAdoptionInput={requestId:input.requestId.toLowerCase(),targetScope:input.targetScope,resources:input.resources.map(ref=>({...ref,id:ref.id.toLowerCase()})).sort((a,b)=>a.id.localeCompare(b.id))}
+    return this.tx(async client=>{
+      // 目标必须真实登记；不沿旧写口的缺表/内置范围兼容自动扩大来源授权。
+      if(!(await client.query("select to_regclass('teloa_business_scopes') as present")).rows[0]?.present||!(await client.query('select 1 from teloa_business_scopes where owner_id=$1 and scope=$2',[actor.ownerId,command.targetScope])).rowCount)throw new WorkError('teloa/forbidden','请先选择本人已登记的正式业务。')
+      await client.query('select pg_advisory_xact_lock(hashtextextended($1,0))',[JSON.stringify(['resource-adoption',actor.ownerId,command.requestId])])
+      const prior=(await client.query('select * from teloa_resource_adoptions where owner_id=$1 and request_id=$2 order by position',[actor.ownerId,command.requestId])).rows
+      if(prior.length){
+        if(prior.length!==command.resources.length||prior.some(row=>!sameAdoption(row.request_spec,command)))throw new WorkError('teloa/conflict','同一请求 ID 不能采用另一组资料或目标业务。')
+        const drafts:ResourceDraft[]=[]
+        for(const row of prior){if(!isWorkResource(row.origin))throw corrupt();authorizeResourceActor(actor,row.origin.ownerId,row.origin.scopeIds,true);drafts.push((await this.draft(client,actor,row.draft_id)).draft)}
+        return drafts
+      }
+      const drafts:ResourceDraft[]=[]
+      for(const [position,ref] of command.resources.entries()){
+        const origin=await this.resource(client,actor,ref.id)
+        if(origin.version!==ref.version||origin.sourceVersion!==ref.sourceVersion||origin.status!=='active')throw new WorkError('teloa/version-conflict','原资料版本或状态已变化，请重新读取后采用。')
+        let fixed:Awaited<ReturnType<ResourceSourceCatalog['read']>>
+        try{fixed=await this.sources.read(origin.sourceId,origin.sourceVersion,{actor,client,scopeIds:origin.scopeIds})}catch(error){if(error instanceof WorkError)throw error;throw new WorkError('teloa/source-unavailable','原资料的固定来源当前不可读取。')}
+        const bytes=Buffer.byteLength(fixed.text)
+        if(!bytes||bytes>2*1024*1024||fixed.text.includes('\0')||fixed.id!==origin.sourceId||fixed.bytes!==bytes||fixed.version!==origin.sourceVersion||createHash('sha256').update(fixed.text).digest('hex')!==origin.sourceVersion)throw new WorkError('teloa/source-unavailable','原资料正文与固定来源版本不一致。')
+        const sourceId='adopted_'+this.identity.id(),draftId=this.identity.id(),draftRequestId=this.identity.id(),now=this.identity.now(),value:ResourceSpec={title:origin.title,sourceId,sourceVersion:origin.sourceVersion,scopeIds:[command.targetScope]}
+        const row=(await client.query("insert into teloa_resource_drafts(id,owner_id,request_id,request_spec,spec,revision,status,created_at,updated_at) values($1,$2,$3,$4,$4,1,'draft',$5,$5) returning *",[draftId,actor.ownerId,draftRequestId,JSON.stringify(value),now])).rows[0]
+        await client.query('insert into teloa_resource_adoptions(owner_id,request_id,position,request_spec,source_id,draft_id,target_scope,origin,origin_source,source_version,content,bytes,created_at) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)',[actor.ownerId,command.requestId,position,JSON.stringify(command),sourceId,draftId,command.targetScope,JSON.stringify(origin),fixed.source,origin.sourceVersion,fixed.text,bytes,now])
+        drafts.push(draftRow(row))
+      }
+      return drafts
     })
   }
   private async draft(client:PoolClient,actor:ResourceActor,id:string):Promise<{draft:ResourceDraft;appliedVersion:unknown}>{
@@ -162,13 +201,13 @@ export class ResourceService {
       return draftRow(row)
     })
   }
-  async apply(actor:ResourceActor,input:unknown):Promise<WorkResource>{
+  async apply(actor:ResourceActor,input:unknown,within?:(client:PoolClient,resource:WorkResource)=>Promise<void>):Promise<WorkResource>{
     const data=object(input,['draftId','expectedVersion']),{id,version}=expected(data,'draftId');authorizeResourceActor(actor,actor.ownerId,[],true)
     return this.tx(async client=>{
       const {draft,appliedVersion}=await this.draft(client,actor,id)
       if(draft.status==='applied'){
         if(appliedVersion!==version)throw new WorkError('teloa/version-conflict','提交版本与已应用的草案不一致。')
-        return this.resource(client,actor,draft.resourceId!)
+        const resource=await this.resource(client,actor,draft.resourceId!);await within?.(client,resource);return resource
       }
       if(draft.version!==version)throw new WorkError('teloa/version-conflict','草案已变化，请核对后提交。')
       // 与未提交知识的本人修订共享原知识锁，避免未提交投影被并发编辑的检查漏过。
@@ -178,7 +217,7 @@ export class ResourceService {
       const value=spec(draft),nextId=this.identity.id(),now=this.identity.now()
       const row=(await client.query(`insert into teloa_resources(id,owner_id,revision,status,spec,created_at,updated_at) values($1,$2,1,'active',$3,$4,$4) returning *`,[nextId,actor.ownerId,JSON.stringify(value),now])).rows[0]
       await client.query(`update teloa_resource_drafts set status='applied',resource_id=$2,applied_version=revision,revision=revision+1,updated_at=$3 where id=$1`,[id,nextId,now])
-      return resourceRow(row)
+      const resource=resourceRow(row);await within?.(client,resource);return resource
     })
   }
   async withdraw(actor:ResourceActor,input:unknown):Promise<WorkResource>{
@@ -213,12 +252,37 @@ export class ResourceService {
     if(!sameIdentity||!validState)throw corrupt()
     return snapshot
   }
+  /** 员工内容修订保留旧固定版本可读；权限撤回仍单独通过 withdraw 处理。 */
+  async publishEmployeeKnowledgeInTransaction(client:PoolClient,actor:ResourceActor,value:ResourceSpec):Promise<WorkResource>{
+    authorizeResourceActor(actor,actor.ownerId,value.scopeIds,true)
+    const next=spec(value)
+    if(!knowledgeSourceId(next.sourceId))throw badInput()
+    return resourceRow((await client.query("insert into teloa_resources(id,owner_id,revision,status,spec,created_at,updated_at) values($1,$2,1,'active',$3,$4,$4) returning *",[this.identity.id(),actor.ownerId,JSON.stringify(next),this.identity.now()])).rows[0])
+  }
+  /** 服务端固定来源读取，供正式员工知识 COW 使用；不接受调用者路径。 */
+  async readFixedInTransaction(client:PoolClient,actor:ResourceActor,id:string):Promise<{resource:WorkResource;text:string}>{
+    const resource=await this.resource(client,actor,id)
+    if(resource.status!=='active')throw new WorkError('teloa/resource-withdrawn','资料已撤回。')
+    const text=await this.source(resource,actor,client)
+    if(createHash('sha256').update(text).digest('hex')!==resource.sourceVersion)throw corrupt()
+    return {resource,text}
+  }
   async list(actor:ResourceActor):Promise<ResourceDirectory>{
     authorizeResourceActor(actor)
-    return this.tx(async client=>({
+    return this.tx(async client=>{const rolesPresent=(await client.query("select to_regclass('teloa_roles') as present")).rows[0]?.present!=null;return {
       drafts:(await client.query('select * from teloa_resource_drafts where owner_id=$1 order by created_at desc,id',[actor.ownerId])).rows.map(draftRow).filter(row=>row.scopeIds.every(scope=>actor.scopeIds.includes(scope))),
-      resources:(await client.query('select * from teloa_resources where owner_id=$1 order by created_at desc,id',[actor.ownerId])).rows.map(resourceRow).filter(row=>row.scopeIds.every(scope=>actor.scopeIds.includes(scope))),
-    }))
+      resources:(await client.query(`select r.* from teloa_resources r where r.owner_id=$1 and not exists(
+        select 1 from teloa_employee_knowledge_versions v join teloa_employee_knowledge_bindings b
+         on b.owner_id=v.owner_id and b.role_id=v.role_id and b.origin_document_id=v.origin_document_id
+        where v.resource_id=r.id and v.resource_id<>b.origin_resource_id and v.resource_id<>b.head_resource_id
+      ) and not exists(select 1 from teloa_employee_knowledge_archives a where a.owner_id=r.owner_id and r.spec->>'sourceId'='knowledge_'||a.knowledge_id::text)
+      and not exists(select 1 from teloa_employee_knowledge_source_retirements d where d.owner_id=r.owner_id and d.source_id=r.spec->>'sourceId' and d.source_version=r.spec->>'sourceVersion')
+      and not exists(select 1 from teloa_employee_knowledge_baseline_refs ref where ref.owner_id=r.owner_id and ref.resource_id=r.id
+       and not exists(select 1 from teloa_employee_knowledge_baselines b where b.owner_id=r.owner_id and b.current_resource_id=r.id)
+       ${rolesPresent?`and not exists(select 1 from teloa_roles role where role.owner_id=r.owner_id and role.definition->'knowledge' ? r.id::text
+        and not exists(select 1 from teloa_employee_knowledge_baselines b where b.owner_id=role.owner_id and b.role_id=role.id and b.origin_resource_id=r.id))`:''})
+      order by r.created_at desc,r.id`,[actor.ownerId])).rows.map(resourceRow).filter(row=>row.scopeIds.every(scope=>actor.scopeIds.includes(scope))),
+    }})
   }
   async findDraft(actor:ResourceActor,input:unknown):Promise<ResourceDraft|null>{
     authorizeResourceActor(actor);const data=object(input,['requestId']);if(!resourceId(data.requestId))throw badInput()
@@ -239,7 +303,7 @@ export class ResourceService {
       const resource=await this.resource(client,actor,id)
       if(resource.status!=='active')throw new WorkError('teloa/resource-withdrawn','资料已撤回，请先核对资料状态。')
       if(resource.version!==version||resource.sourceVersion!==data.sourceVersion)throw new WorkError('teloa/version-conflict','资料已更新，请刷新后查看当前内容。')
-      if(!resource.sourceId.startsWith('local_material_')&&!resource.sourceId.startsWith('industry_'))throw new WorkError('teloa/forbidden','此入口仅用于已加入的本机文件或员工包资料。')
+      if(!resource.sourceId.startsWith('local_material_')&&!resource.sourceId.startsWith('industry_')&&!resource.sourceId.startsWith('adopted_'))throw new WorkError('teloa/forbidden','此入口仅用于已加入的本机文件、员工包或业务采用资料。')
       return {resource,text:await this.source(resource,actor,client)}
     })
   }
@@ -289,13 +353,13 @@ export class ResourceService {
       return ids.map(id=>resources.get(id)!)
   }
   /** 岗位执行准备读取：只接受资源身份，不创建虚构消息或复用消息审计快照。 */
-  async executionKnowledge(actor:ResourceActor,targetScopes:string[],ids:readonly string[],signal?:AbortSignal):Promise<ResourceContext['contents']>{
+  async executionKnowledge(actor:ResourceActor,targetScopes:string[],ids:readonly string[],signal?:AbortSignal,fixedKnowledgeRead?:FixedRunKnowledgeRead):Promise<ResourceContext['contents']>{
     validateRoleKnowledge(actor,targetScopes,ids)
     signal?.throwIfAborted()
-    return this.tx(client=>this.executionKnowledgeInTransaction(client,actor,targetScopes,ids,signal))
+    return this.tx(client=>this.executionKnowledgeInTransaction(client,actor,targetScopes,ids,signal,fixedKnowledgeRead))
   }
   /** Run 准备已持有事务连接时，岗位资料必须在同一连接内读取。 */
-  async executionKnowledgeInTransaction(client:PoolClient,actor:ResourceActor,targetScopes:string[],ids:readonly string[],signal?:AbortSignal):Promise<ResourceContext['contents']>{
+  async executionKnowledgeInTransaction(client:PoolClient,actor:ResourceActor,targetScopes:string[],ids:readonly string[],signal?:AbortSignal,fixedKnowledgeRead?:FixedRunKnowledgeRead):Promise<ResourceContext['contents']>{
     validateRoleKnowledge(actor,targetScopes,ids)
     signal?.throwIfAborted()
       const contents:ResourceContext['contents']=[]
@@ -311,7 +375,7 @@ export class ResourceService {
       }
       for(const id of ids){
         signal?.throwIfAborted()
-        const resource=resources.get(id)!,text=await this.source(resource,actor,client)
+        const resource=resources.get(id)!,text=await this.source(resource,actor,client,fixedKnowledgeRead,resource.id)
         const size=Buffer.byteLength(text,'utf8')
         if(size>fullTextMaxBytes)throw retrievalOnly(resource,size,'员工/任务全文上限')
         bytes+=size
@@ -363,7 +427,7 @@ export class ResourceService {
    * 本地检索命中回读：逐条核对本人、目标范围、启用状态、资料版本与正文版本，按规范化正文区间切片。
    * 只返回有界摘录（单条 2 KiB、合计 16 KiB），不注入整篇资料。
    */
-  async readExcerptsInTransaction(client:PoolClient,actor:ResourceActor,targetScopes:string[],hits:readonly unknown[]):Promise<{resource:WorkResource;excerpt:string}[]>{
+  async readExcerptsInTransaction(client:PoolClient,actor:ResourceActor,targetScopes:string[],hits:readonly unknown[],fixedKnowledgeRead?:FixedRunKnowledgeRead):Promise<{resource:WorkResource;excerpt:string}[]>{
     authorizeResourceActor(actor)
     if(!resourceScopes(targetScopes)||!Array.isArray(hits)||hits.length>retrievalLimits.maxResults)throw badInput()
     const rows=hits.map(excerptHit),resources=new Map<string,{resource:WorkResource;text:string|null}>()
@@ -381,7 +445,7 @@ export class ResourceService {
     let total=0
     for(const row of rows){
       const entry=resources.get(row.resourceId)!
-      entry.text??=normalizeRetrievalText(await this.source(entry.resource,actor,client))
+      entry.text??=normalizeRetrievalText(await this.source(entry.resource,actor,client,fixedKnowledgeRead,entry.resource.id))
       if(row.chars[1]>entry.text.length)throw new WorkError('teloa/storage-corrupt','检索索引区间与资料正文不一致，已停止读取。')
       const excerpt=clipBytes(entry.text.slice(row.chars[0],row.chars[1]),Math.min(retrievalLimits.maxExcerptBytes,retrievalLimits.maxTotalExcerptBytes-total))
       if(!excerpt.trim())break

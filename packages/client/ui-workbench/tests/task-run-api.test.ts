@@ -64,6 +64,20 @@ test('群续办与冻结结果映射可读取运行目录，损坏或跨业务�
  await assert.rejects(read({...input,businessContext:{...businessContext,resultMappings:[resultMapping,resultMapping]}}))
 })
 const configurationFailedRow={...row,linkVersion:0,state:'configuration_failed',evidence:null,agentPresetId:'standard',configurationError:{code:'teloa/preset-unavailable',stage:'preset-resolve',message:'标准模式暂不可用'},inputText:JSON.stringify({task:{id:taskId,version:1,title:'调查',goal:'核对证据',scope:'general'},role:{id:roleId,version:2,name:'调查岗',duty:'调查',dataScope:'只读',executionScope:'代拟',runtimeConfig:{agentPresetId:'standard'}}})}
+test('权限解析阶段：合法失败回包保留错误详情，不阻断同任务的其他运行',async()=>{
+ const configurationError={code:'teloa/permission-mode-unavailable',stage:'permission-resolve',message:'宿主没有配置请求的权限模式预设。'}
+ const failed={...configurationFailedRow,id:roleId,configurationError},calls:unknown[]=[]
+ const runs=await createTaskRunApi(async(method,payload)=>{calls.push([method,payload]);return [row,failed]}).list(taskId)
+ assert.equal(runs.length,2);assert.equal(runs[0]?.state,'ended');assert.equal(runs[1]?.state,'configuration_failed')
+ assert.deepEqual(runs[1]?.configurationError,configurationError)
+ assert.deepEqual(calls,[['task-runs/list',{taskId}]])
+})
+test('权限解析阶段：未知配置失败阶段仍按损坏宿主回包拒绝',async()=>{
+ for(const stage of ['permission-unknown','',null,42,{stage:'permission-resolve'}]){
+  const failed={...configurationFailedRow,configurationError:{...configurationFailedRow.configurationError,stage}}
+  await assert.rejects(createTaskRunApi(async()=>[failed]).list(taskId),{code:'teloa/invalid-host-response',message:'运行配置失败信息不正确。'})
+ }
+})
 test('本地业务的空摘要与可选空字段保留原固定快照，恢复原准备不重建或启动',async()=>{
  const object={...businessContext.object,summary:'',fields:[{label:'备注',value:''}]}
  assert.deepEqual(readBusinessRecordSnapshot(object,object.scope),object,'本地业务的正式回包契约允许这些空值')
@@ -329,4 +343,64 @@ test('planContext.occurrenceId 保持宿主领取 uuid 契约（v1–v8）；eve
  const build=(occurrenceId:string)=>({...plannedRow,inputText:JSON.stringify({...JSON.parse(plannedRow.inputText),planContext:{...planContext,occurrenceId}})})
  assert.equal((await createTaskRunApi(async()=>[build('030dda22-6472-8d74-964f-a2b4bd16b15d')]).list(taskId))[0]!.planContext?.occurrenceId,'030dda22-6472-8d74-964f-a2b4bd16b15d')
  await assert.rejects(createTaskRunApi(async()=>[build('event:44537d38-522d-8777-abea-7cedaf366259')]).list(taskId),{code:'teloa/invalid-host-response'})
+})
+
+test('准备条件只读请求绑定任务及版本，不生成准备日志，拒绝错误版本回包',async()=>{
+ let writes=0
+ const api=createTaskRunApi(async(method,payload)=>{assert.equal(method,'task-runs/readiness');assert.deepEqual(payload,{taskId,expectedTaskVersion:1});return {schema:'teloa.task-run-readiness/v1',taskId,taskVersion:1,ready:true}},{read:()=>null,write:()=>{writes++},clear:()=>{writes++}})
+ assert.equal((await api.readiness(taskId,1)).ready,true)
+ assert.equal(writes,0)
+ assert.equal(api.pending(),undefined)
+ await assert.rejects(createTaskRunApi(async()=>({schema:'teloa.task-run-readiness/v1',taskId,taskVersion:2,ready:true})).readiness(taskId,1),{code:'teloa/invalid-host-response'})
+})
+
+test('员工API运行权限模式和显式模型覆盖严格对齐固定快照，list与原会话均可读取',async()=>{
+ const {employeeApiPermissionModes}=await import('../../../sdk/contract.mjs')
+ const sessionId='task-run-'+id,original=JSON.parse(row.inputText),declared={provider:'employee-provider',model:'employee-default'},selected={primary:{provider:'request-provider',model:'request-selected'}}
+ const conversation={id,ownerId:'local:teloa-owner',title:'调查',scopeIds:['general'],version:1,status:'ready',requestedSessionId:sessionId,sessionId,createdAt:row.createdAt,requestId:id,purpose:'task-run',run:{taskId,taskVersion:1,roleId,roleVersion:2,agentPresetId:'standard'}}
+ for(const permissionMode of employeeApiPermissionModes){
+  const snapshot={...original,permissionMode,modelPolicy:selected,modelPolicyOverride:true,role:{...original.role,runtimeConfig:{agentPresetId:'standard',model:declared}}}
+  const fixed={...row,sessionId,agentPresetId:'standard',permissionMode,modelPolicy:selected,modelPolicyOverride:true,inputText:JSON.stringify(snapshot)}
+  const api=createTaskRunApi(async method=>method==='conversations/read'?conversation:[fixed])
+  const view=(await api.list(taskId))[0]!
+  assert.equal(view.permissionMode,permissionMode);assert.equal(view.modelPolicyOverride,true);assert.deepEqual(view.modelPolicy,selected)
+  assert.equal((await api.chatPresentation(sessionId))?.runId,id)
+  const invalid=[
+   {...fixed,permissionMode:'invalid'},
+   {...fixed,permissionMode:permissionMode==='read-only'?'workspace-write':'read-only'},
+   {...fixed,permissionMode:undefined},
+   {...fixed,inputText:JSON.stringify({...snapshot,permissionMode:undefined})},
+   {...fixed,inputText:JSON.stringify({...snapshot,permissionMode:'invalid'})},
+   {...fixed,modelPolicyOverride:false},
+   {...fixed,modelPolicyOverride:undefined},
+   {...fixed,inputText:JSON.stringify({...snapshot,modelPolicyOverride:false})},
+   {...fixed,inputText:JSON.stringify({...snapshot,modelPolicyOverride:undefined})},
+   {...fixed,modelPolicy:undefined,inputText:JSON.stringify({...snapshot,modelPolicy:undefined})},
+   {...fixed,modelPolicy:{primary:declared}},
+   {...fixed,modelPolicyOverride:undefined,inputText:JSON.stringify({...snapshot,modelPolicyOverride:undefined})},
+   {...fixed,unknownExecutionOption:true},
+   {...fixed,inputText:JSON.stringify({...snapshot,unknownExecutionOption:true})},
+  ]
+  for(const changed of invalid){
+   const rejected=createTaskRunApi(async method=>method==='conversations/read'?conversation:[changed])
+   await assert.rejects(rejected.list(taskId),{code:'teloa/invalid-host-response'})
+   await assert.rejects(rejected.chatPresentation(sessionId),{code:'teloa/invalid-host-response'})
+  }
+ }
+})
+
+test('reconcile和stop不能同时改写顶层与快照来提升权限档或新增模型覆盖标记',async()=>{
+ const modelPolicy={primary:{provider:'fixture',model:'default'}},snapshot={...JSON.parse(row.inputText),permissionMode:'read-only',modelPolicy}
+ const fixed={...row,permissionMode:'read-only',modelPolicy,inputText:JSON.stringify(snapshot)}
+ const original=(await createTaskRunApi(async()=>[fixed]).list(taskId))[0]!
+ for(const changed of [
+  {...fixed,permissionMode:'danger-full-access',inputText:JSON.stringify({...snapshot,permissionMode:'danger-full-access'})},
+  {...fixed,modelPolicyOverride:true,inputText:JSON.stringify({...snapshot,modelPolicyOverride:true})},
+ ]){
+  const api=createTaskRunApi(async endpoint=>endpoint==='task-runs/list'?[changed]:changed)
+  // 两侧自洽的响应本身可读；拒绝必须来自与原运行的冻结字段比较。
+  assert.equal((await api.list(taskId)).length,1)
+  await assert.rejects(api.reconcile(original),/执行目标快照发生变化/)
+  await assert.rejects(api.stop(original),/执行目标快照发生变化/)
+ }
 })

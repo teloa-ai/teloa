@@ -555,7 +555,7 @@ test('新建与切换员工会话不自动发送，主外壳和身份组件没�
   const create=implementation<(workspace:string,intent:unknown)=>Promise<void>>(node,{
    ...applicationCapabilityModules['./application-presentation.js'],plainCreation,
    setCreating:(value:boolean)=>calls.push(['creating',value]),homeCreationLocation:()=> 'origin',latestState:{current:{}},
-   resolveConversationObject:()=>object,homeContextApi:{pending:()=>undefined},persistentObject:()=>true,
+   resolveConversationObject:()=>object,readLatestConversationRole:async()=>({id:roleA,scopes:['general']}),homeContextApi:{pending:()=>undefined},persistentObject:()=>true,
    work:{create:async(options:{roleId?:string;beforeOpen:(row:unknown)=>Promise<void>;mayOpen:()=>boolean})=>{assert.equal(options.roleId,roleA);assert.equal(options.mayOpen(),true);await options.beforeOpen(conversation);current=conversation.sessionId;return conversation},getSnapshot:()=>({sessionId:current})},
    mergeObjectLinks:()=>{},ensureHomeObjectContext:async()=>({}),objectConversationApi:{},setConversationObject:()=>{},
    mayContinueHomeCreation:()=>true,mainSession:{getSnapshot:()=>current},
@@ -565,7 +565,7 @@ test('新建与切换员工会话不自动发送，主外壳和身份组件没�
    roleConversationIdentities:{fail:(sessionId:string,error:string)=>calls.push(['identityError',sessionId,error])},
    actions:{closeDetail:()=>{},openMessages:(mode:string)=>calls.push(['open',mode]),closeSidebar:()=>{}},window:{matchMedia:()=>({matches:false})},
   })
-  await create('workspace',{object,resolve:(ok:boolean)=>calls.push(['resolved',ok])})
+  await create('workspace',{object,scope:'general',resolve:(ok:boolean)=>calls.push(['resolved',ok])})
   assert.deepEqual(calls,[['creating',true],['resolved',true],['intent',null],['selection',false],['creationError',undefined],['open','native'],['creating',false]])
  assert.doesNotMatch(source('WorkbenchFrame.tsx'),/\bresendRoleIdentity\b|role\.conversation\.introducePrompt/)
  assert.doesNotMatch(source('RoleConversationIdentity.tsx'),/onResend|role\.conversation\.resend|role\.conversation\.introducePrompt/)

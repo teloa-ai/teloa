@@ -85,6 +85,8 @@ for(const locale of ['zh-CN','en'])for(const width of [390,1400])test(locale+'/'
  const writes=await page.evaluate(()=>(window as any).richFixture.calls.filter((row:any)=>row[0]==='business-records/create'));assert.equal(writes.length,1)
  assert.deepEqual(writes[0][1].fields,[{name:'amount',value:'{"currency":"CNY","decimal":"9007199254740993.01"}'},{name:'tags',value:JSON.stringify([cloud,compliance])}])
  const detail=page.getByRole('dialog',{name:title,exact:true});await detail.waitFor();assert.match(await detail.innerText(),/CNY 9007199254740993\.01/)
+ const factCells=detail.locator('dl').first().locator(':scope > div'),firstFact=await factCells.nth(0).boundingBox(),secondFact=await factCells.nth(1).boundingBox()
+ assert.ok(firstFact&&secondFact);assert.ok(Math.abs(firstFact.x-secondFact.x)<1&&secondFact.y>firstFact.y,'窄记录抽屉按正文容器收单列，宽桌面也不挤成两列')
  await detail.getByRole('button',{name:en?'Edit record':'编辑记录',exact:true}).click()
  assert.equal(await page.getByLabel(amount,{exact:true}).inputValue(),'9007199254740993.01')
  await page.getByRole('combobox',{name:amount+' · '+(en?'Currency':'币种')}).selectOption('USD');await page.getByLabel(amount,{exact:true}).fill('-10.5000')

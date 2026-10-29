@@ -40,7 +40,9 @@ test('新建会话先解析默认执行位置，选择器只用于例外和主�
 test('跨多个业务范围的数字员工先选择会话语境，再复用范围默认执行位置',async()=>{
   const source=await read('WorkbenchFrame.tsx')
   const dialog=await read('ConversationScopeDialog.tsx')
-  assert.match(source,/available\.length>1\)\{setRoleScopeIntent\(\{object,scopes:available,\.\.\.\(goal\?\{goal\}:\{\}\)\}\)/)
+  assert.match(source,/available\.length>1\)\{setRoleScopeIntent\(\{object:fresh,scopes:available,\.\.\.\(goal\?\{goal\}:\{\}\)\}\)/)
+  assert.match(source,/const role=await readLatestConversationRole\(object\.id\)/)
+  assert.match(source,/role\.scopes\.filter\(scope=>scopes\.includes\(scope\)\)/)
   assert.match(source,/requestRoleCreation\(object,role\.scopes\)/)
   assert.match(source,/roleScopes\?requestRoleCreation\(object,roleScopes\)/)
   assert.match(source,/<ConversationScopeDialog options=/)

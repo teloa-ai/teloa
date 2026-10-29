@@ -1,6 +1,6 @@
 import {isIndustryManifest} from './industry-manifest.ts'
 import clsx from 'clsx'
-import {useMemo,useState} from 'react'
+import {useEffect,useMemo,useRef,useState} from 'react'
 import type {IndustryLoadCreateInput} from './industry-load-api.js'
 import type {WorkError} from '@teloa/contract'
 import type {BusinessSpaceRecord} from './business-directory.js'
@@ -14,6 +14,8 @@ import {localizeWorkError} from './i18n/errors.js'
 import {localizedMarketItemCopy} from './market-home-presentation.js'
 import {industryResourceDestinationGroups,isBusinessDeclarationPackage} from './industry-template-presentation.js'
 import {inspectIndustryContent} from './industry-content.js'
+import {knowledgeResetFromError,type KnowledgeResetPreview} from './knowledge-reset.js'
+import {KnowledgeResetConfirmation} from './KnowledgeResetConfirmation.js'
 
 type Props={
  embedded?:boolean
@@ -33,9 +35,12 @@ export function IndustryLoadForm({embedded=false,item,space,pending,recoveryErro
  const [requestId,setRequestId]=useState(()=>crypto.randomUUID())
  const [busy,setBusy]=useState(false)
  const [error,setError]=useState('')
+ const [knowledgeReset,setKnowledgeReset]=useState<{key:string;input:IndustryLoadCreateInput;preview:KnowledgeResetPreview}>()
  const contentId=item.contentStorage?.contentId
  const itemCopy=localizedMarketItemCopy(item,locale)
  const contentHash=item.packageContent?.hash??(item.contentStorage?item.contentStorage.loaded?'':item.hash??'':item.id.startsWith('directory-')?item.id.slice(10):'')
+ const selectionKey=JSON.stringify([item.id,contentId,contentHash,item.packageContent?.manifestPath,space?.id,space?.version]),selection=useRef(selectionKey);selection.current=selectionKey
+ useEffect(()=>{setKnowledgeReset(undefined)},[selectionKey])
  // 个人版没有目的地可选：加载一律进本空间，业务范围取模板清单声明的 scope。
  const scope=isIndustryManifest(item.manifest)?item.manifest.scope:''
  // 范围名与切换器、已保存目录的组标题同源：标签目录里有标题就用标题；首次加载的新范围还没有标签，
@@ -55,14 +60,21 @@ export function IndustryLoadForm({embedded=false,item,space,pending,recoveryErro
   if(busy)return
   setBusy(true)
   setError('')
-  try{await operation()}catch{setError(t('market.industry.load.failed'))}finally{setBusy(false)}
+  try{await operation()}catch(reason){setError(localizeWorkError(locale,reason)||t('market.industry.load.failed'))}finally{setBusy(false)}
  }
  const submit=()=>run(async()=>{
   if(!contentId||!/^[0-9a-f]{64}$/.test(contentHash))throw Error(t('market.industry.load.contentNotReady'))
   if(!space)throw Error(t('market.industry.load.failed'))
   const target:IndustryLoadCreateInput['target']={kind:'existing',spaceId:space.id,expectedVersion:space.version}
-  await load({requestId,contentId,contentHash,target})
-  setRequestId(crypto.randomUUID())
+  const input={requestId,contentId,contentHash,target}
+  try{await load(input);if(selection.current===selectionKey){setKnowledgeReset(undefined);setRequestId(crypto.randomUUID())}}
+  catch(reason){const preview=knowledgeResetFromError(reason);if(preview&&selection.current===selectionKey){setKnowledgeReset({key:selectionKey,input,preview});return}throw reason}
+ })
+ const confirmKnowledgeReset=()=>run(async()=>{
+  const reset=knowledgeReset;if(!reset||reset.key!==selection.current)return
+  setKnowledgeReset(undefined)
+  try{await load({...reset.input,knowledgeResetDigest:reset.preview.digest});if(selection.current===reset.key)setRequestId(crypto.randomUUID())}
+  catch(reason){const preview=knowledgeResetFromError(reason);if(preview&&selection.current===reset.key){setKnowledgeReset({...reset,preview});return}throw reason}
  })
 
  return <section className={clsx(css.panel,embedded?marketCss.actionPanel:marketCss.sheet)} aria-label={t('market.industry.load.aria')}>
@@ -78,7 +90,8 @@ export function IndustryLoadForm({embedded=false,item,space,pending,recoveryErro
    {declarationOnly&&<section className={css.declarationNotice} aria-label={t('market.industry.load.declarationPackageAria')}><p>{t('market.industry.load.declarationPackage')}</p>{declarationSourceIds.map(sourceId=><p key={sourceId}>{t('market.industry.load.declarationSource',{sourceId})}</p>)}</section>}
    {!space&&<p className={css.note} role="status">{t('market.industry.load.spaceUnavailable')}</p>}
    <p className={css.note}>{t('market.industry.load.boundary')}</p>
-   <div className={css.actions}><button type="button" disabled={busy||!!pending||!contentId||!targetReady||!/^[0-9a-f]{64}$/.test(contentHash)} onClick={()=>void submit()}>{busy?t('market.industry.load.loading'):t('market.industry.load.confirm')}</button></div>
+   {knowledgeReset?.key===selectionKey&&<KnowledgeResetConfirmation preview={knowledgeReset.preview} busy={busy} confirm={()=>void confirmKnowledgeReset()} cancel={()=>setKnowledgeReset(undefined)}/>}
+   <div className={css.actions}><button type="button" disabled={busy||!!pending||!!knowledgeReset||!contentId||!targetReady||!/^[0-9a-f]{64}$/.test(contentHash)} onClick={()=>void submit()}>{busy?t('market.industry.load.loading'):t('market.industry.load.confirm')}</button></div>
   </div>
   {!contentId&&<p className={css.note}>{t('market.industry.load.incomplete')}</p>}
  </section>

@@ -151,6 +151,7 @@ function makeRunApi(rows:any[]):any{
  return {
   pending:()=>undefined,recoveryMessage:()=>undefined,discard:()=>false,
   origin:async(taskId:string)=>contract.readTaskRunOrigin({taskId,runId:null,source:null}),
+  readiness:async(taskId:string,taskVersion:number)=>contract.readTaskRunReadiness({schema:'teloa.task-run-readiness/v1',taskId,taskVersion,ready:true}),
   list:async()=>rows,
   prepare:async()=>{throw Error('未使用')},
   recoverPrepare:async()=>{throw Error('未使用')},

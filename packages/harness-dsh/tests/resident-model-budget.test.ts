@@ -18,6 +18,52 @@ import {createNativeWorkInput} from '../src/native-work-input.ts'
 import {installResidentModelBudget} from '../src/resident-model-budget.ts'
 import {readSessionEvents} from '../src/session-events.ts'
 
+test('自动工作总额度耗尽后，首页与员工单聊仍能完成手动对话且不新增任务额度记账',{timeout:30000},async t=>{
+ const db=await setupRoleWork();t.after(db.close)
+ await initializeWorkControl(db.pool);await initializeWorkBudgets(db.pool);await initializeWorkRetries(db.pool)
+ const f=await patchedSessionFixture(t),{owner,role}=await roleFixture(db.pool,'employee')
+ const conversations=new Map<string,{id:string;ownerId:string;sessionId:string;status:string}>()
+ const inspect=async(_owner:string,sessionId:string)=>{const row=conversations.get(sessionId);if(!row)throw Error('未知会话');return row}
+ const runs=new TaskRunService(db.pool,identity,inspect),controls=new WorkControlService(db.pool,identity),budgets=new WorkBudgetService(db.pool,identity,ownerAuthority)
+ const reserved=await budgets.reserveOwnerRouting(owner,{modelRequestId:'previous-background-work',tokens:1})
+ await budgets.markDispatched(owner,{reservationId:reserved.id})
+ await budgets.settle(owner,{reservationId:reserved.id,modelRequestId:reserved.modelRequestId,providerRequestId:null,tokens:1,moneyMinorUnits:null,currency:null,receiptId:'previous-background-receipt'})
+ const used=await budgets.readOwner(owner)
+ await budgets.configureOwner(owner,{requestId:randomUUID(),expectedVersion:used.version,policy:{...defaultWorkBudgetPolicy,maxTokens:1}})
+ await assert.rejects(budgets.reserveOwnerRouting(owner,{modelRequestId:'over-budget-background-work',tokens:1}),{code:'teloa/budget-exhausted'})
+ const before=await budgets.readOwner(owner),input=createNativeWorkInput(f.ctx,new WorkAccess())
+ const close=installResidentModelBudget(f.ctx,{owner,pool:db.pool,identity,runs:async()=>runs,controls,budgets,resolveRun:sessionId=>runs.skillScope(owner,{sessionId}),resolveRouting:async()=>null,nativeInput:input,report:()=>{throw Error('手动对话不应进入任务预算重试')}})
+ t.after(()=>{close();input.close()})
+ let requests=0
+ class Model extends LlmAdapter{
+  override async resolveModel(provider:string,model:string){return {provider,id:model,name:model}}
+  async *stream(_options:GenerateOptions):AsyncIterable<StreamChunk>{
+   requests++
+   yield {type:'block-start',index:0,blockType:'text'}
+   yield {type:'text-delta',index:0,text:'手动对话正常'}
+   yield {type:'block-end',index:0,block:{type:'text',text:'手动对话正常'}}
+   yield {type:'usage',usage:{inputTokens:7,outputTokens:3,totalTokens:10}}
+   yield {type:'finish',reason:{kind:'stop'}}
+  }
+ }
+ f.ctx.llm.registerAdapter(['manual-budget'],new Model())
+ for(const kind of ['home','employee']){
+  const {agent}=await f.ctx.agents.create({sessionId:SessionId(randomUUID()),agentOptions:{provider:'manual-budget',model:'test',maxTokens:32}})
+  conversations.set(agent.id,{id:randomUUID(),ownerId:owner,sessionId:agent.id,status:'ready'})
+  if(kind==='employee')await new ObjectConversationService(db.pool,inspect,identity.now).change(owner,{requestId:randomUUID(),kind:'role',objectId:role.id,expectedObjectVersion:role.version,sessionId:agent.id,expectedLinkVersion:0,action:'link'})
+  const message=createUserMessage({source:{kind:'user',rpcId:randomUUID()},content:[{type:'text',text:'这是手动对话，不交办后台任务'}]})
+  await input.withNewInput(agent,message,{producer:'prompt',identity:randomUUID()},()=>agent.followup(message))
+  await until(()=>agent.status==='idle'&&agent.inbox.nextTurn.length===0)
+  const end=[...readSessionEvents(agent.session)].reverse().find(event=>event.type==='turn/end')
+  assert.equal(end?.type==='turn/end'&&end.data.reason.kind,'completed',kind+' 的手动模型请求应正常结束')
+ }
+ assert.equal(requests,2)
+ assert.deepEqual(await budgets.readOwner(owner),before,'手动对话不增加后台任务的累计用量')
+ assert.equal((await db.pool.query('select count(*)::int n from teloa_work_budget_reservations where owner_id=$1',[owner])).rows[0].n,1,'仅保留此前后台工作的预留回执')
+ assert.equal((await db.pool.query('select count(*)::int n from teloa_task_runs where owner_id=$1',[owner])).rows[0].n,0)
+ assert.equal((await db.pool.query('select count(*)::int n from teloa_work_retries where owner_id=$1',[owner])).rows[0].n,0)
+})
+
 test('路由本地缺凭据且无输出/用量时结算零token；传输未知、已有输出或取消仍保留预留',{timeout:30000},async t=>{
  const db=await setupRoleWork();t.after(db.close)
  await initializeWorkControl(db.pool);await initializeWorkBudgets(db.pool);await initializeWorkRetries(db.pool)
@@ -141,8 +187,14 @@ for(const general of [false,true])test((general?'本人无员工快照':'员工'
  await budgets.configure(owner,{requestId:randomUUID(),budgetAccountId:run.lineage.budgetAccountId,expectedVersion:first.version,policy:{...defaultWorkBudgetPolicy,maxTokens:17}})
  await send('在同一任务中继续')
  assert.equal(physicalRequests,1,'累计额度不足不能先发模型请求再补计数')
+ const refused=[...readSessionEvents(agent.session)].reverse().find(event=>event.type==='turn/end')
+ assert.equal(refused?.type,'turn/end');if(refused?.type!=='turn/end'||refused.data.reason.kind!=='error')throw Error('职责额度不足应结束本次请求')
+ assert.equal(refused.data.reason.error.code,'teloa/budget-exhausted/tokens/work','Task claim 中的额度拒绝也保留原因和范围')
  assert.equal((await budgets.read(owner,{budgetAccountId:run.lineage.budgetAccountId})).usedTokens,17)
  assert.equal((await db.pool.query('select count(*)::int count from teloa_work_retries where owner_id=$1',[owner])).rows[0].count,2)
+ assert.deepEqual((await db.pool.query('select attempts,state,completed from teloa_work_retries where owner_id=$1 and completed=false',[owner])).rows,[{attempts:0,state:'ready',completed:false}],'拒绝回滚原子claim，不消耗重试次数')
+ assert.equal((await db.pool.query('select count(*)::int count from teloa_work_retry_claims where owner_id=$1',[owner])).rows[0].count,1,'被拒请求不保存claim')
+ assert.equal((await db.pool.query('select count(*)::int count from teloa_work_budget_reservations where owner_id=$1',[owner])).rows[0].count,1,'被拒请求不保存额度预留')
  const limited=await budgets.read(owner,{budgetAccountId:run.lineage.budgetAccountId})
  await budgets.configure(owner,{requestId:randomUUID(),budgetAccountId:run.lineage.budgetAccountId,expectedVersion:limited.version,policy:{...defaultWorkBudgetPolicy,maxConcurrent:1}})
  missingUsage=true

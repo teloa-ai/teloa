@@ -15,7 +15,10 @@ let tree:any={space:{id:'space',ownerId:'self',workspaceId:'default',title:'个�
 const second={...doc,id:'33333333-3333-4333-8333-333333333333',title:'设计规范',sourceId:'knowledge_33333333-3333-4333-8333-333333333333'}
 tree.nodes.push({...root,id:'page-2',parentId:'folder',type:'page',title:second.title,path:['root','folder','page-2'],knowledgeId:second.id,siblingOrder:1})
 const standalone=new URLSearchParams(window.location.search).has('standalone')
+const employeeCopy=new URLSearchParams(window.location.search).has('employee-copy'),copyResourceId='66666666-6666-4666-8666-666666666666'
+if(new URLSearchParams(window.location.search).has('root-page'))tree={...tree,nodes:[root,{...tree.nodes.find((node:any)=>node.id==='page'),parentId:root.id,path:[root.id,'page']}]}
 let resources:any[]=standalone?[]:[doc,local,second]
+if(employeeCopy)resources=[{...doc,id:copyResourceId}]
 const version={knowledgeId:docId,ownerId:'self',sourceId:'77777777-7777-4777-8777-777777777777',sourceType:'paste',version:1,contentHash:hash,bytes:112,createdAt:stamp,markdown:'# 产品定位\n\n帮助用户更简单地完成工作。\n\n## 使用方式\n选择相关资料，再提出目标。'}
 const calls:string[]=[],reads:number[]=[]
 let publishedVersions=[version]
@@ -24,7 +27,10 @@ let pauseSave=false,releaseSave:(()=>void)|undefined,failSave=false
 let pauseWithdraw=false,releaseWithdraw:(()=>void)|undefined
 let pauseDirectory=new URLSearchParams(window.location.search).has('defer-directory'),releaseDirectory:(()=>void)|undefined
 sources.push({...sources[0],id:second.sourceId,title:second.title,source:'产品资料 / 设计规范',knowledge:{...sources[0].knowledge,knowledgeId:second.id}})
-const api:any={reviseKnowledgeResource:async(input:any)=>{if(failSave){failSave=false;throw Object.assign(Error('保存暂不可用'),{code:'teloa/dependency-unavailable'})}if(pauseSave)await new Promise<void>(resolve=>{releaseSave=resolve});return {knowledge:{version:{...version,version:2,markdown:input.markdown}},resource:{...doc,version:2}}},directory:async()=>{const captured=resources;if(pauseDirectory)await new Promise<void>(resolve=>{releaseDirectory=resolve});return {drafts:[],resources:captured}},sources:async()=>sources,knowledgeTree:async()=>tree,listKnowledgeVersions:async()=>publishedVersions,readKnowledgeVersion:async(_id:string,requested:number)=>{reads.push(requested);return publishedVersions.find(row=>row.version===requested)},readContent:async()=>({resource:local,text:'# 发布检查\n\n核对产物与版本。'}),createKnowledgeFolder:async(input:any)=>{const node={...root,id:'new-folder',type:'folder',parentId:input.parentId,title:input.title,path:[...tree.nodes.find((n:any)=>n.id===input.parentId).path,'new-folder']};tree={...tree,space:{...tree.space,directoryRevision:2},nodes:[...tree.nodes,node]};calls.push('folder');return {space:tree.space,node}},withdraw:async(row:any)=>{if(pauseWithdraw)await new Promise<void>(resolve=>{releaseWithdraw=resolve});resources=resources.map(r=>r.id===row.id?{...r,status:'withdrawn',version:r.version+1}:r);return resources.find(r=>r.id===row.id)}}
+const api:any={reviseKnowledgeResource:async(input:any)=>{if(failSave){failSave=false;throw Object.assign(Error('保存暂不可用'),{code:'teloa/dependency-unavailable',rejected:true})}if(pauseSave)await new Promise<void>(resolve=>{releaseSave=resolve});return {knowledge:{version:{...version,version:2,markdown:input.markdown}},resource:{...doc,version:2}}},directory:async()=>{const captured=resources;if(pauseDirectory)await new Promise<void>(resolve=>{releaseDirectory=resolve});return {drafts:[],resources:captured}},sources:async()=>sources,knowledgeTree:async()=>tree,listKnowledgeVersions:async()=>publishedVersions,readKnowledgeVersion:async(_id:string,requested:number)=>{reads.push(requested);return publishedVersions.find(row=>row.version===requested)},readContent:async()=>({resource:local,text:'# 发布检查\n\n核对产物与版本。'}),createKnowledgeFolder:async(input:any)=>{const node={...root,id:'new-folder',type:'folder',parentId:input.parentId,title:input.title,path:[...tree.nodes.find((n:any)=>n.id===input.parentId).path,'new-folder']};tree={...tree,space:{...tree.space,directoryRevision:2},nodes:[...tree.nodes,node]};calls.push('folder');return {space:tree.space,node}},withdraw:async(row:any)=>{if(pauseWithdraw)await new Promise<void>(resolve=>{releaseWithdraw=resolve});resources=resources.map(r=>r.id===row.id?{...r,status:'withdrawn',version:r.version+1}:r);return resources.find(r=>r.id===row.id)}}
+const employeeKnowledgeReads:any[]=[]
+if(employeeCopy)api.employeeKnowledge={read:async(input:any)=>{employeeKnowledgeReads.push(input);throw Error('物理副本不能当作员工逻辑引用读取')}}
+;(window as any).__libraryEmployeeKnowledgeReads=employeeKnowledgeReads
 
 const standaloneReceipts=new Map<string,any>(standalone?JSON.parse(sessionStorage.getItem('library-test-server-receipts')??'[]'):[])
 let loseStandaloneReply=false
@@ -48,6 +54,7 @@ if(standalone){
  })
  api.reviseStandaloneKnowledge=standaloneApi.reviseStandaloneKnowledge;api.restoreStandaloneKnowledge=standaloneApi.restoreStandaloneKnowledge
 }
+if(new URLSearchParams(window.location.search).has('missing-source'))sources.splice(0,sources.length)
 ;(window as any).__standaloneKnowledgeWrites=standaloneWrites
 ;(window as any).__standaloneKnowledgeVersions=()=>publishedVersions
 ;(window as any).__standaloneLoseReply=()=>{loseStandaloneReply=true}

@@ -8,7 +8,7 @@
 .format{margin-right:auto;padding-left:2px;color:var(--teloa-muted);font-size:var(--teloa-font-caption);white-space:nowrap}
 .toolbar{flex:none}
 .toolbar button{width:32px;padding:6px}
-.editor>textarea{display:block;box-sizing:border-box;width:100%;min-height:500px;resize:vertical;padding:26px 28px;border:0;outline:0;background:var(--teloa-surface);color:var(--teloa-text);font:13px/1.75 ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;tab-size:2}
+.editor textarea{display:block;box-sizing:border-box;width:100%;min-height:500px;resize:vertical;padding:26px 28px;border:0;outline:0;background:var(--teloa-surface);color:var(--teloa-text);font:13px/1.75 ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;tab-size:2}
 .preview{box-sizing:border-box;min-height:500px;padding:28px 32px;overflow:auto;color:var(--teloa-text);font-size:var(--teloa-font-body);line-height:1.75}
 .preview>:first-child{margin-top:0}
 .preview>:last-child{margin-bottom:0}
@@ -30,5 +30,5 @@
 .preview [role=region]{overflow:auto}
 .preview hr{border:0;border-top:1px solid var(--teloa-border);margin:24px 0}
 .editor>footer{display:flex;justify-content:space-between;gap:12px;padding:8px 11px;border-top:1px solid var(--teloa-border);color:var(--teloa-muted);font-size:var(--teloa-font-caption)}
-.tabs button:focus-visible,.toolbar button:focus-visible,.editor>textarea:focus-visible{outline:2px solid var(--teloa-text);outline-offset:-2px}
-@media(max-width:760px){.editor>header{align-items:flex-start;flex-wrap:wrap;padding:7px 8px}.format{align-self:center}.toolbar{width:100%;max-width:100%;flex-wrap:wrap;padding-top:5px;border-top:1px solid var(--teloa-border)}.toolbar button{min-width:36px;min-height:36px}.editor>textarea,.preview{min-height:360px;padding:20px}.editor>footer{flex-wrap:wrap}}
+.tabs button:focus-visible,.toolbar button:focus-visible,.editor textarea:focus-visible{outline:2px solid var(--teloa-text);outline-offset:-2px}
+@media(max-width:760px){.editor>header{align-items:flex-start;flex-wrap:wrap;padding:7px 8px}.format{align-self:center}.toolbar{width:100%;max-width:100%;flex-wrap:wrap;padding-top:5px;border-top:1px solid var(--teloa-border)}.toolbar button{min-width:36px;min-height:36px}.editor textarea,.preview{min-height:360px;padding:20px}.editor>footer{flex-wrap:wrap}}

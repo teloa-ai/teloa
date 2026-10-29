@@ -32,3 +32,28 @@ test('多选字段只接受声明顺序且去重的规范串，必填不能为�
   assert.throws(()=>api.assertBusinessRecordFieldValue(tags,value),{code:'teloa/invalid-input'})
  assert.doesNotThrow(()=>api.assertBusinessRecordFieldValue({...tags,required:false},undefined))
 })
+
+test('日期错误明确规范UTC含毫秒格式，保持严格校验且不回显原始字段值',()=>{
+ for(const value of ['2026-10-28T15:11:38Z','2026-10-28T23:11:38.000+08:00','2026-02-30T00:00:00.000Z','PRIVATE-DATE'])assert.throws(()=>api.assertBusinessRecordFieldValue(field('datetime'),value),(error:unknown)=>{
+  assert.ok(error instanceof Error&&'details' in error)
+  assert.deepEqual(error.details,{reason:'datetime-format',field:'value',format:'YYYY-MM-DDTHH:mm:ss.sssZ',example:'2026-10-28T15:11:38.000Z'})
+  assert.match(error.message,/UTC.*3位毫秒.*Z/)
+  assert.ok(!JSON.stringify({message:error.message,details:error.details}).includes(value))
+  return true
+ })
+ assert.doesNotThrow(()=>api.assertBusinessRecordFieldValue(field('datetime'),'2026-10-28T15:11:38.000Z'))
+})
+
+test('基础字段超长错误只包含字段和长度事实，2000边界仍按UTF16严格执行',()=>{
+ const value='PRIVATE-TEXT-'+ '密'.repeat(2434)
+ assert.equal(value.length,2447)
+ assert.throws(()=>api.assertBusinessRecordFieldValue(field('text'),value),(error:unknown)=>{
+  assert.ok(error instanceof Error&&'details' in error)
+  assert.deepEqual(error.details,{reason:'field-value-too-long',field:'value',actualLength:2447,maxLength:2000,lengthUnit:'utf16-code-units'})
+  assert.match(error.message,/2447.*2000/)
+  assert.ok(!JSON.stringify({message:error.message,details:error.details}).includes('PRIVATE-TEXT-'))
+  return true
+ })
+ assert.doesNotThrow(()=>api.assertBusinessRecordFieldValue(field('text'),'😀'.repeat(1000)))
+ assert.throws(()=>api.assertBusinessRecordFieldValue(field('text'),'😀'.repeat(1000)+'字'),{code:'teloa/invalid-input'})
+})

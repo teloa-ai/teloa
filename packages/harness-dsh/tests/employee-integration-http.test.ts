@@ -29,7 +29,8 @@ test('独立员工HTTP/MCP鉴权、SDK和跨协议幂等、权限隔离、密钥
  Reflect.set(ctx,'credentials',credentials);Reflect.set(ctx,'webServer',{register:(route:any)=>{routes.push(route);return()=>{routes.splice(routes.indexOf(route),1)}}})
  // 这里检验HTTP/协议和持久来源；真实原生执行另在隔离工作台验收，不以此替身冒充。
  const unused=async():Promise<never>=>{throw new EmployeeApiError('service_unavailable','Local protocol fixture does not execute models.',503)}
- const runtime:EmployeeApiRuntime={prepare:unused,start:unused,read:unused,stop:unused,withdraw:unused,result:async()=>undefined}
+ let checkFailure:EmployeeApiError|undefined
+ const runtime:EmployeeApiRuntime={prepare:unused,start:unused,read:unused,stop:unused,withdraw:unused,result:async()=>undefined,check:async()=>{if(checkFailure)throw checkFailure}}
  host=createEmployeeIntegrationHost(ctx,{owner,pool:async()=>pool,employees:async()=>[role],scopes:async()=>['general'],runtime,admit:run=>Promise.resolve().then(run),report:()=>{}})
  server=createServer((req,res)=>{const path=new URL(req.url!,'http://127.0.0.1').pathname,route=routes.find(r=>r.kind==='exact'?r.path===path:path===r.path||path.startsWith(r.path+'/'));if(route)void route.handler(req,res);else res.writeHead(404).end()})
  await new Promise<void>(done=>server.listen(0,'127.0.0.1',done))
@@ -49,6 +50,28 @@ test('独立员工HTTP/MCP鉴权、SDK和跨协议幂等、权限隔离、密钥
  await assert.rejects(()=>client.startWork({...input,input:'不同正文'},{requestId}),{code:'idempotency_conflict'})
  await assert.rejects(()=>readClient.getWork(work.id),{code:'not_found'})
  await assert.rejects(()=>readClient.startWork(input,{requestId:randomUUID()}),{code:'forbidden'})
+ const firstTaskId=(await pool.query('select task_id from teloa_employee_api_rounds where work_id=$1 and round=1',[work.id])).rows[0].task_id as string
+ await t.test('HTTP受理的原工作经本人读写端点续办，冲突与可恢复错误保持分类且不输出回调文案',async()=>{
+  const current=await host!.owner('employee-integrations/work-for-task',{taskId:firstTaskId}) as {work:{id:string};canContinue:boolean}
+  assert.equal(current.work.id,work.id);assert.equal(current.canContinue,false)
+  assert.doesNotMatch(JSON.stringify(current),/apiKey|tokenHash|signingSecret|webhook/)
+  await assert.rejects(()=>host!.owner('employee-integrations/work-for-task',{taskId:'invalid'}),(error:any)=>error.code==='teloa/invalid-input'&&!/回调|HTTPS/.test(error.message))
+  await assert.rejects(()=>host!.owner('employee-integrations/continue-work',{taskId:firstTaskId,workId:randomUUID(),requestId:randomUUID(),expectedVersion:work.version,input:'继续核对'}),{code:'teloa/forbidden'})
+  const terminal=(await pool.query("update teloa_employee_api_work set state='failed',error=null,version=version+1 where id=$1 returning version",[work.id])).rows[0].version as number
+  const ownerInput={taskId:firstTaskId,workId:work.id,requestId:randomUUID(),expectedVersion:terminal,input:'从原工作继续核对'}
+  await assert.rejects(()=>host!.owner('employee-integrations/continue-work',{...ownerInput,requestId:randomUUID(),expectedVersion:terminal-1}),{code:'teloa/version-conflict'})
+  for(const failure of [new EmployeeApiError('model_unavailable','MODEL_SECRET_MUST_NOT_RENDER',409),new EmployeeApiError('permission_mode_unavailable','MODE_SECRET_MUST_NOT_RENDER',409),new EmployeeApiError('service_unavailable','SERVICE_SECRET_MUST_NOT_RENDER',503)]){
+   checkFailure=failure
+   await assert.rejects(()=>host!.owner('employee-integrations/continue-work',ownerInput),(error:any)=>error.code==='teloa/dependency-unavailable'&&!/SECRET|回调|HTTPS/.test(error.message)&&typeof error.details?.reason==='string')
+   assert.equal((await pool.query('select count(*)::int as count from teloa_employee_api_rounds where work_id=$1',[work.id])).rows[0].count,1,'可恢复拒绝不创建新轮次')
+  }
+  checkFailure=undefined
+  const next=await host!.owner('employee-integrations/continue-work',ownerInput) as {work:{id:string;round:number}}
+  assert.equal(next.work.id,work.id);assert.equal(next.work.round,2)
+  const retried=await host!.owner('employee-integrations/continue-work',ownerInput) as {work:{id:string;round:number}}
+  assert.equal(retried.work.id,work.id);assert.equal(retried.work.round,2)
+  assert.equal((await pool.query('select count(*)::int as count from teloa_employee_api_rounds where work_id=$1',[work.id])).rows[0].count,2,'同一请求只新增一轮')
+ })
  mcp=new Client({name:'teloa-test',version:'1'},{capabilities:{}})
  await mcp.connect(new StreamableHTTPClientTransport(new URL(origin+'/mcp'),{requestInit:{headers:{authorization:'Bearer '+issued.apiKey}}}) as Parameters<Client['connect']>[0])
  const toolList=await mcp.listTools();assert.equal(toolList.tools.length,7)
@@ -74,5 +97,7 @@ test('独立员工HTTP/MCP鉴权、SDK和跨协议幂等、权限隔离、密钥
  await assert.rejects(()=>client.getWork(work.id),{code:'unauthorized'})
  const replacement=new TeloaClient({baseUrl:origin,apiKey:rotated.apiKey});assert.equal((await replacement.getWork(work.id)).id,work.id)
  await host.owner('employee-integrations/revoke',{id:issued.integration.id});await assert.rejects(()=>replacement.getWork(work.id),{code:'unauthorized'})
+ const revoked=await host.owner('employee-integrations/work-for-task',{taskId:firstTaskId}) as {work:{id:string};canContinue:boolean}
+ assert.equal(revoked.work.id,work.id);assert.equal(revoked.canContinue,false,'历史仍可读，撤销不恢复续办权限')
  assert.equal(await credentials.readRecord(('teloa-employee-api/i'+issued.integration.id.replaceAll('-','')) as never),undefined)
 })

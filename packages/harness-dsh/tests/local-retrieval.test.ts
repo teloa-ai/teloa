@@ -888,3 +888,16 @@ test('尚未进入清理的旧 profile 对账跨模型切换后跳过，不阻�
  release.resolve();await cleanup
  assert.deepEqual(store.of('reconcile'),[],'不能下发跨切换保留下来的旧 hash')
 })
+
+test('本人界面语义试搜复用主体范围和有界摘录；拒绝自报身份和资料，未就绪不准备',async t=>{
+ let admitted=0
+ const e=await setup({admit:async work=>{admitted++;return work()}});t.after(()=>e.ctx.fiber.dispose())
+ const result=await e.handle('retrieval/search',{query:'报销流程',limit:3})
+ assert.deepEqual(result,fixture);assert.equal(admitted,1)
+ assert.deepEqual(e.store.of('search')[0]?.args.slice(0,3),[human,human.scopeIds,{query:'报销流程',limit:3}])
+ for(const payload of [{query:'报销',actor:human},{query:'报销',resourceIds:[resourceId]},{query:'报销',scopeIds:['other']},{query:' '},{query:'x',limit:9}])await assert.rejects(e.handle('retrieval/search',payload),{code:'teloa/invalid-input'})
+ assert.equal(e.store.of('search').length,1);assert.deepEqual(e.embedding.prepared,[])
+ const cold=await setup({},{phase:'unprepared'});t.after(()=>cold.ctx.fiber.dispose())
+ await assert.rejects(cold.handle('retrieval/search',{query:'报销'}),{code:'teloa/dependency-unavailable'})
+ assert.equal(cold.store.of('search').length,0);assert.deepEqual(cold.embedding.prepared,[])
+})

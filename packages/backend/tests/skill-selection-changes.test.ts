@@ -10,6 +10,7 @@ import {initializeSkillInstallations,SkillInstallationService,type NativeSkillMe
 import type {SkillInstallSourceBundle,SkillInstallSourceIdentity,SkillInstallSourceInput} from '../src/market/skill-install-source.ts'
 import {SkillAvailabilityService} from '../src/market/skill-availability.ts'
 import {SkillSelectionService} from '../src/market/skill-selection-changes.ts'
+import {marketTrustHash,normalizeMarketSourceTrust} from '../src/market/content-store.ts'
 
 let container:StartedPostgreSqlContainer,pool:Pool
 const at='2026-09-12T21:00:00.000Z',identity={id:randomUUID,now:()=>at},hash=(value:string|Uint8Array)=>createHash('sha256').update(value).digest('hex'),encoder=new TextEncoder()
@@ -28,6 +29,38 @@ function bundle(ownerId:string,fixed:SkillInstallSourceIdentity,version:string){
 before(async()=>{process.env.DOCKER_HOST='unix://'+join(homedir(),'.orbstack/run/docker.sock');process.env.TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE='/var/run/docker.sock';container=await new PostgreSqlContainer('postgres:17-alpine').start();pool=new Pool({connectionString:container.getConnectionUri()});await initializeSkillInstallations(pool)},{timeout:180_000})
 beforeEach(async()=>{await pool.query('truncate teloa_skill_selection_requests,teloa_skill_install_maintenance_requests,teloa_skill_install_availability,teloa_skill_install_usages,teloa_skill_install_requests,teloa_skill_selections,teloa_skill_installations')})
 after(async()=>{await pool?.end();await container?.stop()})
+
+test('同文件但信任发布者变化时保留两份安装，本人选择新来源不迁移旧加载引用',async()=>{
+ const owner=randomUUID(),reader=new Reader(),files=new Files();reader.owner=owner
+ const old={kind:'industry' as const,loadId:randomUUID(),itemInstanceId:randomUUID()},next={kind:'industry' as const,loadId:randomUUID(),itemInstanceId:randomUUID()}
+ const fixed=(input:typeof old)=>({kind:'industry-local' as const,loadId:input.loadId,itemInstanceId:input.itemInstanceId,contentId:randomUUID(),contentHash:hash(input.loadId),resourceId:'research-brief',resourceVersion:'1.0.0'})
+ const oldBundle=bundle(owner,fixed(old),'1.0.0'),nextBundle={...oldBundle.value,source:fixed(next)}
+ const trust=(publisher:string)=>normalizeMarketSourceTrust({publisher,repository:null,license:{status:'declared',value:'MIT'},signature:{status:'unverified',signer:null},compatibility:{teloa:'未声明',dsh:'未声明'},plugins:[],externalCapabilities:[],permissions:[],review:{conclusion:'needs-review',summary:'本人导入，未完成兼容性核对'}})
+ const beforeTrust=trust('SOC 1.3.0 导入'),afterTrust=trust('SOC 1.3.1 导入')
+ reader.values.set(JSON.stringify(old),{...oldBundle.value,trust:beforeTrust,trustHash:marketTrustHash(beforeTrust)})
+ reader.values.set(JSON.stringify(next),{...nextBundle,trust:afterTrust,trustHash:marketTrustHash(afterTrust)})
+ files.metadata.set(oldBundle.value.bundleHash,oldBundle.metadata)
+ const installs=new SkillInstallationService(pool,identity,reader,files),service=new SkillSelectionService(pool,identity)
+ const first=(await installs.install(owner,{requestId:randomUUID(),source:old,expectedBundleHash:oldBundle.value.bundleHash,expectedTrustHash:marketTrustHash(beforeTrust)})).installation
+ const target=(await installs.install(owner,{requestId:randomUUID(),source:next,expectedBundleHash:oldBundle.value.bundleHash,expectedTrustHash:marketTrustHash(afterTrust)})).installation
+ assert.notEqual(first.id,target.id)
+ assert.equal(first.bundleHash,target.bundleHash)
+ assert.notEqual(first.trustHash,target.trustHash)
+ assert.equal((await service.get(owner,{nativeName:first.native.name})).installationId,first.id,'新来源安装不会自动改本人当前选择')
+ const preview=await service.preview(owner,{currentInstallationId:first.id,targetInstallationId:target.id})
+ assert.deepEqual(preview.impact.industryUsages,[{loadId:old.loadId,itemInstanceId:old.itemInstanceId}])
+ const command={requestId:randomUUID(),nativeName:first.native.name,currentInstallationId:first.id,targetInstallationId:target.id,expectedSelectionVersion:preview.selection.version,expectedCurrentBundleHash:first.bundleHash,expectedTargetBundleHash:target.bundleHash,expectedImpactDigest:preview.impactDigest,industryUsages:[]}
+ const selected=await service.change(owner,command)
+ assert.equal(selected.current.installationId,target.id)
+ assert.deepEqual(selected.receipt.migratedIndustryUsages,[])
+ const directory=await installs.list(owner,{})
+ assert.equal(directory.items.length,2)
+ assert.equal(directory.usages.find(use=>use.loadId===old.loadId)?.installationId,first.id)
+ assert.equal(directory.usages.find(use=>use.loadId===next.loadId)?.installationId,target.id)
+ assert.deepEqual(await installs.get(owner,{installationId:first.id}),first,'原安装与可信固定记录完整保留')
+ assert.deepEqual((await new SkillAvailabilityService(pool,identity).selectedDirectory(owner)).map(row=>row.installation.id),[target.id],'原生默认目录读取本人刚确认的新安装')
+ assert.deepEqual(await service.change(owner,command),selected,'未知回包恢复同一请求，不重复推进选择版本')
+})
 
 async function fixture(){
  const owner=randomUUID(),reader=new Reader(),files=new Files();reader.owner=owner

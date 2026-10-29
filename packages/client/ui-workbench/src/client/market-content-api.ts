@@ -104,7 +104,8 @@ function pending(value:unknown):Pending{
 }
 const samePending=(a:Pending,b:Omit<Pending,'requestId'>)=>a.kind===b.kind&&a.logicalId===b.logicalId&&a.version===b.version&&a.hash===b.hash
 const requestFiles=(files:readonly {path:string;bytes:Uint8Array}[])=>files.map(file=>({path:file.path,base64:encode(file.bytes)}))
-const uploadTrust=(publisher:string):MarketTrust=>({publisher,repository:null,license:{status:'missing'},signature:{status:'unverified',signer:null},compatibility:{teloa:'未声明',dsh:'未声明'},plugins:[],externalCapabilities:[],permissions:[],review:{conclusion:'needs-review',summary:'本地上传来源尚未完成签名与兼容审查'}})
+// 文件名只属于上传来源，不能成为发布者身份；本地缺省信任始终未签名、待核对。
+const uploadTrust=():MarketTrust=>({publisher:'本人导入',repository:null,license:{status:'missing'},signature:{status:'unverified',signer:null},compatibility:{teloa:'未声明',dsh:'未声明'},plugins:[],externalCapabilities:[],permissions:[],review:{conclusion:'needs-review',summary:'本地上传来源尚未完成签名与兼容审查'}})
 function summaryItem(value:StoredSummary):MarketItem{
  const storage={contentId:value.id,createdAt:value.createdAt,loaded:false},source={kind:'stored' as const,contentId:value.id}
  if(value.kind==='atomic-skill'){
@@ -195,7 +196,7 @@ export function createMarketContentApi(call:Call,journal?:MarketContentJournal,n
   async importAtomic(value:AtomicSkillContent,name:string){
    if(!name.trim())throw Error('上传来源名称不能为空。')
    const identity={kind:'atomic-skill' as const,logicalId:value.id,version:value.version,hash:value.hash}
-   return send({kind:'atomic-skill',source:{kind:'upload',name:name.trim()},metadata:{id:value.id,title:value.title,version:value.version,categories:[...value.categories],...(value.localized?{localized:value.localized}:{})},trust:uploadTrust(name.trim()),files:requestFiles(value.files)},identity)
+   return send({kind:'atomic-skill',source:{kind:'upload',name:name.trim()},metadata:{id:value.id,title:value.title,version:value.version,categories:[...value.categories],...(value.localized?{localized:value.localized}:{})},trust:uploadTrust(),files:requestFiles(value.files)},identity)
   },
   async importIndustry(item:MarketItem,requestId?:string){
    if(item.source.kind!=='upload')throw Error('首批行业模板持久化只接受上传来源。')
@@ -205,7 +206,7 @@ export function createMarketContentApi(call:Call,journal?:MarketContentJournal,n
    const resolved=item.packageContent.resolved??[]
    const fixed=publicResources.map(resource=>{const value=resolved.find(row=>row.resourceId===resource.id);if(!value?.sourceContentId||!uuid(value.sourceContentId))throw Error('公共技能必须选择带真实 contentId 的已持久化来源。');return {resourceId:value.resourceId,sourceContentId:value.sourceContentId,sourceItemId:value.sourceItemId,sourceResourceId:value.sourceResourceId,sourceHash:value.sourceHash}})
    const identity={kind:'industry-template' as const,logicalId:item.manifest.id,version:item.manifest.version,hash:item.packageContent.hash}
-   return send({kind:'industry-template',source:{kind:'upload',name:item.source.name},manifestPath:item.packageContent.manifestPath,trust:item.trust??uploadTrust(item.source.name),files:requestFiles(item.packageContent.files),references:fixed},identity,requestId)
+   return send({kind:'industry-template',source:{kind:'upload',name:item.source.name},manifestPath:item.packageContent.manifestPath,trust:item.trust??uploadTrust(),files:requestFiles(item.packageContent.files),references:fixed},identity,requestId)
   },
   pendingGithubImport:()=>awaitingGithub?structuredClone(awaitingGithub):undefined,
   githubRecoveryMessage:()=>githubRecoveryError,

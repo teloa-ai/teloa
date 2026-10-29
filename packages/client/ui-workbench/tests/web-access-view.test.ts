@@ -161,7 +161,7 @@ function makeGrantApi(overrides:any={}):any{
  }
 }
 
-test('上网两项独立勾选默认都不勾；勾选后保存只回传那一条 anyArguments 规则；已授权态清单显示「搜索网页」而非空白',async()=>{
+test('现有搜索授权回显勾选；新增打开网页按完整集合保存，未授权项不默认勾选',async()=>{
  const changeCalls:any[]=[]
  const api=makeGrantApi({
   get:async()=>({roleVersion:5,grant:{roleId,roleVersion:5,state:'active',rules:[{name:'web_search',allowed:[],anyArguments:true}],createdAt:'2026-09-20T00:00:00.000Z'}}),
@@ -171,18 +171,19 @@ test('上网两项独立勾选默认都不勾；勾选后保存只回传那一�
  const app=mountComponent('RoleToolGrants.tsx','RoleToolGrants',{role:pausedEmployee(),api,resources,changed:()=>{}})
  await app.flush()
  assert.ok(app.find(el=>el.type==='li'&&app.contentOf(el)===zh('roleGrant.web.search')),'已授权清单应显示「搜索网页」而不是空白')
+ assert.ok(!app.wholeContent().includes(zh('roleGrant.pauseHint')),'已暂停且可编辑时不再提示先暂停员工')
  const searchLabel=app.find(el=>el.type==='label'&&app.contentOf(el).includes(zh('roleGrant.web.search'))&&app.contentOf(el).includes(zh('roleGrant.web.searchHint')))
  const searchInput=searchLabel.props.children[0]
- assert.equal(searchInput.props.checked,false,'搜索网页默认不勾')
+ assert.equal(searchInput.props.checked,true,'现有搜索网页授权必须回显')
  const fetchLabel=app.find(el=>el.type==='label'&&app.contentOf(el).includes(zh('roleGrant.web.fetch'))&&app.contentOf(el).includes(zh('roleGrant.web.fetchHint')))
  assert.equal(fetchLabel.props.children[0].props.checked,false,'打开网页默认不勾')
- searchInput.props.onChange({target:{checked:true}})
+ fetchLabel.props.children[0].props.onChange({target:{checked:true}})
  app.render()
  const saveButton=app.find(el=>el.type==='button'&&app.contentOf(el)===zh('roleGrant.save'))
  await saveButton.props.onClick()
  await app.flush()
  assert.equal(changeCalls.length,1)
- assert.deepEqual(changeCalls[0].rules,[{name:'web_search',allowed:[],anyArguments:true}])
+ assert.deepEqual(changeCalls[0].rules,[{name:'web_search',allowed:[],anyArguments:true},{name:'web_fetch',allowed:[],anyArguments:true}])
 })
 
 test('总开关关闭时（候选没有 web 规则）整节显示 disabledByGlobal，且不渲染任何勾选项',async()=>{
@@ -242,6 +243,7 @@ function makeRunApi(rows:any[]):any{
  return {
   pending:()=>undefined,recoveryMessage:()=>undefined,discard:()=>false,
   origin:async(taskId:string)=>contract.readTaskRunOrigin({taskId,runId:null,source:null}),
+  readiness:async(taskId:string,taskVersion:number)=>contract.readTaskRunReadiness({schema:'teloa.task-run-readiness/v1',taskId,taskVersion,ready:true}),
   list:async()=>rows,
   prepare:async()=>{throw Error('未使用')},
   recoverPrepare:async()=>{throw Error('未使用')},
