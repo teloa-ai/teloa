@@ -64,6 +64,20 @@ test('群续办与冻结结果映射可读取运行目录，损坏或跨业务�
  await assert.rejects(read({...input,businessContext:{...businessContext,resultMappings:[resultMapping,resultMapping]}}))
 })
 const configurationFailedRow={...row,linkVersion:0,state:'configuration_failed',evidence:null,agentPresetId:'standard',configurationError:{code:'teloa/preset-unavailable',stage:'preset-resolve',message:'标准模式暂不可用'},inputText:JSON.stringify({task:{id:taskId,version:1,title:'调查',goal:'核对证据',scope:'general'},role:{id:roleId,version:2,name:'调查岗',duty:'调查',dataScope:'只读',executionScope:'代拟',runtimeConfig:{agentPresetId:'standard'}}})}
+test('权限解析阶段：合法失败回包保留错误详情，不阻断同任务的其他运行',async()=>{
+ const configurationError={code:'teloa/permission-mode-unavailable',stage:'permission-resolve',message:'宿主没有配置请求的权限模式预设。'}
+ const failed={...configurationFailedRow,id:roleId,configurationError},calls:unknown[]=[]
+ const runs=await createTaskRunApi(async(method,payload)=>{calls.push([method,payload]);return [row,failed]}).list(taskId)
+ assert.equal(runs.length,2);assert.equal(runs[0]?.state,'ended');assert.equal(runs[1]?.state,'configuration_failed')
+ assert.deepEqual(runs[1]?.configurationError,configurationError)
+ assert.deepEqual(calls,[['task-runs/list',{taskId}]])
+})
+test('权限解析阶段：未知配置失败阶段仍按损坏宿主回包拒绝',async()=>{
+ for(const stage of ['permission-unknown','',null,42,{stage:'permission-resolve'}]){
+  const failed={...configurationFailedRow,configurationError:{...configurationFailedRow.configurationError,stage}}
+  await assert.rejects(createTaskRunApi(async()=>[failed]).list(taskId),{code:'teloa/invalid-host-response',message:'运行配置失败信息不正确。'})
+ }
+})
 test('本地业务的空摘要与可选空字段保留原固定快照，恢复原准备不重建或启动',async()=>{
  const object={...businessContext.object,summary:'',fields:[{label:'备注',value:''}]}
  assert.deepEqual(readBusinessRecordSnapshot(object,object.scope),object,'本地业务的正式回包契约允许这些空值')

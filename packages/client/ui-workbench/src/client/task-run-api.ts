@@ -11,7 +11,8 @@ export type RunPlanMethodSource={artifactId:string;version:number;basisHash:stri
 export type RunPlanContext={event?:RunPlanEventContext;occurrenceId:string;goal:string;dataScope:string;delivery:string;notice?:string;work?:RunPlanWorkContext;methodSource?:RunPlanMethodSource}
 export type RunIndustryContext={taskId:string;sourceDigest:string;method:string;requirements:string[];inputs:string[];output:string;skills:Array<{id:string;title:string;version:string}>;notice:string}
 export type RunBusinessContext={taskId:string;sourceId:string;object:BusinessObjectSnapshot;updates?:BusinessObjectSnapshot[];notice:string}
-export type RunConfigurationError={code:string;stage:'model-resolve'|'preset-resolve'|'session-create'|'session-receipt'|'session-inspect';message:string;actualAgentPresetId?:string}
+const runConfigurationErrorStages=['model-resolve','permission-resolve','preset-resolve','session-create','session-receipt','session-inspect'] as const
+export type RunConfigurationError={code:string;stage:typeof runConfigurationErrorStages[number];message:string;actualAgentPresetId?:string}
 export type TaskRunSubagentState='reserved'|'started'|'ended'|'abandoned'
 export type TaskRunSubagentView={state:TaskRunSubagentState;createdAt:string;recoveryId?:string;childSessionId?:string;depth?:number;startedAt?:string;endedAt?:string;stopReason?:string;tokenEstimate?:number}
 /** 只读聊天呈现；身份来自本人原预约和冻结 Run，不来自消息正文。 */
@@ -133,7 +134,7 @@ function readRow(value:unknown):RunView{
  if(r.modelStatus!==undefined&&!modelPolicy)throw Error('模型观察缺少固定策略。')
  const modelStatus=r.modelStatus===undefined?undefined:readTaskRunModelStatus(r.modelStatus,modelPolicy!)
  if((r.agentPresetId===undefined)!==(agentPresetId===undefined)||r.agentPresetId!==undefined&&(!preset(r.agentPresetId)||r.agentPresetId!==agentPresetId))throw Error('执行运行配置格式不正确。')
- if(r.configurationError!==undefined){const error=taskInput(r.configurationError,['code','stage','message','actualAgentPresetId']);if(typeof error.code!=='string'||!/^teloa\/[a-z0-9-]+$/.test(error.code)||!['model-resolve','preset-resolve','session-create','session-receipt','session-inspect'].includes(String(error.stage))||typeof error.message!=='string'||!error.message.trim()||error.message.length>1000||(error.actualAgentPresetId!==undefined&&!preset(error.actualAgentPresetId)))throw Error('运行配置失败信息不正确。');configurationError={code:error.code,stage:error.stage as RunConfigurationError['stage'],message:error.message,...(error.actualAgentPresetId===undefined?{}:{actualAgentPresetId:error.actualAgentPresetId as string})}}
+ if(r.configurationError!==undefined){const error=taskInput(r.configurationError,['code','stage','message','actualAgentPresetId']);if(typeof error.code!=='string'||!/^teloa\/[a-z0-9-]+$/.test(error.code)||!(runConfigurationErrorStages as readonly unknown[]).includes(error.stage)||typeof error.message!=='string'||!error.message.trim()||error.message.length>1000||(error.actualAgentPresetId!==undefined&&!preset(error.actualAgentPresetId)))throw Error('运行配置失败信息不正确。');configurationError={code:error.code,stage:error.stage as RunConfigurationError['stage'],message:error.message,...(error.actualAgentPresetId===undefined?{}:{actualAgentPresetId:error.actualAgentPresetId as string})}}
  if((r.state==='configuration_failed')!==!!configurationError)throw Error('运行配置失败状态不一致。')
  let planContext:RunPlanContext|undefined
  if(snapshot.planContext!==undefined){

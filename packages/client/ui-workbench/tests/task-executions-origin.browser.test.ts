@@ -17,6 +17,7 @@ const source={kind:'conversation-work',sessionId:'original-platform-session',req
 const f=window.originFixture={mode:window.originMode||'parent',opens:[],calls:[],holdOrigin:false,waiting:false,release:()=>{}};
 const ordinary=f.mode.startsWith('ordinary'),prepared=['ordinary','ordinary-pending','ordinary-recovery'].includes(f.mode);
 const row={id,taskId,roleId,taskVersion:1,roleVersion:2,linkVersion:1,sessionId:'failed-run-session',nativeRequestId:id,state:prepared?'prepared':'ended',evidence:prepared?null:{state:'ended',turn:0,messageSeq:1,endSeq:2,reason:ordinary?'completed':'error'},allowedTools:[],skills:[],knowledge:[],memory:[],inputText:JSON.stringify({task:{id:taskId,version:1,title:'Investigate',goal:'Check evidence',scope:'general'},role:{id:roleId,version:2,name:'Investigator',duty:'Investigate',dataScope:'Read only',executionScope:'Draft'}}),createdAt:'2026-10-12T00:00:00.000Z'};
+if(f.mode==='permission-failed')Object.assign(row,{state:'configuration_failed',evidence:null,configurationError:{code:'teloa/permission-mode-unavailable',stage:'permission-resolve',message:'宿主没有配置请求的权限模式预设。'}});
 if(f.mode.startsWith('owner-')){
  const executor={kind:'owner',grantId:source.requestId,grantVersion:1};Object.assign(row,{roleId:null,roleVersion:null,executor,evidence:{state:'ended',turn:0,messageSeq:1,endSeq:2,reason:'completed'},deliveryCheck:{state:f.mode==='owner-unknown'?'unknown':'review-required'},inputText:JSON.stringify({schema:'teloa.task-run-input/v3',executor,allowedTools:[],task:{id:taskId,version:1,title:'Investigate',goal:'Check evidence',scope:'general'},skills:[],knowledge:[]})});
 }
@@ -60,6 +61,16 @@ test('普通非父任务保留原prepared执行启动控制',async t=>{
  const page=await mount(t,'ordinary');await page.getByRole('button',{name:'Start',exact:true}).waitFor()
  assert.equal(await page.locator('[data-teloa-focus="prepare"]').count(),0)
  assert.equal(await page.getByRole('button',{name:'Return to original request',exact:true}).count(),0)
+})
+test('权限解析失败显示三语失败步骤，仍可返回原交办且不派发执行',async t=>{
+ for(const [locale,stage,back] of [['zh-CN','失败步骤：解析运行配置','返回原交办'],['zh-Hant','失敗步驟：解析執行設定','返回原交辦'],['en','Failed at: Resolve run configuration','Return to original request']] as const){
+  const page=await mount(t,'permission-failed',locale)
+  await page.getByText(stage,{exact:true}).waitFor()
+  await page.getByRole('button',{name:back,exact:true}).click()
+  assert.deepEqual(await page.evaluate(()=>window.originFixture.opens),['original-platform-session'])
+  assert.equal(await page.getByRole('textbox',{name:'Original conversation draft'}).inputValue(),'Keep the original input')
+  assert.equal(await page.evaluate(()=>window.originFixture.calls.every(call=>['task-runs/list','task-runs/origin','task-runs/readiness'].includes(call.method))),true)
+ }
 })
 test('已完成原Run隐藏无效准备按钮且保留原结果入口',async t=>{
  const page=await mount(t,'ordinary-ended');await page.getByText('Investigator',{exact:true}).waitFor()

@@ -36,7 +36,7 @@ const terminal=(state:RunView['state'])=>['ended','withdrawn','configuration_fai
 const noExecutionTools=(row:RunView)=>row.state==='prepared'&&row.executor?.kind!=='owner'&&(row.toolRules??[]).length===0
 /** 服务端 prepare 期空工具拒绝的可操作原因；只用于选择提示，其他 teloa/conflict 仍走通用错误。 */
 const isRoleRunToolGateError=(error:unknown):boolean=>error!==null&&typeof error==='object'&&'code' in error&&(error as {code?:unknown}).code==='teloa/conflict'&&'details' in error&&(error as {details?:{reason?:unknown}}).details?.reason==='role-run-no-execution-tools'
-const configurationStages={'model-resolve':'taskExecution.stage.resolve','preset-resolve':'taskExecution.stage.resolve','session-create':'taskExecution.stage.create','session-receipt':'taskExecution.stage.receipt','session-inspect':'taskExecution.stage.inspect'} as const
+const configurationStages={'model-resolve':'taskExecution.stage.resolve','permission-resolve':'taskExecution.stage.resolve','preset-resolve':'taskExecution.stage.resolve','session-create':'taskExecution.stage.create','session-receipt':'taskExecution.stage.receipt','session-inspect':'taskExecution.stage.inspect'} as const
 
 function TaskRunFlowDetails({run,api}:{run:RunView;api:TaskRunApi}){
  const {locale,t}=useI18n()
