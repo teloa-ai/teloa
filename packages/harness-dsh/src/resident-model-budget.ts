@@ -117,6 +117,7 @@ export function installResidentModelBudget(ctx:Context,options:Options):()=>void
   if(!request.sessionId){yield* next();return}
   const run=await options.resolveRun(request.sessionId)
   const routing=run?null:await options.resolveRouting?.(request.sessionId)
+  // 首页和员工单聊的手动对话没有 Task/Run 或后台路由来源，不使用自动工作的累计额度。
   if(!run&&!routing){yield* next();return}
   if(run&&(!run.roleSnapshot&&run.executor?.kind!=='owner'||!run.lineage))throw new WorkError('teloa/conflict','历史任务需要建立新的受控执行，不能自动重放。')
   const position=nativeInput.modelPosition(request)
