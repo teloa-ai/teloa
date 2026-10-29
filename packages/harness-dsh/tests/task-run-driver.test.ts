@@ -21,7 +21,7 @@ test('固定整项控制未 active 或读口缺失时，prepare 后仍不可领�
   let claims=0,checks=0,sends=0
   const run={id:'run',state:'prepared',allowedTools:['bash'],lineage:{}} as TaskRun
   const driver=new TaskRunDriver({get:async()=>run,executionScope:async()=>{throw Error('暂停前不能读取发送目标')},claim:async()=>{claims++;throw Error('暂停前不能领取')},record:async()=>run,requestStop:async()=>run},{check:async()=>{checks++},send:async()=>{sends++},stop:async()=>{},events:async()=>[],...(state?{controlState:async()=>state}:{})})
-  await assert.rejects(driver.start('owner',{runId:'run'},new AbortController().signal),{code:'teloa/forbidden'})
+  await assert.rejects(driver.start('owner',{runId:'run'},new AbortController().signal),{code:'teloa/forbidden',details:{reason:'work-control-inactive'}})
   assert.deepEqual({claims,checks,sends},{claims:0,checks:0,sends:0});assert.equal(run.state,'prepared')
  }
 })

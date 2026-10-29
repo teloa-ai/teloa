@@ -30,6 +30,28 @@ beforeEach(async()=>{await pool.query('truncate teloa_skill_selection_requests,t
 
 test('预览仅检查固定bundle并返回无字节文件清单',async()=>{const {reader,service}=setup(),input={kind:'atomic' as const,contentId:atomicId};reader.values.set(JSON.stringify(input),bundle());const value=await service.preview(owner,{source:input});assert.deepEqual(value,{source:atomicSource,bundleHash,native,files:[{path:'SKILL.md',hash:hash('skill'),size:5}]});assert.deepEqual(await service.list(owner,{}),{items:[],usages:[]})})
 
+test('包升级仅改变内容身份时，本人确认沿用严格等价方法只登记新usage并核验文件，不重复publish',async()=>{
+ const {reader,service,files}=setup(),old={kind:'industry' as const,loadId:randomUUID(),itemInstanceId:randomUUID()},next={kind:'industry' as const,loadId:randomUUID(),itemInstanceId:randomUUID()}
+ const first=trustedBundle(),make=(input:typeof old)=>({...first,source:{kind:'industry-local' as const,loadId:input.loadId,itemInstanceId:input.itemInstanceId,contentId:randomUUID(),contentHash:hash(input.loadId),resourceId:'research-brief',resourceVersion:'1.0.0'}})
+ reader.values.set(JSON.stringify(old),make(old));reader.values.set(JSON.stringify(next),make(next))
+ const install=(source:typeof old)=>service.install(owner,{requestId:randomUUID(),source,expectedBundleHash:first.bundleHash,expectedTrustHash:first.trustHash})
+ const original=(await install(old)).installation
+ const preview=await service.preview(owner,{source:next})
+ assert.notEqual(preview.source.contentId,original.source.contentId)
+ assert.equal(preview.trustHash,original.trustHash)
+ assert.deepEqual((await service.list(owner,{})).usages.map(use=>use.loadId),[old.loadId],'预览不能替本人登记新加载')
+ const reused=await install(next)
+ assert.deepEqual(reused.installation,original,'保留原安装、来源、版本及选用状态')
+ assert.ok(reused.source.kind!=='atomic')
+ assert.equal(reused.source.loadId,next.loadId)
+ assert.deepEqual(files.published,[original.id])
+ assert.deepEqual(files.verified,[original.id])
+ const listed=await service.list(owner,{})
+ assert.equal(listed.items.length,1)
+ assert.deepEqual(new Set(listed.usages.map(use=>use.loadId)),new Set([old.loadId,next.loadId]))
+ assert.ok(listed.usages.every(use=>use.installationId===original.id))
+})
+
 test('安装预览如实列出 Skill、独立插件、MCP 连接和权限，invalid 签名拒装',async()=>{
  const {reader,service}=setup(),input={kind:'atomic' as const,contentId:atomicId},unverified=trustedBundle()
  reader.values.set(JSON.stringify(input),unverified)

@@ -109,7 +109,7 @@ function world(options:Options={}){
   sleep:async()=>{resting();if(options.hold)await held},now:()=>clock++,waitMs:options.knowledgeSlow?3:20000,
   ...(options.audit?{audit:(entry:unknown)=>{options.audit!.push(entry)}}:{}),
  }
- return {calls,release,sleeping,handler:createIndustryPrepareHandler(owner,async()=>ports),writes:()=>calls.filter(([endpoint])=>mutating.has(endpoint)),record:()=>state.record,migrate:()=>{state.migrated=true}}
+ return {ports,calls,release,sleeping,handler:createIndustryPrepareHandler(owner,async()=>ports),writes:()=>calls.filter(([endpoint])=>mutating.has(endpoint)),record:()=>state.record,migrate:()=>{state.migrated=true}}
 }
 const byId=(r:any,id:string)=>r.rows.find((row:any)=>row.itemInstanceId===id)
 // 官方目录出品的纯内容技能信任声明（official-catalog.ts officialCatalogTrust 的形状）
@@ -547,4 +547,72 @@ test('prepare：应用启用后待重启时如实说明，员工保持暂停；�
  const failed:any=await f.handler('industry-loads/prepare',{loadId,expectedDigest:fr.digest})
  assert.deepEqual(failed.results.filter((x:any)=>x.itemInstanceId===G).map((x:any)=>[x.step,x.outcome,x.code]),[['plugin','failed','teloa/dependency-unavailable']])
  assert.equal(byId(failed.readiness,G).state,'auto')
+})
+
+
+test('升级沿用的员工与资料按 carriedFrom 读取真实准备状态，不创建第二份对象',async()=>{
+ const w=world({rolePaused:true,noRoleSkill:true})
+ const original=w.ports.loads
+ w.ports.loads=async(endpoint,payload,signal)=>{
+  const load=await original(endpoint,payload,signal) as Record<string,any>
+  return {...load,items:load.items.map((item:any)=>item.instanceId===R?{...item,instanceId:'f1111111-1111-4111-8111-111111111111',carriedFrom:R}:item.instanceId===K?{...item,instanceId:'f2222222-2222-4222-8222-222222222222',carriedFrom:K}:item)}
+ }
+ const knowledge=w.ports.knowledge
+ w.ports.knowledge=async(endpoint,payload,signal)=>endpoint==='industry-knowledge/list'?{items:[{loadId:otherLoad,itemInstanceId:K,state:'active',revision:2}]}:knowledge(endpoint,payload,signal)
+ const roles=w.ports.roles
+ w.ports.roles=async(endpoint,payload,signal)=>{
+  const result=await roles(endpoint,payload,signal) as any
+  return endpoint==='industry-roles/list'?{items:result.items.map((row:any)=>({...row,loadId:otherLoad}))}:result
+ }
+ const handler=createIndustryPrepareHandler(owner,async()=>w.ports)
+ const ready=await handler('industry-loads/readiness',{loadId}) as any
+ assert.equal(ready.rows.find((row:any)=>row.itemInstanceId==='f2222222-2222-4222-8222-222222222222').state,'ready')
+ assert.equal(ready.rows.find((row:any)=>row.itemInstanceId==='f1111111-1111-4111-8111-111111111111').entry,'role-resume')
+ assert.equal(w.calls.filter(([endpoint])=>endpoint.endsWith('/instantiate')).length,0)
+})
+
+function unlinkedLocalMethod(change?:(row:Record<string,any>)=>Record<string,any>,observed='available'){
+ const w=world({skillPreinstalled:true,localSkill:true,s1Trust:null,rolePaused:true,noRoleSkill:true,observeState:observed})
+ const original=w.ports.skills;let linked=false
+ w.ports.skills=async(endpoint,payload,signal)=>{
+  const result=await original(endpoint,payload,signal) as Record<string,any>
+  if(endpoint!=='skill-installations/list')return result
+  const row={...result.items[0],source:{...result.items[0].source,loadId:otherLoad,contentId:'c8888888-0000-4000-8000-000000000000',contentHash:hex('9')}}
+  return {items:[change?change(row):row],usages:[{loadId:linked?loadId:otherLoad,itemInstanceId:S1,installationId:INST}]}
+ }
+ return {...w,handler:createIndustryPrepareHandler(owner,async()=>w.ports),link:()=>{linked=true}}
+}
+
+test('升级未变本地方法识别旧安装，仍需本人关联当前加载；只读观测不安装也不自动计就绪',async()=>{
+ const w=unlinkedLocalMethod(),before=await w.handler('industry-loads/readiness',{loadId}) as any
+ assert.deepEqual([byId(before,S1).state,byId(before,S1).entry],['needs-user','skill-link'])
+ assert.ok(w.calls.some(([endpoint,payload])=>endpoint==='skill-installations/observe'&&payload.installationId===INST))
+ await w.handler('industry-loads/prepare',{loadId,expectedDigest:before.digest})
+ assert.equal(w.calls.some(([endpoint])=>endpoint==='skill-installations/install'),false,'一键准备不能替代本人沿用确认')
+ w.link()
+ const after=await w.handler('industry-loads/readiness',{loadId}) as any
+ assert.equal(byId(after,S1).state,'ready')
+ assert.notEqual(after.digest,before.digest)
+})
+
+test('已有相同安装但工作区停用、缺失、遮蔽或观测失败仍不能计就绪',async()=>{
+ for(const state of ['disabled','missing','shadowed','unknown']){
+  const w=unlinkedLocalMethod(undefined,state),ready=await w.handler('industry-loads/readiness',{loadId}) as any
+  assert.deepEqual([byId(ready,S1).state,byId(ready,S1).entry],['needs-user','skill-link'],state)
+  assert.equal(w.calls.some(([endpoint])=>endpoint==='skill-installations/install'),false,state)
+ }
+})
+
+test('跨包方法识别不放宽文件、信任、资源版本或任一原生元数据校验',async()=>{
+ const changes=[
+  (row:Record<string,any>)=>({...row,bundleHash:hex('6')}),
+  (row:Record<string,any>)=>({...row,trustHash:hex('6')}),
+  (row:Record<string,any>)=>({...row,source:{...row.source,resourceVersion:'2.0.0'}}),
+  ...['name','description','bodyHash','modelInvocable','userInvocable'].map(key=>(row:Record<string,any>)=>({...row,native:{...row.native,[key]:typeof row.native[key]==='boolean'?!row.native[key]:'changed'}})),
+ ]
+ for(const change of changes){
+  const w=unlinkedLocalMethod(change),ready=await w.handler('industry-loads/readiness',{loadId}) as any
+  assert.deepEqual([byId(ready,S1).state,byId(ready,S1).entry],['needs-user','skill-confirm'])
+  assert.equal(w.calls.some(([endpoint])=>endpoint==='skill-installations/install'),false)
+ }
 })

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import type {Conversation} from '@teloa/contract'
-import {latestRoleConversation,roleCanStartConversation} from '../src/client/role-conversation-selection.ts'
+import {latestRoleConversation,roleCanStartConversation,readCurrentRoleForConversation} from '../src/client/role-conversation-selection.ts'
 import type {PresentedConversation} from '../src/client/work-presentation.ts'
 
 const conversation=(id:string,status:Conversation['status']='ready'):Conversation=>({id:'work-'+id,sessionId:id,requestedSessionId:id,ownerId:'owner',title:'会话 '+id,scopeIds:['general'],version:1,status,createdAt:'2026-09-01T00:00:00.000Z'})
@@ -34,4 +34,13 @@ test('暂停仍可开始聊天，离职才禁止新会话',()=>{
   assert.equal(roleCanStartConversation('active'),true)
   assert.equal(roleCanStartConversation('paused'),true)
   assert.equal(roleCanStartConversation('retired'),false)
+})
+
+test('员工新建工作每次读取最新版；目录失败不回落旧会话版本',async()=>{
+ let version=2,reads=0
+ const read=async()=>{reads++;return [{id:'employee',state:'active' as const,version,scopes:['SOC']}]}
+ assert.equal((await readCurrentRoleForConversation(read,'employee')).version,2)
+ version=3;assert.equal((await readCurrentRoleForConversation(read,'employee')).version,3);assert.equal(reads,2)
+ await assert.rejects(readCurrentRoleForConversation(async()=>{throw new Error('offline')},'employee'),/offline/)
+ await assert.rejects(readCurrentRoleForConversation(async()=>[],'employee'),{code:'teloa/not-found'})
 })

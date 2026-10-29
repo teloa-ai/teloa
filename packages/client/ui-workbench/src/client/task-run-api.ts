@@ -1,4 +1,5 @@
-import {WorkError,readWorkExecutor,isConversation,readTaskRunOrigin,readRunPlanEventContext,isMessageReference,readBusinessSourceMappingDefinition,readBusinessObjectTypeDefinition,businessSourceMappingLimits,type RunPlanEventContext,type Conversation,savedArtifactSource,artifactContent,type SavedArtifactSource,type ArtifactContent} from '@teloa/contract'
+import {createEmployeeApiWorkApi} from './employee-api-work-api.ts'
+import {WorkError,readWorkExecutor,isConversation,readTaskRunOrigin,readTaskRunReadiness,readRunPlanEventContext,isMessageReference,readBusinessSourceMappingDefinition,readBusinessObjectTypeDefinition,businessSourceMappingLimits,type RunPlanEventContext,type Conversation,savedArtifactSource,artifactContent,type SavedArtifactSource,type ArtifactContent} from '@teloa/contract'
 import {readManagedRunSkill,type ManagedRunSkillView} from './task-run-managed-skill.ts'
 import {createConfirmedFlowApi} from './flow-api.ts'
 import type {TaskRequestJournal} from './task-api.ts'
@@ -16,7 +17,9 @@ export type TaskRunSubagentView={state:TaskRunSubagentState;createdAt:string;rec
 /** 只读聊天呈现；身份来自本人原预约和冻结 Run，不来自消息正文。 */
 export type TaskRunChatPresentation={scope:string;conversation:Conversation;sessionId:string;runId:string;taskId:string;taskVersion:number;roleId:string|null;roleVersion:number|null;nativeRequestId:string;title:string;goal:string}
 export type TaskRunDeliveryCheck={state:'saved'|'review-required'|'unknown'}
-export type RunView={deliveryCheck?:TaskRunDeliveryCheck;title?:string;roleId?:string|null;executor?:import('@teloa/contract').WorkExecutor;scope?:string;roleSnapshot?:RunRoleSnapshot;lineage?:WorkLineage;industryContext?:RunIndustryContext;planContext?:RunPlanContext;businessContext?:RunBusinessContext;toolRules?:TaskToolArgumentRule[];subagents?:TaskRunSubagentView[];contextTokenEstimate?:number;webAccess?:WebAccessEntry[];id:string;taskId:string;sessionId:string;nativeRequestId:string;state:'prepared'|'submitting'|'accepted'|'active'|'ended'|'withdrawn'|'configuration_failed';reason?:string;stopRequestedAt:string|null;flowId?:string;agentPresetId?:string;modelPolicy?:TaskRunModelPolicy;modelStatus?:TaskRunModelStatus;configurationError?:RunConfigurationError;taskVersion:number;roleVersion:number|null;goal:string;roleName:string;createdAt:string;skills:{name:string;sha256:string;managed?:ManagedRunSkillView}[];knowledge:{id:string;version:number;title:string;sourceVersion:string}[]}
+export type RunPermissionMode='danger-full-access'|'workspace-write'|'read-only'
+const readRunPermissionMode=(value:unknown):RunPermissionMode=>{if(typeof value!=='string'||!['danger-full-access','workspace-write','read-only'].includes(value))throw Error('执行权限模式不正确。');return value as RunPermissionMode}
+export type RunView={permissionMode?:RunPermissionMode;modelPolicyOverride?:true;deliveryCheck?:TaskRunDeliveryCheck;title?:string;roleId?:string|null;executor?:import('@teloa/contract').WorkExecutor;scope?:string;roleSnapshot?:RunRoleSnapshot;lineage?:WorkLineage;industryContext?:RunIndustryContext;planContext?:RunPlanContext;businessContext?:RunBusinessContext;toolRules?:TaskToolArgumentRule[];subagents?:TaskRunSubagentView[];contextTokenEstimate?:number;webAccess?:WebAccessEntry[];id:string;taskId:string;sessionId:string;nativeRequestId:string;state:'prepared'|'submitting'|'accepted'|'active'|'ended'|'withdrawn'|'configuration_failed';reason?:string;stopRequestedAt:string|null;flowId?:string;agentPresetId?:string;modelPolicy?:TaskRunModelPolicy;modelStatus?:TaskRunModelStatus;configurationError?:RunConfigurationError;taskVersion:number;roleVersion:number|null;goal:string;roleName:string;createdAt:string;skills:{name:string;sha256:string;managed?:ManagedRunSkillView}[];knowledge:{id:string;version:number;title:string;sourceVersion:string}[]}
 const planContextNotice='资料范围是工作说明，不授予读取或执行权限；实际权限以岗位授权为准。'
 const planMethodSourceNotice='以下是本人计划已核对的固定成果版本全文，仅作为本轮资料，不授予工具、应用、文件或其他执行权限。'
 const planWorkContextNotice='以下模板要求是本轮待获取或核实的资料，不表示已经提供输入；方法与交付要求仅供任务参考，Skill 声明不代表已安装或授权，不增加执行权限。'
@@ -86,7 +89,7 @@ function read(value:unknown):RunView{
  catch(error){throw new WorkError('teloa/invalid-host-response',error instanceof Error&&error.message?error.message:'执行记录格式不正确。')}
 }
 function readRow(value:unknown):RunView{
- const r=taskInput(value,['id','taskId','roleId','taskVersion','roleVersion','linkVersion','sessionId','nativeRequestId','state','evidence','stopRequestedAt','allowedTools','argumentRules','inputText','createdAt','skills','knowledge','memory','flowId','agentPresetId','configurationError','subagents','contextTokenEstimate','webAccess','groupContext','groupReference','modelPolicy','modelStatus','roleSnapshot','lineage','executor','deliveryCheck'])
+ const r=taskInput(value,['id','taskId','roleId','taskVersion','roleVersion','linkVersion','sessionId','nativeRequestId','state','evidence','stopRequestedAt','allowedTools','argumentRules','inputText','createdAt','skills','knowledge','memory','flowId','agentPresetId','configurationError','subagents','contextTokenEstimate','webAccess','groupContext','groupReference','modelPolicy','modelStatus','roleSnapshot','lineage','executor','deliveryCheck','permissionMode','modelPolicyOverride'])
  const ownerExecutor=r.executor===undefined?undefined:readWorkExecutor(r.executor),owner=ownerExecutor?.kind==='owner'
  if(ownerExecutor&&!owner)throw Error('本人执行身份不正确。')
  // 旧宿主没有这一位：缺字段回落 null，不影响其余严格读取。
@@ -107,7 +110,7 @@ function readRow(value:unknown):RunView{
   if(!owner||r.state!=='ended'||reason!=='completed'||stopRequestedAt!==null||typeof check.state!=='string'||!['saved','review-required','unknown'].includes(check.state))throw Error('交付检查与原执行状态不一致。')
   deliveryCheck={state:check.state as TaskRunDeliveryCheck['state']}
  }
- const snapshot=taskInput(JSON.parse(r.inputText),['schema','lineage','task','role','skills','knowledge','memory','tools','planContext','industryContext','businessContext','groupContext','groupReference','groupTopic','groupContinuation','modelPolicy','executor','allowedTools','agentPresetId','artifactRevision']),task=taskInput(snapshot.task,['id','version','title','goal','scope'])
+ const snapshot=taskInput(JSON.parse(r.inputText),['schema','lineage','task','role','skills','knowledge','memory','tools','planContext','industryContext','businessContext','groupContext','groupReference','groupTopic','groupContinuation','modelPolicy','executor','allowedTools','agentPresetId','artifactRevision','permissionMode','modelPolicyOverride']),task=taskInput(snapshot.task,['id','version','title','goal','scope'])
  if(snapshot.groupContinuation!==undefined)checkGroupContinuation(snapshot.groupContinuation)
  if(owner?snapshot.schema!=='teloa.task-run-input/v3':snapshot.schema!==undefined&&snapshot.schema!=='teloa.task-run-input/v2')throw Error('执行输入版本不正确。')
  if(owner&&(JSON.stringify(readWorkExecutor(snapshot.executor))!==JSON.stringify(ownerExecutor)||JSON.stringify(snapshot.allowedTools)!==JSON.stringify(r.allowedTools)||snapshot.task===undefined||snapshot.role!==undefined||r.roleSnapshot!==undefined))throw Error('本人执行来源与快照不一致。')
@@ -120,7 +123,12 @@ function readRow(value:unknown):RunView{
  let agentPresetId:string|undefined,configurationError:RunConfigurationError|undefined
  if(role.runtimeConfig!==undefined)agentPresetId=readRoleRuntimeConfig(role.runtimeConfig).agentPresetId
  const modelPolicy=snapshot.modelPolicy===undefined?undefined:readTaskRunModelPolicy(snapshot.modelPolicy)
- if(modelPolicy)assertRoleModelPolicy(role.runtimeConfig===undefined?undefined:readRoleRuntimeConfig(role.runtimeConfig),modelPolicy)
+ const permissionMode=snapshot.permissionMode===undefined?undefined:readRunPermissionMode(snapshot.permissionMode)
+ if(permissionMode!==(r.permissionMode===undefined?undefined:readRunPermissionMode(r.permissionMode)))throw Error('执行权限模式与固定快照不一致。')
+ if(snapshot.modelPolicyOverride!==undefined&&snapshot.modelPolicyOverride!==true||r.modelPolicyOverride!==undefined&&r.modelPolicyOverride!==true)throw Error('执行模型选择来源不正确。')
+ const modelPolicyOverride=snapshot.modelPolicyOverride===true
+ if(modelPolicyOverride!==(r.modelPolicyOverride===true)||modelPolicyOverride&&!modelPolicy)throw Error('执行模型选择与固定快照不一致。')
+ if(modelPolicy&&!modelPolicyOverride)assertRoleModelPolicy(role.runtimeConfig===undefined?undefined:readRoleRuntimeConfig(role.runtimeConfig),modelPolicy)
  if(JSON.stringify(modelPolicy)!==JSON.stringify(r.modelPolicy===undefined?undefined:readTaskRunModelPolicy(r.modelPolicy)))throw Error('执行模型与固定快照不一致。')
  if(r.modelStatus!==undefined&&!modelPolicy)throw Error('模型观察缺少固定策略。')
  const modelStatus=r.modelStatus===undefined?undefined:readTaskRunModelStatus(r.modelStatus,modelPolicy!)
@@ -205,7 +213,7 @@ function readRow(value:unknown):RunView{
  const toolRules=readTaskToolArgumentRules(r.argumentRules??[])
  if(!Array.isArray(r.allowedTools)||toolRules.some(rule=>!(r.allowedTools as unknown[]).includes(rule.name)))throw Error('执行工具范围不一致。')
  if(owner&&(task.scope!=='general'||r.roleVersion!==null||r.roleId!==null||skills.length||memory.length||snapshot.businessContext!==undefined||snapshot.groupContext!==undefined||JSON.stringify(snapshot.knowledge)!==JSON.stringify(r.knowledge)))throw Error('本人执行不能继承岗位或其他业务范围。')
- return {...(ownerExecutor?{executor:ownerExecutor}:{}),...(deliveryCheck?{deliveryCheck}:{}),toolRules,knowledge,skills,...(roleSnapshot?{roleSnapshot}:{}),...(lineage?{lineage}:{}),...(subagents===undefined?{}:{subagents}),...(contextTokenEstimate===undefined?{}:{contextTokenEstimate}),...(webAccess===undefined?{}:{webAccess}),...(planContext?{planContext}:{}),...(industryContext?{industryContext}:{}),...(businessContext?{businessContext}:{}),id:r.id,taskId:r.taskId,sessionId:r.sessionId,nativeRequestId:r.nativeRequestId,state:r.state as RunView['state'],...(reason?{reason}:{}),stopRequestedAt,...(r.flowId===undefined?{}:{flowId:r.flowId as string}),...(agentPresetId===undefined?{}:{agentPresetId}),...(modelPolicy?{modelPolicy}:{}),...(modelStatus?{modelStatus}:{}),...(configurationError===undefined?{}:{configurationError}),taskVersion:r.taskVersion as number,roleVersion:r.roleVersion as number|null,title:task.title,roleId:r.roleId as string|null,scope:task.scope,goal:task.goal,roleName:role.name,createdAt:r.createdAt}
+ return {...(permissionMode===undefined?{}:{permissionMode}),...(modelPolicyOverride?{modelPolicyOverride:true as const}:{}),...(ownerExecutor?{executor:ownerExecutor}:{}),...(deliveryCheck?{deliveryCheck}:{}),toolRules,knowledge,skills,...(roleSnapshot?{roleSnapshot}:{}),...(lineage?{lineage}:{}),...(subagents===undefined?{}:{subagents}),...(contextTokenEstimate===undefined?{}:{contextTokenEstimate}),...(webAccess===undefined?{}:{webAccess}),...(planContext?{planContext}:{}),...(industryContext?{industryContext}:{}),...(businessContext?{businessContext}:{}),id:r.id,taskId:r.taskId,sessionId:r.sessionId,nativeRequestId:r.nativeRequestId,state:r.state as RunView['state'],...(reason?{reason}:{}),stopRequestedAt,...(r.flowId===undefined?{}:{flowId:r.flowId as string}),...(agentPresetId===undefined?{}:{agentPresetId}),...(modelPolicy?{modelPolicy}:{}),...(modelStatus?{modelStatus}:{}),...(configurationError===undefined?{}:{configurationError}),taskVersion:r.taskVersion as number,roleVersion:r.roleVersion as number|null,title:task.title,roleId:r.roleId as string|null,scope:task.scope,goal:task.goal,roleName:role.name,createdAt:r.createdAt}
 }
 export type TaskRunApi=ReturnType<typeof createTaskRunApi>
 type Prepare={requestId:string;taskId:string;expectedTaskVersion:number}
@@ -221,7 +229,7 @@ function readPrepare(value:unknown):PendingPrepare{
  if(!uuid(r.roleId)||!positive(r.expectedRoleVersion)||!positive(r.expectedLinkVersion)||typeof r.sessionId!=='string'||!/^[-a-zA-Z0-9_]{1,128}$/.test(r.sessionId))throw Error('执行准备恢复记录不正确。')
  return r as LegacyPrepare
 }
-export function createTaskRunApi(call:(method:string,payload:unknown)=>Promise<unknown>,journal?:TaskRequestJournal,flowJournal?:TaskRequestJournal){
+export function createTaskRunApi(call:(method:string,payload:unknown)=>Promise<unknown>,journal?:TaskRequestJournal,flowJournal?:TaskRequestJournal,employeeWorkJournal?:TaskRequestJournal){
  let pending:PendingPrepare|undefined,recoveryError:ReturnType<typeof recoveryStorageError>|undefined,preparing=false
  try{const raw=journal?.read();if(raw){if(raw.length>3000)throw Error();pending=readPrepare(JSON.parse(raw))}}catch{recoveryError=recoveryStorageError()}
  const sendPrepare=async()=>{
@@ -239,9 +247,17 @@ export function createTaskRunApi(call:(method:string,payload:unknown)=>Promise<u
   return row
  }
  return {
+ employeeWork:createEmployeeApiWorkApi(call,employeeWorkJournal),
  flowRequests:createConfirmedFlowApi(call,flowJournal),
  pending:()=>pending?{...pending}:undefined,
  recoveryMessage:()=>recoveryError,
+ async readiness(taskId:string,taskVersion:number){
+  if(!uuid(taskId)||!positive(taskVersion))throw new WorkError('teloa/invalid-input','任务身份或版本不正确。')
+  let result
+  try{result=readTaskRunReadiness(await call('task-runs/readiness',{taskId,expectedTaskVersion:taskVersion}))}catch(error){if(error instanceof WorkError&&error.code==='teloa/invalid-input')throw new WorkError('teloa/invalid-host-response','执行条件检查响应不正确。');throw error}
+  if(result.taskId!==taskId||result.taskVersion!==taskVersion)throw new WorkError('teloa/invalid-host-response','执行条件检查不属于当前任务版本。')
+  return result
+ },
  async prepare(taskId:string,taskVersion:number){
   if(preparing)throw Error('正在准备执行。')
   if(recoveryError)throw recoveryError
@@ -313,7 +329,7 @@ export function createTaskRunApi(call:(method:string,payload:unknown)=>Promise<u
 }}
 function validateUpdate(run:RunView,result:RunView):RunView{
   if(result.id!==run.id||result.taskId!==run.taskId||result.sessionId!==run.sessionId||result.nativeRequestId!==run.nativeRequestId)throw Error('核对返回了其他执行。')
-  if(JSON.stringify(result.executor)!==JSON.stringify(run.executor)||JSON.stringify(result.roleSnapshot)!==JSON.stringify(run.roleSnapshot)||JSON.stringify(result.lineage)!==JSON.stringify(run.lineage)||JSON.stringify(result.modelPolicy)!==JSON.stringify(run.modelPolicy)||result.agentPresetId!==run.agentPresetId||result.taskVersion!==run.taskVersion||result.roleVersion!==run.roleVersion||result.title!==run.title||result.roleId!==run.roleId||result.scope!==run.scope||result.goal!==run.goal||result.roleName!==run.roleName||result.createdAt!==run.createdAt||run.flowId!==undefined&&result.flowId!==run.flowId||JSON.stringify(result.skills)!==JSON.stringify(run.skills)||JSON.stringify(result.knowledge)!==JSON.stringify(run.knowledge)||JSON.stringify(result.toolRules??[])!==JSON.stringify(run.toolRules??[])||JSON.stringify(result.planContext)!==JSON.stringify(run.planContext)||JSON.stringify(result.industryContext)!==JSON.stringify(run.industryContext)||JSON.stringify(result.businessContext)!==JSON.stringify(run.businessContext))throw Error('执行目标快照发生变化。')
+  if(result.permissionMode!==run.permissionMode||result.modelPolicyOverride!==run.modelPolicyOverride||JSON.stringify(result.executor)!==JSON.stringify(run.executor)||JSON.stringify(result.roleSnapshot)!==JSON.stringify(run.roleSnapshot)||JSON.stringify(result.lineage)!==JSON.stringify(run.lineage)||JSON.stringify(result.modelPolicy)!==JSON.stringify(run.modelPolicy)||result.agentPresetId!==run.agentPresetId||result.taskVersion!==run.taskVersion||result.roleVersion!==run.roleVersion||result.title!==run.title||result.roleId!==run.roleId||result.scope!==run.scope||result.goal!==run.goal||result.roleName!==run.roleName||result.createdAt!==run.createdAt||run.flowId!==undefined&&result.flowId!==run.flowId||JSON.stringify(result.skills)!==JSON.stringify(run.skills)||JSON.stringify(result.knowledge)!==JSON.stringify(run.knowledge)||JSON.stringify(result.toolRules??[])!==JSON.stringify(run.toolRules??[])||JSON.stringify(result.planContext)!==JSON.stringify(run.planContext)||JSON.stringify(result.industryContext)!==JSON.stringify(run.industryContext)||JSON.stringify(result.businessContext)!==JSON.stringify(run.businessContext))throw Error('执行目标快照发生变化。')
   const order={prepared:0,submitting:1,accepted:2,active:3,ended:4,withdrawn:4,configuration_failed:4}
   if((run.state==='withdrawn'&&result.state!=='withdrawn')||(result.state==='withdrawn'&&!['prepared','withdrawn'].includes(run.state)))throw Error('撤销状态与原执行不一致。')
   if((run.state==='configuration_failed'&&result.state!=='configuration_failed')||result.state==='configuration_failed'&&run.state!=='configuration_failed'||order[result.state]<order[run.state]||run.state==='ended'&&result.reason!==run.reason||run.state==='configuration_failed'&&(result.agentPresetId!==run.agentPresetId||JSON.stringify(result.configurationError)!==JSON.stringify(run.configurationError)))throw Error('核对结果与已有执行状态不一致。')

@@ -52,6 +52,13 @@ test('创建失败保留完整固定请求，恢复重放同一参数且成功�
  assert.deepEqual(await api.recover(),record);assert.deepEqual(calls[0],calls[1]);assert.equal(raw,null)
 })
 
+test('已安装但待本人关联的技能入口保持严格语义，不可冒充其他资源或就绪状态',async()=>{
+ const row={itemInstanceId:skillId,kind:'skill',title:'调查方法',state:'needs-user',step:null,entry:'skill-link'}
+ const readiness={loadId,status:'active',title:'调查',version:'1.3.1',digest:hash,counts:{ready:0,auto:0,needsUser:1,optional:0,pending:0},rows:[row]}
+ assert.deepEqual(await createIndustryLoadApi(async()=>readiness).readiness(loadId),readiness)
+ for(const change of [{kind:'role'},{state:'ready'},{step:'skill'}])await assert.rejects(createIndustryLoadApi(async()=>({...readiness,rows:[{...row,...change}]})).readiness(loadId),/格式/)
+})
+
 test('同一待核对请求不能更换来源或目标，日志写失败时不调用服务',async()=>{
  let raw:string|null=null,calls=0;const journal={read:()=>raw,write:(value:string)=>{raw=value},clear:()=>{raw=null}}
  await assert.rejects(createIndustryLoadApi(async()=>{calls++;throw Error('未知')},journal).create(input),/未知/)

@@ -138,7 +138,7 @@ export class TaskRunDriver{
   const planId=current.lineage?.definition?.planId
   const systemDigest=typeof planId==='string'?await this.service.isSystemDigestRun?.(owner,{planId})??false:false
   if(!systemDigest)assertRoleRunToolsRunnable(current)
-  if(current.lineage&&await this.ports.controlState?.(current)!=='active')throw new WorkError('teloa/forbidden','原工作已暂停或停止，请先核对恢复。')
+  if(current.lineage&&await this.ports.controlState?.(current)!=='active')throw new WorkError('teloa/forbidden','原工作已暂停或停止，请先核对恢复。',{reason:'work-control-inactive'})
   const target=await this.service.executionScope(owner,input)
   await this.ports.check(current,signal,target)
   signal.throwIfAborted()

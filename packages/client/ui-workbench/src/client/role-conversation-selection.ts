@@ -1,3 +1,4 @@
+import {WorkError} from '@teloa/contract'
 import type { PresentedConversation } from './work-presentation.js'
 import type { PreviewRole } from './role-preview.js'
 
@@ -20,4 +21,11 @@ export function latestRoleConversation(
   return conversations
     .filter(row=>row.conversation.status==='ready'&&active.has(row.conversation.sessionId)&&!archived.has(row.conversation.sessionId))
     .sort((a,b)=>b.updatedAt-a.updatedAt||a.conversation.id.localeCompare(b.conversation.id))[0]
+}
+
+/** 每次新建/打开员工工作都读取当前目录；读取失败不能回落旧会话缓存版本。 */
+export async function readCurrentRoleForConversation<T extends Pick<PreviewRole,'id'|'state'|'version'|'scopes'>>(read:()=>Promise<readonly T[]>,roleId:string):Promise<T>{
+ const role=(await read()).find(row=>row.id===roleId)
+ if(!role)throw new WorkError('teloa/not-found','员工已不在当前目录，请重新选择。')
+ return role
 }

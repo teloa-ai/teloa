@@ -5,6 +5,7 @@ import {businessResultToolNames} from './business-result-tools.ts'
 import {businessChangeSetToolNames} from './business-change-set-tools.ts'
 import {knowledgeSearchToolName} from './local-retrieval.ts'
 import {skillHttpGrantedSkills,skillHttpToolName} from './skill-http-tool.ts'
+import {isPublicReferenceSourceId} from '@teloa/backend'
 export const roleToolGrantEndpoints=['role-tools/get','role-tools/change','role-tools/candidates']
 /** 公共参考资料 MCP 的 server 名；资源工具的 server 参数只认这一个值。 */
 export const referenceServerName='teloa_reference'
@@ -108,8 +109,8 @@ export function externalEgressToolAllowed(allowedTools:readonly string[]|null,na
 }
 /** 首批复用公共参考资料 MCP，只开放岗位已选资料的明确来源版本。 */
 export function referenceToolRules(contents:readonly Pick<ResourceContext['contents'][number],'sourceId'|'sourceVersion'>[]):TaskToolArgumentRule[]{
- // 行业来源通过平台资料上下文提供；公共 MCP 尚无本人行业来源的读取适配。
- const allowed=contents.filter(item=>!item.sourceId.startsWith('industry_')).map(item=>({id:item.sourceId,version:item.sourceVersion}))
+ // 只从当前已授权资料里取实际公共Catalog支持的来源；私有来源保持原Run/检索权限路径。
+ const allowed=contents.filter(item=>isPublicReferenceSourceId(item.sourceId)).map(item=>({id:item.sourceId,version:item.sourceVersion}))
  if(!allowed.length)return []
  // 资源工具与正文读取同进退：岗位没有公共资料可读时，也没有枚举该 server 的理由。
  return [{name:referenceReadTool,allowed:Array.from(new Map(allowed.map(args=>[JSON.stringify(args),args])).values())},
@@ -120,6 +121,7 @@ export function validateReferenceToolRules(rules:TaskToolArgumentRule[],availabl
  // 不把 `mcp__*` 作为通配符，避免一次连接把同一服务器的未声明工具也带进执行面。
  const candidates=new Map(available.map(rule=>[rule.name,rule]))
  for(const rule of readTaskToolArgumentRules(rules)){
+  if(rule.name===referenceReadTool&&(rule.anyArguments===true||!rule.allowed.length||rule.allowed.some(args=>typeof args.id!=='string'||!isPublicReferenceSourceId(args.id))))throw new WorkError('teloa/forbidden','公共参考资料工具仅支持已授权的明确公共来源版本；私有资料请使用运行正文或资料检索。')
   const candidate=candidates.get(rule.name)
   if((workspaceFileToolNames as readonly string[]).includes(rule.name)){
    if(!isWorkspaceFileRule(rule)||!candidate||!isWorkspaceFileRule(candidate))throw new WorkError('teloa/forbidden','文件工具只能授权当前工作目录，且必须有真实受限文件工具候选。')

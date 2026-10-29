@@ -20,7 +20,7 @@ export type PrepareStep='knowledge'|'skill'|'mcp'|'data-source'|'execution-tool'
  * restart-required 已启用、重启后生效；failed 安装失败；drift 固定来源已变化；unreadable 已登记而读不出。
  */
 export type PluginHoldReason='unverified'|'rejected'|'restart-required'|'failed'|'drift'|'unreadable'
-export type ReadinessEntry='model-settings'|'connector-settings'|'skill-confirm'|'plugin'|'knowledge-retry'|'role-retry'|'role-resume'|'task-form'|'plan-form'
+export type ReadinessEntry='model-settings'|'connector-settings'|'skill-confirm'|'skill-link'|'plugin'|'knowledge-retry'|'role-retry'|'role-resume'|'task-form'|'plan-form'
 export type ReadinessState='ready'|'auto'|'needs-user'|'optional'|'pending'
 /** trust 只出现在随一键安装、带信任声明的技能行上：确认卡与面板据此逐项列出名称与信任摘要，不静默安装。 */
 export type SkillTrustSummary={publisher:string;license:string|null}
@@ -67,13 +67,13 @@ const ofLoad=(rows:Record<string,unknown>[],loadId:string)=>rows.filter(row=>low
 const failureOf=(value:unknown,fallback:{code:string;message:string})=>isRecord(value)&&typeof value.code==='string'&&typeof value.message==='string'?{code:value.code,message:value.message}:fallback
 const revisionOf=(value:unknown)=>Number.isSafeInteger(value)?Number(value):null
 
-type LoadItem={instanceId:string;kind:string;title:string;required:boolean;status:string;version?:string;modelDependencies?:IndustryModelDependency[]}
+type LoadItem={instanceId:string;carriedFrom?:string;kind:string;title:string;required:boolean;status:string;version?:string;modelDependencies?:IndustryModelDependency[]}
 type Load={id:string;status:string;title:string;version:string;mappingHash:string;items:LoadItem[];relations:{kind:string;from:string;to:string}[]}
 type Fact={state:string;revision:number|null}
 type RoleFact=Fact&{role:{id:string;version:number;state:string}|null}
 /** 已登记安装的完整身份：进入准备摘要，绑定前按同一 usage 逐项重核；只比版本不能发现迁到另一份同版本安装。 */
-type Installed={id:string;version:number|null;source:string;bundleHash:string|null;name:string|null;bodyHash:string|null}
-type SkillFact={raw:string;revision:number|null;installed:boolean;preparing:boolean;confirm:boolean;bundleHash:string|null;trustHash:string|null;trust?:SkillTrustSummary;installation?:Installed}
+type Installed={id:string;version:number|null;source:string;bundleHash:string|null;trustHash:string|null;native:string;name:string|null;bodyHash:string|null}
+type SkillFact={raw:string;revision:number|null;installed:boolean;preparing:boolean;confirm:boolean;link?:boolean;bundleHash:string|null;trustHash:string|null;trust?:SkillTrustSummary;installation?:Installed}
 type PluginFact=Fact&{id:string;drift:boolean;packageName:string|null}
 /** 一键准备时预览得出的不可自动安装结论：按（加载, 条目）记在本人的准备 handler 里，只对同一实例修订有效；实例一推进（本人自行安装等）即失效。 */
 type PluginHolds=Map<string,{revision:number|null;reason:PluginHoldReason}>
@@ -81,12 +81,12 @@ type Snapshot={load:Load;models:Map<string,IndustryModelObservation[]>;knowledge
 
 function readLoad(value:unknown):Load{
  if(!isRecord(value)||typeof value.id!=='string'||typeof value.status!=='string'||typeof value.templateTitle!=='string'||typeof value.templateVersion!=='string'||typeof value.mappingHash!=='string'||!Array.isArray(value.items)||!Array.isArray(value.relations))throw hostBad()
- const list=value.items.map(item=>{if(!isRecord(item)||typeof item.instanceId!=='string'||typeof item.kind!=='string'||typeof item.title!=='string'||typeof item.required!=='boolean'||typeof item.status!=='string')throw hostBad();return {instanceId:item.instanceId.toLowerCase(),kind:item.kind,title:item.title,required:item.required,status:item.status,...(typeof item.version==='string'?{version:item.version}:{}),...industryResourceModelDependencies(item.kind,item.modelDependencies)}})
+ const list=value.items.map(item=>{if(!isRecord(item)||typeof item.instanceId!=='string'||typeof item.kind!=='string'||typeof item.title!=='string'||typeof item.required!=='boolean'||typeof item.status!=='string')throw hostBad();return {instanceId:item.instanceId.toLowerCase(),...(typeof item.carriedFrom==='string'?{carriedFrom:item.carriedFrom.toLowerCase()}:{}),kind:item.kind,title:item.title,required:item.required,status:item.status,...(typeof item.version==='string'?{version:item.version}:{}),...industryResourceModelDependencies(item.kind,item.modelDependencies)}})
  const relations=value.relations.map(link=>{if(!isRecord(link)||typeof link.kind!=='string'||typeof link.from!=='string'||typeof link.to!=='string')throw hostBad();return {kind:link.kind,from:link.from.toLowerCase(),to:link.to.toLowerCase()}})
  return {id:value.id.toLowerCase(),status:value.status,title:value.templateTitle,version:value.templateVersion,mappingHash:value.mappingHash,items:list,relations}
 }
 const stable=(value:unknown):string=>JSON.stringify(value,(_,item)=>isRecord(item)?Object.fromEntries(Object.entries(item).sort(([a],[b])=>a<b?-1:a>b?1:0)):item)
-const installedOf=(row:Record<string,unknown>):Installed=>{const native=isRecord(row.native)?row.native:{};return {id:lower(row.id),version:revisionOf(row.version),source:stable(row.source),bundleHash:typeof row.bundleHash==='string'?row.bundleHash:null,name:typeof native.name==='string'?native.name:null,bodyHash:typeof native.bodyHash==='string'?native.bodyHash:null}}
+const installedOf=(row:Record<string,unknown>):Installed=>{const native=isRecord(row.native)?row.native:{};return {id:lower(row.id),version:revisionOf(row.version),source:stable(row.source),bundleHash:typeof row.bundleHash==='string'?row.bundleHash:null,trustHash:typeof row.trustHash==='string'?row.trustHash:null,native:stable(native),name:typeof native.name==='string'?native.name:null,bodyHash:typeof native.bodyHash==='string'?native.bodyHash:null}}
 /**
  * 方案条目的固定引用：自装来源只认同一资源标识与版本——首次安装它的可以是另一加载（团队包与从它派生的单员工包共用同一份方法），
  * 字节摘要与原生正文由调用处逐项核对（跨加载共用安装须信任说明相同，由安装服务保证）；公共来源只认同一 sourceContent/sourceResource（skill-installations.ts:25）。其余来源不属于方案条目。
@@ -98,6 +98,12 @@ function fixedReference(source:unknown):string|null{
  if(source.kind==='industry-public')return pick(['sourceContentId','sourceContentHash','sourceResourceId','sourceResourceVersion'])
  return null
 }
+/** 新加载尚无 usage 时只识别严格等价的本地行业方法；这里只读展示，不能代替本人的沿用确认。 */
+function reusableLocalSkill(row:Record<string,unknown>,preview:Record<string,unknown>):boolean{
+ if(!isRecord(row.source)||row.source.kind!=='industry-local'||!isRecord(preview.source)||preview.source.kind!=='industry-local'||!isRecord(row.native)||!isRecord(preview.native))return false
+ const reference=fixedReference(row.source),stored=row.native,current=preview.native
+ return reference!==null&&reference===fixedReference(preview.source)&&row.bundleHash===preview.bundleHash&&(row.trustHash??null)===(preview.trustHash??null)&&(['name','description','bodyHash','modelInvocable','userInvocable'] as const).every(key=>stored[key]===current[key])
+}
 const pluginOf=(row:unknown):PluginFact=>{if(!isRecord(row)||typeof row.id!=='string'||!UUID.test(row.id)||typeof row.state!=='string')throw hostBad();return {id:row.id.toLowerCase(),state:row.state,revision:revisionOf(row.revision),drift:row.drift===true,packageName:isRecord(row.definition)&&typeof row.definition.packageName==='string'?row.definition.packageName:null}}
 const holdKey=(loadId:string,itemInstanceId:string)=>loadId+'/'+itemInstanceId
 const roleOf=(row:Record<string,unknown>)=>isRecord(row.role)&&typeof row.role.id==='string'&&Number.isSafeInteger(row.role.version)&&typeof row.role.state==='string'?{id:row.role.id,version:Number(row.role.version),state:row.role.state}:null
@@ -105,16 +111,17 @@ const roleOf=(row:Record<string,unknown>)=>isRecord(row.role)&&typeof row.role.i
 async function snapshot(ports:IndustryPreparePorts,loadId:string,holds:PluginHolds,signal?:AbortSignal):Promise<Snapshot>{
  const load=readLoad(await ports.loads('industry-loads/get',{loadId},signal))
  if(load.id!==loadId)throw hostBad()
- const facts=(rows:Record<string,unknown>[])=>new Map(ofLoad(rows,load.id).map(row=>[lower(row.itemInstanceId),{state:String(row.state),revision:revisionOf(row.revision)}] as const))
+ const currentRows=(rows:Record<string,unknown>[]):Record<string,unknown>[]=>load.items.flatMap(item=>{const found=rows.find(row=>lower(row.itemInstanceId)===item.instanceId&&lower(row.loadId)===load.id)??(item.carriedFrom?rows.find(row=>lower(row.itemInstanceId)===item.carriedFrom):undefined);return found?[{...found,itemInstanceId:item.instanceId}]:[]})
+ const facts=(rows:Record<string,unknown>[])=>new Map(currentRows(rows).map(row=>[lower(row.itemInstanceId),{state:String(row.state),revision:revisionOf(row.revision)}] as const))
  const knowledge=facts(items(await ports.knowledge('industry-knowledge/list',{},signal)))
- const roles=new Map(ofLoad(items(await ports.roles('industry-roles/list',{},signal)),load.id).map(row=>[lower(row.itemInstanceId),{state:String(row.state),revision:revisionOf(row.revision),role:roleOf(row)}] as const))
+ const roles=new Map(currentRows(items(await ports.roles('industry-roles/list',{},signal))).map(row=>[lower(row.itemInstanceId),{state:String(row.state),revision:revisionOf(row.revision),role:roleOf(row)}] as const))
  // 连接器列表逐行容错：读不出的行只进 errors（只带实例身份），对应条目由 classify 按「已登记但读不出」处理
  const connectors=new Map([...facts(items(await ports.mcp('industry-mcp-connections/list',{},signal))),...facts(items(await ports.dataSources('industry-data-sources/list',{},signal))),...facts(items(await ports.executionTools('industry-execution-tools/list',{},signal)))])
- const plugins=new Map(ofLoad(items(await ports.plugins('industry-plugins/list',{},signal)),load.id).map(row=>[lower(row.itemInstanceId),pluginOf(row)] as const))
+ const plugins=new Map(currentRows(items(await ports.plugins('industry-plugins/list',{},signal))).map(row=>[lower(row.itemInstanceId),pluginOf(row)] as const))
  // usages 固定安装归属；就绪还必须核对默认工作区实际加载的同一份正文。
  const listed=await ports.skills('skill-installations/list',{},signal)
  if(!isRecord(listed)||!Array.isArray(listed.items)||!Array.isArray(listed.usages))throw hostBad()
- const installs=new Map(listed.items.filter(isRecord).map(row=>[lower(row.id),{state:String(row.state),revision:revisionOf(row.version),identity:installedOf(row)}] as const))
+ const installs=new Map(listed.items.filter(isRecord).map(row=>[lower(row.id),{state:String(row.state),revision:revisionOf(row.version),identity:installedOf(row),record:row}] as const))
  const used=new Map(listed.usages.filter(isRecord).filter(use=>lower(use.loadId)===load.id).map(use=>[lower(use.itemInstanceId),installs.get(lower(use.installationId))] as const))
  const skills=new Map<string,SkillFact>()
  for(const item of load.items){
@@ -137,6 +144,18 @@ async function snapshot(ports:IndustryPreparePorts,loadId:string,holds:PluginHol
   try{preview=await ports.skills('skill-installations/preview',{source:{kind:'industry',loadId:load.id,itemInstanceId:item.instanceId}},signal)}catch(error){if(signal?.aborted)throw error;preview=undefined}
   if(!isRecord(preview)||typeof preview.bundleHash!=='string'||!HEX.test(preview.bundleHash)||!Array.isArray(preview.files)){skills.set(item.instanceId,{raw:'preview-failed',revision:null,installed:false,preparing:false,confirm:true,bundleHash:null,trustHash:null});continue}
   const trustHash=typeof preview.trustHash==='string'&&HEX.test(preview.trustHash)?preview.trustHash:null
+  const reusable=[...installs.values()].find(found=>reusableLocalSkill(found.record,preview))
+  if(reusable){
+   let observed='unverified'
+   if(reusable.state==='installed')try{
+    const value=await ports.skills('skill-installations/observe',{installationId:reusable.identity.id},signal)
+    if(isRecord(value)&&typeof value.state==='string'){
+     const current=value.current,stored=reusable.record.native
+     observed=value.state==='available'?isRecord(current)&&isRecord(stored)&&(['name','description','bodyHash','modelInvocable','userInvocable'] as const).every(key=>current[key]===stored[key])?'available':'mismatch':['shadowed','missing','disabled'].includes(value.state)?value.state:'unverified'
+    }
+   }catch(error){if(signal?.aborted)throw error}
+   skills.set(item.instanceId,{raw:'unlinked/'+reusable.state+'/'+observed,revision:reusable.revision,installed:false,preparing:false,confirm:true,link:true,bundleHash:preview.bundleHash,trustHash,installation:reusable.identity});continue
+  }
   const scripted=!preview.files.every(inert),trust=trustHash?readOnlyOfficial(preview.trust):null
   // 没有信任声明的技能无法判定来源与审核，一律逐个确认
   const blocked=!trust
@@ -185,7 +204,7 @@ function classify(s:Snapshot,item:LoadItem):Classified|null{
    const v=s.skills.get(id);if(!v)return null
    if(v.installed)return row('ready',v.raw,v.revision)
    if(v.preparing)return row('pending',v.raw,v.revision)
-   return v.confirm?row('needs-user',v.raw,v.revision,null,'skill-confirm'):{...row('auto',v.raw,v.revision,'skill'),...(v.trust?{trust:v.trust}:{})}
+   return v.confirm?row('needs-user',v.raw,v.revision,null,v.link?'skill-link':'skill-confirm'):{...row('auto',v.raw,v.revision,'skill'),...(v.trust?{trust:v.trust}:{})}
   }
   case 'mcp':case 'data-source':case 'execution-tool':{
    const v=s.connectors.get(id)

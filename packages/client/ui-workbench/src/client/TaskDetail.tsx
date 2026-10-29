@@ -46,7 +46,7 @@ const person=(id:string,roles:readonly PreviewRole[]=[],t?:Parameters<typeof rol
 const foldKeys={run:'task.timeline.fold.run',change:'task.timeline.fold.change',artifact:'task.timeline.fold.artifact',knowledge:'task.timeline.fold.knowledge',approval:'task.timeline.fold.approval'} as const
 const foldKey=(kind:TimelineEventKind)=>kind in foldKeys?foldKeys[kind as keyof typeof foldKeys]:'task.timeline.fold.change'
 
-export type TaskDetailProps={workProgress?:((runs:RunView[])=>ReactNode)|undefined;
+export type TaskDetailProps={apiWork?:ReactNode;workProgress?:((runs:RunView[])=>ReactNode)|undefined;
  roleDirectory?:RoleDirectoryState|undefined
  presentation?:{full:boolean;toggle:()=>void}|undefined
  groups?:readonly TaskGroupOption[]|undefined;openGroup?:((id:string)=>void)|undefined
@@ -158,6 +158,7 @@ export function TaskDetail(props:TaskDetailProps):JSX.Element{
   }
   // 交给员工/本人执行的任务，暂停/继续只能走运行控制；compact 状态卡不能把台账级 continue 再暴露成必失败按钮。
   if(runManagedTask&&primary?.action.kind==='progress'&&(primary.action.action==='pause'||primary.action.action==='resume'))primary=runs.length?{label:t('task.status.action.viewRun'),action:{kind:'anchor',anchor:'run'}}:undefined
+  const prepareBlocked=primary?.action.kind==='anchor'&&primary.action.anchor==='run'&&primary.action.focus==='prepare'&&(!currentPreparation||currentPreparation.disabled)
   const secondary=runManagedTask&&model.secondary?.action.kind==='progress'&&(model.secondary.action.action==='pause'||model.secondary.action.action==='resume')?undefined:model.secondary
   const executionsNode=<TaskRunPreparationContext.Provider value={setPreparation}>{executions(acceptRuns)}</TaskRunPreparationContext.Provider>
   // 「完成任务」的下拉只列当前任务版本的成果；纯文字交付没有成果版本时下拉为空、按钮永久禁用。
@@ -216,7 +217,8 @@ export function TaskDetail(props:TaskDetailProps):JSX.Element{
     <div className={detailCss.layout}><div className={detailCss.columns}>
     <div className={clsx(css.goalLine,detailCss.slotGoal)}><span className={css.sectionEyebrow}>{t('task.detail.goal')}</span><DetailText markdown text={taskGoalText(task,t)} expandLabel={density('goalExpand')} collapseLabel={density('goalCollapse')}/></div>
     {quietStatus?<div className={clsx(detailCss.quietStatus,detailCss.slotStatus)}>{statusChildren}</div>:<div className={clsx(detailCss.statusPanel,detailCss.slotStatus)}>
-      <StatusBox ariaLabel={t('task.status.aria')} tone={currentPreparation?.control?.tone??model.tone} sentence={currentPreparation?.control?.sentence??model.sentence} hint={currentPreparation?.control?.hint??model.hint} hintLabel={t('task.status.hint')} {...(currentPreparation?.control?{primary:{label:currentPreparation.control.actionLabel,disabled:currentPreparation.control.disabled,onSelect:()=>{focusObjectAnchor(root.current,'run','resume');currentPreparation.control?.act()}}}:primary?{primary:statusAction(primary)}:{})} {...(secondary?{secondary:statusAction(secondary)}:{})}>
+      <StatusBox ariaLabel={t('task.status.aria')} tone={currentPreparation?.control?.tone??(prepareBlocked?'warn':model.tone)} sentence={currentPreparation?.control?.sentence??(prepareBlocked?t('taskExecution.readiness.blocked'):model.sentence)} hint={currentPreparation?.control?.hint??(prepareBlocked?currentPreparation?.reason??t('taskExecution.readiness.checking'):model.hint)} hintLabel={t('task.status.hint')} {...(currentPreparation?.control?{primary:{label:currentPreparation.control.actionLabel,disabled:currentPreparation.control.disabled,onSelect:()=>{focusObjectAnchor(root.current,'run','resume');currentPreparation.control?.act()}}}:primary?{primary:statusAction(primary)}:{})} {...(secondary?{secondary:statusAction(secondary)}:{})}>
+        {prepareBlocked&&<p role="status" aria-live="polite" className={css.muted}>{currentPreparation?.reason??t('taskExecution.readiness.checking')} {currentPreparation?.refresh&&<button type="button" onClick={currentPreparation.refresh}>{t('taskExecution.refresh')}</button>}{responsible&&<button type="button" onClick={()=>openRole(responsible.id)}>{t('market.industry.planForm.openRole')}</button>}</p>}
         {statusChildren}
       </StatusBox>
     </div>}
@@ -226,7 +228,7 @@ export function TaskDetail(props:TaskDetailProps):JSX.Element{
       <TaskFact label={t('task.rail.source')} wide>{openSourceRow?<button type="button" className={detailCss.link} onClick={openSourceRow}>{sourceLabel}<ChevronRight size={14} aria-hidden="true"/></button>:sourceLabel}</TaskFact>
       {linkedGroup&&linkedGroup.id!==task.source?.groupId&&<TaskFact label={t('task.detail.group')} wide>{openGroup?<button type="button" className={detailCss.link} onClick={()=>openGroup(linkedGroup.id)}>{linkedGroup.name}<ChevronRight size={14} aria-hidden="true"/></button>:linkedGroup.name}</TaskFact>}
     </dl>
-    <div className={detailCss.slotProgress}>{runsLoaded&&props.workProgress?.(runs)}</div>
+    <div className={detailCss.slotProgress}>{props.apiWork}{runsLoaded&&props.workProgress?.(runs)}</div>
     <section className={clsx(detailCss.resultBlock,resultEmpty&&detailCss.resultCompact,detailCss.slotResult)} aria-label={t('task.detail.artifact')} data-teloa-anchor="artifact">
       <header><h3>{t('task.detail.artifact')}</h3>{(taskArtifacts.length>0||!!artifactRef||!!task.result||task.storage==='persistent'&&runsLoaded&&runs.some(row=>row.state==='ended'))&&<button type="button" className={detailCss.link} onClick={()=>openTaskArtifact(artifactRef)}>{t('task.detail.viewArtifacts')}<ChevronRight size={14} aria-hidden="true"/></button>}</header>
       {task.result&&<p>{task.result}</p>}

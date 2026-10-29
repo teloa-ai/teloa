@@ -5,8 +5,25 @@ import { withBusinessExamples } from '../src/client/business-work-preview.ts'
 import { changeArtifactWork } from '../src/client/artifact-work.ts'
 import { resolveArtifactSource } from '../src/client/artifact-source.ts'
 import { sourceStamp } from '../src/client/artifact-preview.ts'
+import {artifactContent} from '@teloa/contract'
 const now='2026-09-11T05:00:00Z'
 const session={id:'s1',title:'本人会话',scope:'general',bindingId:'b1'},ref={kind:'session' as const,id:'s1'}
+test('空行超过40段的完整报告可保存，原文、顺序与原消息身份不丢失',()=>{
+ const state=emptyTaskPreview(),source=resolveArtifactSource(state,ref,session)
+ for(const count of [1,40,41,67,120]){
+  const body=Array.from({length:count},(_,index)=>`证据段落 ${index+1}\n- 原始字段与判定条件 ${index+1}`).join('\n\n')
+  const message={sessionId:session.id,messageId:'original-report',seq:63,role:'assistant' as const,at:now,text:body,images:[],interrupted:false,omittedBlocks:0}
+  const next=changeArtifactWork(state,{type:'create',id:'report-'+count,source:ref,expectedSource:sourceStamp(source),title:'完整报告',body,messages:[message],now},session)
+  const version=next.artifacts[0]!.versions[0]!
+  assert.equal(version.sections.map(section=>section.text).join('\n\n'),body)
+  assert.ok(version.sections.length<=40)
+  if(count<=40)assert.equal(version.sections.length,count,'已有短稿段落边界保持')
+  assert.deepEqual(version.messages,[message])
+  assert.doesNotThrow(()=>artifactContent({title:version.title,sections:version.sections,snapshotIds:[],messageSnapshotIds:['a'.repeat(64)],note:version.note}))
+ }
+ assert.equal(state.artifacts.length,0)
+ assert.throws(()=>changeArtifactWork(state,{type:'create',id:'too-long',source:ref,expectedSource:sourceStamp(source),title:'超长稿',body:'文'.repeat(16001),now},session),/16000/)
+})
 test('会话来源必须与当前绑定一致，草稿来源变化不静默保存',()=>{
   const state=emptyTaskPreview(),source=resolveArtifactSource(state,ref,session)
   const command={type:'create' as const,id:'a1',source:ref,expectedSource:sourceStamp(source),title:'工作稿',body:'本人整理的内容',now}

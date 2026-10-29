@@ -6,6 +6,7 @@ type Journal={read:()=>string|null;write:(value:string)=>void;clear:()=>void}
 type Ports={registerLocalMaterial?:(input:LocalMaterialRegistrationInput)=>Promise<SourceReference>;create:(input:ResourceSpec&{requestId:string})=>Promise<ResourceDraft>}
 type Command=LocalMaterialRegistrationInput&{draftRequestId:string;source?:SourceReference}
 export const isLocalMaterialSourceId=(id:string)=>id.startsWith('local_material_')&&resourceId(id.slice('local_material_'.length))
+export const isAdoptedMaterialSourceId=(id:string)=>id.startsWith('adopted_')&&resourceId(id.slice('adopted_'.length))
 /** 员工包资料与市场固定内容共用 `industry_<loadId>_<itemId>` 身份；正文仍由服务端固定版本核对。 */
 export const isIndustryMaterialSourceId=(id:string)=>/^industry_[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}_[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id)
 export function readLocalMaterialInput(value:unknown):LocalMaterialRegistrationInput{

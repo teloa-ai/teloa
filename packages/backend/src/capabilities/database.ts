@@ -14,6 +14,7 @@ import {KnowledgeResourceService} from './knowledge-resources.ts'
 import {KnowledgeTreeService} from './knowledge-tree.ts'
 import {RetrievalIndexService} from './retrieval-index.ts'
 import {resourceDatabaseEndpointPolicy} from './database-endpoint.ts'
+import {ResourceAdoptionCatalog} from './resource-adoption-catalog.ts'
 
 export function databaseConnectionAllowed(connectionString:string,deployment?:string):boolean{
   let url:URL
@@ -63,7 +64,7 @@ export async function openResourceDatabase(path:string,identity:{id:()=>string;n
   const knowledge=new MarkdownKnowledgeService(pool,knowledgeRoot,'default',identity)
   let localMaterials:ResourceSourceCatalog|undefined
   try{localMaterials=await options.localMaterialCatalog?.(pool)}catch(error){await close();throw error}
-  const sources=combineReferenceCatalogs(createPublicReferenceCatalog(),new IndustryReferenceCatalog(pool,market,loads),new MarkdownKnowledgeCatalog(knowledge),localMaterials)
+  const sources=combineReferenceCatalogs(createPublicReferenceCatalog(),new IndustryReferenceCatalog(pool,market,loads),new MarkdownKnowledgeCatalog(knowledge),localMaterials,new ResourceAdoptionCatalog(pool))
   const service=new ResourceService(pool,sources,identity)
   return {pool,dispatchLocks,close,service,knowledge,knowledgeTree:new KnowledgeTreeService(pool,'default',identity),knowledgeResources:new KnowledgeResourceService(pool,knowledge,service),retrieval:new RetrievalIndexService(pool,service,identity),sources}
 }

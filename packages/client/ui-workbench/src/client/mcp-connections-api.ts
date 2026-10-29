@@ -21,7 +21,7 @@ export type ManagedMcpConnectionRecord={
  errorMessage?:string
  /** 安装失败的明确错误码（可重试）；界面按它给本地化文案 */
  errorCode?:'install-timeout'|'install-failed'
- tools?:{name:string;fullName:string;readOnly:boolean}[]
+ tools?:{name:string;fullName:string;readOnly:boolean;description?:string;inputSchema?:Record<string,unknown>;annotations?:{readOnlyHint?:boolean;destructiveHint?:boolean;idempotentHint?:boolean;openWorldHint?:boolean}}[]
  sourceScopeSupport?:'unsupported'
  custom?:{title:string}
  createdAt:string
@@ -48,9 +48,12 @@ function readRecord(value:unknown):ManagedMcpConnectionRecord{
   if(row.tools!==undefined){
    if(!Array.isArray(row.tools))throw Error()
    tools=row.tools.map(item=>{
-    const t=exact(item,['name','fullName','readOnly'])
+    const t=exact(item,['name','fullName','readOnly','description','inputSchema','annotations'])
     if(typeof t.name!=='string'||!t.name||typeof t.fullName!=='string'||!t.fullName||typeof t.readOnly!=='boolean')throw Error()
-    return {name:t.name,fullName:t.fullName,readOnly:t.readOnly}
+    if(t.description!==undefined&&(typeof t.description!=='string'||t.description.length>32_768))throw Error()
+    if(t.inputSchema!==undefined&&(!t.inputSchema||typeof t.inputSchema!=='object'||Array.isArray(t.inputSchema)||JSON.stringify(t.inputSchema).length>131_072))throw Error()
+    if(t.annotations!==undefined){const annotations=exact(t.annotations,['readOnlyHint','destructiveHint','idempotentHint','openWorldHint']);if(Object.values(annotations).some(value=>typeof value!=='boolean'))throw Error()}
+    return {name:t.name,fullName:t.fullName,readOnly:t.readOnly,...t.description===undefined?{}:{description:t.description as string},...t.inputSchema===undefined?{}:{inputSchema:t.inputSchema as Record<string,unknown>},...t.annotations===undefined?{}:{annotations:t.annotations as NonNullable<NonNullable<ManagedMcpConnectionRecord['tools']>[number]['annotations']>}}
    })
   }
   const rec:ManagedMcpConnectionRecord={id:(row.id as string).toLowerCase(),catalogId:row.catalogId as string,serverName:row.serverName as string,status:row.status as ManagedMcpConnectionRecord['status'],createdAt:row.createdAt as string,updatedAt:row.updatedAt as string}
@@ -98,12 +101,13 @@ export type CustomMcpAppApi=Pick<ManagedMcpConnectionApi,'getCustom'|'previewCus
 export function hasCustomMcpAppApi(api:Partial<ManagedMcpConnectionApi>):api is CustomMcpAppApi{
  return (['getCustom','previewCustom','saveCustom','updateCustom','authorizeCustom','connect','disconnect','delete'] as const).every(key=>typeof api[key]==='function')
 }
-export type CustomMcpPreview={definition:CustomMcpDefinition;definitionHash:string;authorizationConfigured:boolean;connection?:ManagedMcpConnectionRecord}
+export type CustomMcpPreview={definition:CustomMcpDefinition;definitionHash:string;savedDefinitionHash?:string;authorizationConfigured:boolean;connection?:ManagedMcpConnectionRecord}
 function readCustomPreview(value:unknown):CustomMcpPreview{
- const row=exact(value,['schema','definition','definitionHash','connection','authorizationConfigured','readiness','next'])
+ const row=exact(value,['schema','definition','definitionHash','savedDefinitionHash','connection','authorizationConfigured','readiness','next'])
  if(row.schema!=='teloa.mcp-preview/v1'||typeof row.definitionHash!=='string'||!/^[a-f0-9]{64}$/.test(row.definitionHash))throw Error('自定义应用预览格式不正确。')
  if(typeof row.authorizationConfigured!=='boolean')throw Error('自定义应用认证状态不正确。')
- return {definition:readCustomMcpDefinition(row.definition),definitionHash:row.definitionHash,authorizationConfigured:row.authorizationConfigured,...row.connection===undefined?{}:{connection:readRecord(row.connection)}}
+ if(row.savedDefinitionHash!==undefined&&(typeof row.savedDefinitionHash!=='string'||!/^[a-f0-9]{64}$/.test(row.savedDefinitionHash)))throw Error('已保存应用定义版本不正确。')
+ return {definition:readCustomMcpDefinition(row.definition),definitionHash:row.definitionHash,authorizationConfigured:row.authorizationConfigured,...row.savedDefinitionHash===undefined?{}:{savedDefinitionHash:row.savedDefinitionHash as string},...row.connection===undefined?{}:{connection:readRecord(row.connection)}}
 }
 export function createManagedMcpConnectionApi(call:Call){
  const listeners=new Set<()=>void>()
@@ -124,7 +128,7 @@ export function createManagedMcpConnectionApi(call:Call){
   /** 仅可信浏览器控件调用；认证值不写浏览器存储或通用待恢复请求。 */
   async authorizeCustom(input:{id:string;expectedDefinitionHash:string;credentials:Record<string,string>;readOnlyTools:string[]}){
    identity(input.id,input.expectedDefinitionHash)
-   if(!Array.isArray(input.readOnlyTools)||input.readOnlyTools.length>32||new Set(input.readOnlyTools).size!==input.readOnlyTools.length||input.readOnlyTools.some(v=>!/^[A-Za-z0-9_-]{1,128}$/.test(v))||Object.values(input.credentials).some(v=>typeof v!=='string'||!v.trim()||v.length>8192||/[\x00-\x1f\x7f]/.test(v)))throw Error('请核对认证值和只读工具清单。')
+   if(!Array.isArray(input.readOnlyTools)||input.readOnlyTools.length>32||new Set(input.readOnlyTools).size!==input.readOnlyTools.length||input.readOnlyTools.some(v=>!/^[^\x00-\x20\x7f]{1,128}$/.test(v))||Object.values(input.credentials).some(v=>typeof v!=='string'||!v.trim()||v.length>8192||/[\x00-\x1f\x7f]/.test(v)))throw Error('请核对认证值和只读工具清单。')
    return changed(readRecord(await call('mcp-connections/authorize-custom',input)))
   },
   /** 添加连接器；credentials 只含配方声明字段，值均为字符串 */

@@ -7,6 +7,7 @@ test('资源核验状态使用用户可采取行动的说明',()=>{
   assert.deepEqual(describeIndustryInspection(undefined),{label:'内容待读取',tone:'neutral'})
   assert.deepEqual(describeIndustryInspection({state:'parsed',message:'内容已解析。'}),{label:'内容可预览',tone:'ready'})
   assert.deepEqual(describeIndustryInspection({state:'pending',message:'等待适配。'}),{label:'等待适配',tone:'pending'})
+  assert.deepEqual(describeIndustryInspection({state:'pending',message:'技能原文已读取。',definition:{kind:'skill',text:'# 方法',files:[]}}),{label:'原文可预览',tone:'neutral'})
   assert.deepEqual(describeIndustryInspection({state:'missing',message:'缺少文件。'}),{label:'缺少内容',tone:'warning'})
   assert.deepEqual(describeIndustryInspection({state:'unresolved',message:'引用待解析。'}),{label:'引用待核对',tone:'pending'})
   assert.deepEqual(describeIndustryInspection({state:'invalid',message:'格式错误。'}),{label:'内容有问题',tone:'warning'})

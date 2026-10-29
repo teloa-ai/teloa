@@ -9,7 +9,7 @@ import {isRecord,resourceId,resourceVersion} from './resources.ts'
  * 区分「运行时安装」与「模型工件下载」两段进度。
  */
 /** retrieval/cancel 只取消后台索引（清补跑并等待收尾），不取消模型准备或移除已提交向量；仅本人界面调用。 */
-export const retrievalEndpoints=['retrieval/status','retrieval/enroll','retrieval/remove','retrieval/reindex','retrieval/cancel','retrieval-model/status','retrieval-model/prepare','retrieval-model/cancel','retrieval-model/select'] as const
+export const retrievalEndpoints=['retrieval/status','retrieval/search','retrieval/enroll','retrieval/remove','retrieval/reindex','retrieval/cancel','retrieval-model/status','retrieval-model/prepare','retrieval-model/cancel','retrieval-model/select'] as const
 export type RetrievalEndpoint=typeof retrievalEndpoints[number]
 export const retrievalLimits={maxEnrollments:500,maxSourceBytes:2*1024*1024,maxChunks:50000,maxQueryChars:500,maxResults:8,maxExcerptBytes:2048,maxTotalExcerptBytes:16384,dimensions:1024,vectorBytes:4096} as const
 

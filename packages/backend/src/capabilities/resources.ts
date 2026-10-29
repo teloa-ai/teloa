@@ -3,6 +3,8 @@ import { ReferenceError,type ReferenceCatalog } from '@teloa/mcp-reference/catal
 import { WorkError,isRecord,promptFullTextMaxBytes,isResourceSpec,isResourceDraft,isWorkResource,resourceId,resourceScopes,resourceVersion,retrievalLimits,type ResourceSpec,type ResourceDraft,type WorkResource,type ResourceReference,type ResourceDirectory,type MessageResourceSnapshot,type ResourceContext,type SourceReference } from '@teloa/contract'
 import { normalizeRetrievalText } from './retrieval-chunker.ts'
 import {roleKnowledgeMaxReferences} from '@teloa/contract'
+import {createHash} from 'node:crypto'
+import {isResourceAdoptionInput,type ResourceAdoptionInput} from '@teloa/contract'
 export type ResourceActor={ownerId:string;kind:'human'|'agent';scopeIds:string[]}
 /** 来源适配器只接收服务端主体；事务内读取复用连接，避免嵌套借用耗尽连接池。 */
 export type ResourceSourceContext={actor:ResourceActor;client?:PoolClient;scopeIds?:string[]}
@@ -18,6 +20,7 @@ const specKeys=['title','sourceId','sourceVersion','scopeIds']
 const badInput=()=>new WorkError('teloa/invalid-input','资源请求格式不正确或包含未知字段。')
 const corrupt=()=>new WorkError('teloa/storage-corrupt','资源存储内容不符合合同，已停止读取。')
 const same=(a:unknown,b:unknown)=>JSON.stringify(a)===JSON.stringify(b)
+const sameAdoption=(stored:unknown,command:ResourceAdoptionInput)=>isResourceAdoptionInput(stored)&&stored.requestId===command.requestId&&stored.targetScope===command.targetScope&&stored.resources.length===command.resources.length&&stored.resources.every((ref,index)=>ref.id===command.resources[index]?.id&&ref.version===command.resources[index]?.version&&ref.sourceVersion===command.resources[index]?.sourceVersion)
 const stableId=(v:unknown):v is string=>typeof v==='string'&&/^[a-zA-Z0-9_-]{1,128}$/.test(v)
 /** Markdown 来源的合法大小写别名指向同一 UUID；其他来源标识仍逐字比较。 */
 const knowledgeSourceId=(sourceId:string):string|undefined=>{
@@ -133,6 +136,38 @@ export class ResourceService {
       return draftRow(row)
     })
   }
+  /** 本人主动把可读原资料固定版本采用到另一已登记业务；原资料、来源及索引保持独立。 */
+  async prepareAdoption(actor:ResourceActor,input:unknown):Promise<ResourceDraft[]>{
+    if(!isResourceAdoptionInput(input))throw badInput()
+    authorizeResourceActor(actor,actor.ownerId,[input.targetScope],true)
+    const command:ResourceAdoptionInput={requestId:input.requestId.toLowerCase(),targetScope:input.targetScope,resources:input.resources.map(ref=>({...ref,id:ref.id.toLowerCase()})).sort((a,b)=>a.id.localeCompare(b.id))}
+    return this.tx(async client=>{
+      // 目标必须真实登记；不沿旧写口的缺表/内置范围兼容自动扩大来源授权。
+      if(!(await client.query("select to_regclass('teloa_business_scopes') as present")).rows[0]?.present||!(await client.query('select 1 from teloa_business_scopes where owner_id=$1 and scope=$2',[actor.ownerId,command.targetScope])).rowCount)throw new WorkError('teloa/forbidden','请先选择本人已登记的正式业务。')
+      await client.query('select pg_advisory_xact_lock(hashtextextended($1,0))',[JSON.stringify(['resource-adoption',actor.ownerId,command.requestId])])
+      const prior=(await client.query('select * from teloa_resource_adoptions where owner_id=$1 and request_id=$2 order by position',[actor.ownerId,command.requestId])).rows
+      if(prior.length){
+        if(prior.length!==command.resources.length||prior.some(row=>!sameAdoption(row.request_spec,command)))throw new WorkError('teloa/conflict','同一请求 ID 不能采用另一组资料或目标业务。')
+        const drafts:ResourceDraft[]=[]
+        for(const row of prior){if(!isWorkResource(row.origin))throw corrupt();authorizeResourceActor(actor,row.origin.ownerId,row.origin.scopeIds,true);drafts.push((await this.draft(client,actor,row.draft_id)).draft)}
+        return drafts
+      }
+      const drafts:ResourceDraft[]=[]
+      for(const [position,ref] of command.resources.entries()){
+        const origin=await this.resource(client,actor,ref.id)
+        if(origin.version!==ref.version||origin.sourceVersion!==ref.sourceVersion||origin.status!=='active')throw new WorkError('teloa/version-conflict','原资料版本或状态已变化，请重新读取后采用。')
+        let fixed:Awaited<ReturnType<ResourceSourceCatalog['read']>>
+        try{fixed=await this.sources.read(origin.sourceId,origin.sourceVersion,{actor,client,scopeIds:origin.scopeIds})}catch(error){if(error instanceof WorkError)throw error;throw new WorkError('teloa/source-unavailable','原资料的固定来源当前不可读取。')}
+        const bytes=Buffer.byteLength(fixed.text)
+        if(!bytes||bytes>2*1024*1024||fixed.text.includes('\0')||fixed.id!==origin.sourceId||fixed.bytes!==bytes||fixed.version!==origin.sourceVersion||createHash('sha256').update(fixed.text).digest('hex')!==origin.sourceVersion)throw new WorkError('teloa/source-unavailable','原资料正文与固定来源版本不一致。')
+        const sourceId='adopted_'+this.identity.id(),draftId=this.identity.id(),draftRequestId=this.identity.id(),now=this.identity.now(),value:ResourceSpec={title:origin.title,sourceId,sourceVersion:origin.sourceVersion,scopeIds:[command.targetScope]}
+        const row=(await client.query("insert into teloa_resource_drafts(id,owner_id,request_id,request_spec,spec,revision,status,created_at,updated_at) values($1,$2,$3,$4,$4,1,'draft',$5,$5) returning *",[draftId,actor.ownerId,draftRequestId,JSON.stringify(value),now])).rows[0]
+        await client.query('insert into teloa_resource_adoptions(owner_id,request_id,position,request_spec,source_id,draft_id,target_scope,origin,origin_source,source_version,content,bytes,created_at) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)',[actor.ownerId,command.requestId,position,JSON.stringify(command),sourceId,draftId,command.targetScope,JSON.stringify(origin),fixed.source,origin.sourceVersion,fixed.text,bytes,now])
+        drafts.push(draftRow(row))
+      }
+      return drafts
+    })
+  }
   private async draft(client:PoolClient,actor:ResourceActor,id:string):Promise<{draft:ResourceDraft;appliedVersion:unknown}>{
     const row=(await client.query('select * from teloa_resource_drafts where id=$1 for update',[id])).rows[0] as Record<string,unknown>|undefined
     if(!row)throw new WorkError('teloa/not-found','资源草案不存在。')
@@ -239,7 +274,7 @@ export class ResourceService {
       const resource=await this.resource(client,actor,id)
       if(resource.status!=='active')throw new WorkError('teloa/resource-withdrawn','资料已撤回，请先核对资料状态。')
       if(resource.version!==version||resource.sourceVersion!==data.sourceVersion)throw new WorkError('teloa/version-conflict','资料已更新，请刷新后查看当前内容。')
-      if(!resource.sourceId.startsWith('local_material_')&&!resource.sourceId.startsWith('industry_'))throw new WorkError('teloa/forbidden','此入口仅用于已加入的本机文件或员工包资料。')
+      if(!resource.sourceId.startsWith('local_material_')&&!resource.sourceId.startsWith('industry_')&&!resource.sourceId.startsWith('adopted_'))throw new WorkError('teloa/forbidden','此入口仅用于已加入的本机文件、员工包或业务采用资料。')
       return {resource,text:await this.source(resource,actor,client)}
     })
   }

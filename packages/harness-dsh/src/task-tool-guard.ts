@@ -1,3 +1,4 @@
+import {registerTaskPermissionLoop,type EmployeeRunReader,type TaskPermissionDenial} from './task-permission-loop.ts'
 import {taskToolArgumentsAllowed,type TaskToolArgumentRule} from './task-tool-arguments.ts'
 import type {Context} from '@deepseek-ai/cordis'
 import type {PreToolDecision,ToolDefinition,ToolExecution} from '@deepseek-ai/dsh-tools'
@@ -38,7 +39,8 @@ export type WebAccessGatePorts={
 }
 
 /** 复用 DSH 公开前置守卫，保留框架既有审批链；不凭工具名称前缀授予权限。 */
-export function registerTaskToolGuard(ctx:Context,readPolicy:TaskToolPolicyReader,selfAuthorizedTools:readonly string[]=[],readBusinessBinding?:TaskSessionBusinessBindingReader,delegation?:SubagentDelegationPorts,webAccess?:WebAccessGatePorts,team?:TaskRunTeamAccess,browserCleanup?:TaskBrowserCleanupAccess,orchestration?:TaskRunOrchestrationAccess,workspaceFiles?:TaskRunWorkspaceFileAccess,goalObservation?:TaskRunGoalObservationReader){
+export function registerTaskToolGuard(ctx:Context,readPolicy:TaskToolPolicyReader,selfAuthorizedTools:readonly string[]=[],readBusinessBinding?:TaskSessionBusinessBindingReader,delegation?:SubagentDelegationPorts,webAccess?:WebAccessGatePorts,team?:TaskRunTeamAccess,browserCleanup?:TaskBrowserCleanupAccess,orchestration?:TaskRunOrchestrationAccess,workspaceFiles?:TaskRunWorkspaceFileAccess,goalObservation?:TaskRunGoalObservationReader,isEmployeeRun?:EmployeeRunReader){
+ const permissionLoop=isEmployeeRun?registerTaskPermissionLoop(ctx,isEmployeeRun):undefined
  const selfAuthorized=new Set(selfAuthorizedTools)
  // 自授权分支在资源工具闸之前返回，装配期就堵死这条绕过路径，避免日后扩充自授权集时静默放开。
  if(mcpResourceTools.some(name=>selfAuthorized.has(name)))throw Error('自授权工具不能包含 MCP 资源工具。')
@@ -140,7 +142,9 @@ export function registerTaskToolGuard(ctx:Context,readPolicy:TaskToolPolicyReade
    return {kind:'deny',reason:'无法核对任务执行权限，请先恢复授权服务。'}
   }
   if(exec.signal.aborted)return {kind:'deny',reason:'本次工具调用已取消。'}
-  if(policy!==null&&exec.name==='plugin_manager')return {kind:'deny',reason:'受管任务不能修改 Teloa 的扩展，请由本人在创造模式中操作。'}
+  if(!cleanup&&!teamMember&&!orchestrationChild&&lineage.depth===0&&policy?.nativeRequestId)permissionLoop?.capture(exec,policySessionId,policy.nativeRequestId,policy.allowedTools.includes(exec.name)||selfAuthorized.has(exec.name))
+  const deny=(reason:TaskPermissionDenial,message:string):PreToolDecision=>{permissionLoop?.denied(exec,reason);return {kind:'deny',reason:message}}
+  if(policy!==null&&exec.name==='plugin_manager')return deny('tool-scope','受管任务不能修改 Teloa 的扩展，请由本人在创造模式中操作。')
   if(orchestrationChild&&orchestration?.ownsStructuredOutput(exec))return next()
   if(orchestrationChild&&orchestration&&!orchestration.toolAllowed(exec))return {kind:'deny',reason:'工具超出本次 Flow 子工作授权范围。'}
   // 交付复核的结构化回执：同上，只认本 agent 存活复核租约在自身作用域登记的同一定义、且正在接收本单元唯一一次提交；不进岗位授权清单。
@@ -151,14 +155,14 @@ export function registerTaskToolGuard(ctx:Context,readPolicy:TaskToolPolicyReade
    return next()
   }
   // 上游把 MCP 资源工具做成共享工具，普通会话也能看见；这条闸让它和其他工具一样只认岗位授权清单。
-  if(!mcpResourceToolAllowed(policy===null?null:policy.allowedTools,exec.name))return {kind:'deny',reason:'MCP 资源工具未在员工执行范围内授权。'}
+  if(!mcpResourceToolAllowed(policy===null?null:policy.allowedTools,exec.name))return deny('tool-scope','MCP 资源工具未在员工执行范围内授权。')
   // 本人会话可选官方能力；受管执行仍需显式岗位授权和子任务归属适配。
-  if(!orchestrationToolAllowed(policy===null?null:policy.allowedTools,exec.name))return {kind:'deny',reason:'编排类工具未在员工执行范围内授权。'}
+  if(!orchestrationToolAllowed(policy===null?null:policy.allowedTools,exec.name))return deny('tool-scope','编排类工具未在员工执行范围内授权。')
   if(policy!==null&&(exec.name==='workflow'||exec.name==='ralph')&&!orchestration)return {kind:'deny',reason:'本次执行未装配原生编排授权。'}
   // 委派会创建新的执行主体，执行态一次性拆分由同名 Teloa 工具在取得子会话身份后精确登记。
   if((delegationTools as readonly string[]).includes(exec.name)){
    if(policy!==null&&(teamDelegationTools as readonly string[]).includes(exec.name)&&team===undefined)return {kind:'deny',reason:'本次执行未装配受管 Team 授权。'}
-   if(!delegationToolAllowed(policy===null?null:policy.allowedTools,exec.name))return {kind:'deny',reason:'当前会话不能使用此委派工具，请核对员工执行范围。'}
+   if(!delegationToolAllowed(policy===null?null:policy.allowedTools,exec.name))return deny('tool-scope','当前会话不能使用此委派工具，请核对员工执行范围。')
    if(exec.name===subagentTaskToolName){
     if(delegation===undefined)return {kind:'deny',reason:'无法核对本次子任务执行范围，请稍后重试。'}
     if(lineage.depth>=delegation.limits.maxDepth)return {kind:'deny',reason:'已达到本次任务允许的拆分层数上限。'}
@@ -188,14 +192,14 @@ export function registerTaskToolGuard(ctx:Context,readPolicy:TaskToolPolicyReade
     }catch{gate=undefined}
    }
    // ①②先出各自的固定理由；③兜住 gate===undefined 与授权不足，逐字回既有那一句。
-   if(gate!==undefined&&!gate.enabled)return {kind:'deny',reason:'设置中已关闭网页搜索与读取。'}
-   if(gate!==undefined&&exec.name==='web_fetch'&&!gate.hostAllowed)return {kind:'deny',reason:'目标网站在拦截名单里。'}
-   if(!externalEgressToolAllowed(policy===null?null:policy.allowedTools,exec.name,businessBound,gate))return {kind:'deny',reason:'本会话关联了外部业务来源，联网工具未在员工执行范围内授权。'}
+   if(gate!==undefined&&!gate.enabled)return deny('web-scope','设置中已关闭网页搜索与读取。')
+   if(gate!==undefined&&exec.name==='web_fetch'&&!gate.hostAllowed)return deny('web-scope','目标网站在拦截名单里。')
+   if(!externalEgressToolAllowed(policy===null?null:policy.allowedTools,exec.name,businessBound,gate)){const message='本会话关联了外部业务来源，联网工具未在员工执行范围内授权。';return policy!==null&&!policy.allowedTools.includes(exec.name)?deny('tool-scope',message):{kind:'deny',reason:message}}
    // ④岗位清单与参数范围这两道既有闸必须先于写记录判完：记录的语义是「一次已放行的外发」
    // （契约 `web-access.ts:5`），未授权的执行态会话不该先落账再被拒——那张表只追加，删不掉。
    // 判据与下面两行逐字同一份；这里先判一次，放行后下面再判一次，结论恒等。
-   if(policy!==null&&!policy.allowedTools.includes(exec.name))return {kind:'deny',reason:'当前任务未授权使用此工具，请核对员工执行范围。'}
-   if(policy?.argumentRules!==undefined&&!taskToolArgumentsAllowed(policy.argumentRules,exec.name,exec.arguments))return {kind:'deny',reason:'工具参数超出本次任务授权的数据范围或版本。'}
+   if(policy!==null&&!policy.allowedTools.includes(exec.name))return deny('tool-scope','当前任务未授权使用此工具，请核对员工执行范围。')
+   if(policy?.argumentRules!==undefined&&!taskToolArgumentsAllowed(policy.argumentRules,exec.name,exec.arguments))return deny('argument-scope','工具参数超出本次任务授权的数据范围或版本。')
    // ⑤派发前写记录：写不进就没有对价，按不变式 2 拒绝；普通会话（'no-run'）放行且不记录。
    // web_fetch 的重定向目标由 DSH `web-fetch-http` 复判（组合钉已钉死 maxRedirects:3），本闸只判首跳 URL。
    if(webAccess!==undefined&&entry!==undefined){
@@ -203,9 +207,9 @@ export function registerTaskToolGuard(ctx:Context,readPolicy:TaskToolPolicyReade
     catch{return {kind:'deny',reason:'无法记录本次上网，已取消该工具调用。'}}
    }
   }
-  if(policy!==null&&!cleanup&&!policy.allowedTools.includes(exec.name))return {kind:'deny',reason:'当前任务未授权使用此工具，请核对员工执行范围。'}
+  if(policy!==null&&!cleanup&&!policy.allowedTools.includes(exec.name))return deny('tool-scope','当前任务未授权使用此工具，请核对员工执行范围。')
   // 技能代发按「岗位 × 技能」授权（审查修复 R1 M-1）：参数里只有 skill 对应授权记录，地址与请求体由工具自身按声明核对。
-  if(policy?.argumentRules!==undefined&&(exec.name===skillHttpToolName?!skillHttpGrantedSkills(policy.argumentRules).includes(String((exec.arguments as Record<string,unknown>|undefined)?.skill)):!taskToolArgumentsAllowed(policy.argumentRules,exec.name,exec.arguments)))return {kind:'deny',reason:'工具参数超出本次任务授权的数据范围或版本。'}
+  if(policy?.argumentRules!==undefined&&(exec.name===skillHttpToolName?!skillHttpGrantedSkills(policy.argumentRules).includes(String((exec.arguments as Record<string,unknown>|undefined)?.skill)):!taskToolArgumentsAllowed(policy.argumentRules,exec.name,exec.arguments)))return deny('argument-scope','工具参数超出本次任务授权的数据范围或版本。')
   if(policy!==null&&(workspaceFileToolNames as readonly string[]).includes(exec.name)){
    if(!workspaceFiles||!policy.argumentRules?.some(rule=>rule.name===exec.name&&isWorkspaceFileRule(rule)))return {kind:'deny',reason:'当前任务未装配受限工作目录文件授权。'}
    const issue=await workspaceFiles.check(exec,lineage.root,policy)
@@ -241,5 +245,5 @@ export function registerTaskToolGuard(ctx:Context,readPolicy:TaskToolPolicyReade
   }
   return next()
  })
- return ()=>{removePreExecute();removeNativeGuard();removeOrchestrationGuard();removeManagedGuard();removeFileGuard()}
+ return ()=>{permissionLoop?.dispose();removePreExecute();removeNativeGuard();removeOrchestrationGuard();removeManagedGuard();removeFileGuard()}
 }

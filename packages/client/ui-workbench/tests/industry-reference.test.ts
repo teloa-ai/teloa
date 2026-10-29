@@ -51,6 +51,9 @@ test('独立Skill可明确供行业引用，固定正文和附件且不伪造原
  const result=await resolveIndustryReferences(consumer,[stored],candidates)
  const resolved=result.packageContent!.resolved![0]!
  assert.equal(resolved.inspection.state,'pending')
+ assert.match(resolved.inspection.message,/市场 → 我的应用与技能/)
+ assert.match(resolved.inspection.message,/员工 → 能力/)
+ assert.doesNotMatch(resolved.inspection.message,/尚未安装|运行条件待检查/)
  assert.equal(resolved.inspection.definition?.kind,'skill')
  assert.equal(resolved.sourceFiles.length,2)
  const entry=marketResourceIndex([stored,result]).find(row=>row.itemId===stored.id)!

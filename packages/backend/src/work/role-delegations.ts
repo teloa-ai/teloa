@@ -2,7 +2,7 @@ import {readActiveGroupWorkResource} from './group-work-resources.ts'
 import type {Pool,PoolClient} from 'pg'
 import {createHash} from 'node:crypto'
 import {isDeepStrictEqual} from 'node:util'
-import {WorkError,taskInput,roleSupportsScope,groupDefinition,isResourceSpec,readTaskRunFlow,groupRunResultManifest,type DigitalRole,type RoleWorkDelegation,type TwinExecutionConsent} from '@teloa/contract'
+import {WorkError,roleKnowledgeMaxReferences,taskInput,roleSupportsScope,groupDefinition,isResourceSpec,readTaskRunFlow,groupRunResultManifest,type DigitalRole,type RoleWorkDelegation,type TwinExecutionConsent} from '@teloa/contract'
 import {readGroupAgentGrant} from './group-agent-grants.ts'
 import {readRoleToolGrant} from './role-tool-grants.ts'
 import {readStoredRoleMemoryView} from './role-memory-views.ts'
@@ -31,7 +31,7 @@ function readFields(value:unknown):RoleDelegationFields{
  }
  if(typeof row.scope!=='string'||!/^[-a-zA-Z0-9_]{1,128}$/.test(row.scope)||row.memoryViewId!==null&&!roleWorkUuid(row.memoryViewId)||typeof row.safeRecovery!=='boolean')throw roleWorkInvalid()
  const names=(v:unknown):v is string=>typeof v==='string'&&/^[-a-zA-Z0-9_.]{1,128}$/.test(v)
- return {scope:row.scope,allowedTools:list(row.allowedTools,names,256),knowledgeIds:list(row.knowledgeIds,roleWorkUuid,8).map(id=>id.toLowerCase()),memoryViewId:row.memoryViewId===null?null:(row.memoryViewId as string).toLowerCase(),groupIds:list(row.groupIds,roleWorkUuid,30).map(id=>id.toLowerCase()),safeRecovery:row.safeRecovery}
+ return {scope:row.scope,allowedTools:list(row.allowedTools,names,256),knowledgeIds:list(row.knowledgeIds,roleWorkUuid,roleKnowledgeMaxReferences).map(id=>id.toLowerCase()),memoryViewId:row.memoryViewId===null?null:(row.memoryViewId as string).toLowerCase(),groupIds:list(row.groupIds,roleWorkUuid,30).map(id=>id.toLowerCase()),safeRecovery:row.safeRecovery}
 }
 export function readStoredRoleWorkDelegation(row:Record<string,unknown>):RoleWorkDelegation{
  try{

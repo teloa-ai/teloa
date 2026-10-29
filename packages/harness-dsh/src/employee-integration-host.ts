@@ -14,7 +14,7 @@ type WebRoute={kind:'exact'|'prefix';path:string;handler:(req:IncomingMessage,re
 type WebServer={register:(route:WebRoute)=>()=>void}
 type Pool=EmployeeIntegrationService['pool']
 type Ports={owner:string;pool:()=>Promise<Pool>;employees:()=>Promise<DigitalRole[]>;scopes:()=>Promise<readonly string[]>;runtime:EmployeeApiRuntime;admit:<T>(run:()=>Promise<T>)=>Promise<T>;report:(code:string)=>void}
-export const employeeIntegrationOwnerEndpoints=['employee-integrations/list','employee-integrations/create','employee-integrations/rotate','employee-integrations/revoke','employee-integrations/deliveries','employee-integrations/retry'] as const
+export const employeeIntegrationOwnerEndpoints=['employee-integrations/list','employee-integrations/create','employee-integrations/rotate','employee-integrations/revoke','employee-integrations/deliveries','employee-integrations/retry','employee-integrations/work-for-task','employee-integrations/continue-work'] as const
 const toolName={listEmployees:'teloa_list_employees',startWork:'teloa_start_work',getWork:'teloa_get_work',continueWork:'teloa_continue_work',cancelWork:'teloa_cancel_work',getResult:'teloa_get_result',listEvents:'teloa_list_work_events'} as const
 const identitySchema={type:'string',format:'uuid'}
 const mcpTools=[
@@ -34,6 +34,19 @@ function publicError(error:unknown):EmployeeApiError{
   if(['teloa/version-conflict','teloa/conflict'].includes(error.code))return new EmployeeApiError('conflict','Configuration changed; read the current state before retrying.',409)
  }
  return new EmployeeApiError('service_unavailable','The work service is unavailable. Retry the same idempotent request later.',503)
+}
+/** 原工作操作使用稳定错误分类；不能套用创建凭据的回调地址校验文案。 */
+function ownerWorkError(error:EmployeeApiError):WorkError{
+ if(error.status===401||error.status===403)return new WorkError('teloa/forbidden','原集成已失效或未获准续办，请核对员工对外调用授权。',{reason:'employee-api-integration-unavailable'})
+ if(error.code==='version_conflict'||error.code==='employee_changed')return new WorkError('teloa/version-conflict','原 API 工作或员工配置已变化，请刷新后再核对续办。')
+ if(error.code==='work_busy')return new WorkError('teloa/conflict','原工作仍在执行，请刷新并等待本轮结束后再续办。',{reason:'employee-api-work-busy'})
+ if(error.code==='concurrency_limit')return new WorkError('teloa/conflict','原集成已达到并发额度，请等待已有工作结束后再续办。',{reason:'employee-api-concurrency-limit'})
+ if(error.code==='idempotency_conflict'||error.code==='conflict')return new WorkError('teloa/conflict','原续办请求与已有记录不一致，请核对原工作及待恢复请求。')
+ if(error.code==='model_unavailable')return new WorkError('teloa/dependency-unavailable','原工作使用的模型或模型认证暂不可用，请核对模型设置后恢复同一续办请求。',{reason:'employee-api-model-unavailable'})
+ if(error.code==='permission_mode_unavailable')return new WorkError('teloa/dependency-unavailable','原工作使用的执行权限档位暂不可用，请核对宿主配置后恢复同一续办请求。',{reason:'employee-api-permission-mode-unavailable'})
+ if(error.status>=500||error.code==='employee_unavailable')return new WorkError('teloa/dependency-unavailable','原 API 工作暂时无法完成此操作，请核对员工与宿主状态后恢复同一请求。',{reason:'employee-api-service-unavailable'})
+ if(error.status===404)return new WorkError('teloa/not-found','原 API 工作暂时无法定位，请核对原任务。')
+ return new WorkError('teloa/invalid-input','原工作续办输入不符合要求，请核对任务身份、当前版本与续办正文。')
 }
 const json=(res:ServerResponse,status:number,value:unknown,requestId:string)=>{res.writeHead(status,{'content-type':'application/json; charset=utf-8','cache-control':'no-store','x-content-type-options':'nosniff','x-request-id':requestId});res.end(JSON.stringify(value))}
 async function body(req:IncomingMessage){
@@ -125,13 +138,15 @@ export function createEmployeeIntegrationHost(ctx:Context,ports:Ports){
    try{
    const s=await services()
    if(endpoint==='employee-integrations/list'){taskInput(payload,[]);return {items:await s.keys.list(ports.owner),employees:(await ports.employees()).filter(role=>role.kind==='employee'&&role.state==='active'&&role.responsibility),scopes:await ports.scopes()}}
+   if(endpoint==='employee-integrations/work-for-task')return await s.work.forOwnerTask(ports.owner,payload)
+   if(endpoint==='employee-integrations/continue-work')return await s.work.continueOwnerTask(ports.owner,payload,controller.signal)
    if(endpoint==='employee-integrations/create')return await s.keys.create(ports.owner,payload)
    if(endpoint==='employee-integrations/rotate')return await s.keys.rotate(ports.owner,payload)
    if(endpoint==='employee-integrations/revoke')return await s.keys.revoke(ports.owner,payload)
    if(endpoint==='employee-integrations/deliveries'){const r=taskInput(payload,['id']);return {items:await s.hooks.list(ports.owner,employeeApiId(r.id))}}
    if(endpoint==='employee-integrations/retry'){const r=taskInput(payload,['eventId']);return s.hooks.retry(ports.owner,employeeApiId(r.eventId))}
    throw new WorkError('teloa/not-found','未提供此集成管理操作。')
-   }catch(error){if(error instanceof EmployeeApiError)throw new WorkError(error.status===403||error.status===401?'teloa/forbidden':'teloa/invalid-input','请核对员工身份、版本和回调地址；远程回调使用HTTPS，本机回环可使用HTTP。');throw error}
+   }catch(error){if(error instanceof EmployeeApiError){if(endpoint==='employee-integrations/work-for-task'||endpoint==='employee-integrations/continue-work')throw ownerWorkError(error);throw new WorkError(error.status===403||error.status===401?'teloa/forbidden':'teloa/invalid-input','请核对员工身份、版本和回调地址；远程回调使用HTTPS，本机回环可使用HTTP。')}throw error}
   },
   async close(){closed=true;clearTimeout(timer);controller.abort();for(const remove of unregister)remove();await Promise.allSettled([...transports].map(transport=>transport.close()));await inFlight},
  }

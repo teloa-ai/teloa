@@ -2,7 +2,7 @@ import markdownTypography from "./MarkdownTypography.module.css"
 import type {WorkProject,WorkTask} from '@teloa/contract'
 import {useEffect,useState,useSyncExternalStore} from 'react'
 import {Users,Sparkles,ChevronRight} from 'lucide-react'
-import {verifyKnowledgeVersionContent,type DigitalRole,type Group,type PageCreateDraftPreview,type PageCreateDraft,type WorkResource,type ResourceDraft,type KnowledgeNode,type KnowledgeVersion} from '@teloa/contract'
+import {readCustomMcpDefinition,verifyKnowledgeVersionContent,type DigitalRole,type Group,type PageCreateDraftPreview,type PageCreateDraft,type WorkResource,type ResourceDraft,type KnowledgeNode,type KnowledgeVersion} from '@teloa/contract'
 import type {PropsRuntime} from '@deepseek-ai/dsh-client-ui-slots'
 import type {ToolCallViewProps} from '@deepseek-ai/dsh-client-ui-tool/client'
 import type {PageCreateApi} from './page-create-api.js'
@@ -56,6 +56,10 @@ const record=(value:unknown):Record<string,unknown>=>value!==null&&typeof value=
 const label=(value:unknown):string=>typeof value==='string'?value.trim().slice(0,300):''
 /** 原始定义仅供只读核对；文件编码与凭据没有展示用途。 */
 function readableDefinition(value:unknown,hidden:string,key=''):unknown{
+ if(record(value).schema==='teloa.mcp-server/v1')try{
+  const definition=readCustomMcpDefinition(value),{auth,...rest}=definition
+  return {...Object.fromEntries(Object.entries(rest).map(([name,item])=>[name,readableDefinition(item,hidden,name)])),...auth?{auth:{kind:auth.kind,requirement:auth.requirement??'all',headers:auth.headers}}:{}}
+ }catch{return hidden}
  if(/(?:password|secret|token|credential|authorization|cookie|headers|env|api[_-]?key|access[_-]?key|private[_-]?key)|^(?:key|auth)$/i.test(key))return hidden
  if(Array.isArray(value))return value.slice(0,200).map(item=>readableDefinition(item,hidden))
  if(value!==null&&typeof value==='object')return Object.fromEntries(Object.entries(value).filter(([key])=>!/base64/i.test(key)).map(([key,item])=>[key,readableDefinition(item,hidden,key)]))

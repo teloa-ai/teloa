@@ -24,6 +24,15 @@ test('固定公共原件安装可供业务usage复用；没usage时只说已安�
  const unlinked=await fact(api({list:async()=>({items:[installation],usages:[]})}))
  assert.equal(unlinked.status,'unlinked');assert.equal(unlinked.nativeName,undefined)
 })
+test('本地包升级的等价原安装仍需当前usage及真实默认工作区观测，不把旧包或新包内容身份当安装状态',async()=>{
+ const localSource:SkillInstallSourceIdentity={kind:'industry-local',loadId,itemInstanceId:itemId,contentId,contentHash:hash,resourceId:'writing-revision',resourceVersion:'1.0.0'}
+ const installed={...installation,source:{...localSource,loadId:'80000000-0000-4000-8000-000000000001',itemInstanceId:'90000000-0000-4000-8000-000000000001',contentId:'a0000000-0000-4000-8000-000000000001',contentHash:'f'.repeat(64)}}
+ const port=api({preview:async()=>({...preview,source:localSource}),list:async()=>({items:[installed],usages:[]})})
+ const unlinked=await fact(port)
+ assert.equal(unlinked.status,'unlinked');assert.equal(unlinked.installationId,installed.id);assert.equal(unlinked.linked,false);assert.equal(unlinked.nativeName,undefined)
+ assert.equal((await fact({...port,observe:async()=>({...observed,state:'missing',current:null})})).status,'missing')
+ assert.equal((await fact({...port,list:async()=>({items:[installed],usages:[{loadId,itemInstanceId:itemId,installationId}]})})).status,'installed')
+})
 test('业务usage指向同名的错误来源/版本/包/正文/信任版本均拒绝冒认',async()=>{
  const original=installation.source;assert.equal(original.kind,'atomic')
  const rows:SkillInstallationRecord[]=[{...installation,source:{...original,contentHash:'d'.repeat(64)}},{...installation,source:{...original,resourceVersion:'2.0.0'}},{...installation,bundleHash:'d'.repeat(64)},{...installation,native:{...native,bodyHash:'d'.repeat(64)}},{...installation,trustHash:'d'.repeat(64)}]

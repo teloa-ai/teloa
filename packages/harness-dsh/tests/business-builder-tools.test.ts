@@ -59,6 +59,38 @@ test('固定原生 schema 提供有界 patchJson；read 给出当前身份下可
   assert.equal((await f.call(revise,args)).isError,false);assert.equal((await f.service.get(f.actor,{draftId:f.draft.id})).revision,canonical.revision,'重放沿原请求回执，不增加版本')
  }
 })
+test('搭建目录提供经契约校验的成果映射完整例，叶子读取和单条upsert保留原页面与定义',async t=>{
+ for(const rich of [false,true]){
+  const f=await fixture();t.after(()=>f.ctx.fiber.dispose())
+  if(rich)await f.service.upgradeFormat(f.actor,{draftId:f.draft.id,expectedRevision:1,requestId:randomUUID()})
+  const body=(result:Awaited<ReturnType<typeof f.call>>)=>JSON.parse(result.content.map(item=>item.type==='text'?item.text:'').join(''))
+  let current=body(await f.call(read))
+  assert.equal((await f.call(revise,{draftId:f.draft.id,expectedRevision:current.revision,patchJson:current.capabilities.patchProtocol.exampleJson})).isError,false)
+  const before=await f.service.get(f.actor,{draftId:f.draft.id})
+  current=body(await f.call(read));const protocol=current.capabilities.sourceMappingProtocol,example=JSON.parse(protocol.examplePatchJson)
+  assert.equal(protocol.format,'teloa.business-source-mapping/v1');assert.equal(protocol.exampleOnly,true);assert.equal(protocol.canAddExample,true)
+  assert.ok(protocol.required.includes('mapping'));assert.ok(protocol.required.includes('acknowledgeShortInterval'))
+  assert.match(protocol.update.rules,/只传本次变更.*未出现在patch.*保留/);assert.match(protocol.update.rules,/不读取平台源码/)
+  assert.match(protocol.sourceKinds['role-result'].rules,/\$\.object\.id.*唯一主键/)
+  assert.deepEqual(example.upsertDefinitions.map((item:any)=>item.kind),['object-type','source-mapping'])
+  const mapping=example.upsertDefinitions[1].definition
+  assert.equal(mapping.domain,f.draft.scope);assert.deepEqual(mapping.source,{kind:'role-result'})
+  assert.equal(mapping.mapping.find((item:any)=>item.field===mapping.primaryKey[0]).path,'$.object.id')
+  assert.equal((await f.call(revise,{draftId:f.draft.id,expectedRevision:current.revision,patchJson:protocol.examplePatchJson})).isError,false)
+  const added=await f.service.get(f.actor,{draftId:f.draft.id})
+  assert.deepEqual(added.candidate.pages,before.candidate.pages);assert.equal(added.candidate.homePageId,before.candidate.homePageId)
+  assert.deepEqual(added.candidate.definitions.slice(0,before.candidate.definitions.length),before.candidate.definitions)
+  current=body(await f.call(read));assert.deepEqual(current.capabilities.sourceMappingProtocol.readExistingExample,{definition:{kind:'source-mapping',localId:mapping.id}})
+  const leaf=body(await f.call(read,current.capabilities.sourceMappingProtocol.readExistingExample))
+  assert.deepEqual(leaf.definition,{kind:'source-mapping',definition:mapping})
+  const changed={...mapping,title:'调整成果映射名称'}
+  assert.equal((await f.call(revise,{draftId:f.draft.id,expectedRevision:leaf.revision,patchJson:JSON.stringify({upsertDefinitions:[{kind:'source-mapping',definition:changed}]})})).isError,false)
+  const updated=await f.service.get(f.actor,{draftId:f.draft.id})
+  assert.deepEqual(updated.candidate.pages,added.candidate.pages);assert.equal(updated.candidate.definitions.length,added.candidate.definitions.length)
+  assert.deepEqual(updated.candidate.definitions.filter(item=>item.definition.id!==mapping.id),added.candidate.definitions.filter(item=>item.definition.id!==mapping.id))
+  assert.equal(updated.candidate.definitions.find(item=>item.definition.id===mapping.id)?.definition.title,changed.title)
+ }
+})
 test('合法23/24页草案目录始终可读，容量受限时只提供合法现有页修改例并保留全部原页和顺序',async t=>{
  for(const count of [23,24]){
   const f=await fixture();t.after(()=>f.ctx.fiber.dispose())

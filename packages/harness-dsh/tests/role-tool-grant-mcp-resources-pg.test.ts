@@ -19,6 +19,7 @@ import {openResourceDatabase,initializeCollaboration,initializeGroupAgentGrants,
 import {testRoleResponsibility} from './role-test-fixture.ts'
 import {referenceReadTool,referenceServerName,referenceToolRules,validateReferenceToolRules} from '../src/role-tool-grants.ts'
 import {registerTaskToolGuard} from '../src/task-tool-guard.ts'
+import {createPublicReferenceCatalog} from '../../mcp-reference/src/local.ts'
 
 let container:StartedPostgreSqlContainer,pool:TaskRunService['pool'],temporary:string
 const identity={id:randomUUID,now:()=>new Date().toISOString()}
@@ -32,9 +33,9 @@ before(async()=>{
 },{timeout:120000})
 after(async()=>{await pool?.end();await container?.stop();if(temporary)await rm(temporary,{recursive:true,force:true})})
 
-const text='公共参考正文'
+const publicCatalog=createPublicReferenceCatalog(),publicInfo=(await publicCatalog.list()).references[0]!,text=(await publicCatalog.read(publicInfo.id,publicInfo.version)).text
 /** 岗位声明的公共资料快照；sourceVersion 必须是正文摘要，否则执行快照读取会判定损坏。 */
-const knowledgeItem=(id:string)=>({id,version:1,title:'公共依据',sourceId:'public-'+id,sourceVersion:createHash('sha256').update(text).digest('hex'),scopeIds:['general'],text})
+const knowledgeItem=(id:string)=>({id,version:1,title:'公共依据',sourceId:publicInfo.id,sourceVersion:createHash('sha256').update(text).digest('hex'),scopeIds:['general'],text})
 
 /** 建一个已声明公共资料、处于暂停态的雇员岗位，并关联任务会话，供真实 prepare 使用。 */
 async function fixture(){
@@ -56,7 +57,7 @@ test('岗位显式授权后 MCP 列举工具经真实 prepare 与守卫放行，
  const grants=new RoleToolGrantService(pool,identity.now,async(_db,_owner,_role,rules)=>policy.validate(rules))
 
  // 1) 保存授权：真实 change 走生产校验，读取正文与列举资源工具都能进规则表。
- const rules=[{name:referenceReadTool,allowed:[{id:'public-'+knowledgeId,version:knowledgeItem(knowledgeId).sourceVersion}]},{name:'list_mcp_resources',allowed:[{server:referenceServerName}]}]
+ const rules=[{name:referenceReadTool,allowed:[{id:publicInfo.id,version:knowledgeItem(knowledgeId).sourceVersion}]},{name:'list_mcp_resources',allowed:[{server:referenceServerName}]}]
  const saved=await grants.change(owner,{roleId:role.id,expectedRoleVersion:1,action:'save',rules})
  assert.equal(saved.state,'active');assert.equal(saved.roleVersion,2)
  // 读取类资源工具没有候选参数，真实保存链路直接拒绝。

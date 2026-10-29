@@ -347,7 +347,7 @@ export class TaskService{
     const admission=await new RoleWorkEligibilityService(this.pool).authorize(owner,{roleId:assigned.id,expectedRoleVersion:assigned.version,scope:task.scope,inputSchema:'teloa.task-run-input/v2',authorization,groupId:task.groupId},client)
     await client.query('update teloa_tasks set execution_authorization=$3 where owner_id=$1 and id=$2',[owner,task.id,JSON.stringify(authorization)]);admission.assertCurrent()
    }
-   await new WorkLineageService(this.pool,this.identity).bindTask(client,owner,{taskId:task.id,source:source??{kind:'owner-task',taskId:task.id}})
+   await new WorkLineageService(this.pool,this.identity).bindTask(client,owner,{taskId:task.id,source:source??{kind:'owner-task',taskId:task.id}},identity)
    if(identity?.executor==='general')await bindArtifactRevisionTask(client,owner,identity.requestId,task.id)
    confirmed?.assertCurrent();return task
  }

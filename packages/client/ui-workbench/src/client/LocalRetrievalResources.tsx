@@ -1,5 +1,6 @@
 import {ActionButton} from '@teloa/client-ui-kit'
-import type {WorkResource} from '@teloa/contract'
+import {useEffect,useRef,useState} from 'react'
+import type {RetrievalSearchResult,WorkResource} from '@teloa/contract'
 import type {LocalRetrievalApi,RetrievalStatus} from './local-retrieval-api.js'
 import type {RetrievalTranslate} from './LocalRetrievalModelPanel.js'
 import {useRetrievalSnapshot} from './use-retrieval-snapshot.js'
@@ -32,12 +33,12 @@ export function LocalRetrievalResourcesPresentation({status,resource,busy,error,
   </header>
   {error&&<p role="alert" className={css.error}>{error}</p>}
 
-  {(selectedRow||!!status?.items.length)&&<ul className={css.rows}>
+  {(selectedRow||!!status?.items.length)&&<details open={!!status?.building||!!selectedRow||status?.items.some(row=>row.state!=='ready')}><summary>{t('retrieval.resources.statusList')}</summary><ul className={css.rows}>
    {selectedRow&&<li className={css.row} aria-current="true"><span className={css.rowText}>{selectedRow.title+' · '+selectedRow.label}{enrolled&&together(selectedRow.sourceId)}</span>{enrolled
     ?<ActionButton className={css.button} aria-label={t('retrieval.resources.removeAria',{title:selectedRow.title})} disabled={readOnly} onClick={()=>onRemove(selectedRow.sourceId)}>{t('retrieval.resources.remove')}</ActionButton>
     :<ActionButton className={css.button} aria-label={t('retrieval.resources.enrollAria',{title:selectedRow.title})} disabled={readOnly||!modelReady||resource?.status!=='active'} onClick={()=>onEnroll(selectedRow.sourceId)}>{t('retrieval.resources.enroll')}</ActionButton>}</li>}
    {status?.items.map(row=>{const title=row.title??t('retrieval.index.unavailable');return <li key={row.resourceId??row.sourceId} className={css.row} aria-current={resource&&row.resourceId===resource.id?'true':undefined}><span className={css.rowText}>{title+' · '+itemLabel(row.state)}{together(row.sourceId)}</span><ActionButton className={css.button} aria-label={t('retrieval.resources.removeAria',{title})} disabled={busy||!!readFailed} onClick={()=>onRemove(row.sourceId)}>{t('retrieval.resources.remove')}</ActionButton></li>})}
-  </ul>}
+  </ul></details>}
   {status&&status.items.length>0&&<details className={css.info}><summary>{t('retrieval.resources.details')}</summary><ul>{status.items.map(row=><li key={row.resourceId??row.sourceId}>{row.title??t('retrieval.index.unavailable')} · {t('retrieval.index.'+row.state)}{row.chunkCount!==null&&` · ${t('retrieval.resources.chunks',{count:row.chunkCount})}`}</li>)}</ul><p>{t('retrieval.resources.totalChunks',{chunks:status.chunks})}</p></details>}
  </section>
 }
@@ -51,5 +52,17 @@ export function LocalRetrievalResources({api,resource,visible,onModelSettings}:{
   if(!latest.enabled||!latest.provider||!['ready','standby'].includes(latest.provider.preparation.phase)){onModelSettings?.();return api.status(signal)}
   return api.enroll(sourceId,signal)
  })
- return <LocalRetrievalResourcesPresentation status={snapshot.value?.index} resource={resource} busy={snapshot.busy} readFailed={snapshot.readFailed} modelReady={ready} modelLabel={modelLabel} error={snapshot.error?localizeWorkError(locale,snapshot.error):''} t={t as RetrievalTranslate} {...(onModelSettings?{onModelSettings}:{})} onEnroll={enroll} onRemove={id=>run(signal=>api.remove(id,signal))} onReindex={()=>run(signal=>api.reindex(signal))} onCancel={()=>run(signal=>api.cancel(signal))}/>
+ return <><LocalRetrievalResourcesPresentation status={snapshot.value?.index} resource={resource} busy={snapshot.busy} readFailed={snapshot.readFailed} modelReady={ready} modelLabel={modelLabel} error={snapshot.error?localizeWorkError(locale,snapshot.error):''} t={t as RetrievalTranslate} {...(onModelSettings?{onModelSettings}:{})} onEnroll={enroll} onRemove={id=>run(signal=>api.remove(id,signal))} onReindex={()=>run(signal=>api.reindex(signal))} onCancel={()=>run(signal=>api.cancel(signal))}/>{ready&&<RetrievalTrial api={api}/>}</>
+}
+
+/** 命中原片段由同一检索权限和版本校验返回；查询取消不取消后台索引。 */
+function RetrievalTrial({api}:{api:LocalRetrievalApi}){
+ const {locale,t}=useI18n(),[query,setQuery]=useState(''),[result,setResult]=useState<RetrievalSearchResult>(),[busy,setBusy]=useState(false),[error,setError]=useState(''),active=useRef<AbortController>()
+ useEffect(()=>{setResult(undefined);setError('');setBusy(false);return()=>active.current?.abort()},[api])
+ const search=async()=>{
+  if(busy||!query.trim())return
+  const controller=new AbortController();active.current=controller;setBusy(true);setError('');setResult(undefined)
+  try{const next=await api.search(query.trim(),controller.signal);if(!controller.signal.aborted)setResult(next)}catch(cause){if(!controller.signal.aborted)setError(localizeWorkError(locale,cause))}finally{if(active.current===controller&&!controller.signal.aborted){setBusy(false);active.current=undefined}}
+ }
+ return <details className={css.panel}><summary>{t('retrieval.trial.title')}</summary><p>{t('retrieval.trial.boundary')}</p><form className={css.trialForm} onSubmit={event=>{event.preventDefault();void search()}}><label>{t('retrieval.trial.query')}<input value={query} maxLength={500} disabled={busy} onChange={event=>{setQuery(event.target.value);setResult(undefined);setError('')}}/></label><ActionButton className={css.button} type="submit" disabled={busy||!query.trim()}>{t(busy?'retrieval.trial.searching':'retrieval.trial.search')}</ActionButton></form>{error&&<p role="alert">{error}</p>}{result&&<div role="status"><p>{t('retrieval.trial.coverage',{searched:result.coverage.searched.length,pending:result.coverage.pending.length})}</p>{!result.results.length&&<p>{t('retrieval.trial.empty')}</p>}{result.results.map((hit,index)=><article key={index}><h4>{hit.title} · v{hit.resourceVersion}</h4><small>{t('retrieval.trial.lines',{start:hit.lines[0]+1,end:hit.lines[1]+1})}{hit.heading?' · '+hit.heading:''}</small><pre className={css.excerpt}>{hit.excerpt}</pre></article>)}</div>}</details>
 }

@@ -8,16 +8,17 @@ import { useI18n } from './i18n/provider.js'
 import { applicationPresentation } from './application-presentation.js'
 import css from './CreateConversationDialog.module.css'
 
-type Props={management:ConversationManagement;current:string|undefined;initialWorkspaceId:string|undefined;pendingRequestId:string|undefined;restart:(requestId:string)=>void;locked:boolean;busy:boolean;goal:string|undefined;notice?:string|undefined;initialError?:string|undefined;mode?:'create'|'chooseWorkspace';create:(workspaceId?:string)=>Promise<void>;close:()=>void;settings:()=>void}
+type Props={management:ConversationManagement;current:string|undefined;initialWorkspaceId:string|undefined;pendingRequestId:string|undefined;restart:(requestId:string)=>void;locked:boolean;busy:boolean;goal:string|undefined;notice?:string|undefined;initialError?:string|undefined;mode?:'create'|'chooseWorkspace';create:(workspaceId?:string)=>Promise<void>;close:()=>void;settings:()=>void;reloadConfiguration?:(()=>Promise<void>)|undefined;scopeChoices?:readonly {id:string;label:string}[];selectedScope?:string|undefined;onScopeChange?:((scope:string)=>void)|undefined}
 
 /** 选择原生登记身份，不把执行位置显示名或任意路径作为创建参数。`mode==='chooseWorkspace'` 对应左栏「更换执行位置」入口，标题、说明与主按钮换成对应文案；常规新建路径不受影响。
  * 宿主分配执行位置时不显示位置选择、本机路径与管理入口，只保留目标、待恢复说明与错误；提交沿用待恢复请求的原位置（通常为空，由宿主分配）。 */
-export function CreateConversationDialog({management,current,initialWorkspaceId,pendingRequestId,restart,locked,busy,goal,notice,initialError,mode='create',create,close,settings}:Props){
+export function CreateConversationDialog({management,current,initialWorkspaceId,pendingRequestId,restart,locked,busy,goal,notice,initialError,mode='create',create,close,settings,reloadConfiguration,scopeChoices,selectedScope,onScopeChange}:Props){
   const {locale,t}=useI18n()
   const hostAssigned=useSyncExternalStore(applicationPresentation.subscribe,applicationPresentation.getExecutionPlacement,applicationPresentation.getExecutionPlacement)==='host-assigned'
   const changingLocation=mode==='chooseWorkspace'&&!hostAssigned
   const native=useSyncExternalStore(management.subscribe,management.getSnapshot)
-  const [selected,setSelected]=useState(initialWorkspaceId??''),[error,setError]=useState<string|undefined>(initialError)
+  const [selected,setSelected]=useState(initialWorkspaceId??''),[error,setError]=useState<string|undefined>(initialError),[refreshing,setRefreshing]=useState(false),[reloaded,setReloaded]=useState(false)
+  useEffect(()=>setError(initialError),[initialError])
   const dialog=useRef<HTMLDialogElement>(null),select=useRef<HTMLSelectElement>(null),pending=useRef(false)
   const initialized=useRef(initialWorkspaceId!==undefined),focusAfterUnlock=useRef(false)
   useEffect(()=>{if(!locked&&focusAfterUnlock.current){focusAfterUnlock.current=false;select.current?.focus()}},[locked])
@@ -35,7 +36,7 @@ export function CreateConversationDialog({management,current,initialWorkspaceId,
     catch(error){setError(localizeWorkError(locale,error))}
   }
   const submit=async()=>{
-    if(pending.current||!hostAssigned&&(!native.ready||!defaultRecovery&&(!selected||!workspace&&!locked)))return
+    if(pending.current||refreshing||scopeChoices&&!scopeChoices.some(scope=>scope.id===selectedScope)||!hostAssigned&&(!native.ready||!defaultRecovery&&(!selected||!workspace&&!locked)))return
     pending.current=true;setError(undefined)
     try{await create(hostAssigned?initialWorkspaceId:defaultRecovery?undefined:selected)}catch(error){setError(localizeWorkError(locale,error))}
     finally{pending.current=false}
@@ -46,7 +47,7 @@ export function CreateConversationDialog({management,current,initialWorkspaceId,
   return <dialog ref={dialog} className={css.dialog} aria-label={t(titleKey)} {...dismissEvents}>
     <form onSubmit={event=>{event.preventDefault();void submit()}}>
       <header><div><h2>{t(titleKey)}</h2>{!hostAssigned&&<p>{t(changingLocation?'conversationDialog.changeLocationDescription':'conversationDialog.description')}</p>}</div><button type="button" className={css.icon} aria-label={t('conversationDialog.close')} disabled={busy} onClick={close}><X size={18}/></button></header>
-      {notice&&<p role="status">{notice}</p>}
+      {notice&&<p role="status">{notice}</p>}{scopeChoices&&<label>{t('roleDelegation.scope')}<select aria-label={t('roleDelegation.scope')} value={selectedScope??''} disabled={busy||locked||refreshing} onChange={event=>onScopeChange?.(event.target.value)}><option value="">{t('conversationDialog.scope')}</option>{scopeChoices.map(scope=><option key={scope.id} value={scope.id}>{scope.label}</option>)}</select></label>}
       {goal&&<div className={css.goal}><strong>{t('conversationDialog.goal')}</strong><p>{goal}</p></div>}
       {!hostAssigned&&<>
       <label htmlFor="teloa-create-workspace">{t('conversationDialog.workspace')}</label>
@@ -62,8 +63,8 @@ export function CreateConversationDialog({management,current,initialWorkspaceId,
       {selected&&!workspace&&native.ready&&!defaultRecovery&&<p role="alert">{t('conversationDialog.removed')}</p>}
       </>}
       {locked&&!busy&&<div><p>{t('conversationDialog.locked')}</p>{pendingRequestId&&<button type="button" onClick={startNew}>{t('conversationDialog.startNew')}</button>}</div>}
-      {error&&<p role="alert" className={css.error}>{error}</p>}
-      <footer>{!hostAssigned&&<button type="button" disabled={busy||locked} onClick={settings}>{t('conversationDialog.manage')}</button>}<span/><button type="button" disabled={busy} onClick={close}>{t('conversationDialog.cancel')}</button><button type="submit" className={css.primary} disabled={busy||!hostAssigned&&(!native.ready||!defaultRecovery&&(!selected||!workspace&&!locked))}>{t(busy?'conversationDialog.creating':locked?'conversationDialog.retry':changingLocation?'conversationDialog.useLocation':'conversationDialog.create')}</button></footer>
+      {error&&<p role="alert" className={css.error}>{error}</p>}{error&&reloadConfiguration&&<button type="button" disabled={busy||refreshing} onClick={()=>{if(pending.current||refreshing)return;setRefreshing(true);void reloadConfiguration().then(()=>{setError(undefined);setReloaded(true)},cause=>setError(localizeWorkError(locale,cause))).finally(()=>setRefreshing(false))}}>{t('roleDelegation.loadLatestConfiguration')}</button>}{reloaded&&<p role="status">{t('roleDelegation.latestConfigurationLoaded')}</p>}
+      <footer>{!hostAssigned&&<button type="button" disabled={busy||locked} onClick={settings}>{t('conversationDialog.manage')}</button>}<span/><button type="button" disabled={busy} onClick={close}>{t('conversationDialog.cancel')}</button><button type="submit" className={css.primary} disabled={busy||refreshing||!!scopeChoices&&!scopeChoices.some(scope=>scope.id===selectedScope)||!hostAssigned&&(!native.ready||!defaultRecovery&&(!selected||!workspace&&!locked))}>{t(busy?'conversationDialog.creating':locked?'conversationDialog.retry':changingLocation?'conversationDialog.useLocation':'conversationDialog.create')}</button></footer>
     </form>
   </dialog>
 }

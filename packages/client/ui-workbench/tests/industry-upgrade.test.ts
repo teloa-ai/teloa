@@ -130,7 +130,7 @@ test('已保存的方案从继任加载的升级血缘读回，只读回显且�
  const versions=nodes(view).find(node=>node.type==='p'&&node.children.some(child=>(child as unknown)==='1.0.0'))!
  assert.deepEqual(versions.children.filter(child=>typeof child==='string'&&/\d/.test(child)),['1.0.0','1.1.0'])
  assert.equal(versions.children.filter(child=>typeof child!=='string').map(child=>child.props['aria-label']).join(),'presentation.changeTo')
- assert.ok(text(view).includes('market.industry.update.notApplied'))
+ assert.equal(text(view).includes('market.industry.update.notApplied'),false)
  assert.equal(nodes(view).filter(node=>node.type==='button').length,0)
 })
 

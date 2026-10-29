@@ -126,15 +126,16 @@ export function ArtifactPanel({ messageAuthor, taskSources, taskRuns, recovery, 
     useLayoutEffect(() => {
         if (!open || !target)
             return;
-        const node = dialog.current, previous = document.activeElement instanceof HTMLElement ? document.activeElement : null, media = window.matchMedia('(max-width:1080px)');
+        const node = dialog.current, previous = document.activeElement instanceof HTMLElement ? document.activeElement : null, media = window.matchMedia('(max-width:1080px)'), narrow = window.matchMedia('(max-width:760px)');
         const show = () => { if (!node)
-            return; const focused = node.contains(document.activeElement) ? document.activeElement as HTMLElement : null; node.close(); if (inline ? expanded : media.matches || !!document.querySelector('dialog[open]:modal'))
+            return; const focused = node.contains(document.activeElement) ? document.activeElement as HTMLElement : null; node.close(); if (inline ? expanded || narrow.matches : media.matches || !!document.querySelector('dialog[open]:modal'))
             node.showModal();
         else
             node.show(); ((restoreToggle.current ? expandToggle.current : null) || focused || node.querySelector<HTMLElement>('[data-artifact-close]') || node.querySelector<HTMLElement>('header button'))?.focus(); restoreToggle.current = false; };
         show();
         media.addEventListener('change', show);
-        return () => { media.removeEventListener('change', show); node?.close(); if (previous?.isConnected && previous.getClientRects().length)
+        narrow.addEventListener('change', show);
+        return () => { media.removeEventListener('change', show); narrow.removeEventListener('change', show); node?.close(); if (previous?.isConnected && previous.getClientRects().length)
             previous.focus(); };
     }, [open, targetKey, inline, expanded, portal]);
     useLayoutEffect(()=>{
@@ -210,7 +211,7 @@ export function ArtifactPanel({ messageAuthor, taskSources, taskRuns, recovery, 
     return present(<dialog ref={dialog} className={panelClass} aria-label={t("artifact.panel.text.006")} onKeyDown={onKeyDown} onCancel={onCancel} onCompositionStart={()=>{composing.current=true}} onCompositionEnd={()=>{composing.current=false}}>
     <ArtifactPanelHeader count={rows.length}>
       {artifact&&version&&!showList&&<a aria-label={t('artifactFiles.download')} title={t('artifactFiles.download')} download={'teloa-'+artifact.id.replace(/[^\w-]/g,'_')+'-v'+version.number+'.md'} href={'data:text/markdown;charset=utf-8,'+encodeURIComponent(markdown)}><Download size={16}/></a>}
-      {inline&&<button type="button" ref={expandToggle} aria-label={t(expanded?'artifactFiles.collapseImage':'artifactFiles.expandImage')} title={t(expanded?'artifactFiles.collapseImage':'artifactFiles.expandImage')} onClick={()=>setExpanded(value=>!value)}>{expanded?<Minimize2 size={16}/>:<Maximize2 size={16}/>}</button>}
+      {inline&&<button type="button" data-artifact-expand ref={expandToggle} aria-label={t(expanded?'artifactFiles.collapseImage':'artifactFiles.expandImage')} title={t(expanded?'artifactFiles.collapseImage':'artifactFiles.expandImage')} onClick={()=>setExpanded(value=>!value)}>{expanded?<Minimize2 size={16}/>:<Maximize2 size={16}/>}</button>}
       <button type="button" data-artifact-close aria-label={t('artifact.panel.text.009')} disabled={closingBlocked} onClick={back}><X size={18}/></button>
     </ArtifactPanelHeader>
     <fieldset disabled={busy} className={css.layout}><article className={css.content} aria-label={t('artifact.panel.text.021')}>
@@ -249,10 +250,7 @@ export function ArtifactPanel({ messageAuthor, taskSources, taskRuns, recovery, 
         {previewBody&&<section className={css.preview}><div className={[css.markdown,markdownTypography.typography].join(" ")}><MarkdownPreview markdown={previewBody} images={false}/></div></section>}
         {!!draft.messages?.length&&<ArtifactMessages messages={draft.messages} api={nativeArtifacts} enabled={!!source}/>}
         {!!fileDraft.files.length&&<ArtifactFiles sessionId={target.source.id} api={artifactFileApi} files={fileDraft.files} enabled={false} form={{query:'',candidate:null}} changeForm={()=>{}}/>}
-        <div className={css.previewActions}>
-          {source&&(previewBody.trim()||fileDraft.files.length>0)&&<button type="button" aria-label={t('artifact.panel.text.041')} title={t('artifact.panel.text.041')} onClick={async()=>{const id=crypto.randomUUID();const saved=await act({type:'create',id,source:target.source,expectedSource:draft.stamp,title:draft.title||source.title,body:previewBody,files:fileDraft.files,...(draft.messages?{messages:draft.messages}:{}),now:new Date().toISOString()});if(saved){clearDraft();clearFiles();setShowList(false);setSelected(typeof saved==='string'?saved:id);setVersion(1);setSection('');setView('preview')}}}><Save size={16}/></button>}
-          {previewBody&&<a aria-label={t('artifactFiles.download')} title={t('artifactFiles.download')} download={(source?.title||'teloa-result').replace(/[\/:*?"<>|]/g,'_')+'.md'} href={'data:text/markdown;charset=utf-8,'+encodeURIComponent(previewBody)}><Download size={16}/></a>}
-        </div>
+
         {source&&!previewBody&&!fileDraft.files.length&&<button type="button" className={css.sourceLink} title={t('artifact.panel.text.031')} onClick={()=>void goToSource(source.ref)}><span>{t('artifact.panel.text.031')}</span><ArrowUpRight size={15} aria-hidden/></button>}
       </section> : version ? <>
         <header className={css.artifactHeader}><div><span>{artifact.primary ? t("artifact.panel.text.043") : t("artifact.panel.text.006")} · v{version.number}</span><h3>{version.title}</h3><p>{version.author} · {new Date(version.at).toLocaleString(locale)} · {version.note}</p></div></header>
@@ -313,6 +311,11 @@ export function ArtifactPanel({ messageAuthor, taskSources, taskRuns, recovery, 
         </section>}
       </> : <p role="alert">{t("artifact.panel.text.118")}</p>}
       {source && (draft.stamp !== sourceStamp(source) || fileDraft.stamp !== sourceStamp(source)) && <section className={base.block}><p>{t("artifact.panel.text.119")}</p><button type="button" onClick={() => { patch({ stamp: sourceStamp(source) }); patchFiles({ stamp: sourceStamp(source) }); }}>{t("artifact.panel.text.120")}</button></section>}
-    </article></fieldset>
+    </article>
+        {!(showList&&rows.length>0)&&!artifact&&(previewBody||fileDraft.files.length>0)&&<footer className={css.createActions}>
+          {source&&(previewBody.trim()||fileDraft.files.length>0)&&<button type="button" aria-label={t('artifact.panel.text.041')} title={t('artifact.panel.text.041')} onClick={async()=>{const id=crypto.randomUUID();const saved=await act({type:'create',id,source:target.source,expectedSource:draft.stamp,title:draft.title||source.title,body:previewBody,files:fileDraft.files,...(draft.messages?{messages:draft.messages}:{}),now:new Date().toISOString()});if(saved){clearDraft();clearFiles();setShowList(false);setSelected(typeof saved==='string'?saved:id);setVersion(1);setSection('');setView('preview')}}}><Save size={16} aria-hidden/>{t('artifact.panel.text.041')}</button>}
+          {previewBody&&<a aria-label={t('artifactFiles.download')} title={t('artifactFiles.download')} download={(source?.title||'teloa-result').replace(/[\/:*?"<>|]/g,'_')+'.md'} href={'data:text/markdown;charset=utf-8,'+encodeURIComponent(previewBody)}><Download size={16} aria-hidden/>{t('artifactFiles.download')}</a>}
+        </footer>}
+    </fieldset>
   </dialog>);
 }

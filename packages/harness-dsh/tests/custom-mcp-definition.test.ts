@@ -16,8 +16,16 @@ const definition={schema:'teloa.mcp-server/v1',serverName:'custom_server',title:
 test('自定义定义只接受无凭据 HTTP 结构，拒绝秘密、命令和地址认证',()=>{
  const parsed=readCustomMcpDefinition(definition)
  assert.equal(customMcpDefinitionHash(parsed),customMcpDefinitionHash(readCustomMcpDefinition({...definition})))
- for(const value of [{...definition,headers:{Authorization:'secret'}},{...definition,credentials:{key:'secret'}},{...definition,ownerId:'other'},{...definition,transport:'stdio',command:'node'},{...definition,url:'https://name:password@example.com/mcp'},{...definition,url:'https://example.com/mcp?token=secret'},{...definition,url:'http://example.com/mcp'}])assert.throws(()=>readCustomMcpDefinition(value),{code:'teloa/invalid-input'})
- assert.equal(readCustomMcpDefinition({...definition,url:'http://127.0.0.1:9001/mcp'}).transport,'streamable-http')
+ for(const value of [{...definition,headers:{Authorization:'secret'}},{...definition,credentials:{key:'secret'}},{...definition,ownerId:'other'},{...definition,transport:'stdio',command:'node'}])assert.throws(()=>readCustomMcpDefinition(value),{code:'teloa/invalid-input'})
+})
+
+test('自定义 MCP 允许任意主机的 HTTP/HTTPS，仍拒绝其他协议和地址内凭据',()=>{
+ for(const url of ['http://example.com/mcp','http://192.0.2.10:8080/mcp','http://service.internal/mcp','http://localhost:9001/mcp','http://127.0.0.1:9001/mcp','http://[::1]:9001/mcp','https://example.com/mcp']){
+  assert.equal(readCustomMcpDefinition({...definition,url}).url,url)
+ }
+ for(const url of ['ftp://example.com/mcp','file:///tmp/mcp','ws://example.com/mcp','javascript:alert(1)','https://name:password@example.com/mcp','http://name:password@example.com/mcp','http://name@example.com/mcp','http://example.com/mcp?token=secret','https://example.com/mcp?token=secret','http://example.com/mcp#secret']){
+  assert.throws(()=>readCustomMcpDefinition({...definition,url}),{code:'teloa/invalid-input'},url)
+ }
 })
 
 test('真实 HTTP MCP 保存、重试、连接、恢复和断开复用受管生命周期',{timeout:30000},async t=>{
@@ -52,7 +60,7 @@ test('真实 HTTP MCP 保存、重试、连接、恢复和断开复用受管生�
  await assert.rejects(()=>managed.handler('mcp-connections/save-custom',{...payload,definition:{...local,title:'不同定义'},expectedDefinitionHash:customMcpDefinitionHash({...local,title:'不同定义'})}),{code:'teloa/conflict'})
  const connected=await managed.handler('mcp-connections/connect',{id:saved.id}) as ManagedMcpConnectionRecord
  assert.equal(connected.status,'connected');assert.ok(requests>0)
- assert.deepEqual(connected.tools,[{name:'update_record',fullName:'mcp__custom_server__update_record',readOnly:false}])
+ assert.deepEqual(connected.tools,[{name:'update_record',fullName:'mcp__custom_server__update_record',readOnly:false,description:'测试写入工具',inputSchema:{type:'object',properties:{},additionalProperties:false}}])
  assert.match(managed.writeToolLabel('mcp__custom_server__update_record')??'',/update_record/)
  assert.equal(managed.isReadOnlyTool('custom_server','update_record'),false)
  assert.ok(ctx.tools.get('mcp__custom_server__update_record'))

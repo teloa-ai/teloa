@@ -73,6 +73,10 @@
 .emptyDetail p,.muted{color:var(--teloa-muted);font-size:var(--teloa-font-caption);line-height:1.65}
 .version{overflow-wrap:anywhere;color:var(--teloa-muted);font-family:inherit;font-size:var(--teloa-font-caption);font-variant-numeric:tabular-nums;}
 .actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:18px}
+.adoption{max-height:65vh;overflow:auto;border-bottom:1px solid var(--teloa-border);background:var(--teloa-surface)}
+.adoption .editor{max-width:720px;margin-inline:auto;padding:20px}
+.adoption ul{padding-inline-start:20px;overflow-wrap:anywhere}
+.adoption select{min-width:0;max-width:100%;min-height:44px}
 .button,.primaryButton{display:inline-flex;align-items:center;justify-content:center;gap:6px;min-height:34px;padding:6px 10px;border-radius:7px;font:inherit;font-size:var(--teloa-font-caption);cursor:pointer}
 .button{border:1px solid var(--teloa-border);background:var(--teloa-background);color:var(--teloa-text)}
 .primaryButton{border:1px solid var(--teloa-text);background:var(--teloa-text);color:var(--teloa-background)}
@@ -92,7 +96,6 @@
 .treeSearch input{width:100%;min-width:0;border:0;outline:0;background:transparent;color:var(--teloa-text);font:inherit;font-size:var(--teloa-font-caption)}
 @media(max-width:760px){.treeSearch{min-height:44px}.treeSearch input{font-size:var(--teloa-font-touch-input)}}
 
-.retrieval{flex:none;max-height:45%;overflow:auto;padding:0 12px;}
 .librarySearch{display:flex;flex:1;align-items:center;gap:8px;min-width:0;height:32px;padding:0 10px;border:1px solid var(--teloa-border);border-radius:8px;color:var(--teloa-muted);background:var(--teloa-surface)}
 .librarySearch input{width:100%;min-width:0;border:0;outline:0;background:transparent;color:var(--teloa-text);font:inherit;font-size:var(--teloa-font-control)}
 .librarySearch:focus-within{outline:2px solid var(--teloa-focus);outline-offset:2px}
@@ -113,6 +116,7 @@
 .fileName svg{flex:none;color:var(--teloa-muted)}
 .fileName>span{min-width:0;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;line-height:1.4;max-height:2.8em}
 .fileLocation{display:block;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.fileScope{display:block;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--teloa-text)}
 .favorite{display:grid;place-items:center;width:30px;height:30px;padding:0;border:0;background:transparent;color:var(--teloa-muted);border-radius:6px;cursor:pointer}
 .favorite[aria-pressed=true]{color:var(--teloa-accent)}
 .documentToolbar{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:16px}

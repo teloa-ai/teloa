@@ -1,26 +1,29 @@
 import {useEffect,useRef,useState} from 'react'
 import type {SkillInstallApi,SkillInstallationRecord,SkillInstallObservation,SkillInstallPreview,SkillInstallSourceInput} from './skill-install-api.js'
 import {SkillInstallationStatus} from './SkillInstallationStatus.js'
-import {mergeSkillInstallation,selectSkillInstallation,skillPendingForSource,recoverSkillForSource,uniqueSkillInstallations} from './skill-install-state.js'
+import {SkillSelectionPanel} from './SkillSelectionPanel.js'
+import {mergeSkillInstallation,selectSkillInstallation,skillPendingForSource,recoverSkillForSource,uniqueSkillInstallations,type SkillInstallMismatch} from './skill-install-state.js'
 import {useI18n} from './i18n/provider.js'
 import {localizeWorkError} from './i18n/errors.js'
 export function SkillInstallControl({api,source,title,changed}:{api:SkillInstallApi;source:SkillInstallSourceInput;title:string;changed?:()=>void}){
   const {locale,t}=useI18n()
   const [preview,setPreview]=useState<SkillInstallPreview>(),[record,setRecord]=useState<SkillInstallationRecord>(),[observation,setObservation]=useState<{id:string;version:number;value:SkillInstallObservation}>(),[error,setError]=useState(''),[busy,setBusy]=useState(false),[revision,setRevision]=useState(0),[linked,setLinked]=useState(source.kind==='atomic'),[discarded,setDiscarded]=useState(false)
+  const [mismatch,setMismatch]=useState<SkillInstallMismatch>(),[loading,setLoading]=useState(true)
   const loadGeneration=useRef(0),actionGeneration=useRef(0),operation=useRef(false),recordRef=useRef(record)
   recordRef.current=record
   useEffect(()=>()=>{loadGeneration.current++;actionGeneration.current++},[])
   useEffect(()=>{
     let live=true
     const token=++loadGeneration.current
-    setError('')
+    setError('');setLoading(true)
     void Promise.all([api.preview(source),api.list()]).then(([fixed,directory])=>{
       if(!live||token!==loadGeneration.current)return
       setPreview(fixed)
       const selected=selectSkillInstallation(source,fixed,directory.items,directory.usages)
       setLinked(selected.linked)
-      setRecord(current=>mergeSkillInstallation(current,selected.record))
-    },()=>{if(live&&token===loadGeneration.current)setError(t('market.skill.status.readFailed'))})
+      setMismatch(selected.mismatch)
+      setRecord(current=>selected.record?mergeSkillInstallation(current,selected.record):undefined)
+    },()=>{if(live&&token===loadGeneration.current)setError(t('market.skill.status.readFailed'))}).finally(()=>{if(live&&token===loadGeneration.current)setLoading(false)})
     return()=>{live=false;loadGeneration.current++}
   },[api,JSON.stringify(source),revision])
   const observe=async()=>{
@@ -47,7 +50,7 @@ export function SkillInstallControl({api,source,title,changed}:{api:SkillInstall
   }
   const pending=api.pending(),recoveryError=api.recoveryMessage(),pendingHere=skillPendingForSource(pending,source),blockedByOther=!!pending&&!pendingHere
   const installRequest=()=>({requestId:crypto.randomUUID(),source,expectedBundleHash:preview!.bundleHash,...(preview!.trustHash?{expectedTrustHash:preview!.trustHash}:{})})
-  return <section aria-label={t('market.skill.control.aria',{title})}>{preview&&<><p>{t('market.skill.control.nativeSummary',{name:preview.native.name,count:preview.files.length})}</p><details><summary>{t('market.skill.control.reviewFiles')}</summary><ul>{preview.files.map(file=><li key={file.path}>{file.path} · {file.size} {t('market.skill.file.bytes')} · {file.hash}</li>)}</ul></details></>}{blockedByOther&&<p role="status">{t('market.skill.control.otherPending')}</p>}<SkillInstallationStatus {...(record?{record}:{})} {...(record&&observation?.id===record.id&&observation.version===record.version?{observation:observation.value}:{})} pending={pendingHere} {...(source.kind==='industry'&&record&&!linked&&!busy&&preview&&!blockedByOther?{reuse:()=>void run(()=>api.install(installRequest())),reuseLabel:t('market.skill.control.reuse',{title})}:{})} {...(error||recoveryError?{error:error?error:localizeWorkError(locale,recoveryError)+' '+t('recovery.nextStep')}:{})} refresh={()=>setRevision(x=>x+1)} {...(preview&&!busy&&!blockedByOther?{install:()=>void run(()=>api.install(installRequest()))}:{})} {...(record?.state==='preparing'&&linked&&preview&&!pending&&!busy?{continueInstall:()=>void run(()=>api.install(installRequest()))}:{})} {...(!busy&&pendingHere?{recover:()=>void run(()=>recoverSkillForSource(api,source))}:{})} {...(record?.state==='installed'&&!busy?{observe:()=>void observe()}:{})}/>{recoveryError&&<button type="button" onClick={()=>{api.discard();setDiscarded(true)}}>{t('recovery.discard')}</button>}{discarded&&<p role="status">{t('recovery.discarded')}</p>}</section>
+  return <section aria-label={t('market.skill.control.aria',{title})}>{preview&&<><p>{t('market.skill.control.nativeSummary',{name:preview.native.name,count:preview.files.length})}</p><details><summary>{t('market.skill.control.reviewFiles')}</summary><ul>{preview.files.map(file=><li key={file.path}>{file.path} · {file.size} {t('market.skill.file.bytes')} · {file.hash}</li>)}</ul></details></>}{blockedByOther&&<p role="status">{t('market.skill.control.otherPending')}</p>}<SkillInstallationStatus loading={loading} {...(record?{record}:{})} {...(mismatch?{mismatch}:{})} {...(record&&observation?.id===record.id&&observation.version===record.version?{observation:observation.value}:{})} pending={pendingHere} {...(source.kind==='industry'&&record&&!mismatch&&!linked&&!busy&&preview&&!loading&&!blockedByOther?{reuse:()=>void run(()=>api.install(installRequest())),reuseLabel:t('market.skill.control.reuse',{title})}:{})} {...(error||recoveryError?{error:error?error:localizeWorkError(locale,recoveryError)+' '+t('recovery.nextStep')}:{})} refresh={()=>setRevision(x=>x+1)} {...(preview&&!busy&&!loading&&!blockedByOther?{install:()=>void run(()=>api.install(installRequest()))}:{})} {...(record?.state==='preparing'&&linked&&preview&&!pending&&!busy&&!loading&&!mismatch?{continueInstall:()=>void run(()=>api.install(installRequest()))}:{})} {...(!busy&&pendingHere?{recover:()=>void run(()=>recoverSkillForSource(api,source))}:{})} {...(record?.state==='installed'&&!busy&&!loading?{observe:()=>void observe()}:{})}/>{record?.state==='installed'&&linked&&!mismatch&&api.selection&&<SkillSelectionPanel key={record.id} api={api.selection} record={record} onChanged={()=>{setObservation(undefined);setRevision(value=>value+1);changed?.()}}/>}{recoveryError&&<button type="button" onClick={()=>{api.discard();setDiscarded(true)}}>{t('recovery.discard')}</button>}{discarded&&<p role="status">{t('recovery.discarded')}</p>}</section>
 }
 export function SkillInstallDirectory({api}:{api:SkillInstallApi}){
   const {t}=useI18n()

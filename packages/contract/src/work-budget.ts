@@ -6,6 +6,11 @@ export type BudgetReservation={id:string;ownerId:string;budgetAccountId:string;c
  * 未核验终态的调用仍按进行中计时，与并发占用一致。token 与轮次仍是累计额度。
  */
 export const workBudgetElapsedWindowMs=86_400_000
+/** 单次交办只允许预设有限 token 上限；与完整 WorkBudgetPolicy.maxTokens 使用同一数值边界。 */
+export function readWorkTokenLimit(value:unknown):number{
+ if(!Number.isSafeInteger(value)||Number(value)<1)throw new WorkError('teloa/invalid-input','工作 token 上限必须是正安全整数。')
+ return Number(value)
+}
 export type WorkBudgetExhaustion={reason:'tokens'|'rounds'|'concurrent'|'elapsed';scope:'work'|'owner'}
 const exhaustionReasons:readonly string[]=['tokens','rounds','concurrent','elapsed'],exhaustionScopes:readonly string[]=['work','owner']
 /**
@@ -25,7 +30,8 @@ export function readWorkBudgetExhaustedCode(code:unknown):Partial<WorkBudgetExha
 export function readWorkBudgetPolicy(value:unknown):WorkBudgetPolicy{
  if(!value||typeof value!=='object'||Array.isArray(value))throw new WorkError('teloa/invalid-input','工作额度格式不正确。')
  const v=value as Record<string,unknown>,keys=['maxGoalRounds','maxTokens','maxElapsedMs','maxConcurrent','maxRetries','stagnationRounds','money']
- if(Object.keys(v).length!==keys.length||Object.keys(v).some(k=>!keys.includes(k))||keys.slice(0,-1).some(k=>!Number.isSafeInteger(v[k])||Number(v[k])<(k==='maxRetries'?0:1)))throw new WorkError('teloa/invalid-input','工作额度需要完整的正数上限；重试次数可以为 0。')
+ if(Object.keys(v).length!==keys.length||Object.keys(v).some(k=>!keys.includes(k))||keys.slice(0,-1).filter(k=>k!=='maxTokens').some(k=>!Number.isSafeInteger(v[k])||Number(v[k])<(k==='maxRetries'?0:1)))throw new WorkError('teloa/invalid-input','工作额度需要完整的正数上限；重试次数可以为 0。')
+ readWorkTokenLimit(v.maxTokens)
  if(v.money!==null){const m=v.money as Record<string,unknown>;if(!m||typeof m!=='object'||Array.isArray(m)||Object.keys(m).length!==2||!Object.hasOwn(m,'currency')||!Object.hasOwn(m,'maxMinorUnits')||typeof m.currency!=='string'||!/^[A-Z]{3}$/.test(m.currency)||!Number.isSafeInteger(m.maxMinorUnits)||Number(m.maxMinorUnits)<1)throw new WorkError('teloa/invalid-input','费用额度格式不正确。')}
  return structuredClone(v) as WorkBudgetPolicy
 }

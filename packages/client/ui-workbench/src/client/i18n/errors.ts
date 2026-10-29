@@ -16,6 +16,7 @@ const errorKeys: Readonly<Record<string, MessageKey>> = {
   'teloa/storage-corrupt':'error.storageCorrupt',
   'teloa/invalid-input': 'error.invalidInput',
   'teloa/forbidden': 'error.forbidden',
+  'teloa/permission-stalled':'roleDelegation.permissionStalled',
   'teloa/not-found': 'error.notFound',
   'teloa/conflict': 'error.conflict',
   'teloa/version-conflict': 'error.versionConflict',
@@ -61,6 +62,12 @@ export const isTaskWorkOutstandingError=(error:unknown):boolean=>codeOf(error)==
 
 /** 服务端 message 仅供日志；用户提示只由稳定 code 和当前产品词典决定。 */
 export function localizeWorkError(locale: string, error: unknown): string {
+  if(codeOf(error)==='teloa/dependency-unavailable'){
+    const reason=detailsFieldOf(error,'reason')
+    if(reason==='mcp-auth-rejected')return translateMessage(locale,'create.app.errorAuth')
+    if(reason==='mcp-network-unavailable')return translateMessage(locale,'create.app.errorNetwork')
+    if(reason==='mcp-service-error')return translateMessage(locale,'create.app.errorService')
+  }
   if (codeOf(error) === 'teloa/invalid-input' && detailsFieldOf(error,'reason') === 'secret-in-message') return translateMessage(locale, 'error.secretInMessage')
   // 员工资料范围含不可用资料：只按稳定原因给出可操作提示，不回显内部资料 ID。
   if (codeOf(error) === 'teloa/invalid-input' && detailsFieldOf(error,'reason') === 'role-knowledge-unavailable') return translateMessage(locale, 'error.roleKnowledgeUnavailable')

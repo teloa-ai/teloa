@@ -16,12 +16,14 @@ import {loopWorkFixture,loopText,loopTool} from './fixtures/native-loop-work-adm
 import {registerCredentialGuards} from '../src/credential-guards.ts'
 const owner='owner',roleId='22222222-2222-4222-8222-222222222222'
 const coordinationSummary='当前工作的业务与接手约定'
-test('工作工具英文静态说明不改变八项原生参数与工具协议',async t=>{
+test('单次交办仅新增可选workTokenLimit，八项既有工具参数协议保持',async t=>{
  const f=await setup();t.after(()=>f.ctx.fiber.dispose())
  const schemas=f.ctx.tools.schemas(f.agent).filter(tool=>(conversationWorkToolNames as readonly string[]).includes(tool.name)).sort((a,b)=>a.name.localeCompare(b.name))
- const withoutDescriptions=(value:unknown):unknown=>Array.isArray(value)?value.map(withoutDescriptions):value&&typeof value==='object'?Object.fromEntries(Object.entries(value).filter(([key])=>key!=='description').sort(([a],[b])=>a.localeCompare(b)).map(([key,child])=>[key,withoutDescriptions(child)])):value
+ const withoutDescriptions=(value:unknown):unknown=>Array.isArray(value)?value.map(withoutDescriptions):value&&typeof value==='object'?Object.fromEntries(Object.entries(value).filter(([key])=>key!=='description'&&key!=='workTokenLimit').sort(([a],[b])=>a.localeCompare(b)).map(([key,child])=>[key,withoutDescriptions(child)])):value
  assert.equal(schemas.length,8)
- assert.equal(createHash('sha256').update(JSON.stringify(withoutDescriptions(schemas))).digest('hex'),'b0d14cbda922ab690b40ee2467f1f436abbafd7ce8b0026c0cf4f76035efed33','英文改写只能改变description，工具名字和原生参数协议逐项保持')
+ assert.match(JSON.stringify(schemas.find(tool=>tool.name==='teloa_work_dispatch')!.parameters),/workTokenLimit/)
+ for(const tool of schemas.filter(tool=>tool.name!=='teloa_work_dispatch'))assert.doesNotMatch(JSON.stringify(tool.parameters),/workTokenLimit/)
+ assert.equal(createHash('sha256').update(JSON.stringify(withoutDescriptions(schemas))).digest('hex'),'b0d14cbda922ab690b40ee2467f1f436abbafd7ce8b0026c0cf4f76035efed33','除已审阅的可选token上限外，工具名字和原生参数协议逐项保持')
  const check=(value:unknown):void=>{if(Array.isArray(value)){value.forEach(check);return}if(value&&typeof value==='object')for(const [key,child]of Object.entries(value)){if(key==='description'&&typeof child==='string')assert.doesNotMatch(child,/\p{Script=Han}/u);else check(child)}}
  schemas.forEach(check)
 })
@@ -152,7 +154,31 @@ test('只读目录的真实Loop回包与主会话约定不冒充交办或稍后�
  const initialText=initial.data.content.filter(block=>block.type==='text').map(block=>block.text).join('\n')
  assert.match(initialText,/Directory reads neither dispatch work nor schedule a later card/)
  assert.match(initialText,/No Task\/Run exists before approval; rejection executes nothing/)
+ for(const protocol of [
+  /including a request for an employee-assigned draft.*teloa_work_dispatch/,
+  /Do not first create an unassigned task/,
+  /Dispatch cannot reuse an existing task draft and has no save-only mode/,
+  /approval creates and starts the work/,
+  /business recordRef belongs in dispatch\.reference/,
+  /A business record is not a WorkResource/,
+  /local recordRef can come from teloa_business_records_read or the current owner message; no separate HTTP query is required/,
+  /host independently verifies owner, business scope, object version and snapshot hash/,
+  /business_data_query reads only configured security-alert HTTP source snapshots/,
+  /does not query local-records/,
+  /source argument filters returned snapshot\.source, not a connection ID or local sourceId/,
+  /Do not repeat data_query against unsupported scopes/,
+  /Candidate\/catalog tools.*are not the employee's current grants/,
+  /Read teloa_role_tools_get/,
+  /all visible progress and final replies in the current user's language/,
+ ]){
+  assert.match(initialText,protocol)
+  assert.match(JSON.stringify(f.adapter.requests[1]),protocol,'实际工具后模型请求仍保留当前交办协议')
+ }
  assert.match(f.ctx.tools.schemas(f.agent).find(schema=>schema.name==='teloa_work_directory')?.description??'',/Read the main conversation/)
+ const query=f.ctx.tools.schemas(f.agent).find(schema=>schema.name==='teloa_business_data_query')!
+ assert.match(query.description??'',/does not query local-records/)
+ assert.match(JSON.stringify(query.parameters),/Filter the returned snapshot\.source field; not a connection ID/)
+ assert.doesNotMatch(f.ctx.tools.schemas(f.agent).find(schema=>schema.name==='teloa_work_dispatch')?.description??'',/Investigations also require the fixed reference returned by a real data query/)
  assert.equal(base.approvals.length,0);assert.equal(base.dispatched.length,0)
  assert.equal(f.events.filter(event=>event.type==='turn/start').length,1);assert.equal(f.events.filter(event=>event.type==='turn/end').length,1)
  assert.equal(f.agent.inbox.nextStep.length,0,'普通回答不被强制续发交办')
@@ -226,6 +252,13 @@ test('明确交办先走原生批准卡且批准前不建任务，模型可见�
  assert.equal(f.dispatched.length,0)
  release()
  assert.equal((await pending).isError,false)
+ assert.equal(f.dispatched.length,1)
+ const dispatch=schemas.find(schema=>schema.name==='teloa_work_dispatch')!
+ assert.match(dispatch.description,/Do not first create an unassigned task/)
+ assert.match(dispatch.description,/has no save-only mode/)
+ for(const field of ['taskId','draftId','saveOnly']){
+  assert.equal((await f.call('teloa_work_dispatch',{scope:'SOC',title:'核对告警',goal:'只读核对',roleId,expectedRoleVersion:1,[field]:'original-draft'})).isError,true,'不能让提示暗示不存在的草稿复用或仅保存参数')
+ }
  assert.equal(f.dispatched.length,1)
 })
 
@@ -558,4 +591,20 @@ test('模型可见的恢复说明与主会话指引明确区分成果续改与�
  const decision=await f.ctx.waterfall('agent/pre-step',{agent:f.agent,messages,turn:1,step:1,signal:new AbortController().signal},async()=>({kind:'enter' as const,messages})) as unknown as {messages:Array<{content:ReadonlyArray<{type:string;text?:string}>}>}
  const notice=decision.messages.at(-1)!.content.map(block=>block.text??'').join('')
  assert.match(notice,/new linked artifact revision/);assert.match(notice,/teloa-revision/);assert.match(notice,/not a requestId or retry/)
+})
+
+
+test('原生交办卡明示token上限且传递原值；非法、额外policy和汇报提额在审批前拒绝',async t=>{
+ const f=await setup();t.after(()=>f.ctx.fiber.dispose())
+ const input={scope:'SOC',title:'独立新轮',goal:'仅本次核对，不变更其他边界',roleId,expectedRoleVersion:1}
+ for(const workTokenLimit of [0,-1,1.1,Number.MAX_SAFE_INTEGER+1,'6000000',null])assert.equal((await f.call('teloa_work_dispatch',{...input,workTokenLimit})).isError,true)
+ for(const extra of [{budgetPolicy:{maxTokens:6_000_000}},{maxTokens:6_000_000},{workTokenLimit:6_000_000,ownerTokenLimit:10_000_000}])assert.equal((await f.call('teloa_work_dispatch',{...input,...extra})).isError,true)
+ assert.equal((await f.call('teloa_work_collect_reports',{scope:'SOC',title:'汇报',goal:'读取回报',workTokenLimit:6_000_000})).isError,true)
+ assert.equal(f.approvals.length,0);assert.equal(f.dispatched.length,0)
+ assert.equal((await f.call('teloa_work_dispatch',{...input,workTokenLimit:6_000_000})).isError,false)
+ assert.equal((f.dispatched[0] as {workTokenLimit:number}).workTokenLimit,6_000_000)
+ assert.match(f.approvals[0]!,/6,000,000/);assert.match(f.approvals[0]!,/本人累计总额度仍然约束/)
+ assert.equal((await f.call('teloa_work_dispatch',input)).isError,false)
+ assert.equal(Object.hasOwn(f.dispatched[1] as object,'workTokenLimit'),false,'旧省略请求保持旧规范，不偷偷补字段')
+ assert.match(f.approvals[1]!,/2,000,000/)
 })

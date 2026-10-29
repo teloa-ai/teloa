@@ -39,6 +39,54 @@ function fixture(){
  return {port,changeInput:(next:BusinessBuilderSwitchSnapshot['input'])=>{input=next;for(const listener of listeners)listener()},notify:()=>{for(const listener of listeners)listener()},controller,calls,blocks,bindings,drafts,conversations,rows,source,space:()=>space,changeSpace:()=>space=randomUUID(),selected:()=>selected,select:(id:string|undefined)=>{selected=id},navigate:(value:string)=>location=value,location:()=>location,refreshes:()=>refreshes}
 }
 
+test('原生刷新重新发布等值InputState时，首次builder与daily创建保持原导航和预约',async t=>{
+ for(const kind of ['builder','daily'] as const)for(const approved of [false,true])await t.test(kind+(approved?'保留已确认原稿':'空白原稿'),async()=>{
+  const f=fixture();t.after(()=>f.controller.dispose());f.select('original')
+  const original={draft:approved?'本人原稿':'',draftRev:7,phase:'plain' as const,attachmentIds:[],occurrences:[],queue:[]};f.changeInput(original)
+  await f.controller.connect({})
+  const token=f.controller.captureNavigation();if(approved)f.controller.approveNavigation(token)
+  // readNativeSessionForOpening 先刷新原生目录；InputState 的发布对象不是编辑身份。
+  const adopt=f.port.adopt
+  f.port.adopt=async(...args)=>{f.changeInput(structuredClone(original));return adopt(...args)}
+  const binding=kind==='builder'?await f.controller.start({scope:'sales',workspaceId:'workspace'},token):await f.controller.openDaily({scope:'sales',title:'订单',workspaceId:'workspace'},token)
+  assert.equal(binding.sessionId,f.selected());assert.notEqual(f.selected(),'original')
+  assert.equal(f.bindings.size,1);assert.equal(f.conversations.size,1)
+  assert.equal(f.calls.filter(call=>call==='create').length,1);assert.equal(f.calls.filter(call=>call==='open').length,1)
+  assert.deepEqual(f.source.read().input,original,'刷新不能改写原稿内容')
+ })
+})
+
+test('原生刷新期间输入语义或修订变化仍拒绝旧批准，随后按同预约恢复',async t=>{
+ type Input=NonNullable<BusinessBuilderSwitchSnapshot['input']>
+ const changes:readonly [string,(input:Input)=>Input][]=[
+  ['revision',input=>({...input,draftRev:input.draftRev+1})],
+  ['text',input=>({...input,draft:'后来编辑'})],
+  ['attachment',input=>({...input,attachmentIds:['later-file' as never]})],
+  ['reference',input=>({...input,occurrences:[{source:'later',ref:'later-document'} as never]})],
+  ['queue',input=>({...input,queue:[{id:'later-message'} as never]})],
+  ['phase',input=>({...input,phase:'adjudicating'})],
+  ['claim',input=>({...input,claim:{name:'later-command',token:'/later'}})],
+ ]
+ for(const kind of ['builder','daily'] as const)for(const [name,change] of changes)await t.test(kind+'/'+name,async()=>{
+  const f=fixture();t.after(()=>f.controller.dispose());f.select('original')
+  const original:Input={draft:'本人原稿',draftRev:7,phase:'plain',attachmentIds:[],occurrences:[],queue:[]};f.changeInput(original)
+  await f.controller.connect({})
+  const token=f.controller.captureNavigation();f.controller.approveNavigation(token)
+  const adopt=f.port.adopt;f.port.adopt=async(...args)=>{f.changeInput(change(structuredClone(original)));return adopt(...args)}
+  const pending=kind==='builder'?f.controller.start({scope:'sales',workspaceId:'workspace'},token):f.controller.openDaily({scope:'sales',title:'订单',workspaceId:'workspace'},token)
+  await assert.rejects(pending,{code:'teloa/conflict'})
+  assert.equal(f.selected(),'original');assert.equal(f.calls.filter(call=>call==='open').length,0)
+  assert.equal(f.bindings.size,1);assert.equal(f.conversations.size,1)
+  const reserved=[...f.bindings.values()][0]!
+  f.port.adopt=adopt;f.changeInput({...original,draftRev:9})
+  const recovery=f.controller.captureNavigation();f.controller.approveNavigation(recovery)
+  if(kind==='builder')await f.controller.recover(reserved.requestId,false,recovery);else await f.controller.recoverDaily(reserved.requestId,recovery)
+  assert.equal(f.bindings.size,1);assert.equal(f.conversations.size,1)
+  assert.equal(f.selected(),[...f.bindings.values()][0]!.sessionId)
+  assert.equal(f.calls.filter(call=>call==='open').length,1)
+ })
+})
+
 test('固定原来源的native页面只在本次明确opened后接受，start/open/recover首次完成原稿核对',async t=>{
  for(const operation of ['start','open','recover'] as const){
   const f=fixture();t.after(()=>f.controller.dispose());await f.controller.connect({})

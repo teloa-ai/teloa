@@ -21,13 +21,32 @@ async function response(id=contentId){
  return {receipt:{requestId,contentId:id,source:{kind:'upload',name:'report'},createdAt},content:{id,ownerId:'owner',kind:'atomic-skill',logicalId:skill.id,version:skill.version,hash:skill.hash,baseHash:skill.hash,manifestPath:skill.entryPath,metadata:{id:skill.id,title:skill.title,version:skill.version,categories:skill.categories},files:skill.files.map(row=>({path:row.path,hash:row.hash,base64:base64(row.bytes)})),provides:[{resourceId:skill.id,kind:'skill',version:skill.version,path:skill.entryPath}],references:[],createdAt}}
 }
 
+test('本地原子与行业上传的缺省发布者稳定，ZIP名称只作来源；显式信任不被替换',async()=>{
+ const skill=await skillFixture(),submitted:Record<string,any>[]=[],capture=()=>createMarketContentApi(async(_endpoint,payload)=>{submitted.push(payload as Record<string,any>);throw Error('停在提交边界')},undefined,()=>requestId)
+ for(const name of ['soc-1.3.0.zip','soc-1.3.1.zip'])await assert.rejects(capture().importAtomic(skill,name),/停在提交边界/)
+ const {readIndustryDirectory}=await import('../src/client/industry-directory.ts')
+ for(const version of ['1.3.0','1.3.1']){
+  const manifest={format:'teloa.business-package/v2',id:'local-soc',title:'安全运营',version,domain:'general',scope:'general',description:'固定方法',resources:[{id:'method',kind:'skill',title:'方法',version:'1.0.0',required:true,source:{kind:'local',path:'method/SKILL.md'}}],relations:[],entrypoints:['method']}
+  const item=await readIndustryDirectory([file('teloa.json',JSON.stringify(manifest)),file('method/SKILL.md','# 固定正文')],'teloa.json','soc-'+version+'.zip')
+  await assert.rejects(capture().importIndustry(item),/停在提交边界/)
+  const explicit={publisher:'明确声明的内部发布者',repository:null,license:{status:'missing' as const},signature:{status:'unverified' as const,signer:null},compatibility:{teloa:'未声明',dsh:'未声明'},plugins:[],externalCapabilities:[],permissions:[],review:{conclusion:'needs-review' as const,summary:'需要本人核对'}}
+  await assert.rejects(capture().importIndustry({...item,trust:explicit}),/停在提交边界/)
+  assert.deepEqual(submitted.at(-1)?.trust,explicit)
+ }
+ const defaults=submitted.filter(row=>row.trust.publisher==='本人导入')
+ assert.equal(defaults.length,4)
+ assert.ok(defaults.every(row=>row.trust.signature.status==='unverified'&&row.trust.review.conclusion==='needs-review'))
+ assert.deepEqual(new Set(defaults.map(row=>JSON.stringify(row.trust))),new Set([JSON.stringify(defaults[0]!.trust)]))
+ assert.deepEqual(defaults.map(row=>row.source.name),['soc-1.3.0.zip','soc-1.3.1.zip','soc-1.3.0.zip','soc-1.3.1.zip'])
+})
+
 test('独立 Skill 提交原始文件字节，后端固定身份返回后才进入持久目录',async()=>{
  const skill=await skillFixture(),calls:{endpoint:string;payload:unknown}[]=[]
  let raw:string|null=null
  const api=createMarketContentApi(async(endpoint,payload)=>{calls.push({endpoint,payload});return response()}, {read:()=>raw,write:value=>{raw=value},clear:()=>{raw=null}},()=>requestId)
  const item=await api.importAtomic(skill,'report')
  assert.equal(calls[0]?.endpoint,'market-content/import')
- assert.deepEqual(calls[0]?.payload,{kind:'atomic-skill',requestId,source:{kind:'upload',name:'report'},metadata:{id:'report-writing',title:'报告撰写',version:'1.0.0',categories:['写作']},trust:{publisher:'report',repository:null,license:{status:'missing'},signature:{status:'unverified',signer:null},compatibility:{teloa:'未声明',dsh:'未声明'},plugins:[],externalCapabilities:[],permissions:[],review:{conclusion:'needs-review',summary:'本地上传来源尚未完成签名与兼容审查'}},files:[{path:'report/SKILL.md',base64:'IyDmiqXlkYoK5oyJ6K+B5o2u5YaZ5L2c44CC'},{path:'report/examples.md',base64:'56S65L6L'}]})
+ assert.deepEqual(calls[0]?.payload,{kind:'atomic-skill',requestId,source:{kind:'upload',name:'report'},metadata:{id:'report-writing',title:'报告撰写',version:'1.0.0',categories:['写作']},trust:{publisher:'本人导入',repository:null,license:{status:'missing'},signature:{status:'unverified',signer:null},compatibility:{teloa:'未声明',dsh:'未声明'},plugins:[],externalCapabilities:[],permissions:[],review:{conclusion:'needs-review',summary:'本地上传来源尚未完成签名与兼容审查'}},files:[{path:'report/SKILL.md',base64:'IyDmiqXlkYoK5oyJ6K+B5o2u5YaZ5L2c44CC'},{path:'report/examples.md',base64:'56S65L6L'}]})
  assert.equal(item.contentStorage?.contentId,contentId)
  assert.equal(item.contentStorage?.loaded,true)
  assert.equal(item.atomicSkill?.text,'# 报告\n按证据写作。')

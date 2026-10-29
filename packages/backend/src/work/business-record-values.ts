@@ -1,4 +1,4 @@
-import {WorkError,parseBooleanValue,parseDurationSeconds,readBusinessRichFieldValue,businessRecordUniqueKeys,type BusinessObjectFieldDefinition,type BusinessRichFieldDefinition,type BusinessObjectTypeDefinition,type BusinessObjectTypeDefinitionV2} from '@teloa/contract'
+import {WorkError,parseBooleanValue,parseDurationSeconds,readBusinessRichFieldValue,businessRecordUniqueKeys,businessRecordValueLimits,businessRecordDatetimeFormat,businessRecordDatetimeExample,type BusinessObjectFieldDefinition,type BusinessRichFieldDefinition,type BusinessObjectTypeDefinition,type BusinessObjectTypeDefinitionV2} from '@teloa/contract'
 export type BusinessRecordConstraintState={id:string;fields:readonly {label:string;value:string}[];deletedAt?:string}
 /** 当前记录或完整批次后态共用；每个字段独立占用，多关联每位成员分别占用。 */
 export function assertBusinessRecordUniqueState(definition:BusinessObjectTypeDefinition|BusinessObjectTypeDefinitionV2,records:readonly BusinessRecordConstraintState[]):void{
@@ -31,12 +31,13 @@ export function assertBusinessRecordFieldValue(field:BusinessObjectFieldDefiniti
   return
  }
  if(value===undefined||value===''){if(field.required)throw invalid();return}
- if(typeof value!=='string'||value!==value.trim()||value.length>2000)throw invalid()
+ if(typeof value!=='string'||value!==value.trim())throw invalid()
+ if(value.length>businessRecordValueLimits.field)throw new WorkError('teloa/invalid-input','字段「'+field.label+'」长度为 '+value.length+'，最多 '+businessRecordValueLimits.field+'（按 UTF-16 代码单元计）。',{reason:'field-value-too-long',field:field.name,actualLength:value.length,maxLength:businessRecordValueLimits.field,lengthUnit:'utf16-code-units'})
  switch(field.type){
   case 'text':case 'reference':return
   case 'number':if(!/^[+-]?(?:\d+(?:\.\d+)?|\.\d+)(?:[eE][+-]?\d+)?$/.test(value)||!Number.isFinite(Number(value))||Math.abs(Number(value))>1e15)throw invalid();return
   case 'enum':if(!field.values?.includes(value))throw invalid();return
-  case 'datetime':if(!Number.isFinite(Date.parse(value))||new Date(value).toISOString()!==value)throw invalid();return
+  case 'datetime':if(!Number.isFinite(Date.parse(value))||new Date(value).toISOString()!==value)throw new WorkError('teloa/invalid-input','字段「'+field.label+'」必须使用规范 UTC 日期时间，含3位毫秒并以 Z 结尾；格式 '+businessRecordDatetimeFormat+'，例如 '+businessRecordDatetimeExample+'。',{reason:'datetime-format',field:field.name,format:businessRecordDatetimeFormat,example:businessRecordDatetimeExample});return
   case 'duration':if(parseDurationSeconds(value)===undefined)throw invalid();return
   case 'boolean':if(parseBooleanValue(value)===undefined)throw invalid();return
  }

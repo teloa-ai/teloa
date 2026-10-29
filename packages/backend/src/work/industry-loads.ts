@@ -144,7 +144,10 @@ export async function initializeIndustryLoads(pool:Pool):Promise<void>{
  await pool.query(`
  select pg_advisory_xact_lock(hashtextextended('teloa-industry-loads-schema:'||current_schema(),0));
  create table if not exists teloa_industry_loads(id uuid primary key,owner_id text not null,content_id uuid not null,content_hash text not null check(content_hash ~ '^[0-9a-f]{64}$'),template_id text not null,template_version text not null,template_title text not null,domain text not null,scope text not null,description text not null,source_snapshot jsonb not null check(jsonb_typeof(source_snapshot)='object'),space_id uuid not null,space_version integer not null check(space_version>0),mapping_hash text check(mapping_hash ~ '^[0-9a-f]{64}$'),relations jsonb not null check(jsonb_typeof(relations)='array'),entrypoints jsonb not null check(jsonb_typeof(entrypoints)='array'),created_at timestamptz not null,foreign key(space_id,owner_id) references teloa_business_spaces(id,owner_id));
- create unique index if not exists teloa_industry_loads_source_identity on teloa_industry_loads(owner_id,space_id,content_id,content_hash);
+ alter table teloa_industry_loads add column if not exists status text not null default 'active';
+ -- 历史加载保留；同一内容只能有一条生效加载，卸载后可建立新的加载代次。
+ drop index if exists teloa_industry_loads_source_identity;
+ create unique index teloa_industry_loads_source_identity on teloa_industry_loads(owner_id,space_id,content_id,content_hash) where status='active';
  -- 先建立新身份索引，再按列集移除旧约束；不依赖 PostgreSQL 自动截短后的名称，不改既有加载与映射。
  do $migration$ declare previous record; begin
   for previous in select c.conname from pg_constraint c where c.conrelid='teloa_industry_loads'::regclass and c.contype='u'
@@ -163,6 +166,7 @@ export async function initializeIndustryLoads(pool:Pool):Promise<void>{
  alter table teloa_industry_loads drop constraint if exists teloa_industry_loads_status_check;
  alter table teloa_industry_loads add constraint teloa_industry_loads_status_check check(status in ('active','unloaded','superseded'));
  create table if not exists teloa_industry_load_unload_requests(owner_id text not null,request_id uuid not null,request_spec jsonb not null check(jsonb_typeof(request_spec)='object'),load_id uuid not null references teloa_industry_loads(id),primary key(owner_id,request_id));
+ alter table teloa_industry_loads add column if not exists reloads uuid references teloa_industry_loads(id);
  alter table teloa_industry_loads add column if not exists supersedes uuid references teloa_industry_loads(id);
  alter table teloa_industry_load_items add column if not exists carried_from uuid;
  create table if not exists teloa_industry_load_upgrade_requests(owner_id text not null,request_id uuid not null,request_spec jsonb not null check(jsonb_typeof(request_spec)='object'),load_id uuid not null references teloa_industry_loads(id),successor_load_id uuid not null references teloa_industry_loads(id),primary key(owner_id,request_id));
@@ -200,11 +204,13 @@ export class IndustryLoadService{
   if(!row)throw new WorkError('teloa/forbidden','行业模板加载记录不存在或不属于当前本人。')
   if(row.owner_id!==ownerId)throw new WorkError('teloa/forbidden','行业模板加载记录不存在或不属于当前本人。')
   const itemRows=(await db.query('select * from teloa_industry_load_items where load_id=$1 order by local_id',[loadId])).rows
+  const reloadSource=row.reloads===null?undefined:(await db.query('select owner_id,content_id,content_hash,space_id,status,source_snapshot from teloa_industry_loads where id=$1',[row.reloads])).rows[0]
   const planRow=(await db.query('select choices,diff_digest,created_at from teloa_industry_upgrade_plans where owner_id=$1 and successor_load_id=$2',[ownerId,loadId])).rows[0]
   // 沿用项的实例挂在被替代的加载上，因此按实例身份（全表唯一）而不是按加载查询，两类身份一次取齐。
   const instanceStates=await this.instanceStates(db,ownerId,itemRows.flatMap(item=>[item.instance_id,item.carried_from]).filter((value):value is string=>uuid(value)))
   try{
    const snapshot=sourceSnapshot(row.source_snapshot)
+   if(row.reloads!==null&&(!uuid(row.reloads)||row.supersedes!==null||!reloadSource||reloadSource.owner_id!==row.owner_id||reloadSource.content_id!==row.content_id||reloadSource.content_hash!==row.content_hash||!same(sourceSnapshot(reloadSource.source_snapshot),snapshot)||reloadSource.space_id!==row.space_id||reloadSource.status!=='unloaded'))throw Error()
    if(!loadStatuses.includes(row.status)||(row.status==='unloaded')!==(row.unloaded_at!==null))throw Error()
    // 继任血缘三件事同生共死：`supersedes` 指向的旧加载、它的模板版本与那次升级的计划，缺一即视为记录损坏。
    const superseded=row.supersedes===null?undefined:row.supersedes
@@ -212,7 +218,7 @@ export class IndustryLoadService{
    if(superseded!==undefined&&(!uuid(superseded)||!semver(row.superseded_version)||!hash(planRow.diff_digest)))throw Error()
    const upgrade:IndustryLoadUpgrade|undefined=superseded===undefined?undefined:{loadId:superseded,templateVersion:row.superseded_version,choices:readIndustryUpdateChoices(planRow.choices),diffDigest:planRow.diff_digest,createdAt:stamp(planRow.created_at)}
    if(!uuid(row.id)||!uuid(row.content_id)||!hash(row.content_hash)||row.template_id!==snapshot.templateId||row.template_version!==snapshot.templateVersion||row.template_title!==snapshot.title||row.domain!==snapshot.domain||row.scope!==snapshot.scope||row.description!==snapshot.description||!uuid(row.space_id)||!positive(row.space_version)||!positive(row.current_space_version)||row.current_space_version<row.space_version||!text(row.space_name,80)||!Array.isArray(row.relations)||!Array.isArray(row.entrypoints))throw Error()
-   const items:IndustryLoadItem[]=itemRows.map(item=>{if(!id(item.local_id)||!uuid(item.instance_id)||!kinds.includes(item.kind)||!text(item.title,120)||!semver(item.version)||typeof item.required!=='boolean'||!['pending-adapter','skipped'].includes(item.status)||item.required&&item.status==='skipped')throw Error();if(item.carried_from!==null&&(superseded===undefined||!uuid(item.carried_from)))throw Error();return {localId:item.local_id,instanceId:item.instance_id,kind:item.kind,title:item.title,version:item.version,required:item.required,status:item.status,...(item.carried_from===null?{}:{carriedFrom:item.carried_from})}})
+   const items:IndustryLoadItem[]=itemRows.map(item=>{if(!id(item.local_id)||!uuid(item.instance_id)||!kinds.includes(item.kind)||!text(item.title,120)||!semver(item.version)||typeof item.required!=='boolean'||!['pending-adapter','skipped'].includes(item.status)||item.required&&item.status==='skipped')throw Error();if(item.carried_from!==null&&(superseded===undefined&&!uuid(row.reloads)||!uuid(item.carried_from)))throw Error();return {localId:item.local_id,instanceId:item.instance_id,kind:item.kind,title:item.title,version:item.version,required:item.required,status:item.status,...(item.carried_from===null?{}:{carriedFrom:item.carried_from})}})
    const carried=items.flatMap(item=>item.carriedFrom?[item.carriedFrom]:[]);if(new Set(carried).size!==carried.length)throw Error()
    const byLocal=new Map(items.map(item=>[item.localId,item])),byInstance=new Set(items.map(item=>item.instanceId));if(byLocal.size!==items.length||byInstance.size!==items.length||items.length!==snapshot.resources.length||row.mapping_hash!==mappingHash(items))throw Error()
    for(const expected of snapshot.resources){const actual=byLocal.get(expected.localId);if(!actual||actual.kind!==expected.kind||actual.title!==expected.title||actual.version!==expected.version||actual.required!==expected.required||actual.status!==(expected.available?'pending-adapter':'skipped'))throw Error()}
@@ -314,13 +320,14 @@ export class IndustryLoadService{
    if(space&&space.name!==data.target.name)throw new WorkError('teloa/conflict','业务空间身份已用于其他名称。')
   }else if(!space)throw new WorkError('teloa/forbidden','目标业务空间不存在或不属于当前本人。')
   else if(space.version!==data.target.expectedVersion)throw new WorkError('teloa/version-conflict','目标业务空间版本已变化。')
-  const duplicate=space&&(await db.query('select id,status from teloa_industry_loads where owner_id=$1 and space_id=$2 and content_id=$3 and content_hash=$4',[ownerId,data.target.spaceId,data.contentId,data.contentHash])).rows[0]
+  const duplicate=space&&(await db.query("select id,status from teloa_industry_loads where owner_id=$1 and space_id=$2 and content_id=$3 and content_hash=$4 order by (status='active') desc,space_version desc,created_at desc,id desc limit 1",[ownerId,data.target.spaceId,data.contentId,data.contentHash])).rows[0]
   if(duplicate){
-   // 同一固定内容身份与摘要在同一空间只有一条加载行。已卸载或已被替代的那条不能复活：
-   // 复用它会让"新加载"既不在目录里、又拒绝一切实例写入，因此两条重复路径都直接拒绝。
-   if(duplicate.status!=='active')throw new WorkError('teloa/conflict','同一内容已在此业务空间加载过，并已卸载或被升级替代，不能再次加载。')
-   if(options.duplicate==='reject')throw new WorkError('teloa/conflict','候选版本已加载到该业务空间，不能再作为继任加载。')
-   return duplicate.id as string
+   if(duplicate.status==='superseded')throw new WorkError('teloa/conflict','同一内容已被升级替代，请使用当前版本或在升级页面核对版本。')
+   if(duplicate.status==='active'){
+    if(options.duplicate==='reject')throw new WorkError('teloa/conflict','候选版本已加载到该业务空间，不能再作为继任加载。')
+    return duplicate.id as string
+   }
+   if(options.duplicate==='reject')throw new WorkError('teloa/conflict','候选版本曾被卸载，请重新加载后核对升级。')
   }
   if(space&&data.target.kind==='new')throw new WorkError('teloa/conflict','业务空间已存在；加载其他版本须按当前空间版本提交。')
   if(!space)space=(await db.query('insert into teloa_business_spaces(id,owner_id,name,description,version,created_at,updated_at) values($1,$2,$3,$4,1,$5,$5) returning *',[data.target.spaceId,ownerId,newName!,snapshot.description,now])).rows[0]
@@ -328,12 +335,16 @@ export class IndustryLoadService{
   // 加载成功即把模板 `scope` 登记为业务范围标签（规格 §3.3）：与加载行同一事务，加载写不成标签也不会留下。
   // 标题优先用模板标题，超过标签上限就退回 `scope` 本身。同一 `scope` 重复加载时登记幂等，不改已有标题与来源。
   await BusinessScopeService.ensure(db,ownerId,{scope:snapshot.scope,title:snapshot.title.length<=80?snapshot.title:snapshot.scope,kind:'domain',spaceId:space.id})
+  // 新代次不复活旧加载或旧请求；已保留且仍有效的员工、资料沿用原对象。
+  // 连接与授权在卸载时已解除，必须重新确认，不随重装复活。
+  const reloaded=duplicate?.status==='unloaded'?await this.read(db,ownerId,duplicate.id):undefined
+  const carriedFrom=options.carriedFrom??new Map(reloaded?.items.filter(item=>['role','knowledge'].includes(item.kind)&&item.status==='active').map(item=>[item.localId,item.carriedFrom??item.instanceId]))
   const loadId=this.identity.id();if(!uuid(loadId))throw invalid()
   const mapping=new Map(snapshot.resources.map(item=>[item.localId,this.identity.id()]));if([...mapping.values()].some(value=>!uuid(value)))throw invalid()
   const relations=snapshot.relations.map(link=>({kind:link.kind,from:mapping.get(link.from)!,to:mapping.get(link.to)!})),entrypoints=snapshot.entrypoints.map(local=>mapping.get(local)!)
   const digest=mappingHash([...mapping].map(([localId,instanceId])=>({localId,instanceId})))
-  await db.query('insert into teloa_industry_loads(id,owner_id,content_id,content_hash,template_id,template_version,template_title,domain,scope,description,source_snapshot,space_id,space_version,mapping_hash,relations,entrypoints,created_at,supersedes) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)',[loadId,ownerId,data.contentId,data.contentHash,snapshot.templateId,snapshot.templateVersion,snapshot.title,snapshot.domain,snapshot.scope,snapshot.description,JSON.stringify(snapshot),space.id,space.version,digest,JSON.stringify(relations),JSON.stringify(entrypoints),now,options.supersedes??null])
-  for(const item of snapshot.resources)await db.query('insert into teloa_industry_load_items(load_id,local_id,instance_id,kind,title,version,required,status,carried_from) values($1,$2,$3,$4,$5,$6,$7,$8,$9)',[loadId,item.localId,mapping.get(item.localId),item.kind,item.title,item.version,item.required,item.available?'pending-adapter':'skipped',options.carriedFrom?.get(item.localId)??null])
+  await db.query('insert into teloa_industry_loads(id,owner_id,content_id,content_hash,template_id,template_version,template_title,domain,scope,description,source_snapshot,space_id,space_version,mapping_hash,relations,entrypoints,created_at,supersedes,reloads) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)',[loadId,ownerId,data.contentId,data.contentHash,snapshot.templateId,snapshot.templateVersion,snapshot.title,snapshot.domain,snapshot.scope,snapshot.description,JSON.stringify(snapshot),space.id,space.version,digest,JSON.stringify(relations),JSON.stringify(entrypoints),now,options.supersedes??null,reloaded?.id??null])
+  for(const item of snapshot.resources)await db.query('insert into teloa_industry_load_items(load_id,local_id,instance_id,kind,title,version,required,status,carried_from) values($1,$2,$3,$4,$5,$6,$7,$8,$9)',[loadId,item.localId,mapping.get(item.localId),item.kind,item.title,item.version,item.required,item.available?'pending-adapter':'skipped',carriedFrom.get(item.localId)??null])
   return loadId
  }
  async get(ownerId:string,value:unknown):Promise<IndustryLoadRecord>{owner(ownerId);const row=exact(value,['loadId']);if(!uuid(row.loadId))throw invalid();const db=await this.pool.connect();try{await db.query('begin isolation level repeatable read read only');const result=await this.read(db,ownerId,row.loadId);await db.query('commit');return result}catch(error){await db.query('rollback');throw error}finally{db.release()}}

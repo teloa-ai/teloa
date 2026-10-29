@@ -89,8 +89,13 @@ function source(input:unknown):MarketImportSource{
  if(value.kind!=='upload')throw bad('首批市场内容持久化只接受已经读取字节的本地上传来源。')
  return {kind:'upload',name:requiredText(value.name,'来源名称',300)}
 }
-/** 来源缺少信任声明时的回退发布者标识。 */
-const sourceLabel=(value:MarketImportSource):string=>value.kind==='upload'?value.name:value.kind==='catalog'?'Teloa 官方目录 '+value.entryId:value.owner+'/'+value.repo
+/** 上传文件名只作 source.name 保留，不能冒充发布者或随重命名改变缺省信任。 */
+const sourceLabel=(value:MarketImportSource):string=>value.kind==='upload'?'本人导入':value.kind==='catalog'?'Teloa 官方目录 '+value.entryId:value.owner+'/'+value.repo
+function sourceTrust(value:unknown,source:MarketImportSource):MarketSourceTrust{
+ const trust=normalizeMarketSourceTrust(value,sourceLabel(source))
+ // 与浏览器原子/行业上传的缺省声明一致；只影响未来未声明 trust 的本地导入。
+ return value===undefined&&source.kind==='upload'?{...trust,review:{conclusion:'needs-review',summary:'本地上传来源尚未完成签名与兼容审查'}}:trust
+}
 function unique<T extends {id:string}>(values:T[],label:string):T[]{if(new Set(values.map(value=>value.id)).size!==values.length)throw bad(label+'不能重复。');return values}
 function localizedFields(input:unknown,originals:{title:string;description?:string}):LocalizedFields{
  const row=exact(input,['title','description']),result:LocalizedFields={}
@@ -176,7 +181,7 @@ function normalizeAtomic(input:AtomicInput):Omit<Normalized,'requestSpec'|'sourc
  if(contentFiles.some(file=>!file.path.startsWith(root)))throw bad('技能目录包含入口目录外的文件。')
  if(!utf8(entries[0]!,'SKILL.md').trim())throw bad('SKILL.md 不能为空。')
  const baseHash=sha(JSON.stringify({metadata,files:contentFiles.map(file=>[file.path,file.hash])}))
- const trust=normalizeMarketSourceTrust(input.trust,sourceLabel(input.source))
+ const trust=sourceTrust(input.trust,input.source)
  return {kind:'atomic-skill',logicalId:metadata.id,version:metadata.version,hash:baseHash,baseHash,manifestPath,metadata,trust,trustHash:marketTrustHash(trust),files:contentFiles,provides:[{resourceId:metadata.id,kind:'skill',version:metadata.version,path:manifestPath}],references:[]}
 }
 
@@ -293,8 +298,11 @@ function normalizeIndustry(input:IndustryInput):Omit<Normalized,'requestSpec'|'s
  if(references.some(reference=>!publicResources.some(resource=>resource.id===reference.resourceId)))throw bad('公共资源引用不属于此行业模板。')
  const baseHash=sha(JSON.stringify({manifestPath,files:contentFiles.map(file=>[file.path,file.hash])}))
  const hash=references.length?sha(JSON.stringify([baseHash,references.map(({resourceId,sourceItemId,sourceResourceId,sourceHash})=>[resourceId,sourceItemId,sourceResourceId,sourceHash])])):baseHash
- const trust=normalizeMarketSourceTrust(input.trust,sourceLabel(input.source))
+ const trust=sourceTrust(input.trust,input.source)
  return {kind:'industry-template',logicalId:manifest.id,version:manifest.version,hash,baseHash,manifestPath,metadata:manifest as unknown as Record<string,unknown>,trust,trustHash:marketTrustHash(trust),files:contentFiles,provides,references}
+}
+function importRequestSpec(content:Omit<Normalized,'requestSpec'|'source'|'requestId'>,source:MarketImportSource):Record<string,unknown>{
+ return {kind:content.kind,source,logicalId:content.logicalId,version:content.version,hash:content.hash,baseHash:content.baseHash,manifestPath:content.manifestPath,metadata:content.metadata,trustHash:content.trustHash,references:content.references}
 }
 function normalize(input:unknown):Normalized{
  const row=exact(input,['kind','requestId','source','metadata','manifestPath','trust','files','references'])
@@ -308,7 +316,7 @@ function normalize(input:unknown):Normalized{
   exact(row,['kind','requestId','source','manifestPath','trust','files','references'])
   content=normalizeIndustry(row as unknown as IndustryInput)
  }else throw bad('不支持的市场内容类型。')
- const requestSpec={kind:content.kind,source:normalizedSource,logicalId:content.logicalId,version:content.version,hash:content.hash,baseHash:content.baseHash,manifestPath:content.manifestPath,metadata:content.metadata,trustHash:content.trustHash,references:content.references}
+ const requestSpec=importRequestSpec(content,normalizedSource)
  return {...content,requestId:row.requestId,source:normalizedSource,requestSpec}
 }
 
@@ -402,6 +410,19 @@ export class MarketContentStore{
   // 「Teloa 官方目录」只能由官方目录来源产生；上传或 GitHub 导入自报这个发布者一律拒绝，避免冒充官方收录。
   if(value.source.kind!=='catalog'&&value.trust.publisher==='Teloa 官方目录')throw bad('只有 Teloa 官方目录来源可以使用这个发布者名称。')
   return this.tx(async client=>{
+   // 旧版裸上传省略 trust 时曾使用文件名作为发布者。只允许原请求按准确旧规则重放，
+   // 绝不为新请求恢复旧缺省值，也不改写固定内容、来源或回执。
+   if(value.source.kind==='upload'&&isRecord(input)&&!Object.hasOwn(input,'trust')&&input.trust===undefined){
+    const previous=(await client.query('select * from teloa_market_imports where owner_id=$1 and request_id=$2 for update',[actor.ownerId,value.requestId])).rows[0] as Record<string,unknown>|undefined
+    if(previous&&!same(previous.request_spec,value.requestSpec)){
+     const legacyTrust=normalizeMarketSourceTrust(undefined,value.source.name),legacySpec={...value.requestSpec,trustHash:marketTrustHash(legacyTrust)}
+     if(!same(previous.request_spec,legacySpec)||!same(previous.source,value.source))throw new WorkError('teloa/conflict','同一市场导入请求不能更换来源或内容。')
+     if(!uuid(previous.content_id))throw corrupt()
+     const content=await this.content(client,actor,previous.content_id)
+     if(!same(importRequestSpec(content,value.source),legacySpec))throw corrupt()
+     return {receipt:{requestId:value.requestId,contentId:content.id,source:value.source,createdAt:stamp(previous.created_at)},content}
+    }
+   }
    await this.verifyReferences(client,actor,value)
    const now=this.identity.now()
    const inserted=(await client.query(`insert into teloa_market_contents(id,owner_id,kind,logical_id,version,content_hash,base_hash,manifest_path,metadata,trust,trust_hash,provides,refs,created_at)

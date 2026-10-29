@@ -80,6 +80,18 @@ test('连接草案应用不暗示接通，按需定义隐藏凭据与文件编�
  assert.equal(await drawer.locator('input,textarea').count(),0);assert.deepEqual(await page.evaluate(()=>(window as any).objectFixture.opened),[])
 })
 
+test('自定义应用定义展示非敏感认证结构、请求头和自动前缀规则',async t=>{
+ const page=await mount(t)
+ await page.getByRole('button',{name:/本人双头应用/}).click()
+ const drawer=page.getByRole('dialog',{name:'草案详情',exact:true})
+ await drawer.getByText('查看定义',{exact:true}).click()
+ const definition=await drawer.locator('pre').first().innerText(),parsed=JSON.parse(definition)
+ assert.deepEqual(parsed.definition.auth,{kind:'headers',requirement:'all',headers:[{name:'Authorization',scheme:'Bearer'},{name:'X-API-Key'}]})
+ assert.match(await drawer.innerText(),/系统会自动拼接前缀/)
+ assert.doesNotMatch(definition,/HEADER_SECRET|CREDENTIAL_SECRET|URL_SECRET|QUERY_SECRET/)
+ assert.equal(await drawer.locator('input[type=password]').count(),2)
+})
+
 test('本人技能点击中文名称读取名称描述Markdown，已应用原草案显示技能并保留原身份',async t=>{
  const page=await mount(t),card=page.locator('#skill-live').getByRole('button',{name:/资料核对技能.*已保存，未启用/});await card.waitFor();await card.click()
  const drawer=page.getByRole('dialog',{name:'技能详情',exact:true});await drawer.getByText('核对本人资料并列出来源',{exact:true}).waitFor()
@@ -228,7 +240,7 @@ test('自定义应用原稿在同一抽屉认证并连接，关闭清空输入�
  assert.equal(await drawer.getByLabel('X-API-Key',{exact:true}).inputValue(),'')
  await drawer.getByLabel('Authorization · Bearer',{exact:true}).fill('fixture-only');await drawer.getByLabel('X-API-Key',{exact:true}).fill('fixture-key')
  await drawer.getByRole('button',{name:'添加并连接 / 更新连接',exact:true}).click()
- await drawer.getByText('已保存认证；留空可沿用，填写全部字段可更新。',{exact:true}).waitFor()
+ await drawer.getByText('已保存认证；全部留空可沿用，按下方认证规则填写可更新。',{exact:true}).waitFor()
  assert.equal(await drawer.getByRole('checkbox',{name:'search',exact:true}).isChecked(),false)
  assert.equal(await drawer.getByLabel('X-API-Key',{exact:true}).inputValue(),'')
  assert.equal(await drawer.getByRole('button',{name:'打开应用',exact:true}).count(),0)

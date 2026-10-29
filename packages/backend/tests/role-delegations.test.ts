@@ -59,3 +59,20 @@ test('工具编辑闸核对未收口孩子/未知运行关联，角色版本变�
  const current=await delegations.get(owner,{roleId:role.id});assert.equal(current.roleVersion,2);assert.equal(current.delegations[0].roleVersion,1)
  await assert.rejects(delegations.change(owner,{requestId:randomUUID(),roleId:role.id,expectedRoleVersion:2,expectedVersion:saved.version,action:'resume'}),{code:'teloa/version-conflict'})
 })
+
+test('工具与12/30份资料组合可在两个业务分别保存，31项和跨范围拒绝',async()=>{
+ const {initializeRoleToolGrants}=await import('../src/work/role-tool-grants.ts');await initializeRoleToolGrants(env.pool)
+ for(const [scope,count] of [['general',12],['research',30]] as const){
+  const {owner,role}=await roleFixture(env.pool,'employee'),ids=Array.from({length:count},()=>randomUUID())
+  for(const [index,id] of ids.entries())await env.pool.query("insert into teloa_resources(id,owner_id,revision,status,spec,created_at,updated_at) values($1,$2,1,'active',$3,now(),now())",[id,owner,JSON.stringify({title:'已授权资料'+index,sourceId:'guide_'+index,sourceVersion:'a'.repeat(64),scopeIds:[scope]})])
+  await env.pool.query("update teloa_roles set definition=jsonb_set(definition,'{knowledge}',$2::jsonb),version=2 where id=$1",[role.id,JSON.stringify(ids)])
+  const rules=[{name:'read',allowed:[],workspaceFiles:'default-workspace'}]
+  await env.pool.query("insert into teloa_role_tool_grants(role_id,base_version,role_version,state,rules,request_spec,created_at) values($1,1,2,'active',$2,$3,now())",[role.id,JSON.stringify(rules),JSON.stringify({action:'save',rules})])
+  const delegations=service(),saved=await delegations.change(owner,{requestId:randomUUID(),roleId:role.id,expectedRoleVersion:2,expectedVersion:null,action:'save',fields:{...delegationFields,scope,allowedTools:['read'],knowledgeIds:ids}})
+  assert.deepEqual(saved.knowledgeIds,ids);assert.deepEqual(saved.allowedTools,['read']);assert.deepEqual((await delegations.get(owner,{roleId:role.id})).delegations[0].knowledgeIds,ids)
+  const paused=await delegations.change(owner,{requestId:randomUUID(),roleId:role.id,expectedRoleVersion:2,expectedVersion:saved.version,action:'pause'})
+  await assert.rejects(delegations.change(owner,{requestId:randomUUID(),roleId:role.id,expectedRoleVersion:2,expectedVersion:paused.version,action:'save',fields:{...delegationFields,scope,allowedTools:['read'],knowledgeIds:Array.from({length:31},()=>randomUUID())}}),{code:'teloa/invalid-input'})
+  await env.pool.query("update teloa_resources set spec=jsonb_set(spec,'{scopeIds}','[\"other\"]'::jsonb) where id=$1",[ids[0]])
+  await assert.rejects(delegations.change(owner,{requestId:randomUUID(),roleId:role.id,expectedRoleVersion:2,expectedVersion:paused.version,action:'save',fields:{...delegationFields,scope,allowedTools:['read'],knowledgeIds:ids}}),{code:'teloa/forbidden'})
+ }
+})

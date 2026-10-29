@@ -1,3 +1,4 @@
+import type {LocalRetrievalApi} from './local-retrieval-api.js';
 import {TwinDraftWorkspace,type TwinDraftWorkspacePort} from './TwinDraftWorkspace.js'
 import {RoleMemory as RoleMemoryEditor} from './RoleMemory.js'
 import {skillDisplayTitle,type RoleSkillTitleReader,type SkillDisplayTitle} from './capability-skill-runtime.js';
@@ -82,6 +83,8 @@ import { readRosterFold, writeRosterFold, type RosterFoldState } from './team-ro
 import type { PageCreateApi } from './page-create-api.js';
 import { HIRE_ACTIONS, HIRE_DEFAULT_LIMITS, HIRE_LEVELS, HIRE_PRESETS, hireActionLabel, hireDrifted, hireLevelLabel, hireMergeLimit, hireMergePreset, hirePresetFields, type HireAction, type HireAppliedFields, type HireLevel } from './role-hire-presets.ts';
 type Props = {
+ localRetrievalApi?:LocalRetrievalApi|undefined;
+ openRetrieval?:(()=>void)|undefined;
     twinDrafts?:TwinDraftWorkspacePort|undefined;
     taskRuns?:TaskRunApi|undefined;
     employeeArtifacts?:Pick<ArtifactApi,'listByRole'>|undefined;
@@ -176,7 +179,7 @@ const closed = (state: string) => state === 'completed' || state === 'cancelled'
 const firstSentence = (text: string) => text.split(/[。.!?！？\n]/)[0]?.trim() || text.trim();
 /** 全宽名单工具行上的三个状态胶囊（原型 数字员工形象.jsx:107 的 statusFilters）。恢复旧筛选记忆时也拿它当白名单。 */
 const STATUS_PILL_IDS = ['all', 'busy', 'paused'] as const;
-export function TeamPage({ twinDrafts,employeeArtifacts,openEmployeeArtifact,taskRuns,skillTitleReader,phone,templateSharing,delegations,roleTools,delegationChanged,savedGroups,navigation,work, resourceApi, memoryApi, dailyLogApi, autoDreamTrigger, dailyLogSchedule, runtimeConfigs, capabilityState, persistence, embedded = false, autoFocus = true, conversations, talk, visible, state, collaboration, selected, select, change, openTask, openGroup, openBusiness, resources, nativeSettings, capabilities, plans, scopeLabels, focusScope, profileName = defaultPersonalDisplayName, profileInitials = personalAvatarInitials(profileName), pageCreate }: Props) {
+export function TeamPage({ localRetrievalApi,openRetrieval,twinDrafts,employeeArtifacts,openEmployeeArtifact,taskRuns,skillTitleReader,phone,templateSharing,delegations,roleTools,delegationChanged,savedGroups,navigation,work, resourceApi, memoryApi, dailyLogApi, autoDreamTrigger, dailyLogSchedule, runtimeConfigs, capabilityState, persistence, embedded = false, autoFocus = true, conversations, talk, visible, state, collaboration, selected, select, change, openTask, openGroup, openBusiness, resources, nativeSettings, capabilities, plans, scopeLabels, focusScope, profileName = defaultPersonalDisplayName, profileInitials = personalAvatarInitials(profileName), pageCreate }: Props) {
     const { locale, t, list, number } = useI18n();
     const allowed=useApplicationCapability('people');
     profileName = personalDisplayName(profileName, t('profile.account'));
@@ -240,7 +243,7 @@ export function TeamPage({ twinDrafts,employeeArtifacts,openEmployeeArtifact,tas
     const resetDirectory=()=>{setQuery('');setStatus('all');select(null)};
     const showRoster = !embedded;
     const detailPane = role
-      ? <RoleDetail twinDrafts={isSandbox?undefined:twinDrafts} employeeArtifacts={employeeArtifacts} openEmployeeArtifact={openEmployeeArtifact} openRole={select} taskRuns={taskRuns} skillTitleReader={skillTitleReader} templateSharing={isSandbox?undefined:templateSharing} delegations={isSandbox?undefined:delegations} roleTools={roleTools} delegationChanged={delegationChanged} savedGroups={savedGroups} profileName={profileName} profileInitials={profileInitials} work={work} resourceApi={resourceApi} memoryApi={memoryApi} dailyLogApi={dailyLogApi} autoDreamTrigger={autoDreamTrigger} dailyLogSchedule={dailyLogSchedule} runtimeConfigs={runtimeConfigs} capabilityState={capabilityState} persistence={isSandbox?undefined:persistence} conversations={conversations} {...(!isSandbox?{talk,phone}:{})} input={inputs[role.id] ?? emptyInput()} update={patch => setInputs(current => ({ ...current, [role.id]: { ...(current[role.id] ?? emptyInput()), ...patch } }))} key={role.id} role={role} businessContext={businessFilter==='all'?undefined:businessFilter} state={directoryState} collaboration={collaboration} change={change} back={() => select(null)} openTask={openTask} openGroup={openGroup} openBusiness={isSandbox?undefined:openBusiness} resources={resources} nativeSettings={nativeSettings} capabilities={capabilities} plans={plans}/>
+      ? <RoleDetail localRetrievalApi={localRetrievalApi} openRetrieval={openRetrieval} twinDrafts={isSandbox?undefined:twinDrafts} employeeArtifacts={employeeArtifacts} openEmployeeArtifact={openEmployeeArtifact} openRole={select} taskRuns={taskRuns} skillTitleReader={skillTitleReader} templateSharing={isSandbox?undefined:templateSharing} delegations={isSandbox?undefined:delegations} roleTools={roleTools} delegationChanged={delegationChanged} savedGroups={savedGroups} profileName={profileName} profileInitials={profileInitials} work={work} resourceApi={resourceApi} memoryApi={memoryApi} dailyLogApi={dailyLogApi} autoDreamTrigger={autoDreamTrigger} dailyLogSchedule={dailyLogSchedule} runtimeConfigs={runtimeConfigs} capabilityState={capabilityState} persistence={isSandbox?undefined:persistence} conversations={conversations} {...(!isSandbox?{talk,phone}:{})} input={inputs[role.id] ?? emptyInput()} update={patch => setInputs(current => ({ ...current, [role.id]: { ...(current[role.id] ?? emptyInput()), ...patch } }))} key={role.id} role={role} businessContext={businessFilter==='all'?undefined:businessFilter} state={directoryState} collaboration={collaboration} change={change} back={() => select(null)} openTask={openTask} openGroup={openGroup} openBusiness={isSandbox?undefined:openBusiness} resources={resources} nativeSettings={nativeSettings} capabilities={capabilities} plans={plans}/>
       : <div className={css.empty}><Bot size={38}/><h2>{t('team.landingTitle')}</h2></div>;
     return <section data-team-directory-mode={directoryMode} className={clsx(css.page, css.alignedPage,isSandbox&&css.sandboxMode, teamCss.teamPage, embedded && css.embeddedPage, embedded && teamCss.embeddedTeam)} aria-label={t('navigation.team')}>{!selected&&<CapabilityNotice capability="people"/>}
 
@@ -304,7 +307,9 @@ export function TeamPage({ twinDrafts,employeeArtifacts,openEmployeeArtifact,tas
   </section>;
 }
 // 导出给 team-profile-sections.test.ts 用 renderToStaticMarkup 直接核对「编辑」态的五组呈现，不必经过 TeamPage 的内部选中态。
-export function RoleDetail({ twinDrafts,employeeArtifacts,openEmployeeArtifact,openRole,taskRuns,skillTitleReader,phone,templateSharing,delegations,roleTools,delegationChanged,savedGroups,work, resourceApi, memoryApi, dailyLogApi, autoDreamTrigger, dailyLogSchedule, runtimeConfigs, capabilityState, persistence, conversations, talk, input, update, role, businessContext, state, collaboration, change, back, openTask, openGroup, openBusiness, resources, nativeSettings, capabilities, plans, profileName = defaultPersonalDisplayName, profileInitials = personalAvatarInitials(profileName) }: {
+export function RoleDetail({ localRetrievalApi,openRetrieval,twinDrafts,employeeArtifacts,openEmployeeArtifact,openRole,taskRuns,skillTitleReader,phone,templateSharing,delegations,roleTools,delegationChanged,savedGroups,work, resourceApi, memoryApi, dailyLogApi, autoDreamTrigger, dailyLogSchedule, runtimeConfigs, capabilityState, persistence, conversations, talk, input, update, role, businessContext, state, collaboration, change, back, openTask, openGroup, openBusiness, resources, nativeSettings, capabilities, plans, profileName = defaultPersonalDisplayName, profileInitials = personalAvatarInitials(profileName) }: {
+ localRetrievalApi?:LocalRetrievalApi|undefined;
+ openRetrieval?:(()=>void)|undefined;
     twinDrafts?:TwinDraftWorkspacePort|undefined;
     openRole?:Props['select']|undefined;
     taskRuns?:TaskRunApi|undefined;
@@ -566,7 +571,7 @@ export function RoleDetail({ twinDrafts,employeeArtifacts,openEmployeeArtifact,o
               </>}
               {section === 'reading' && <>
                 <p>{role.dataScope}</p>
-                <RoleKnowledge compact api={resourceApi} ids={role.knowledge} scopes={role.scopes}/>
+                <RoleKnowledge compact api={resourceApi} ids={role.knowledge} scopes={role.scopes} retrieval={localRetrievalApi} openRetrieval={openRetrieval??resources}/>
               </>}
               {section === 'limit' && <>
                 {role.responsibility && <dl className={teamCss.responsibilities}>{responsibilityGroups(role.responsibility).filter(group => (['confirmationPoints', 'escalationRules'] as string[]).includes(group.key)).map(group => <div key={group.key}><dt>{t(group.labelKey)}</dt><dd>{group.items.length ? <ul>{group.items.map(item => <li key={item}>{item}</li>)}</ul> : t('team.detail.notSet')}</dd></div>)}</dl>}

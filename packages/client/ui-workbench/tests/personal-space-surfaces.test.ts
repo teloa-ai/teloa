@@ -89,7 +89,7 @@ test('左栏顶部不再有空间入口与切换箭头；账号块提供「我�
  assert.match(frame,/objectConversationApi\.list\('role',role\.id\)/)
  assert.match(frame,/const recent=latestRoleConversation\(presentConversations\(/)
  assert.match(frame,/if\(!recent\)\{[\s\S]{0,180}await requestRoleCreation\(object,role\.scopes\)[\s\S]{0,40}return true/)
- assert.match(frame,/if\(available\.length>1\)\{setRoleScopeIntent\(\{object,scopes:available,\.\.\.\(goal\?\{goal\}:\{\}\)\}\);return\}/,'跨业务范围先选业务语境，不把业务范围误当成本机执行位置')
+ assert.match(frame,/if\(available\.length>1\)\{setRoleScopeIntent\(\{object:fresh,scopes:available,\.\.\.\(goal\?\{goal\}:\{\}\)\}\);return\}/,'跨业务范围先选业务语境，不把业务范围误当成本机执行位置')
  assert.equal(frame.match(/canStart:roleCanStartConversation\(role\.state\)/g)?.length,3,'暂停只是不再接新任务，仍应能开始聊天；只有离职阻断新会话')
  assert.match(frame,/roleConversationOpening\.current\.has\(roleId\)/,'所有分身与AI 员工直达入口应共用防重复打开锁')
  assert.match(frame,/return createWork\(decision\.workspaceId,intent,true\)\.then\(\(\)=>\{\},\(\)=>\{\}\)/,'自动创建必须把 Promise 交回调用者，岗位锁才能覆盖完整创建过程')

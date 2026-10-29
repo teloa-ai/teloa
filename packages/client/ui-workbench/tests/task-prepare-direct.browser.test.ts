@@ -8,8 +8,8 @@ import {build} from 'vite'
 import {launchOptions,loadPlaywright} from './fixtures/load-playwright.mjs'
 
 type PrepareRequest={requestId:string;taskId:string;expectedTaskVersion:number}
-type FixtureCall={method:'task-runs/prepare';payload:PrepareRequest}|{method:'task-runs/start'|'task-runs/withdraw';payload:{runId:string}}|{method:'task-runs/list'|'task-runs/origin';payload:{taskId:string}}|{method:'work-controls/get'|'work-recovery/inspect';payload:{controlId:string}}|{method:'work-recovery/resume';payload:{requestId:string;controlId:string;expectedVersion:number;candidateRunIds:string[]}}
-type Fixture={calls:FixtureCall[];journal:string|null;controlJournal:string|null;opens:string[];waiting:boolean;release:()=>void;select:(target:'other'|'version')=>void;originalInput:()=>string;driftControl:()=>void}
+type FixtureCall={method:'task-runs/readiness';payload:{taskId:string;expectedTaskVersion:number}}|{method:'task-runs/prepare';payload:PrepareRequest}|{method:'task-runs/start'|'task-runs/withdraw';payload:{runId:string}}|{method:'task-runs/list'|'task-runs/origin';payload:{taskId:string}}|{method:'work-controls/get'|'work-recovery/inspect';payload:{controlId:string}}|{method:'work-recovery/resume';payload:{requestId:string;controlId:string;expectedVersion:number;candidateRunIds:string[]}}
+type Fixture={authorized:boolean;calls:FixtureCall[];journal:string|null;controlJournal:string|null;opens:string[];waiting:boolean;release:()=>void;select:(target:'other'|'version')=>void;originalInput:()=>string;driftControl:()=>void}
 declare global{interface Window{taskPrepareFixture:Fixture}}
 const root=fileURLToPath(new URL('../../../../',import.meta.url)),client=fileURLToPath(new URL('../src/client/',import.meta.url))
 let browser:Awaited<ReturnType<ReturnType<typeof loadPlaywright>['chromium']['launch']>>,script:string,styles:string
@@ -17,7 +17,7 @@ const entry=`
 import React from 'react';import {createRoot} from 'react-dom/client';import {TaskDetail} from '${client}TaskDetail.tsx';import {TaskExecutions} from '${client}TaskExecutions.tsx';import {createTaskRunApi} from '${client}task-run-api.ts';import {createWorkControlApi} from '${client}work-control-api.ts';import {readTaskInputs} from '${client}task-inputs.ts';import {emptyBusinessPreview} from '${client}business-preview.ts';import {I18nProvider} from '${client}i18n/provider.tsx';import {translateMessage} from '${client}i18n/messages.ts';
 const taskId='22222222-2222-4222-8222-222222222222',otherId='55555555-5555-4555-8555-555555555555',roleId='33333333-3333-4333-8333-333333333333',at='2026-10-13T02:00:00.000Z',mode=document.documentElement.dataset.mode;
 const snapshot={locale:'en',dshLocale:'en',revision:1},runtime={t:(key,params)=>translateMessage('en',key,params),subscribe:()=>()=>{},getSnapshot:()=>snapshot};
-const f=window.taskPrepareFixture={calls:[],journal:null,controlJournal:null,opens:[],waiting:false,release:()=>{},select:()=>{},originalInput:()=>rows[0]?.inputText,driftControl:()=>{control={...control,version:control.version+1}}},rows=[];
+const f=window.taskPrepareFixture={authorized:mode!=='no-tools',calls:[],journal:null,controlJournal:null,opens:[],waiting:false,release:()=>{},select:()=>{},originalInput:()=>rows[0]?.inputText,driftControl:()=>{control={...control,version:control.version+1}}},rows=[];
 const controlled=mode.startsWith('control'),runId='66666666-6666-4666-8666-666666666666',controlId='77777777-7777-4777-8777-777777777777',budgetId='88888888-8888-4888-8888-888888888888',lineage={schema:'teloa.work-lineage/v1',ownerId:'local:owner',rootTaskId:taskId,definition:null,parentRunId:null,definitionControlId:null,roundControlId:controlId,controlGeneration:1,budgetAccountId:budgetId};
 let control={id:controlId,ownerId:mode==='control-foreign'?'local:other':'local:owner',generation:2,version:3,state:mode==='control-active'?'active':'paused',scope:'round',pendingRunIds:[],unknownOperationIds:[]};
 const candidates=()=>mode==='control-other'?[{controlId,expectedGeneration:2,runId,nativeRequestId:runId,goal:null,reason:'unaccepted',safeRecovery:false},{controlId,expectedGeneration:2,runId:otherId,nativeRequestId:otherId,goal:null,reason:'unaccepted',safeRecovery:false}]:[{controlId,expectedGeneration:mode==='control-generation'?3:2,runId,nativeRequestId:runId,goal:null,reason:mode==='control-unknown'?'unknown':'unaccepted',safeRecovery:false}];
@@ -26,6 +26,7 @@ const roleSnapshot={schema:'teloa.run-role/v2',id:roleId,version:3,kind:'employe
 if(controlled)rows.push({id:runId,taskId,roleId,taskVersion:5,roleVersion:3,linkVersion:1,sessionId:'task-run-'+runId,nativeRequestId:runId,state:'prepared',evidence:null,allowedTools:[],skills:[],knowledge:[],memory:[],roleSnapshot,lineage,inputText:JSON.stringify({schema:'teloa.task-run-input/v2',task:{id:taskId,version:5,title:'Original task',goal:'Read the original authorised evidence',scope:'general'},role:roleSnapshot,lineage}),createdAt:at});
 const api=createTaskRunApi(async(method,payload)=>{
  f.calls.push({method,payload});
+ if(method==='task-runs/readiness'){if(!f.authorized)throw Object.assign(Error('internal tool identifiers must stay hidden'),{code:'teloa/conflict',details:{reason:'role-run-no-execution-tools'}});return {schema:'teloa.task-run-readiness/v1',taskId:payload.taskId,taskVersion:payload.expectedTaskVersion,ready:true};}
  if(method==='task-runs/list')return rows.filter(row=>row.taskId===payload.taskId);
  if(method==='task-runs/origin')return {taskId:payload.taskId,runId:null,source:null};
  if(method==='task-runs/prepare'){
@@ -54,7 +55,7 @@ before(async()=>{
 after(async()=>{await browser?.close()})
 async function mount(t:TestContext,mode='success'){
  const page=await browser.newPage({viewport:{width:1000,height:900}}),errors:string[]=[];page.setDefaultTimeout(3000);page.on('pageerror',(error:Error)=>errors.push(error.message));t.after(async()=>{await page.close();assert.deepEqual(errors,[])})
- const url='http://127.0.0.1:49319/task-prepare-direct-fixture';await page.route('**/*',(route:{abort:()=>Promise<void>})=>route.abort());await page.route(url,(route:{fulfill:(response:{status:number;contentType:string;body:string})=>Promise<void>})=>route.fulfill({status:200,contentType:'text/html',body:'<!doctype html><html lang="en" data-mode="'+mode+'"><body><div id="root"></div></body></html>'}));await page.goto(url);await page.addStyleTag({content:styles});await page.addScriptTag({content:script});await page.getByRole('article',{name:'Task details'}).waitFor();if(!mode.startsWith('control'))await page.waitForFunction(()=>!document.querySelector<HTMLButtonElement>('[data-teloa-focus="prepare"]')?.disabled);return page
+ const url='http://127.0.0.1:49319/task-prepare-direct-fixture';await page.route('**/*',(route:{abort:()=>Promise<void>})=>route.abort());await page.route(url,(route:{fulfill:(response:{status:number;contentType:string;body:string})=>Promise<void>})=>route.fulfill({status:200,contentType:'text/html',body:'<!doctype html><html lang="en" data-mode="'+mode+'"><body><div id="root"></div></body></html>'}));await page.goto(url);await page.addStyleTag({content:styles});await page.addScriptTag({content:script});await page.getByRole('article',{name:'Task details'}).waitFor();if(!mode.startsWith('control')&&mode!=='no-tools')await page.waitForFunction(()=>!document.querySelector<HTMLButtonElement>('[data-teloa-focus="prepare"]')?.disabled);return page
 }
 const originalTask='22222222-2222-4222-8222-222222222222'
 test('真实主按钮一次准备原任务和版本，StrictMode不重复，核对后仍由本人明确启动同一Run',async t=>{
@@ -95,8 +96,25 @@ test('active沿原Start；未知、外来、不同世代、其它候选与读取
  const late=await mount(t,'control-late');await late.waitForFunction(()=>window.taskPrepareFixture.waiting);assert.equal(await late.getByRole('button',{name:'Start',exact:true}).count(),0);await late.evaluate(()=>window.taskPrepareFixture.select('other'));await late.evaluate(()=>window.taskPrepareFixture.release());await late.waitForFunction(()=>!window.taskPrepareFixture.waiting);assert.equal(await late.getByRole('button',{name:'Resume and start',exact:true,includeHidden:true}).count(),0);assert.equal(await late.evaluate(()=>window.taskPrepareFixture.calls.some(call=>call.method==='work-recovery/resume'||call.method==='task-runs/start')),false)
 })
 test('恢复结果网络未知保留原请求且零自动重试；版本迟到变化不借旧按钮恢复',async t=>{
- const page=await mount(t,'control-network'),status=page.locator('[data-teloa-status-box]');await status.getByRole('button',{name:'Resume and start',exact:true}).click();await page.getByRole('alert').waitFor();await status.getByRole('button',{name:'Check original control request',exact:true}).waitFor()
+ const page=await mount(t,'control-network'),status=page.locator('[data-teloa-status-box]');await status.getByRole('button',{name:'Resume and start',exact:true}).click();await page.getByRole('region',{name:'Task runs',exact:true}).getByRole('alert').waitFor();await status.getByRole('button',{name:'Check original control request',exact:true}).waitFor()
  const request=await page.evaluate(()=>window.taskPrepareFixture.controlJournal);assert.ok(request);const before:Fixture['calls']=await page.evaluate(()=>window.taskPrepareFixture.calls);assert.equal(before.filter(call=>call.method==='work-recovery/resume').length,1);assert.equal(before.some(call=>call.method==='task-runs/start'),false)
  await status.getByRole('button',{name:'Check original control request',exact:true}).click();await page.waitForFunction(()=>window.taskPrepareFixture.controlJournal===null);const resumes:Fixture['calls']=await page.evaluate(()=>window.taskPrepareFixture.calls.filter(call=>call.method==='work-recovery/resume'));assert.equal(resumes.length,2);assert.deepEqual(resumes[0],resumes[1]);assert.equal(await page.evaluate(()=>window.taskPrepareFixture.calls.some(call=>call.method==='task-runs/start')),false)
  const drift=await mount(t,'control-paused');await drift.locator('[data-teloa-status-box]').getByRole('button',{name:'Resume and start',exact:true}).waitFor();await drift.evaluate(()=>window.taskPrepareFixture.driftControl());await drift.locator('[data-teloa-status-box]').getByRole('button',{name:'Resume and start',exact:true}).click();await drift.getByRole('alert').filter({hasText:'The work or recovery candidates changed. Check them again.'}).waitFor();assert.equal(await drift.evaluate(()=>window.taskPrepareFixture.calls.some(call=>call.method==='work-recovery/resume'||call.method==='task-runs/start')),false)
+})
+
+
+test('无工具员工在创建Run前显示原因，状态卡与准备按钮一致，刷新授权后恢复',async t=>{
+ const page=await mount(t,'no-tools'),status=page.locator('[data-teloa-status-box]')
+ await status.getByText('Execution requirements are not met',{exact:true}).waitFor()
+ const prepare=status.getByRole('button',{name:'Prepare run',exact:true})
+ assert.equal(await prepare.isDisabled(),true)
+ await status.getByText('No tools were granted for this run.',{exact:false}).waitFor()
+ assert.equal(await page.getByText('internal tool identifiers must stay hidden',{exact:false}).count(),0)
+ await prepare.evaluate((button:HTMLButtonElement)=>button.click())
+ assert.equal(await page.evaluate(()=>window.taskPrepareFixture.calls.some(call=>call.method==='task-runs/prepare')),false)
+ await page.evaluate(()=>window.taskPrepareFixture.authorized=true)
+ await status.getByRole('button',{name:'Refresh',exact:true}).click()
+ await page.waitForFunction(()=>!document.querySelector<HTMLButtonElement>('[data-teloa-status-box] [data-teloa-primary]')?.disabled)
+ assert.equal(await prepare.isEnabled(),true)
+ assert.equal(await status.getByText('Execution requirements are not met',{exact:true}).count(),0)
 })

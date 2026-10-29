@@ -7,7 +7,7 @@ export type SubagentDelegationLimits={maxDepth:number;maxPerRun:number}
  * 同一条资料授权可有相同参数；选择键必须带工具名，才不会把两项授权错误地绑在一起。
  */
 export function roleToolGrantSelectionKey(rule:TaskToolArgumentRule,args:Record<string,string|number|boolean|null>=rule.allowed[0]??{}):string{
- return rule.name+'\u0000'+JSON.stringify(args)
+ return rule.name+'\u0000'+JSON.stringify(Object.fromEntries(Object.keys(args).sort().map(key=>[key,args[key]])))
 }
 
 export function isSubagentDelegationRule(rule:TaskToolArgumentRule):boolean{
@@ -20,6 +20,23 @@ export function isSubagentDelegationRule(rule:TaskToolArgumentRule):boolean{
  */
 export const skillHttpToolName='teloa_skill_http'
 export type SkillHttpGrantCandidate={skill:string;origins:string[];configured?:boolean;source:'role'|'industry'}
+/** 有限参数不是都指向正文版本；目录工具只接受服务端约定的固定参考服务。 */
+export function roleToolGrantArgumentKind(rule:TaskToolArgumentRule,args:Record<string,string|number|boolean|null>):'resource'|'catalog'|'templates'|undefined{
+ if(rule.name==='mcp__teloa_reference__read_reference'&&Object.keys(args).length===2&&typeof args.id==='string'&&/^[a-zA-Z0-9_-]{1,128}$/.test(args.id)&&typeof args.version==='string'&&/^[a-f0-9]{64}$/.test(args.version))return 'resource'
+ if(Object.keys(args).length===1&&args.server==='teloa_reference'){
+  if(rule.name==='list_mcp_resources')return 'catalog'
+  if(rule.name==='list_mcp_resource_templates')return 'templates'
+ }
+ return undefined
+}
+/** 无法解释的有限参数留在界面供核对，但不能新增或随旧勾选静默保存。 */
+export function selectableRoleToolGrantRules(rules:readonly TaskToolArgumentRule[]):TaskToolArgumentRule[]{
+ return rules.flatMap(rule=>{
+  if(rule.anyArguments===true||isWorkspaceFileRule(rule)||isSkillHttpRule(rule))return [rule]
+  const allowed=rule.allowed.filter(args=>roleToolGrantArgumentKind(rule,args)!==undefined)
+  return allowed.length?[{name:rule.name,allowed}]:[]
+ })
+}
 export function isSkillHttpRule(rule:TaskToolArgumentRule):boolean{
  return rule.name===skillHttpToolName&&rule.anyArguments!==true&&rule.allowed.length>0&&rule.allowed.every(args=>Object.keys(args).length===1&&typeof args.skill==='string')
 }
@@ -39,4 +56,9 @@ export function selectedRoleToolGrantRules(rules:readonly TaskToolArgumentRule[]
   const allowed=rule.allowed.filter(args=>selected.has(roleToolGrantSelectionKey(rule,args)))
   return allowed.length?[{name:rule.name,allowed}]:[]
  })
+}
+
+/** 回显完整现有选择；候选只决定能否继续保存，不能把未变更授权默默当作未勾选。 */
+export function roleToolGrantSelectedKeys(rules:readonly TaskToolArgumentRule[]):string[]{
+ return rules.flatMap(rule=>rule.anyArguments===true||isWorkspaceFileRule(rule)?[roleToolGrantSelectionKey(rule)]:rule.allowed.map(args=>roleToolGrantSelectionKey(rule,args)))
 }

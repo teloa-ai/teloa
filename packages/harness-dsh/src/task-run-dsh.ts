@@ -45,6 +45,7 @@ import {leaseEmployeeSystemPrompt} from './employee-system-prompt.ts'
 import {artifactRevisionScope,createReviewSourceCatalog,leaseTaskDeliveryReview,taskMethodPriority,type ReviewMaterial,type ReviewSourceInput} from './task-delivery-review.ts'
 import type {DeliveryReviewExecutionSnapshot} from './task-delivery-review-tools.ts'
 import {readNativeReviewChildren} from './task-delivery-review-native-children.ts'
+import {leaseTaskRunToolUsage} from './task-run-tool-usage.ts'
 
 export type DshTaskNativeInput=Pick<ReturnType<typeof createNativeWorkInput>,'withNewInput'>&Partial<Pick<ReturnType<typeof createNativeWorkInput>,'readReviewState'>>
 
@@ -496,6 +497,7 @@ export function dshTaskRunPorts(ctx:Context,owner:string,inspect:(sessionId:stri
     let releaseMethods:(()=>void)|undefined
     let releaseEmployee:(()=>void)|undefined
     let releaseReview:(()=>void)|undefined
+    let releaseToolUsage:(()=>void)|undefined
     // 固定技能与本人运行在本次请求的轮次收尾前复核交付（task-delivery-review.ts）；复核输入沿用本运行的
     // 生产者身份，有原生输入准入时经同一许可层发布，没有时与社区版首个输入一样直接交给原 Agent。
     // 复核依据本轮冻结的原目标与选中方法身份，不从历史猜；没有可核对原目标时明确跳过复核。
@@ -532,8 +534,8 @@ export function dshTaskRunPorts(ctx:Context,owner:string,inspect:(sessionId:stri
      trace:entry=>ctx.logger.info(JSON.stringify({event:'task-run.delivery-review',...entry}))}):undefined
     const modelState=(()=>{
      // 固定模型路由先装，复核租约沿用同一路由及参数。
-     try{releaseEmployee=agent.ctx?leaseEmployeeSystemPrompt(agent,run.roleSnapshot?.kind):undefined;releaseMethods=agent.ctx?leaseTaskRunMethods(agent,run.skills):undefined;return ensureModels(agent,run)}
-     catch(error){releaseReview?.();releaseMethods?.();releaseEmployee?.();lift?.();throw error}
+     try{releaseEmployee=agent.ctx?leaseEmployeeSystemPrompt(agent,run.roleSnapshot?.kind):undefined;releaseMethods=agent.ctx?leaseTaskRunMethods(agent,run.skills):undefined;releaseToolUsage=typeof agent.ctx?.systemPrompt?.context==='function'?leaseTaskRunToolUsage(agent,run,{continuations:events=>ports.continuations?.(run,events)??Promise.resolve(undefined),goal:events=>ports.goalObservation?.(run,events)??Promise.resolve(undefined)}):undefined;return ensureModels(agent,run)}
+     catch(error){releaseToolUsage?.();releaseReview?.();releaseMethods?.();releaseEmployee?.();lift?.();throw error}
     })(),routing=modelState?.routing
     // 请求确定没交给原生就失败（取消、读图失败等）时撤掉收窄，会话不带着这次运行的限制留下；
     // 一旦调到 prompt，原生可能已接下这一轮（上层按「需核对、不重发」处理），收窄必须保留。
@@ -623,7 +625,7 @@ export function dshTaskRunPorts(ctx:Context,owner:string,inspect:(sessionId:stri
       if(modelState)modelState.imagesAdmitted=false
       await prompt(textOnly)
      }
-    }catch(error){if(!handedOff){releaseReview?.();releaseMethods?.();releaseEmployee?.();lift?.();modelState?.dispose()}throw error}
+    }catch(error){if(!handedOff){releaseToolUsage?.();releaseReview?.();releaseMethods?.();releaseEmployee?.();lift?.();modelState?.dispose()}throw error}
    }
    if(run.modelPolicy)await serialize(JSON.stringify([run.sessionId,run.nativeRequestId]),operation)
    else await operation()

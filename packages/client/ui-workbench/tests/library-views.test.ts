@@ -20,6 +20,12 @@ test('最近仅显式访问写入，去重排序；收藏取消；目录交集�
  assert.deepEqual(libraryRows(directory,[],{view:'star',query:'',preferences:prefs}).map(row=>row.id),['policy'])
  assert.deepEqual(toggleLibraryFavorite(prefs,'policy').favorites,['removed'])
 })
+test('同名原资料与业务采用资料保留各自scope与引用身份，技术来源搜索和排序仍按原事实',()=>{
+ const old={...resource('old-id','industry_original'),title:'固定告警依据',scopeIds:['soc']},adopted={...resource('new-id','adopted_fixed'),title:old.title,scopeIds:['business-new']},sources=[{id:old.sourceId,title:old.title,source:'market:original/source',version:old.sourceVersion,bytes:1},{id:adopted.sourceId,title:adopted.title,source:'resource:old-id@1 ← market:original/source',version:adopted.sourceVersion,bytes:1}],options={view:'mine' as const,query:'',preferences:{recent:[],favorites:[]}}
+ const rows=libraryRows({drafts:[],resources:[old,adopted]},sources,options)
+ assert.deepEqual(rows.map(row=>[row.id,row.scopeIds]),[['old-id',['soc']],['new-id',['business-new']]])
+ assert.deepEqual(libraryRows({drafts:[],resources:[old,adopted]},sources,{...options,query:'resource:old-id'}).map(row=>row.id),['new-id'])
+})
 test('偏好损坏安全回退、去重、限制长度，键区分本人空间',()=>{
  assert.deepEqual(readLibraryPreferences('{oops'),{recent:[],favorites:[]})
  assert.deepEqual(readLibraryPreferences(JSON.stringify({recent:[{id:'ok',at:1},{id:'ok',at:2},{id:'bad',at:-1},{id:'overflow',at:Number.MAX_SAFE_INTEGER}],favorites:['a','a',42]})),{recent:[{id:'ok',at:2}],favorites:['a']})
@@ -32,6 +38,7 @@ test('独立知识行来自真实来源与页面，无投影仍可浏览文件�
  const id='11111111-1111-4111-8111-111111111111',source:any={id:'knowledge_'+id,title:'本人原知识',version:'a'.repeat(64),bytes:1,source:'knowledge:'+id+'@1',knowledge:{knowledgeId:id,knowledgeVersion:1,workspaceId:'default',category:'reference',topics:[],scopeIds:['general']}},tree:any={space:{workspaceId:'default'},nodes:[{id:'root',title:'知识库',type:'space'},{id:'page',type:'page',knowledgeId:id,title:source.title,path:['root','page']}]},options={view:'mine' as const,query:'',preferences:{recent:[],favorites:[]},tree}
  const rows=libraryRows({drafts:[],resources:[]},[source],options)
  assert.deepEqual(rows.map(row=>[row.kind,row.id,row.status]),[['knowledge',id,'saved']])
+ assert.deepEqual(rows[0]?.scopeIds,['general'])
  assert.equal(libraryRows({drafts:[],resources:[]},[source],{...options,view:'space',knowledgeIds:new Set([id])}).length,1)
  assert.equal(libraryRows({drafts:[],resources:[]},[source],{...options,view:'local'}).length,0)
  assert.equal(libraryRows({drafts:[],resources:[resource('projection',source.id)]},[source],options).filter(row=>row.kind==='knowledge').length,0)

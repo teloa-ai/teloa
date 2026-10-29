@@ -159,7 +159,7 @@
 .goalLine{margin:0 0 20px;padding:0;white-space:pre-wrap;font-size:var(--teloa-font-control)}
 
 /* 任务列表：详情作侧栏挂在列表右侧（≥1200px），窄屏一次只呈现列表或详情；嵌入页照旧只有详情。 */
-@container task-page (min-width:1000px){.alignedPage:not(.embeddedPage) .layout.hasSelection{display:grid;grid-template-columns:minmax(0,1fr) minmax(480px,52%)}.alignedPage:not(.embeddedPage) .layout.hasSelection>.detail{position:sticky;top:0;max-height:100dvh;overflow:auto;border-left:1px solid var(--teloa-border);max-width:none;justify-self:stretch}}
+@container task-page (min-width:1000px){.alignedPage:not(.embeddedPage) .layout.hasSelection{display:grid;grid-template-columns:minmax(0,min(480px,40%)) minmax(0,1fr);max-width:1720px}.alignedPage:not(.embeddedPage) .layout.hasSelection>.detail{position:sticky;top:0;max-height:100dvh;overflow:auto;border-left:1px solid var(--teloa-border);max-width:none;justify-self:stretch}}
 @container task-page (max-width:999px){.alignedPage .layout.hasSelection>.directory{display:none}.alignedPage .layout.hasSelection>.detail{max-width:none}}
 .listRow[aria-selected=true]{background:var(--teloa-surface)}
 .listPinned td:first-child{border-left:0}

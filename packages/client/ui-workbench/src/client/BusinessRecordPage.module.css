@@ -13,3 +13,9 @@
 .referenceField{min-width:0}.referenceField>.actions{margin-top:8px}.page .referenceLink{justify-content:flex-start;text-align:left;min-height:0;padding:0;border:0;color:var(--teloa-accent);background:transparent}.referenceField select{white-space:nowrap;text-overflow:ellipsis}
 
 .referenceValues{display:flex;flex-wrap:wrap;gap:4px 12px}.referenceSelections{list-style:none;padding:0;margin:10px 0;display:flex;flex-direction:column;gap:8px}.referenceSelections li{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 10px;border:1px solid var(--teloa-border);border-radius:7px;background:var(--teloa-subtle);min-width:0}.referenceSelections li>span{min-width:0;overflow-wrap:anywhere}.referenceSelections button{flex-shrink:0}
+
+/* 记录既可在宽业务页，也可在 480px 抽屉读取；字段按实际正文容器收列。 */
+.detail{container:business-record-detail / inline-size}
+.recordHeading strong{max-width:75ch;overflow-wrap:anywhere}
+.summary{max-width:75ch}
+@container business-record-detail (max-width:640px){.facts{grid-template-columns:minmax(0,1fr);gap:16px}}

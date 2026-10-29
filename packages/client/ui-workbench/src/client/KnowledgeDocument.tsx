@@ -4,7 +4,7 @@ import type { ResourceUsageTarget,KnowledgeVersion, KnowledgeVersionSummary, Sou
 import type { ResourceApi } from './resource-api.js';
 import {ResourceUsage} from './ResourceUsage.js';
 import { KnowledgeMarkdownEditor } from './KnowledgeMarkdownEditor.js';
-import {isIndustryMaterialSourceId,isLocalMaterialSourceId} from './local-material-registration.ts';
+import {isIndustryMaterialSourceId,isLocalMaterialSourceId,isAdoptedMaterialSourceId} from './local-material-registration.ts';
 import css from './KnowledgeDocument.module.css';
 import {useI18n} from './i18n/provider.js';
 import {localizeWorkError} from './i18n/errors.js';
@@ -32,7 +32,7 @@ export function KnowledgeDocument({ openUsage,onDirtyChange,onReferenceReadyChan
 const scopeLabel = (value: string) => value === 'general' ? t("knowledge.ui.008") : value;
     const knowledge = source?.knowledge;
     const localMaterial = isLocalMaterialSourceId(resource.sourceId);
-    const previewSource = localMaterial || isIndustryMaterialSourceId(resource.sourceId);
+    const previewSource = localMaterial || isIndustryMaterialSourceId(resource.sourceId) || isAdoptedMaterialSourceId(resource.sourceId);
     const localReadKey = `${resource.ownerId}:${resource.id}:${resource.version}:${resource.sourceVersion}:${resource.status}`;
     const [localReadAttempt,setLocalReadAttempt]=useState(0),[storedLocalContent,setLocalContent]=useState<{key:string;loading:boolean;text?:string;error?:unknown}>();
     const localContent:NonNullable<typeof storedLocalContent>=storedLocalContent?.key===localReadKey?storedLocalContent:{key:localReadKey,loading:true};

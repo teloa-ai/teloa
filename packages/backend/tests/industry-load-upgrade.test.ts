@@ -211,20 +211,24 @@ test('版本比较遵循 semver 预发布次序：正式版高于预发布，预
  }
 })
 
-test('同一内容在同一空间被卸载或被替代后不能重新加载，重复加载不写回执',async()=>{
+test('卸载后建立新加载代次且请求幂等，被替代的旧版本仍拒绝直接加载',async()=>{
  const superseded=await prepare()
  await superseded.loads.upgrade(superseded.owner,command(superseded))
  const reloadSuperseded={requestId:randomUUID(),contentId:superseded.baseline.id,contentHash:superseded.baseline.hash,target:{kind:'existing' as const,spaceId:superseded.load.space.id,expectedVersion:2}}
- await assert.rejects(superseded.loads.create(superseded.owner,reloadSuperseded),{code:'teloa/conflict',message:'同一内容已在此业务空间加载过，并已卸载或被升级替代，不能再次加载。'})
+ await assert.rejects(superseded.loads.create(superseded.owner,reloadSuperseded),{code:'teloa/conflict',message:'同一内容已被升级替代，请使用当前版本或在升级页面核对版本。'})
  assert.equal((await pool.query('select count(*)::int as count from teloa_industry_load_requests where owner_id=$1 and request_id=$2',[superseded.owner,reloadSuperseded.requestId])).rows[0].count,0)
  assert.equal((await superseded.loads.list(superseded.owner,{})).items.length,1)
 
  const unloaded=await prepare()
  await unloaded.loads.unload(unloaded.owner,{requestId:randomUUID(),loadId:unloaded.load.id,expectedMappingHash:unloaded.load.mappingHash})
  const reloadUnloaded={requestId:randomUUID(),contentId:unloaded.baseline.id,contentHash:unloaded.baseline.hash,target:{kind:'existing' as const,spaceId:unloaded.load.space.id,expectedVersion:1}}
- await assert.rejects(unloaded.loads.create(unloaded.owner,reloadUnloaded),{code:'teloa/conflict',message:'同一内容已在此业务空间加载过，并已卸载或被升级替代，不能再次加载。'})
- assert.equal((await pool.query('select count(*)::int as count from teloa_industry_load_requests where owner_id=$1 and request_id=$2',[unloaded.owner,reloadUnloaded.requestId])).rows[0].count,0)
- assert.equal((await unloaded.loads.list(unloaded.owner,{})).items.length,0)
+ const reloaded=await unloaded.loads.create(unloaded.owner,reloadUnloaded)
+ assert.notEqual(reloaded.id,unloaded.load.id)
+ assert.equal(reloaded.status,'active')
+ assert.equal((await unloaded.loads.create(unloaded.owner,reloadUnloaded)).id,reloaded.id)
+ assert.equal((await unloaded.loads.get(unloaded.owner,{loadId:unloaded.load.id})).status,'unloaded')
+ assert.equal((await unloaded.loads.list(unloaded.owner,{})).items.length,1)
+ assert.equal((await unloaded.loads.list(unloaded.owner,{includeUnloaded:true})).items.length,2)
  // 仍在生效的加载照旧复用同一条记录。
  const active=await prepare()
  const again=await active.loads.create(active.owner,{requestId:randomUUID(),contentId:active.baseline.id,contentHash:active.baseline.hash,target:{kind:'existing',spaceId:active.load.space.id,expectedVersion:1}})
@@ -665,4 +669,30 @@ test('升级固定来源的scope不一致时拒绝，不能持加载行锁再取
  const loads=new IndustryLoadService(pool,identity,{...original,read:async(...args)=>({...await original.read(...args),scope:'other-scope'})})
  await assert.rejects(loads.upgrade(f.owner,command(f)),{code:'teloa/source-unavailable'})
  await untouched(f)
+})
+
+
+test('卸载重装沿用原员工身份，旧请求仍返回卸载历史，反复加载不会新建员工',async()=>{
+ const f=await applyFixture()
+ const before=(await pool.query('select id from teloa_roles where owner_id=$1 order by id',[f.owner])).rows
+ await f.loads.unload(f.owner,{requestId:randomUUID(),loadId:f.load.id,expectedMappingHash:f.load.mappingHash})
+ const imported=await applyContent(f.owner,f.market,'1.0.0')
+ assert.equal(imported.id,f.baseline.id)
+ const reload={requestId:randomUUID(),contentId:imported.id,contentHash:imported.hash,target:{kind:'existing' as const,spaceId:f.load.space.id,expectedVersion:f.load.space.version}}
+ const result=await f.loads.create(f.owner,reload)
+ const role=result.items.find(item=>item.localId==='analyst')!
+ assert.equal(role.carriedFrom,instanceOf(f.load,'analyst'))
+ assert.equal(role.status,'active')
+ assert.equal(result.items.find(item=>item.localId==='alerts')!.carriedFrom,undefined)
+ await assert.rejects(f.industryRoles.instantiate(f.owner,{requestId:randomUUID(),loadId:result.id,itemInstanceId:role.instanceId}),{code:'teloa/conflict'})
+ assert.equal((await f.loads.create(f.owner,reload)).id,result.id)
+ assert.deepEqual((await pool.query('select id from teloa_roles where owner_id=$1 order by id',[f.owner])).rows,before)
+ assert.equal((await f.industryRoles.get(f.owner,{instanceId:(await f.industryRoles.list(f.owner,{})).items[0]!.id})).role!.id,f.role.id)
+ assert.equal((await f.loads.get(f.owner,{loadId:f.load.id})).status,'unloaded')
+ const original=(await pool.query('select request_id,request_spec from teloa_industry_load_requests where owner_id=$1 and load_id=$2',[f.owner,f.load.id])).rows[0]
+ assert.equal((await f.loads.create(f.owner,{requestId:original.request_id,...original.request_spec})).status,'unloaded')
+ await f.loads.unload(f.owner,{requestId:randomUUID(),loadId:result.id,expectedMappingHash:result.mappingHash})
+ const third=await f.loads.create(f.owner,{...reload,requestId:randomUUID(),target:{...reload.target,expectedVersion:result.space.version}})
+ assert.equal(third.items.find(item=>item.localId==='analyst')!.carriedFrom,instanceOf(f.load,'analyst'))
+ assert.deepEqual((await pool.query('select id from teloa_roles where owner_id=$1 order by id',[f.owner])).rows,before)
 })

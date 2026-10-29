@@ -218,7 +218,7 @@ export function registerCustomMcpTools(ctx:Context,ports:CustomMcpToolsPorts){
  const checked=new WeakMap<object,ConversationInstructionMutationAuthorization>()
  const definitionSchema={type:'object',additionalProperties:false,required:true,properties:{schema:{type:'string',enum:['teloa.mcp-server/v1'],required:true},serverName:{type:'string',required:true},title:{type:'string',required:true},transport:{type:'string',enum:['streamable-http'],required:true},url:{type:'string',required:true}}} as const
  const definitions=[
-  {name:'teloa_mcp_preview' as const,description:'预览本人指定的自定义 HTTP MCP 服务定义。definition 包含 schema=teloa.mcp-server/v1、serverName、title、transport=streamable-http、url。远程地址使用 HTTPS，本机回环可用 HTTP。地址不能携带凭据、查询参数或片段；不接受 headers、密钥、OAuth 或 stdio 命令。预览不访问该服务。',parameters:{definition:definitionSchema}},
+  {name:'teloa_mcp_preview' as const,description:'预览本人指定的自定义 HTTP MCP 服务定义。definition 包含 schema=teloa.mcp-server/v1、serverName、title、transport=streamable-http、url。允许任意主机的 HTTP 或 HTTPS 地址。地址不能携带凭据、查询参数或片段；不接受 headers、密钥、OAuth 或 stdio 命令。预览不访问该服务。',parameters:{definition:definitionSchema}},
   {name:'teloa_mcp_save' as const,description:'按本人指令保存刚预览的无凭据自定义 HTTP MCP 定义，必须带预览的 definitionHash。本操作仅保存，尚未连接；服务若要求认证，须本人通过安全认证流程完成，不能在会话填写密钥。相同定义重复保存复用原连接。',parameters:{definition:definitionSchema,expectedDefinitionHash:{type:'string',required:true}}},
   {name:'teloa_mcp_connection_connect' as const,description:'按本人授权连接一项已保存的受管 MCP，以返回的 connection.status 和实际工具发现结果判断是否接通。只热加载这一项连接，不重启应用。不得把保存成功说成健康或已授权；连接报错后可核对该记录并重试。',parameters:{id:{type:'string',required:true}}},
   {name:'teloa_mcp_list' as const,description:'读取本人已保存的受管 MCP 连接目录与真实连接状态；不包含凭据。目录出现不代表已连接。',parameters:{}},

@@ -23,6 +23,7 @@ if(f.mode.startsWith('owner-')){
 let journal=f.mode==='ordinary-pending'?JSON.stringify({requestId:source.requestId,taskId,expectedTaskVersion:3}):f.mode==='ordinary-recovery'?'invalid recovery record':null;
 const api=createTaskRunApi(async(method,payload)=>{
  f.calls.push({method,payload});
+ if(method==='task-runs/readiness')return {schema:'teloa.task-run-readiness/v1',taskId:payload.taskId,taskVersion:payload.expectedTaskVersion,ready:true};
  if(method==='task-runs/list')return payload.taskId===taskId&&!f.mode.startsWith('ordinary-empty')?[row]:[];
  if(method==='task-runs/origin'){const requested=payload.taskId??taskId;if(f.holdOrigin&&requested===taskId){f.waiting=true;await new Promise(resolve=>f.release=resolve);f.waiting=false;}
   return {taskId:f.mode==='wrong-task'?other:requested,runId:null,source:ordinary||requested===other?null:f.mode==='wrong-parent'?{...source,sessionId:'different-parent'}:source};}
@@ -66,14 +67,14 @@ test('已完成原Run隐藏无效准备按钮且保留原结果入口',async t=>
  await page.getByRole('button',{name:'Open',exact:true}).click()
  assert.deepEqual(await page.evaluate(()=>window.originFixture.opens),['failed-run-session'])
  assert.equal(await page.getByRole('textbox',{name:'Original conversation draft'}).inputValue(),'Keep the original input')
- assert.equal(await page.evaluate(()=>window.originFixture.calls.every(call=>['task-runs/list','task-runs/origin'].includes(call.method))),true)
+ assert.equal(await page.evaluate(()=>window.originFixture.calls.every(call=>['task-runs/list','task-runs/origin','task-runs/readiness'].includes(call.method))),true)
 })
 test('无Run的必要引导和可准备下一轮的入口继续保留',async t=>{
  for(const [mode,enabled] of [['ordinary-empty',false],['ordinary-empty-ready',true],['ordinary-retry',true]] as const){
   const page=await mount(t,mode);await page.waitForFunction(()=>window.originFixture.calls.some(call=>call.method==='task-runs/list'))
   const prepare=page.locator('[data-teloa-focus="prepare"]');await prepare.waitFor();if(enabled)await page.waitForFunction(()=>!document.querySelector<HTMLButtonElement>('[data-teloa-focus="prepare"]')?.disabled)
   assert.equal(await prepare.isEnabled(),enabled)
-  assert.equal(await page.evaluate(()=>window.originFixture.calls.every(call=>['task-runs/list','task-runs/origin'].includes(call.method))),true)
+  assert.equal(await page.evaluate(()=>window.originFixture.calls.every(call=>['task-runs/list','task-runs/origin','task-runs/readiness'].includes(call.method))),true)
  }
 })
 test('已有Run的待核准备和损坏恢复入口保留，明确丢弃后不留下无效准备按钮',async t=>{
@@ -86,7 +87,7 @@ test('已有Run的待核准备和损坏恢复入口保留，明确丢弃后不�
   await page.getByRole('button',{name:'Discard this recovery record',exact:true}).click()
   assert.equal(await page.locator('[data-teloa-focus="prepare"]').count(),0)
   assert.equal(await page.getByRole('button',{name:'Start',exact:true}).count(),1)
-  assert.equal(await page.evaluate(()=>window.originFixture.calls.every(call=>['task-runs/list','task-runs/origin'].includes(call.method))),true)
+  assert.equal(await page.evaluate(()=>window.originFixture.calls.every(call=>['task-runs/list','task-runs/origin','task-runs/readiness'].includes(call.method))),true)
  }
 })
 test('错误Task来源和点击时变化的parent均fail closed，不能回错会话或丢原稿',async t=>{
@@ -106,7 +107,7 @@ test('后台owner缺完整复核时显示三语说明，固定Run和原交办可
   await page.getByRole('button',{name:back,exact:true}).click()
   assert.deepEqual(await page.evaluate(()=>window.originFixture.opens),['failed-run-session','original-platform-session'])
   assert.equal(await page.getByRole('textbox',{name:'Original conversation draft'}).inputValue(),'Keep the original input')
-  assert.equal(await page.evaluate(()=>window.originFixture.calls.every(call=>['task-runs/list','task-runs/origin'].includes(call.method))),true)
+  assert.equal(await page.evaluate(()=>window.originFixture.calls.every(call=>['task-runs/list','task-runs/origin','task-runs/readiness'].includes(call.method))),true)
  }
 })
 test('交付检查读取未知保持待核，不能显示缺复核或已存成果',async t=>{
@@ -114,5 +115,5 @@ test('交付检查读取未知保持待核，不能显示缺复核或已存成�
  await page.getByRole('status').filter({hasText:'This delivery is still awaiting verification'}).waitFor()
  assert.equal(await page.getByText('A fully reviewed result is not available.',{exact:false}).count(),0)
  assert.equal(await page.getByRole('button',{name:'Return to original request',exact:true}).count(),1)
- assert.equal(await page.evaluate(()=>window.originFixture.calls.every(call=>['task-runs/list','task-runs/origin'].includes(call.method))),true)
+ assert.equal(await page.evaluate(()=>window.originFixture.calls.every(call=>['task-runs/list','task-runs/origin','task-runs/readiness'].includes(call.method))),true)
 })

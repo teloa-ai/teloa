@@ -39,6 +39,17 @@ test('修订分享模板的工具说明要求完整正文并把 capabilities 放
  assert.match(description,/compatibility\.capabilities/)
  assert.match(description,/不能只传变更字段/)
 })
+test('自定义 MCP 新建与修订说明允许任意 HTTP 主机，远程 HTTP 草案通过正式校验',async t=>{
+ const e=await setup();t.after(()=>e.ctx.fiber.dispose())
+ for(const name of ['teloa_create_draft','teloa_create_revise']){
+  const description=e.ctx.tools.schemas(e.agent).find(schema=>schema.name===name)!.description??''
+  assert.match(description,/任意主机的HTTP或HTTPS/);assert.doesNotMatch(description,/远程HTTPS，本机回环可HTTP/)
+ }
+ const body={definition:{schema:'teloa.mcp-server/v1',serverName:'remote_http',title:'本人 HTTP 服务',transport:'streamable-http',url:'http://example.com/mcp'}}
+ const result=await e.call('teloa_create_draft',{entity:'app',body:JSON.stringify(body)})
+ assert.equal(result.isError,false,JSON.stringify(result.content))
+ assert.deepEqual((e.calls[0]!.input as {body:unknown}).body,readPageCreateBody('app',body))
+})
 test('草案目录跨本人/业务混入拒绝，失败与任务身份不伪装成空目录',async t=>{
  for(const cause of ['owner','scope','offline','task','subagent']){
   let reads=0

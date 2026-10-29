@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import {createRoleToolGrantApi} from '../src/client/role-tool-grant-api.ts'
-import {isSubagentDelegationRule,roleToolGrantSelectionKey,selectedRoleToolGrantRules} from '../src/client/role-tool-grant-presentation.ts'
+import {isSubagentDelegationRule,roleToolGrantArgumentKind,selectableRoleToolGrantRules,roleToolGrantSelectionKey,selectedRoleToolGrantRules} from '../src/client/role-tool-grant-presentation.ts'
 
 const roleId='11111111-1111-4111-8111-111111111111'
 const delegation={maxDepth:2,maxPerRun:8}
@@ -35,4 +35,16 @@ test('勾选任务拆分只回传服务端候选的 anyArguments 与空参数清
  const selected=new Set([roleToolGrantSelectionKey(rule),roleToolGrantSelectionKey(source,source.allowed[0]!)])
  assert.deepEqual(selectedRoleToolGrantRules([source,rule],selected),[source,rule])
  assert.deepEqual(selectedRoleToolGrantRules([source,rule],new Set()),[])
+})
+
+test('JSONB回读的参数字段顺序不改变同一授权勾选身份',()=>{
+ const rule={name:'read_reference',allowed:[{id:'guide',version:'a'.repeat(64)}]}
+ assert.equal(roleToolGrantSelectionKey(rule,{id:'guide',version:'a'.repeat(64)}),roleToolGrantSelectionKey(rule,{version:'a'.repeat(64),id:'guide'}))
+})
+test('参考资料目录按固定server参数解释，未知有限参数不能进入可保存授权集合',()=>{
+ const catalog={name:'list_mcp_resources',allowed:[{server:'teloa_reference'}]},templates={name:'list_mcp_resource_templates',allowed:[{server:'teloa_reference'}]},unknown={name:'mcp__future__query',allowed:[{query:'unknown'}]},malformed={name:'mcp__teloa_reference__read_reference',allowed:[{id:'guide'}]},foreign={name:'list_mcp_resources',allowed:[{server:'other'}]}
+ assert.equal(roleToolGrantArgumentKind(catalog,catalog.allowed[0]!),'catalog');assert.equal(roleToolGrantArgumentKind(templates,templates.allowed[0]!),'templates')
+ assert.equal(roleToolGrantArgumentKind(unknown,unknown.allowed[0]!),undefined);assert.equal(roleToolGrantArgumentKind(malformed,malformed.allowed[0]!),undefined)
+ const rules=[catalog,templates,unknown,malformed,foreign],eligible=selectableRoleToolGrantRules(rules)
+ assert.deepEqual(eligible,[catalog,templates]);assert.deepEqual(selectedRoleToolGrantRules(eligible,new Set(rules.flatMap(rule=>rule.allowed.map(args=>roleToolGrantSelectionKey(rule,args))))),[catalog,templates])
 })

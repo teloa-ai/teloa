@@ -4,7 +4,7 @@ import {connectorHeaderName,connectorHeaderScheme,isForbiddenConnectorHeader} fr
 
 export type CustomMcpHeader={name:string;scheme?:string}
 /** 定义只有认证声明；认证值只能通过本人的专用安全入口写入。 */
-export type CustomMcpDefinition={schema:'teloa.mcp-server/v1';serverName:string;title:string;transport:'streamable-http';url:string;auth?:{kind:'headers';headers:CustomMcpHeader[]}}
+export type CustomMcpDefinition={schema:'teloa.mcp-server/v1';serverName:string;title:string;transport:'streamable-http';url:string;auth?:{kind:'headers';headers:CustomMcpHeader[];requirement?:'all'|'any'}}
 export function readCustomMcpDefinition(value:unknown):CustomMcpDefinition{
  const row=taskInput(value,['schema','serverName','title','transport','url','auth'])
  const bad=(message:string)=>new WorkError('teloa/invalid-input',message)
@@ -14,12 +14,12 @@ export function readCustomMcpDefinition(value:unknown):CustomMcpDefinition{
  let url:URL
  try{url=new URL(row.url)}catch{throw bad('MCP 服务地址不正确。')}
  if(url.username||url.password||url.search||url.hash)throw bad('MCP 地址不能携带账号、密码、查询参数或片段；凭据请通过本人安全认证入口管理。')
- const loopback=['localhost','127.0.0.1','[::1]'].includes(url.hostname)
- if(url.protocol!=='https:'&&!(url.protocol==='http:'&&loopback))throw bad('远程 MCP 地址必须使用 HTTPS；本机回环地址可以使用 HTTP。')
+ if(url.protocol!=='http:'&&url.protocol!=='https:')throw bad('MCP 服务地址必须使用 HTTP 或 HTTPS。')
  let auth:CustomMcpDefinition['auth']
  if(row.auth!==undefined){
-  const source=taskInput(row.auth,['kind','headers'])
+  const source=taskInput(row.auth,['kind','headers','requirement'])
   if(source.kind!=='headers'||!Array.isArray(source.headers)||source.headers.length<1||source.headers.length>8)throw bad('静态认证需要1至8个请求头。')
+  if(source.requirement!==undefined&&source.requirement!=='all'&&source.requirement!=='any')throw bad('认证请求头须声明全部填写或任选一项。')
   const names=new Set<string>()
   const headers=source.headers.map(item=>{
    const h=taskInput(item,['name','scheme'])
@@ -27,7 +27,7 @@ export function readCustomMcpDefinition(value:unknown):CustomMcpDefinition{
    if(h.scheme!==undefined&&(typeof h.scheme!=='string'||!connectorHeaderScheme.test(h.scheme)))throw bad('认证前缀不合法。')
    names.add(h.name.toLowerCase());return {name:h.name,...h.scheme===undefined?{}:{scheme:h.scheme as string}}
   })
-  auth={kind:'headers',headers}
+  auth={kind:'headers',headers,...source.requirement===undefined?{}:{requirement:source.requirement as 'all'|'any'}}
  }
  return {schema:'teloa.mcp-server/v1',serverName:row.serverName,title:row.title,transport:'streamable-http',url:url.href,...auth?{auth}:{}}
 }

@@ -22,6 +22,12 @@ test('文件授权使用可理解的当前工作目录名称和真实勾选框�
  for(const [name,label] of [['read','读取当前工作目录'],['write','写入当前工作目录'],['edit','编辑当前工作目录']])assert.match(html,new RegExp('data-teloa-file-grant="'+name+'"[^>]*>.*?type="checkbox".*?<span[^>]*>'+label+'</span>'))
  assert.match(html,/应用数据、Git 设置和账号密钥等敏感信息不包含在内/)
 })
+test('两个参考目录候选明确显示列举用途，不再把server参数伪装为undefined资料版本；未知参数不可选',()=>{
+ const candidates={roleVersion:3,rules:[{name:'list_mcp_resources',allowed:[{server:'teloa_reference'}]},{name:'list_mcp_resource_templates',allowed:[{server:'teloa_reference'}]},{name:'mcp__future__query',allowed:[{query:'unknown'}]}]},html=render(candidates,'zh-CN'),rows=labels(html)
+ assert.equal(rows.length,3);assert.match(rows[0]!,/列出公共参考资料目录/);assert.match(rows[1]!,/列出公共参考资料模板目录/);assert.doesNotMatch(html,/undefined|undefine/)
+ assert.match(rows[0]!,/不授予其他 MCP 服务或资料正文读取/);assert.doesNotMatch(rows[0]!,/disabled/);assert.doesNotMatch(rows[1]!,/disabled/)
+ assert.match(rows[2]!,/type="checkbox" disabled=""/);assert.match(rows[2]!,/无法核对的授权项：mcp__future__query/)
+})
 
 test('后台工作、协作与检索授权使用三种定稿语言的动作名称，原工具标识仍可查看',()=>{
  const names=['job_output','job_list','job_kill','spawn_teammate','send_message','list_agents','wait_agent','interrupt_agent','team_task_create','team_task_list','team_task_get','team_task_update','teloa_knowledge_search']

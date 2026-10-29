@@ -28,6 +28,14 @@ test('面板：进度不计按需项、三类计数、按组列标题与去处�
  assert.match(html,/连接设置（密钥或授权）：SIEM 连接/);assert.match(html,/按模板建任务（需提供资料）：告警研判/);assert.match(html,/去处理/)
  assert.doesNotMatch(html,/工作空间|单空间|实例|投影|尚未加载|内容待读取|人类/)
 })
+
+test('升级后已有相同安装但无当前加载关联，明确核对可用性后沿用，不能当成就绪或重新安装',()=>{
+ const ready={...readiness,counts:{ready:0,auto:0,needsUser:1,optional:0,pending:0},rows:[{itemInstanceId:K,kind:'skill',title:'调查方法',state:'needs-user',step:null,entry:'skill-link'}]}
+ const html=render({readiness:ready})
+ assert.match(html,/已有相同安装.*核对当前工作区可用性.*确认沿用.*调查方法/)
+ assert.match(html,/已就绪 0 项/)
+ assert.doesNotMatch(html,/逐个确认技能|安装技能：/)
+})
 test('面板：确认态列出将准备的内容并保留员工暂停；回执显示完成/处理中/失败计数',()=>{
  const confirming=render({confirming:true})
  assert.match(confirming,/新员工保持暂停/);assert.match(confirming,/账号授权和计划需另行配置/);assert.doesNotMatch(confirming,/上岗会|启用.*每日小结/);assert.match(confirming,/启用资料：分诊指南/)

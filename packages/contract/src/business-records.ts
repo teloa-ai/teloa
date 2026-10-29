@@ -6,6 +6,9 @@ export type BusinessRecordEdit=BusinessRecordTarget&{id:string;expectedVersion:n
 export type BusinessRecordArchive=BusinessRecordTarget&{id:string;expectedVersion:number;requestId:string}
 export type BusinessRecordGet=BusinessRecordTarget&{id:string;version?:number}
 export type BusinessRecordList=BusinessRecordTarget&{limit:number;cursor?:string}
+export const businessRecordValueLimits={title:240,summary:4000,field:2000} as const
+export const businessRecordDatetimeFormat='YYYY-MM-DDTHH:mm:ss.sssZ'
+export const businessRecordDatetimeExample='2026-10-28T15:11:38.000Z'
 const invalid=()=>new WorkError('teloa/invalid-input','本地业务记录参数不正确。')
 const text=(v:unknown,max:number,empty=false):v is string=>typeof v==='string'&&v===v.trim()&&(empty||v.length>0)&&v.length<=max&&!/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/.test(v)
 const version=(v:unknown)=>Number.isSafeInteger(v)&&Number(v)>0&&Number(v)<=2147483647
@@ -15,21 +18,26 @@ function target(row:Record<string,unknown>):BusinessRecordTarget{if(!isBusinessS
 /** 单选、多选与回包共用记录身份边界，不从显示名称猜测或修正身份。 */
 export function isBusinessRecordId(value:unknown):value is string{return text(value,200)&&/^[\p{L}\p{N}][\p{L}\p{N}._:@/+ -]*$/u.test(value)}
 function id(row:Record<string,unknown>):string{if(!isBusinessRecordId(row.id))throw invalid();return row.id}
+function assertTextLength(value:unknown,field:string,maxLength:number):void{
+ if(typeof value==='string'&&value.length>maxLength)throw new WorkError('teloa/invalid-input','字段「'+field+'」长度为 '+value.length+'，最多 '+maxLength+'（按 UTF-16 代码单元计）。',{reason:'field-value-too-long',field,actualLength:value.length,maxLength,lengthUnit:'utf16-code-units'})
+}
 function fields(value:unknown):BusinessRecordFieldValue[]{
  if(!Array.isArray(value)||value.length>50)throw invalid()
- const result=value.map(v=>{const row=exact(v,['name','value']);if(!text(row.name,80)||!text(row.value,2000,true))throw invalid();return {name:row.name,value:row.value}})
+ const result=value.map(v=>{const row=exact(v,['name','value']);if(!text(row.name,80))throw invalid();assertTextLength(row.value,row.name,businessRecordValueLimits.field);if(!text(row.value,businessRecordValueLimits.field,true))throw invalid();return {name:row.name,value:row.value}})
  if(new Set(result.map(f=>f.name)).size!==result.length)throw invalid()
  return result.sort((a,b)=>a.name<b.name?-1:a.name>b.name?1:0)
 }
 export function readBusinessRecordReceipt(value:unknown):{requestId:string}{const row=exact(value,['requestId']);if(!uuid(row.requestId))throw invalid();return {requestId:row.requestId.toLowerCase()}}
 export function readBusinessRecordCreate(value:unknown):BusinessRecordCreate{
  const row=exact(value,['scope','type','requestId','title','summary','fields'])
- if(!text(row.title,240)||!text(row.summary,4000,true))throw invalid()
+ assertTextLength(row.title,'title',businessRecordValueLimits.title);assertTextLength(row.summary,'summary',businessRecordValueLimits.summary)
+ if(!text(row.title,businessRecordValueLimits.title)||!text(row.summary,businessRecordValueLimits.summary,true))throw invalid()
  return {...target(row),...readBusinessRecordReceipt({requestId:row.requestId}),title:row.title,summary:row.summary,fields:fields(row.fields)}
 }
 export function readBusinessRecordEdit(value:unknown):BusinessRecordEdit{
  const row=exact(value,['scope','type','id','expectedVersion','requestId','title','summary','fields'])
- if(!version(row.expectedVersion)||(row.title!==undefined&&!text(row.title,240))||(row.summary!==undefined&&!text(row.summary,4000,true)))throw invalid()
+ assertTextLength(row.title,'title',businessRecordValueLimits.title);assertTextLength(row.summary,'summary',businessRecordValueLimits.summary)
+ if(!version(row.expectedVersion)||(row.title!==undefined&&!text(row.title,businessRecordValueLimits.title))||(row.summary!==undefined&&!text(row.summary,businessRecordValueLimits.summary,true)))throw invalid()
  return {...target(row),id:id(row),expectedVersion:Number(row.expectedVersion),...readBusinessRecordReceipt({requestId:row.requestId}),...(row.title===undefined?{}:{title:row.title as string}),...(row.summary===undefined?{}:{summary:row.summary as string}),fields:fields(row.fields)}
 }
 export function readBusinessRecordArchive(value:unknown):BusinessRecordArchive{

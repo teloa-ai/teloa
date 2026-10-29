@@ -1254,3 +1254,16 @@ test('准备执行拒绝没有执行工具的员工运行，不进入模型',asy
  await assert.rejects(()=>service.prepare(f.owner,f.command),error=>error instanceof WorkError&&error.code==='teloa/conflict'&&(error as {details?:{reason?:string}}).details?.reason==='role-run-no-execution-tools')
  assert.equal((await pool.query('select 1 from teloa_task_runs where owner_id=$1 and task_id=$2',[f.owner,f.task.id])).rows.length,0,'不得留下运行记录')
 })
+
+test('准备条件与实际准备共用空工具拒绝，预检不调用原生会话或创建Run',async()=>{
+ await initializeRoleToolGrants(pool)
+ const f=await fixture(),calls:string[]=[],service=new TaskRunService(pool,{id:()=>{throw Error('预检不生成身份')},now:identity.now},async()=>{calls.push('inspect');return f.inspect()},{allowedTools:[],roleGrants:{validate:async()=>{calls.push('validate')},recheck:async()=>{}}})
+ const before=(await pool.query('select count(*)::int as count from teloa_object_conversations where owner_id=$1',[f.owner])).rows[0].count
+ const expected={code:'teloa/conflict',details:{reason:'role-run-no-execution-tools'}}
+ await assert.rejects(service.preparationTarget(f.owner,{taskId:f.task.id,expectedTaskVersion:1}),expected)
+ assert.deepEqual(calls,[])
+ await assert.rejects(service.prepare(f.owner,f.command),expected)
+ assert.equal((await pool.query('select count(*)::int as count from teloa_task_runs where owner_id=$1',[f.owner])).rows[0].count,0)
+ assert.equal((await pool.query('select count(*)::int as count from teloa_object_conversations where owner_id=$1',[f.owner])).rows[0].count,before)
+ assert.equal((await pool.query('select version from teloa_tasks where id=$1',[f.task.id])).rows[0].version,1)
+})

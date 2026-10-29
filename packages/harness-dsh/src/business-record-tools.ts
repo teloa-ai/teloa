@@ -6,7 +6,7 @@ import {WorkError,taskInput,readBusinessRecordBatch,readBusinessRecordGet,readBu
 import {assertBusinessRecordFieldValue,type BusinessDefinitionBundleVersioned,type BusinessRecordService} from '@teloa/backend'
 import {authorizeBusinessConversation,type BusinessConversationAuthorizationPorts} from './business-conversation-authorization.ts'
 import {readConversationInstructionIdentity,type ConversationInstructionIdentity} from './conversation-instruction-identity.ts'
-import {businessRecordBatchProtocol,businessRecordOperationsParameter} from './business-record-batch-schema.ts'
+import {businessRecordBatchProtocol,businessRecordFieldValueProtocol,businessRecordOperationsParameter} from './business-record-batch-schema.ts'
 import {authorizeGroupBusinessTask,readGroupBusinessTaskInstruction,type GroupBusinessTaskAuthorizationPorts} from './group-business-task-authorization.ts'
 
 export const businessRecordToolNames=['teloa_business_records_read','teloa_business_records_write'] as const
@@ -190,7 +190,7 @@ export function registerBusinessRecordTools(ctx:Context,ports:BusinessRecordTool
   return json(page)
  }
  const definitions:ReadonlyArray<{name:typeof businessRecordToolNames[number];description:string;parameters:ParameterSchemaSpec}>=[
-  {name:read,description:'读取当前本人业务的本地记录。mode互斥：directory（默认，cursor整数，每页32类型）；type+type读字段、关联与uniqueFields规则；list+type+limit(默认20，最多100)+cursor；get+type+id+可选version读完整snapshot和按字段name映射的values；reference 值为原ID，multi-reference 值为规范原ID数组字符串，每个目标名称与状态须按声明 referenceType 另行 list/get 读取；receipt+requestId读原批次回执；recent-writes+可选cursor发现当前会话已提交的原批次，不接受owner/scope/sessionId。list预查不能保证唯一；空结果不证明没有在途或失败，不得自动用新轮身份重写。',parameters:{mode:{type:'string',enum:['directory','type','list','get','receipt','recent-writes']},type:{type:'string'},id:{type:'string'},version:{type:'integer'},requestId:{type:'string'},cursor:{oneOf:[{type:'string'},{type:'integer'}]},limit:{type:'integer'}}},
+  {name:read,description:'读取当前本人业务的本地记录。mode互斥：directory（默认，cursor整数，每页32类型）；type+type读字段、关联与uniqueFields规则；list+type+limit(默认20，最多100)+cursor；get+type+id+可选version读完整snapshot和按字段name映射的values；reference 值为原ID，multi-reference 值为规范原ID数组字符串，每个目标名称与状态须按声明 referenceType 另行 list/get 读取；receipt+requestId读原批次回执；recent-writes+可选cursor发现当前会话已提交的原批次，不接受owner/scope/sessionId。'+businessRecordFieldValueProtocol+'list预查不能保证唯一；空结果不证明没有在途或失败，不得自动用新轮身份重写。',parameters:{mode:{type:'string',enum:['directory','type','list','get','receipt','recent-writes']},type:{type:'string'},id:{type:'string'},version:{type:'integer'},requestId:{type:'string'},cursor:{oneOf:[{type:'string'},{type:'integer'}]},limit:{type:'integer'}}},
   {name:write,description:'一次原生确认后原子保存当前业务1–50个本地记录操作，最多128KiB。'+businessRecordBatchProtocol+'，先get完整记录，保留未改字段，空字符串明确清空。reference 单选保存真实原始目标ID；v2 multi-reference 保存按ID字典序的1–32个真实原ID规范JSON数组字符串，≤2000字符。先按 referenceType list/get 读取每个真实目标标题和状态，仅支持当前本人同业务有效本地目标，失效成员须移除、清空或改绑。constraints.uniqueFields逐字段独立唯一，多关联每个成员独占；后端事务最终核验，list预查不能保证唯一。跨业务及外部来源写入尚不支持。一次本人指令只对应一个固定批次；回包未知先read receipt或recent-writes。真实回执才表示保存，不会派任务或修改外部来源。',parameters:{operations:businessRecordOperationsParameter}},
  ]
  for(const definition of definitions)ctx.tools.register(defineTool({...definition,output:{schema:{type:'string'} as const,render:(_args:unknown,value:string)=>[{type:'text' as const,text:value}]},execute:async(args,exec)=>{

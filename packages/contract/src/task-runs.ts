@@ -35,3 +35,17 @@ export function readTaskRunOrigin(value:unknown):TaskRunOrigin{
  if(source.kind!=='conversation-work'||typeof source.sessionId!=='string'||!/^[-a-zA-Z0-9_]{1,128}$/.test(source.sessionId)||!originUuid(source.requestId)||!messageId(source.messageId)||!Number.isSafeInteger(source.messageSeq)||Number(source.messageSeq)<0||!title(source.title)||typeof source.stopped!=='boolean')throw new WorkError('teloa/invalid-input','原交办来源不可核对。')
  return {taskId:row.taskId,runId:row.runId,source:{kind:'conversation-work',sessionId:source.sessionId,requestId:source.requestId,messageId:source.messageId,messageSeq:Number(source.messageSeq),title:source.title,stopped:source.stopped}}
 }
+
+
+/** 只读准备检查不发放执行许可；实际准备与启动始终重新核验。 */
+export type TaskRunReadiness={schema:'teloa.task-run-readiness/v1';taskId:string;taskVersion:number;ready:true}
+export function taskRunReadinessInput(value:unknown):{taskId:string;expectedTaskVersion:number}{
+ const row=originRecord(value,['taskId','expectedTaskVersion'])
+ if(!originUuid(row.taskId)||!Number.isSafeInteger(row.expectedTaskVersion)||Number(row.expectedTaskVersion)<1)throw new WorkError('teloa/invalid-input','任务身份或版本不正确。')
+ return {taskId:row.taskId.toLowerCase(),expectedTaskVersion:Number(row.expectedTaskVersion)}
+}
+export function readTaskRunReadiness(value:unknown):TaskRunReadiness{
+ const row=originRecord(value,['schema','taskId','taskVersion','ready'])
+ if(row.schema!=='teloa.task-run-readiness/v1'||!originUuid(row.taskId)||!Number.isSafeInteger(row.taskVersion)||Number(row.taskVersion)<1||row.ready!==true)throw new WorkError('teloa/invalid-input','执行条件检查响应不正确。')
+ return {schema:'teloa.task-run-readiness/v1',taskId:row.taskId,taskVersion:Number(row.taskVersion),ready:true}
+}

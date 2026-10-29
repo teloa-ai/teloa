@@ -115,6 +115,7 @@ export {ConnectorProbeService,type ConnectorKind,type ConnectorProbePorts,type C
 export {IndustryPluginSource,type IndustryPluginSourceSnapshot} from './work/industry-plugin-source.ts'
 export {IndustryPluginService,initializeIndustryPlugins,projectPluginState,type IndustryPluginInstance,type IndustryPluginPage,type IndustryPluginState,type IndustryPluginInstallPort} from './work/industry-plugins.ts'
 export {IndustryReferenceCatalog,combineReferenceCatalogs,industryReferenceId} from './capabilities/industry-reference-catalog.ts'
+export {isPublicReferenceSourceId} from '@teloa/mcp-reference/local'
 export {IndustryKnowledgeService,initializeIndustryKnowledge,type IndustryKnowledgeInstance,type IndustryKnowledgePage} from './work/industry-knowledge.ts'
 export {IndustryRoleSource,type IndustryRoleSnapshot,type IndustryRoleTemplate} from './work/industry-role-source.ts'
 export {IndustryRoleService,initializeIndustryRoles,type IndustryRoleKnowledge,type IndustryRoleDeclaration,type IndustryRoleOmittedKnowledge,type IndustryRoleInstance,type IndustryRolePage} from './work/industry-roles.ts'

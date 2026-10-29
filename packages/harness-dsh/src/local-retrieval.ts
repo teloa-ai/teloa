@@ -400,6 +400,15 @@ export function registerLocalRetrieval(ctx:Context,ports:LocalRetrievalPorts){
    }
    case 'retrieval-model/select':return selectModel(payload,signal)
    case 'retrieval/status':taskInput(payload,[]);return status()
+   case 'retrieval/search':{
+    const input=searchInput(payload),embedder=requireEmbedder()
+    return ports.admit(async()=>{
+     const {retrieval,actor}=await mutationContext(signal)
+     assertActive(signal)
+     // 本人界面试搜仅用服务端主体范围；不接受客户端身份、资料或范围参数。
+     return readRetrievalSearchResult(await retrieval.search(actor,[...actor.scopeIds],input,embedder,signal))
+    })
+   }
    case 'retrieval/cancel':taskInput(payload,[]);await Promise.all([setAutoPaused(true),cancelBuild()]);return status()
    case 'retrieval/enroll':{
     const {retrieval,actor}=await mutationContext(signal)

@@ -130,3 +130,5 @@
 @media(max-width:760px){.hubNavigation{gap:18px;padding:0 21px}.topbar:has(~ .hubNavigation){padding-left:12px}}
 
 .quickActions .newWorkGroup .newWorkMenu{position:fixed;right:auto;width:240px;max-width:calc(100vw - 24px)}
+
+.navigationProgress {position:fixed;inset-inline-start:24px;bottom:24px;z-index:var(--teloa-z-shell-overlay);max-width:min(480px,calc(100vw - 48px));padding:12px 16px;background:var(--teloa-surface);color:var(--teloa-text);border:1px solid var(--teloa-border);border-radius:8px;box-shadow:var(--teloa-shadow);font-size:var(--teloa-font-body);line-height:1.5;}

@@ -1,10 +1,10 @@
 import type {KnowledgeCategory,KnowledgeNode,KnowledgeTree,ResourceDirectory,ResourceDraft,RoleArtifactSummary,SourceReference,WorkResource} from '@teloa/contract'
-import {isLocalMaterialSourceId} from './local-material-registration.ts'
+import {isLocalMaterialSourceId,isAdoptedMaterialSourceId} from './local-material-registration.ts'
 
 /** 本机原件使用真实资源段；不冒充知识页或生成假的 knowledgeId。
  *  employeeResourceIds：员工 knowledge 字段引用的资源 ID 集合，传入后这些资源也会包含在目录里。 */
 export function libraryResourceDirectory(directory:ResourceDirectory,sources:SourceReference[],employeeResourceIds?:ReadonlySet<string>):ResourceDirectory{
- const include=(row:ResourceDraft|WorkResource)=>isLocalMaterialSourceId(row.sourceId)||sources.some(source=>source.id===row.sourceId&&source.knowledge)||(employeeResourceIds?.has(row.id)??false)
+ const include=(row:ResourceDraft|WorkResource)=>isLocalMaterialSourceId(row.sourceId)||isAdoptedMaterialSourceId(row.sourceId)||sources.some(source=>source.id===row.sourceId&&source.knowledge)||(employeeResourceIds?.has(row.id)??false)
  return {drafts:directory.drafts.filter(include),resources:directory.resources.filter(include)}
 }
 

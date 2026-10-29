@@ -375,3 +375,15 @@ test('本人completed但正式复核未过：候选仍可读，显式原卡只�
  await f.dispatch.resume('origin',requestId,signal)
  assert.equal(runs.length,2);assert.equal(f.calls.filter(call=>call==='task-runs/retry').length,1);assert.deepEqual(runs[0],original)
 })
+
+
+test('恢复自定义token上限原请求保留冻结额度，不通过resume重新配置账户',async()=>{
+ const f=fixture();f.setRequest({...request,workTokenLimit:6_000_000})
+ let replay:unknown
+ f.ports.requests.reserve=async(_owner,input)=>{replay=input;return f.stored}
+ await f.dispatch.resume('origin',requestId,new AbortController().signal)
+ assert.equal((replay as {workTokenLimit:number}).workTokenLimit,6_000_000)
+ assert.equal(f.calls.filter(call=>call==='create').length,1)
+ await f.dispatch.resume('origin',requestId,new AbortController().signal)
+ assert.equal(f.calls.filter(call=>call==='create').length,1)
+})

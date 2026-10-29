@@ -7,6 +7,11 @@ import type { IndustryManifest } from './industry-manifest.ts'
 
 export type IndustryDefinition={kind:'skill';text:string;files:{path:string;hash:string;size:number}[]}|IndustryPlanDefinition|{kind:'role';fields:RoleTemplateDefinition;ignoredModelSelection?:boolean}|{kind:'knowledge';text:string}|{kind:'work-template';manifest:Extract<MarketManifest,{format:'teloa.work-template/v1'}>}|{kind:'data-source';definition:IndustryDataSourceDefinition}|{kind:'mcp';definition:IndustryMcpConnectionDefinition}|{kind:'plugin';definition:IndustryPluginDefinition}|{kind:'object-type';definition:BusinessObjectTypeDefinition}|{kind:'business-view';definition:BusinessViewDefinition}|{kind:'business-action';definition:BusinessActionDefinition}|{kind:'business-configuration';definition:BusinessDashboardResourceDefinition}
 export type IndustryInspection={id:string;state:'parsed'|'invalid'|'pending'|'missing'|'unresolved';message:string;definition?:IndustryDefinition}
+export const industrySkillPreviewMessage='技能原文已读取。本页展示包内内容；当前安装与可用状态请到“市场 → 我的应用与技能”核对，绑定情况请到“员工 → 能力”查看。'
+/** 原文可读与宿主安装核验是两件事；不把静态预览升级成安装或运行就绪。 */
+export function isIndustrySkillPreview(inspection:Pick<IndustryInspection,'state'>&Partial<Pick<IndustryInspection,'definition'>>|undefined):boolean{
+ return inspection?.state==='pending'&&inspection.definition?.kind==='skill'
+}
 /**
  * 三类业务声明的身份判据，与既有 `plugin` / `work-template` 两支同形。
  * 为什么两条都要核：读取层按清单项的 `resource.id` 当 `source.localId` 落库，却按正文的 `definition.id`
@@ -35,7 +40,7 @@ export function inspectIndustryContent(manifest:IndustryManifest,content:Industr
   if(resource.source.kind==='public'){
    const reference=resource.source
    const resolved=content.resolved?.find(row=>row.resourceId===id&&row.sourceResourceId===reference.id&&row.kind===resource.kind&&row.version===resource.version)
-   if(resolved)return {...structuredClone(resolved.inspection),id,message:resolved.inspection.state==='parsed'?'引用内容已解析，未授予运行权限。':'引用内容已取得，仍待宿主核验。'}
+   if(resolved)return {...structuredClone(resolved.inspection),id,message:isIndustrySkillPreview(resolved.inspection)?industrySkillPreviewMessage:resolved.inspection.state==='parsed'?'引用内容已解析，未授予运行权限。':'引用内容已取得，仍待宿主核验。'}
    return {id,state:'unresolved',message:'公共资源版本尚待解析。'}
   }
   const file=files.get(root+resource.source.path)
@@ -49,7 +54,7 @@ export function inspectIndustryContent(manifest:IndustryManifest,content:Industr
    if(resource.kind==='skill'){
     const path=root+resource.source.path,folder=path.includes('/')?path.slice(0,path.lastIndexOf('/')+1):''
     const files=content.files.filter(value=>value.path.startsWith(folder)).map(value=>({path:value.path.slice(folder.length),hash:value.hash,size:value.bytes.length}))
-    return {id,state:'pending',message:'技能原文已读取；格式、依赖和运行条件还没检查，尚未安装。',definition:{kind:'skill',text:raw,files}}
+    return {id,state:'pending',message:industrySkillPreviewMessage,definition:{kind:'skill',text:raw,files}}
    }
    let definition:IndustryDefinition
    if(resource.kind==='data-source')definition={kind:'data-source',definition:readIndustryDataSourceDefinition(JSON.parse(raw))}

@@ -35,3 +35,27 @@ test('原子记录批次复用单条归一并拒绝嵌套身份、重复目标�
  ])assert.throws(()=>api.readBusinessRecordBatch(bad),{code:'teloa/invalid-input'})
  assert.equal(api.readBusinessRecordBatch({...input,operations:Array(50).fill(create)}).operations.length,50)
 })
+
+test('记录超长错误给出字段与实际上限，不回显原值；原有长度和严格输入边界保持',()=>{
+ const input={scope:'crm',type:'alert',requestId,title:'告警',summary:'',fields:[{name:'detail',value:'内容'}]}
+ for(const actualLength of [2447,4345]){
+  const sensitive='PRIVATE-FIELD-'+ '密'.repeat(actualLength-14)
+  assert.equal(sensitive.length,actualLength)
+  const fields=[{name:'detail',value:sensitive}]
+  for(const read of [()=>api.readBusinessRecordCreate({...input,fields}),()=>api.readBusinessRecordEdit({...input,id:'one',expectedVersion:1,fields}),()=>api.readBusinessChangeSetPrepare({scope:input.scope,requestId,operations:[{operation:'create',type:input.type,title:input.title,summary:'',fields}]})]){
+   assert.throws(read,(error:unknown)=>{
+    assert.ok(error instanceof api.WorkError)
+    assert.equal(error.code,'teloa/invalid-input')
+    assert.deepEqual(error.details,{reason:'field-value-too-long',field:'detail',actualLength,maxLength:2000,lengthUnit:'utf16-code-units'})
+    assert.match(error.message,new RegExp(String(actualLength)));assert.match(error.message,/2000/)
+    assert.ok(!JSON.stringify({message:error.message,details:error.details}).includes('PRIVATE-FIELD-'))
+    return true
+   })
+  }
+ }
+ assert.equal(api.readBusinessRecordCreate({...input,fields:[{name:'detail',value:'😀'.repeat(1000)}]}).fields[0]!.value.length,2000)
+ for(const [field,maxLength] of [['title',240],['summary',4000]] as const)assert.throws(()=>api.readBusinessRecordCreate({...input,[field]:'私'.repeat(maxLength+1)}),(error:unknown)=>{
+  assert.ok(error instanceof api.WorkError);assert.deepEqual(error.details,{reason:'field-value-too-long',field,actualLength:maxLength+1,maxLength,lengthUnit:'utf16-code-units'});return true
+ })
+ for(const value of [' leading','trailing ','control\u0000value'])assert.throws(()=>api.readBusinessRecordCreate({...input,fields:[{name:'detail',value}]}),{code:'teloa/invalid-input'})
+})

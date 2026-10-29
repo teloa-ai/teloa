@@ -55,7 +55,7 @@ export function IndustryLoadForm({embedded=false,item,space,pending,recoveryErro
   if(busy)return
   setBusy(true)
   setError('')
-  try{await operation()}catch{setError(t('market.industry.load.failed'))}finally{setBusy(false)}
+  try{await operation()}catch(reason){setError(localizeWorkError(locale,reason)||t('market.industry.load.failed'))}finally{setBusy(false)}
  }
  const submit=()=>run(async()=>{
   if(!contentId||!/^[0-9a-f]{64}$/.test(contentHash))throw Error(t('market.industry.load.contentNotReady'))

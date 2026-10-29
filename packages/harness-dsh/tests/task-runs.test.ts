@@ -2,7 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import {WorkError,type DigitalRole,type TaskRunModelPolicy} from '@teloa/contract'
 import type {TaskExecutionScope,TaskRunService,TaskRunSkillDatabase} from '@teloa/backend'
-import {TaskRunPresetError} from '@teloa/backend'
+import {TaskRunPresetError,TaskRunService as RuntimeTaskRunService} from '@teloa/backend'
 import {createTaskRunHandler} from '../src/task-runs.ts'
 const ordinary=(service:TaskRunService)=>Object.assign(service,{conversationParent:async()=>null})
 
@@ -250,4 +250,33 @@ test('一键准备把请求级权限模式和模型固定到新建 Run',async()=
  assert.equal((await handler('task-runs/prepare',{requestId,taskId,expectedTaskVersion:3,permissionMode:'workspace-write',model},new AbortController().signal) as {state:string}).state,'prepared')
  assert.deepEqual(options,{permissionMode:'workspace-write',modelPolicy:{primary:model}})
  assert.deepEqual(checks,['mode:workspace-write','model:custom-provider/example-model','create','check:workspace-write'])
+})
+
+test('准备条件检查只读真实目标，拒绝父交办与客户端执行身份，不创建会话或运行',async()=>{
+ const taskId='22345678-1234-4234-8234-123456789012',calls:string[]=[]
+ let parent:unknown=null,blocked=false
+ const service={conversationParent:async()=>parent,preparationTarget:async(_owner:string,input:any)=>{calls.push('check');assert.deepEqual(input,{taskId,expectedTaskVersion:3});if(blocked)throw new WorkError('teloa/conflict','未授权',{reason:'role-run-no-execution-tools'});return {taskId,taskVersion:3}}} as unknown as TaskRunService
+ const handler=createTaskRunHandler('owner',async()=>service,{check:async()=>{calls.push('native-check')},send:async()=>{calls.push('send')},stop:async()=>{},events:async()=>[]})
+ assert.deepEqual(await handler('task-runs/readiness',{taskId,expectedTaskVersion:3},new AbortController().signal),{schema:'teloa.task-run-readiness/v1',taskId,taskVersion:3,ready:true})
+ blocked=true
+ await assert.rejects(handler('task-runs/readiness',{taskId,expectedTaskVersion:3},new AbortController().signal),{code:'teloa/conflict',details:{reason:'role-run-no-execution-tools'}})
+ parent={sessionId:'original'}
+ await assert.rejects(handler('task-runs/readiness',{taskId,expectedTaskVersion:3},new AbortController().signal),{code:'teloa/conflict',details:{reason:'conversation-work-parent'}})
+ await assert.rejects(handler('task-runs/readiness',{taskId,expectedTaskVersion:3,roleId:taskId},new AbortController().signal),{code:'teloa/invalid-input'})
+ assert.deepEqual(calls,['check','check'])
+})
+
+
+test('含权限模式和模型的一键请求仅以严格身份查询真实后端回执，完整准备也不夹带运行选项',async()=>{
+ const requestId='12345678-1234-4234-8234-123456789012',taskId='22345678-1234-4234-8234-123456789012',roleId='32345678-1234-4234-8234-123456789012',sessionId='task-run-'+requestId,model={provider:'deepseek',model:'deepseek-flash'}
+ const database={query:async()=>({rows:[]}),release:()=>{}},strict={pool:{connect:async()=>database}} as unknown as TaskRunService
+ // 真实 request 方法先执行严格 taskInput；旧实现把 permissionMode/model 传入会在查询前抛 invalid-input。
+ const request=RuntimeTaskRunService.prototype.request.bind(strict)
+ let queries=0
+ const service={request:async(owner:string,input:unknown)=>{queries++;assert.deepEqual(Object.keys(input as object).sort(),['expectedTaskVersion','requestId','taskId']);return request(owner,input)},preparationTarget:async()=>({taskId,taskVersion:3,title:'核对',roleId,roleVersion:5}),prepare:async(_owner:string,input:unknown,...rest:any[])=>{assert.equal('permissionMode' in (input as object),false);assert.equal('model' in (input as object),false);assert.deepEqual(rest.at(-1),{permissionMode:'workspace-write',modelPolicy:{primary:model}});return {state:'prepared',sessionId}}} as unknown as TaskRunService
+ const handler=createTaskRunHandler('local-owner',async()=>ordinary(service),{resolvePreset:async()=> 'default-agent',checkPermissionMode:async()=>{},checkModel:async()=>{},check:async()=>{},send:async()=>{},stop:async()=>{},events:async()=>[]},undefined,{conversations:{runReservation:async()=>null,failRunReservation:async()=>false,createRun:async()=>({id:'conversation',ownerId:'local-owner',requestId,title:'核对',status:'ready',sessionId,requestedSessionId:sessionId,purpose:'task-run',run:{taskId,taskVersion:3,roleId,roleVersion:5,agentPresetId:'default-agent'}} as any)},links:{change:async()=>({kind:'task',objectId:taskId,objectVersion:3,conversationId:'conversation',sessionId,version:1,active:true} as any)}})
+ const options={permissionMode:'workspace-write',model}
+ await handler('task-runs/prepare',{requestId,taskId,expectedTaskVersion:3,...options},new AbortController().signal)
+ assert.equal(queries,1)
+ await handler('task-runs/prepare',{requestId,taskId,expectedTaskVersion:3,roleId,expectedRoleVersion:5,sessionId,expectedLinkVersion:1,...options},new AbortController().signal)
 })

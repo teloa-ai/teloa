@@ -10,6 +10,12 @@ type Storage=Pick<globalThis.Storage,'getItem'|'setItem'|'removeItem'>
 export type BusinessBuilderSwitchSnapshot={mainSessionId:string|undefined;bindingSessionId:string|undefined;bindingReady:boolean;input:InputState|null|undefined;pendingSubmissions:readonly {requestId:string}[];monitor:Pick<HomeSubmissionMonitor,'getSnapshot'|'check'>|undefined}
 export type BusinessBuilderSwitchPort={read:()=>BusinessBuilderSwitchSnapshot}
 export type BusinessBuilderSwitchDecision='ready'|'unknown'|'draft'|'pending'|'binding'|'changed'
+/** 原生输入可因 inbox/目录刷新重新发布；编辑身份由修订号和完整语义确定，不由对象引用确定。 */
+export function sameBusinessInput(a:BusinessBuilderSwitchSnapshot['input'],b:BusinessBuilderSwitchSnapshot['input']):boolean{
+ if(a===b)return true
+ if(a==null||b==null)return false
+ return a.draftRev===b.draftRev&&a.draft===b.draft&&a.phase===b.phase&&JSON.stringify([a.attachmentIds,a.occurrences,a.queue,a.claim])===JSON.stringify([b.attachmentIds,b.occurrences,b.queue,b.claim])
+}
 /** 只读官方完整状态；正文/附件/引用/队列始终留在原生会话，不在业务流程内复制。 */
 export async function checkBusinessBuilderSwitch(port:BusinessBuilderSwitchPort,allowDraft=false):Promise<BusinessBuilderSwitchDecision>{
  const initial=port.read()
@@ -76,7 +82,18 @@ export class BusinessBuilderFlow{
  }
  getSnapshot=()=>this.state
  subscribe=(listener:()=>void)=>{this.listeners.add(listener);return()=>{this.listeners.delete(listener)}}
- private publish(patch:Partial<BusinessBuilderState>){const next={...this.state,...patch},leave=this.leavePending;if(leave&&(leave.epoch!==this.epoch||leave.draftId!==next.draft?.id||leave.revision!==next.draft?.revision||leave.sessionId!==next.binding?.sessionId)){this.leavePending=undefined;leave.resolve(false);next.leaveConfirmation=false}this.state=next;for(const listener of this.listeners)listener()}
+ private publish(patch:Partial<BusinessBuilderState>){
+  const next={...this.state,...patch},leave=this.leavePending
+  if(leave){
+   const same=leave.epoch===this.epoch&&leave.draftId===next.draft?.id&&leave.revision===next.draft?.revision&&leave.sessionId===next.binding?.sessionId
+   if(!same||next.draft?.status!=='draft'){
+    this.leavePending=undefined;next.leaveConfirmation=false
+    // 同一份草案已获得终态回执时完成原离开意图；换绑或改版仍拒绝旧导航。
+    leave.resolve(same&&(next.draft?.status==='applied'||next.draft?.status==='discarded'))
+   }
+  }
+  this.state=next;for(const listener of this.listeners)listener()
+ }
  private journal():Journal{
   const raw=this.ports.storage.getItem(this.ports.journalKey)
   if(raw===null)return empty()
@@ -103,9 +120,9 @@ export class BusinessBuilderFlow{
  pendingCreation=()=>this.journal().creation
  pendingSave=()=>this.journal().save
  async requestLeave():Promise<boolean>{
-  if(this.leavePending)return false
   const draft=this.state.draft
   if(!draft||draft.status!=='draft'||draft.revision===1&&!this.state.setupPlan)return true
+  if(this.leavePending)return false
   return new Promise(resolve=>{this.leavePending={resolve,epoch:this.epoch,draftId:draft.id,revision:draft.revision,sessionId:this.state.binding?.sessionId};this.publish({leaveConfirmation:true})})
  }
  decideLeave(choice:'keep'|'continue'){const leave=this.leavePending;this.leavePending=undefined;const matches=!!leave&&leave.epoch===this.epoch&&leave.draftId===this.state.draft?.id&&leave.revision===this.state.draft?.revision&&leave.sessionId===this.state.binding?.sessionId;this.publish({leaveConfirmation:false});leave?.resolve(matches&&choice==='keep')}
@@ -188,7 +205,7 @@ export class BusinessBuilderFlow{
     let bound:BusinessConversationBinding|undefined
     await this.ports.work.create({requestId:request.requestId,title:request.title,...(request.workspaceId===undefined?{}:{workspaceId:request.workspaceId}),mayOpen:()=>{
      const current=this.ports.switching.read()
-     return epoch===this.epoch&&current.mainSessionId===approved.mainSessionId&&this.ports.mayOpen?.()!==false&&switchDecision(current,allowDraft&&current.input===approvedInput)==='ready'
+     return epoch===this.epoch&&current.mainSessionId===approved.mainSessionId&&this.ports.mayOpen?.()!==false&&switchDecision(current,allowDraft&&sameBusinessInput(current.input,approvedInput))==='ready'
     },beforeOpen:async conversation=>{
      bound=await this.ports.api.bind({requestId:request.requestId,sessionId:conversation.sessionId})
      if(bound.kind!=='builder'||(['draftId','scope','workspaceId','title'] as const).some(key=>bound![key]!==reserved[key]))throw invalid()
@@ -428,7 +445,7 @@ export class BusinessBuilderFlow{
     if(JSON.stringify(journal.save)!==JSON.stringify(intent))throw conflict('保存恢复记录已变化。')
     this.write({...journal,save:null},journal)
     await this.dropSavedDraft(intent.input.draftId)
-    if(visible())this.publish({phase:'saved',result,preview:null,error:null})
+    if(visible())this.publish({phase:'saved',result,draft:this.state.draft?{...this.state.draft,status:'applied'}:null,preview:null,error:null})
     return result
    }catch(error){
     if(visible())this.publish({phase:isRecord(error)&&isRecord(error.details)&&error.details.reason==='preview-review-required'?'ready':code(error)==='teloa/version-conflict'||code(error)==='teloa/forbidden'?'error':'unknown',error})

@@ -101,6 +101,20 @@ test('员工授权只能选择本人实时目录的固定规则与参数子集�
  assert.equal((await e.call('teloa_role_tools_change',{...input,selections:[{key:candidates.candidates[0].key,argumentIndices:[9]}]})).isError,true)
 })
 
+test('候选目录与当前已保存授权分开回读，模型说明不能把候选当现有权限',async t=>{
+ const current={roleVersion:1,state:'saved',rules:[{name:'read_reference',allowed:[{id:'ref-one',version:'v1'}]}]}
+ const e=await setup();t.after(()=>e.ctx.fiber.dispose())
+ const original=e.ports.roleGrants;e.ports.roleGrants=async(endpoint,payload,signal)=>endpoint==='role-tools/get'?current:original(endpoint,payload,signal)
+ const available=text(await e.call('teloa_role_tools_candidates',{roleId:id})).value
+ const saved=text(await e.call('teloa_role_tools_get',{roleId:id})).value
+ assert.equal(available.candidates.length,2);assert.deepEqual(saved,current)
+ assert.equal(saved.rules.some((rule:{name:string})=>rule.name==='web_search'),false)
+ const schemas=e.ctx.tools.schemas(e.agent)
+ assert.match(schemas.find(row=>row.name==='teloa_role_tools_candidates')!.description,/不是当前已授权清单.*teloa_role_tools_get/)
+ assert.match(schemas.find(row=>row.name==='teloa_role_tools_get')!.description,/真实状态和精确规则.*当前授权证据/)
+ assert.equal(e.calls.length,0,'两次只读核对不修改授权')
+})
+
 test('原生审核等待前 pin 指令；等待中换轮次拒绝原参数，原生deny保持',async t=>{
  let entered!:()=>void,release!:()=>void;const waiting=new Promise<void>(resolve=>{entered=resolve}),finished=new Promise<void>(resolve=>{release=resolve})
  const e=await setup();t.after(()=>e.ctx.fiber.dispose());e.ctx.on('tools/pre-execute',async(exec,next)=>{if(exec.name==='teloa_skill_availability_change'){entered();await finished}return next()})

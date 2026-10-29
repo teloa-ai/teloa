@@ -418,6 +418,8 @@ private async readVerified(db:PoolClient,owner:string,row:Record<string,unknown>
    if(!['ready','paused','blocked'].includes(task.state))throw new WorkError('teloa/conflict','任务当前不能开启新执行。')
    assertAssignedRoleVersion(task,role)
    const admission=await this.authorizeRole(db,owner,task,role)
+   const groupContext=readStoredRunGroupContext(await this.groupContext?.(db,owner,task,role))
+   await this.resolveExecutionTools(db,owner,task,role,admission,groupContext?await readGroupTaskExecutionMode(db,owner,task.id):null)
    const lineage=await new WorkLineageService(this.pool,this.identity).readInTransaction(db,owner,{taskId:task.id})
    if(!lineage)throw new WorkError('teloa/conflict','请确认这项历史工作的执行范围后继续。')
    admission.assertCurrent();await db.query('commit')
@@ -782,6 +784,28 @@ private async readVerified(db:PoolClient,owner:string,row:Record<string,unknown>
    if(!isDeepStrictEqual(currentExecution,fixedExecution))throw new WorkError('teloa/version-conflict','执行职责或本人回执已变化，请核对原工作。')}
   admission.assertCurrent();return admission
  }
+ /** 预检与实际准备使用同一授权交集和空工具门槛。预检不创建会话/Run，不解析模型、不写配置。 */
+ private async resolveExecutionTools(db:PoolClient,owner:string,task:WorkTask,role:DigitalRole,admission:RoleWorkAdmission,executionMode:RoleRunToolGate['executionMode'],knowledge?:RunKnowledge[]):Promise<{allowedTools:string[];argumentRules:TaskToolArgumentRule[]|undefined}>{
+  let argumentRules=this.argumentRules,allowedTools=[...this.allowedTools]
+  if(this.roleGrants){
+   const grants=await db.query('select * from teloa_role_tool_grants where role_id=$1 order by role_version desc limit 1',[role.id])
+   const grant=grants.rows[0]?readRoleToolGrant(grants.rows[0]):null
+   if(grant&&grant.roleVersion>role.version)throw new WorkError('teloa/storage-corrupt','授权版本高于员工版本。')
+   argumentRules=grant?.state==='active'?grant.rules:[]
+   if(knowledge!==undefined)await this.roleGrants.validate(argumentRules,knowledge,{db,owner,role})
+   allowedTools=toolNames(argumentRules.map(rule=>rule.name))
+  }
+  if(admission.limits.allowedTools!==null){
+   const permitted=new Set(admission.limits.allowedTools)
+   allowedTools=allowedTools.filter(name=>permitted.has(name))
+   if(argumentRules!==undefined)argumentRules=argumentRules.filter(rule=>permitted.has(rule.name))
+  }
+  if(executionMode){const policy=resolveGroupExecutionPolicy({executionMode,roleAllowedTools:allowedTools,argumentRules:argumentRules??[]});allowedTools=policy.allowedTools;if(argumentRules!==undefined)argumentRules=policy.argumentRules}
+  const systemDigest=task.completionPolicy?.kind==='verified'&&task.completionPolicy.verifier==='system-digest'
+  const toolGate=roleRunToolGateFailure({executionMode,allowedTools,grantsWired:!!this.roleGrants,systemDigest})
+  if(toolGate)throw new WorkError('teloa/conflict','负责人还没有可用的执行工具，已阻止准备执行。请先打开员工详情，在员工权限（工具授权）中保存需要的工作工具，再重新准备。',{reason:toolGate})
+  return {allowedTools,argumentRules}
+ }
  private async current(db:PoolClient,owner:string,row:Record<string,unknown>,stateVersion?:number,knownConversation?:Awaited<ReturnType<Inspect>>,fixedSnapshot?:RunRoleSnapshot,completionRun?:TaskRun){
    // 与岗位退役一致：先岗位，后任务；请求中的岗位还要与任务负责人交叉核验。
    const roles=await db.query('select * from teloa_roles where owner_id=$1 and id=$2 for share',[owner,row.roleId]);if(!roles.rows[0])throw new WorkError('teloa/forbidden','员工不属于本人。')
@@ -909,31 +933,8 @@ private async readVerified(db:PoolClient,owner:string,row:Record<string,unknown>
    const taskKnowledge=readRunKnowledge(roleAdmission.limits.knowledgeIds?.length===0?[]:await loadTaskKnowledge?.(target,knowledgeRole,db)??[],8)
    if(roleAdmission.limits.knowledgeIds!==null&&taskKnowledge.some(item=>!roleAdmission.limits.knowledgeIds!.includes(item.id)))throw new WorkError('teloa/forbidden','任务资料超出本人确认的执行范围。')
    const knowledge=mergeKnowledge(roleKnowledge,taskKnowledge)
-   let argumentRules=this.argumentRules,allowedTools=[...this.allowedTools]
-   if(this.roleGrants){
-    const grants=await db.query('select * from teloa_role_tool_grants where role_id=$1 order by role_version desc limit 1',[role.id])
-    const grant=grants.rows[0]?readRoleToolGrant(grants.rows[0]):null
-    if(grant&&grant.roleVersion>role.version)throw new WorkError('teloa/storage-corrupt','授权版本高于员工版本。')
-    argumentRules=grant?.state==='active'?grant.rules:[]
-    await this.roleGrants.validate(argumentRules,knowledge,{db,owner,role})
-    allowedTools=toolNames(argumentRules.map(rule=>rule.name))
-   }
-   if(roleAdmission.limits.allowedTools!==null){
-    const permitted=new Set(roleAdmission.limits.allowedTools)
-    allowedTools=allowedTools.filter(name=>permitted.has(name))
-    if(argumentRules!==undefined)argumentRules=argumentRules.filter(rule=>permitted.has(rule.name))
-   }
-   // 群交流回应（v2 来源 executionMode=reply）由服务端冻结空工具集合，守卫与子级准入读同一份 allowed_tools。
    const executionMode=groupContext?await readGroupTaskExecutionMode(db,owner,task.id):null
-   if(executionMode){
-    const policy=resolveGroupExecutionPolicy({executionMode,roleAllowedTools:allowedTools,argumentRules:argumentRules??[]})
-    allowedTools=policy.allowedTools
-    if(argumentRules!==undefined)argumentRules=policy.argumentRules
-   }
-   // 空执行工具目录不能进入模型：v1 群手工任务没有 executionMode（null）按工作处理；reply 型只写正文。
-   const systemDigestTask=task.completionPolicy?.kind==='verified'&&task.completionPolicy.verifier==='system-digest'
-   const toolGate=roleRunToolGateFailure({executionMode,allowedTools,grantsWired:!!this.roleGrants,systemDigest:systemDigestTask})
-   if(toolGate)throw new WorkError('teloa/conflict','负责人还没有可用的执行工具，已阻止准备执行。请先打开员工详情，在员工权限（工具授权）中保存需要的工作工具，再重新准备。',{reason:toolGate})
+   const {allowedTools,argumentRules}=await this.resolveExecutionTools(db,owner,task,role,roleAdmission,executionMode,knowledge)
    const planContext=readRunPlanContext(await this.planContext?.(db,owner,task.id))
    const industryContext=readRunIndustryContext(await this.industryContext?.(db,owner,task.id))
    const businessContext=readRunBusinessContext(await this.businessContext?.(db,owner,task,{roleId:role.id,allowedTools,...(argumentRules===undefined?{}:{argumentRules})}))
