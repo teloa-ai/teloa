@@ -17,6 +17,8 @@ export const workErrorCodes = [
   'teloa/model-unavailable',
   // 看板分享的原始记录或字节超限，客户端引导缩小范围而非重试来源连接。
   'teloa/dashboard-share-limit',
+  // 完整业务包不能隐式丢弃资料或员工要求的其他业务范围。
+  'teloa/complete-business-cross-scope',
   // 既有位置接受
   'teloa/storage-unavailable',
   'teloa/not-found',

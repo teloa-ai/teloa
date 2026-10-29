@@ -1,4 +1,4 @@
-import {industryUpdateCanonical,isEmployeeKnowledgeContent,localizedMetadata,readBusinessActionDefinition,readBusinessDashboardResource,readBusinessObjectTypeDefinition,readBusinessViewDefinition,readIndustryDataSourceDefinition,readRoleTemplateDefinition,type DigitalRole,type EmployeeKnowledgeContent,type BusinessDashboardResourceDefinition} from '@teloa/contract'
+import {WorkError,industryUpdateCanonical,isEmployeeKnowledgeContent,localizedMetadata,readBusinessActionDefinition,readBusinessDashboardResource,readBusinessObjectTypeDefinition,readBusinessViewDefinition,readIndustryDataSourceDefinition,readRoleTemplateDefinition,type DigitalRole,type EmployeeKnowledgeContent,type BusinessDashboardResourceDefinition} from '@teloa/contract'
 import {readIndustryDirectory,validateIndustryPath,type IndustryContent} from './industry-directory.ts'
 import {inspectIndustryContent} from './industry-content.ts'
 import {isIndustryManifest,validateIndustryManifest,type IndustryManifest,type IndustryRelation,type IndustryResource} from './industry-manifest.ts'
@@ -17,7 +17,7 @@ const json=(value:unknown)=>encode(industryUpdateCanonical(value))
 const order=(a:string,b:string)=>a<b?-1:a>b?1:0
 const fail=(message:string):never=>{throw Error(message)}
 /** 同一份资料所要求的其他业务范围不能在打包时被隐式丢弃。 */
-export const completeBusinessCrossScope=(title:string,scope:string)=>Object.assign(Error('「'+title+'」包含其他业务范围的资料或员工语义，不能随当前业务导出。请先单独处理跨业务范围资料。'),{code:'teloa/complete-business-cross-scope',details:{title,scope}})
+export const completeBusinessCrossScope=(title:string,scope:string)=>new WorkError('teloa/complete-business-cross-scope','「'+title+'」包含其他业务范围的资料或员工语义，不能随当前业务导出。请先单独处理跨业务范围资料。',{title,scope})
 export function assertCompleteBusinessKnowledgeScope(scope:string,title:string,scopeIds:readonly string[]):void{
  if(scopeIds.length!==1||scopeIds[0]!==scope)throw completeBusinessCrossScope(title,scope)
 }
