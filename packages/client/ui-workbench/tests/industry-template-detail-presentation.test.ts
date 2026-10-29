@@ -51,8 +51,15 @@ test('加载只有一屏核对摘要并须显式确认，不在默认详情堆�
   assert.match(loadForm, /<dt>\{t\('market\.industry\.load\.destination'\)\}<\/dt><dd>\{summary\.target\}<\/dd>/)
   assert.match(loadForm, /<dt>\{t\('market\.industry\.load\.effect'\)\}<\/dt><dd>\{summary\.effect\}<\/dd>/)
   assert.doesNotMatch(loadForm, /\bstage\b|market\.industry\.load\.(back|next|stepLocation|stepReview)|<select|<input|<form/)
-  // 写入只有一个入口：显式「加载」按钮触发 submit，submit 内唯一一次 load(...)。
-  assert.equal(loadForm.match(/\bload\(/g)?.length, 1)
+  // 首次提交与冲突确认各有一次写入；覆盖重试必须携带原请求和用户确认的知识清单。
+  const submit=loadForm.slice(loadForm.indexOf('const submit='),loadForm.indexOf('const confirmKnowledgeReset='))
+  const confirm=loadForm.slice(loadForm.indexOf('const confirmKnowledgeReset='),loadForm.indexOf('return <section'))
+  assert.equal(loadForm.match(/\bload\(/g)?.length, 2)
+  assert.equal(submit.match(/\bload\(input\)/g)?.length, 1)
+  assert.match(submit,/knowledgeResetFromError\(reason\)/)
+  assert.match(confirm,/if\(!reset\|\|reset\.key!==selection\.current\)return/)
+  assert.equal(confirm.match(/\bload\(\{\.\.\.reset\.input,knowledgeResetDigest:reset\.preview\.digest\}\)/g)?.length, 1)
+  assert.match(loadForm,/<KnowledgeResetConfirmation preview=\{knowledgeReset\.preview\} busy=\{busy\} confirm=\{\(\)=>void confirmKnowledgeReset\(\)\} cancel=\{\(\)=>setKnowledgeReset\(undefined\)\}/)
   assert.match(loadForm, /onClick=\{\(\)=>void submit\(\)\}>\{busy\?t\('market\.industry\.load\.loading'\):t\('market\.industry\.load\.confirm'\)\}/)
 })
 
