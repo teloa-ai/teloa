@@ -3,6 +3,7 @@ import {workObject,workUuid} from '@teloa/contract'
 import {readWorkProgress} from '@teloa/contract'
 import {recoveryStorageError} from './recovery-error.ts'
 import {createWorkBudgetApi} from './work-budget-api.ts'
+import {createConversationBudgetApi} from './conversation-budget-api.ts'
 type Journal={read:()=>string|null;write:(value:string)=>void;clear:()=>void}
 type Command={requestId:string;controlId:string;expectedVersion:number}&({kind:'change';action:'pause'|'stop';scope:'round'|'definition';roundControlId:string|null}|{kind:'resume';candidateRunIds:string[]})
 const read=(value:unknown):Command=>{if(!value||typeof value!=='object'||!('kind'in value))throw Error('控制恢复记录损坏。');const v=workObject(value,value.kind==='change'?['kind','requestId','controlId','expectedVersion','action','scope','roundControlId']:['kind','requestId','controlId','expectedVersion','candidateRunIds']);if(!workUuid(v.requestId)||!workUuid(v.controlId)||!Number.isSafeInteger(v.expectedVersion)||Number(v.expectedVersion)<1)throw Error('控制版本不正确。');if(v.kind==='change'){if(!['pause','stop'].includes(String(v.action))||!['round','definition'].includes(String(v.scope))||v.roundControlId!==null&&!workUuid(v.roundControlId))throw Error('控制操作不正确。')}else if(v.kind!=='resume'||!Array.isArray(v.candidateRunIds)||!v.candidateRunIds.every(workUuid)||new Set(v.candidateRunIds).size!==v.candidateRunIds.length)throw Error('恢复候选不正确。');return v as Command}
@@ -15,6 +16,7 @@ export function createWorkControlApi(call:(endpoint:string,payload:unknown)=>Pro
  const prepare=(value:Command)=>{const next=read(value);if(pending&&JSON.stringify(pending)!==JSON.stringify(next))throw Error('请先核对原控制请求。');pending??=next;return send()}
  return {
   budgets:createWorkBudgetApi(call,budgetJournal,id),
+  newWorkSettings:createConversationBudgetApi(call,id),
   pending:()=>pending?structuredClone(pending):undefined,recoveryMessage:()=>error,recover:send,
   discard(){clear();error=undefined},
   async get(controlId:string){const value=readWorkControl(await call('work-controls/get',{controlId}));if(value.id!==controlId)throw Error('控制详情与当前工作不一致。');return value},

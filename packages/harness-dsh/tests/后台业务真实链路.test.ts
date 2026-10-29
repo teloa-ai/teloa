@@ -106,7 +106,16 @@ test('后台业务真实链路：普通、群和自动化等待原生进程，�
  await apply(ctx,{projectRoot:root})
  const database=await openResourceDatabase(config,{id:randomUUID,now:()=>new Date().toISOString()}),pool=database.pool
  t.after(()=>pool.end())
- const call=async<T>(endpoint:string,payload:unknown):Promise<T>=>{const reply=await rpc!(endpoint,payload,AbortSignal.timeout(15_000));assert.equal(reply.ok,true,endpoint+': '+JSON.stringify(reply.error));return reply.value as T}
+ const call=async<T>(endpoint:string,payload:unknown):Promise<T>=>{
+  const controller=new AbortController(),timer=setTimeout(()=>controller.abort(new DOMException('RPC 等待超时。','TimeoutError')),15_000)
+  try{
+   const reply=await rpc!(endpoint,payload,controller.signal)
+   assert.equal(reply.ok,true,endpoint+': '+JSON.stringify(reply.error));return reply.value as T
+  }finally{
+   // RPC 已成功返回后不再自动撤销该次原生受理根；显式取消仍由正式 guard 校验。
+   clearTimeout(timer)
+  }
+ }
  type ProcessJob={id:JobId;child:ChildProcess;release:string;ready:string;cancelled:string;exited:string}
  const jobs=new Map<string,ProcessJob>(),statusChecks=new Map<string,number>()
  // web_search 保持正式岗位授权路径，仅替换它的外部 provider：受控进程不联网，只写自身临时标记。

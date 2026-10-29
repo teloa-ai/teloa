@@ -198,3 +198,15 @@ test('错误码只用允许扩散的正式码：不再出现 teloa/not-bound、t
  assert.doesNotMatch(source,/teloa\/not-bound|teloa\/host-unavailable/)
  assert.match(source,/new WorkError\('teloa\/dependency-unavailable','暂时无法核对会话身份。'\)/)
 })
+
+
+test('两项成果工具schema明确披露每类字段上限、长度单位、换行及超限整笔拒绝',async t=>{
+ const e=await setup();t.after(()=>e.ctx.fiber.dispose())
+ const schemas=e.ctx.tools.schemas(e.agent)
+ for(const name of [businessResultToolNames[0],businessResultToolNames[3]]){
+  const schema=schemas.find(tool=>tool.name===name);assert.ok(schema)
+  const text=JSON.stringify(schema)
+  for(const fact of ['240','4000','2000','UTF-16','超限整次拒绝','换行'])assert.ok(text.includes(fact),name+' '+fact)
+ }
+ assert.ok(JSON.stringify(schemas.find(tool=>tool.name===businessResultToolNames[3])!.parameters).includes('65536'))
+})

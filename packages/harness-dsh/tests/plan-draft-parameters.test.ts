@@ -90,3 +90,10 @@ test('零重试在本人、员工及配置草稿中合法保留，不把0补为1
   assert.equal(JSON.stringify(plan),before)
  }
 })
+
+
+test('计划四项资源明确null通过原生schema与reader；重试和无进展保护不能不限',()=>{
+ const plan=structuredClone(ownerExample);plan.work.budget={...plan.work.budget,maxTokens:null,maxGoalRounds:null,maxElapsedMs:null,maxConcurrent:null}
+ assert.deepEqual(validateJsonSchemaValue(tool.parameters,{plan}),[]);assert.doesNotThrow(()=>planDraftBody(plan))
+ for(const key of ['maxRetries','stagnationRounds']){const invalid={...plan,work:{...plan.work,budget:{...plan.work.budget,[key]:null}}};assert.notDeepEqual(validateJsonSchemaValue(tool.parameters,{plan:invalid}),[]);assert.throws(()=>readPageCreatePlanDraft(invalid))}
+})

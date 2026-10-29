@@ -4,12 +4,13 @@ import {randomUUID} from 'node:crypto'
 import {LlmAdapter,ToolCallId,createUserMessage,type GenerateOptions,type StreamChunk} from '@deepseek-ai/dsh-llm'
 import {SessionId} from '@deepseek-ai/dsh-session'
 import type {TaskRun} from '@teloa/backend'
+import type {WorkBudgetPolicy} from '@teloa/contract'
 import {setupRoleWork,identity,ownerAuthority} from '../../backend/tests/role-work-test-fixture.ts'
 import {TaskService} from '../../backend/src/work/tasks.ts'
 import {TaskRunService} from '../../backend/src/work/task-runs.ts'
 import {ObjectConversationService} from '../../backend/src/work/object-conversations.ts'
 import {ConversationWorkService,initializeConversationWork} from '../../backend/src/work/conversation-work.ts'
-import {WorkBudgetService,initializeWorkBudgets} from '../../backend/src/work/work-budget.ts'
+import {WorkBudgetService,initializeWorkBudgets,defaultWorkBudgetPolicy} from '../../backend/src/work/work-budget.ts'
 import {WorkControlService,initializeWorkControl} from '../../backend/src/work/work-control.ts'
 import {initializeWorkRetries} from '../../backend/src/work/work-retries.ts'
 import {WorkAccess} from '../../backend/src/work/work-access.ts'
@@ -21,7 +22,9 @@ import {patchedSessionFixture} from './fixtures/native-final-session.ts'
 import {loopWorkFixture} from './fixtures/native-loop-work-admission.ts'
 import {until,deferred} from './fixtures/native-schedule-admission.ts'
 
-for(const workTokenLimit of [undefined,6_000_000])test('原生交办'+(workTokenLimit?'明确6M':'省略仍2M')+'：批准前零Task/Run/预算，首次真实流先采用已批准额度',{timeout:60000},async t=>{
+const choices:Array<{workTokenLimit?:number|null;workBudgetPolicy?:WorkBudgetPolicy}>=[{},{workTokenLimit:6_000_000},{workTokenLimit:null},{workBudgetPolicy:{maxTokens:6_000_000,maxGoalRounds:12,maxConcurrent:2,maxElapsedMs:120_000,maxRetries:0,stagnationRounds:4,money:null}}]
+for(const choice of choices)test('原生交办'+(choice.workBudgetPolicy?'完整额度':choice.workTokenLimit===null?'明确不限':choice.workTokenLimit?'明确6M':'省略仍2M')+'：批准前零Task/Run/预算，首次真实流先采用已批准额度',{timeout:60000},async t=>{
+ const {workTokenLimit,workBudgetPolicy}=choice,effective=workBudgetPolicy??{...defaultWorkBudgetPolicy,...(workTokenLimit===undefined?{}:{maxTokens:workTokenLimit})}
  const db=await setupRoleWork();t.after(db.close)
  await initializeConversationWork(db.pool);await initializeWorkControl(db.pool);await initializeWorkBudgets(db.pool);await initializeWorkRetries(db.pool)
  const f=await patchedSessionFixture(t),native=await loopWorkFixture(t,true),owner=randomUUID(),source=native.agent
@@ -56,7 +59,7 @@ for(const workTokenLimit of [undefined,6_000_000])test('原生交办'+(workToken
    await new ObjectConversationService(db.pool,inspect,identity.now).change(owner,{requestId:randomUUID(),kind:'task',objectId:task.id,expectedObjectVersion:1,sessionId:worker.id,expectedLinkVersion:0,action:'link'})
    run=await runs.prepareOwner(owner,{requestId:randomUUID(),taskId:task.id,expectedTaskVersion:1,executor:task.executor,sessionId:worker.id,expectedLinkVersion:1},{agentPresetId:'default-agent'})
    assert.ok(run.lineage)
-   assert.equal((await budgets.read(owner,{budgetAccountId:run.lineage.budgetAccountId})).policy.maxTokens,workTokenLimit??2_000_000,'prepare之前已经落定初始上限')
+   assert.deepEqual((await budgets.read(owner,{budgetAccountId:run.lineage.budgetAccountId})).policy,effective,'prepare之前已经落定初始完整策略')
    await runs.claim(owner,{runId:run.id})
    const message=createUserMessage({source:{kind:'user',rpcId:randomUUID()},content:[{type:'text',text:run.inputText}]})
    await input.withNewInput(worker,message,{producer:'task-run',identity:run.id},()=>worker.followup(message))
@@ -65,20 +68,20 @@ for(const workTokenLimit of [undefined,6_000_000])test('原生交办'+(workToken
   },
  }
  registerConversationWorkTools(native.ctx,ports)
- const args={scope:'general',title:'合成预算验收',goal:'只核对本测试中的合成资料',executor:'general',...(workTokenLimit===undefined?{}:{workTokenLimit})}
+ const args={scope:'general',title:'合成预算验收',goal:'只核对本测试中的合成资料',executor:'general',...(workTokenLimit===undefined?{}:{workTokenLimit}),...(workBudgetPolicy===undefined?{}:{workBudgetPolicy})}
  const call=()=>native.ctx.tools.execute({agent:source,name:'teloa_work_dispatch',arguments:args,callId:ToolCallId(randomUUID()),signal:AbortSignal.timeout(15000)})
  const empty=async()=>{for(const table of ['teloa_tasks','teloa_task_runs','teloa_work_budget_accounts','teloa_conversation_work_requests'])assert.equal((await db.pool.query('select count(*)::int n from '+table+' where owner_id=$1',[owner])).rows[0].n,0,table)}
  const rejected=await call();assert.equal(rejected.isError,true);assert.equal(reasons.length,1,JSON.stringify(rejected));await empty()
  approve=async()=> 'cancelled';assert.equal((await call()).isError,true);assert.equal(reasons.length,2);await empty()
  const entered=deferred(),release=deferred();approve=async()=>{entered.resolve();await release.promise;return 'allowed-once'}
  const pending=call();await entered.promise;await empty();assert.equal(physicalRequests,0)
- assert.match(reasons.at(-1)!,workTokenLimit?/6,000,000/:/2,000,000/);assert.match(reasons.at(-1)!,/本人累计总额度仍然约束/)
+ assert.match(reasons.at(-1)!,effective.maxTokens===null?/token 上限：不限/:effective.maxTokens===6_000_000?/6,000,000/:/2,000,000/);assert.match(reasons.at(-1)!,/本人累计总额度仍然约束/)
  release.resolve();const approved=await pending;assert.equal(approved.isError,false,JSON.stringify(approved))
  assert.ok(run?.lineage)
  const state=await budgets.read(owner,{budgetAccountId:run.lineage.budgetAccountId})
  assert.equal(state.version,1,'初始额度没有额外配置版本或改变活动lease')
  assert.equal((await budgets.readOwner(owner)).policy.maxTokens,8_000_000)
  const reservations=(await db.pool.query('select reserved_tokens,state from teloa_work_budget_reservations where owner_id=$1',[owner])).rows
- if(workTokenLimit){assert.equal(physicalRequests,1);assert.equal(reservations.length,1);assert.ok(reservations[0].reserved_tokens>2_000_000&&reservations[0].reserved_tokens<6_000_000);assert.equal(state.usedTokens,10)}
+ if(workBudgetPolicy!==undefined||workTokenLimit!==undefined){assert.equal(physicalRequests,1);assert.equal(reservations.length,1);assert.ok(reservations[0].reserved_tokens>2_000_000&&reservations[0].reserved_tokens<6_000_000);assert.equal(state.usedTokens,10)}
  else{assert.equal(physicalRequests,0);assert.deepEqual(reservations,[]);const end=[...readSessionEvents(worker.session)].reverse().find(event=>event.type==='turn/end');assert.equal(end?.type==='turn/end'&&end.data.reason.kind==='error'?end.data.reason.error.code:null,'teloa/budget-exhausted/tokens/work')}
 })

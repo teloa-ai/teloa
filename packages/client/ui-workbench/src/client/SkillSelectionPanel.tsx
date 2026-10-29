@@ -7,9 +7,10 @@ import css from './MarketPage.module.css'
 
 /** 默认选择只影响后续解析；安装、旧加载引用与历史 Run 各自保留。 */
 export function SkillSelectionPanel({api,record,onChanged}:{api:SkillSelectionApi;record:SkillInstallationRecord;onChanged:()=>void}){
- const {t,locale}=useI18n(),[selection,setSelection]=useState<SkillSelection>(),[preview,setPreview]=useState<SkillSelectionPreview>(),[loading,setLoading]=useState(true),[busy,setBusy]=useState(false),[confirmed,setConfirmed]=useState(false),[error,setError]=useState(''),[revision,setRevision]=useState(0),[settled,setSettled]=useState(false)
+ const {t,locale}=useI18n(),[selection,setSelection]=useState<SkillSelection>(),[preview,setPreview]=useState<SkillSelectionPreview>(),[loading,setLoading]=useState(true),[busy,setBusy]=useState(false),[confirmed,setConfirmed]=useState(false),[error,setError]=useState(''),[revision,setRevision]=useState(0),[settled,setSettled]=useState(false),[discarded,setDiscarded]=useState(false)
  const generation=useRef(0),operation=useRef(false),mounted=useRef(true)
  useEffect(()=>{mounted.current=true;return()=>{mounted.current=false}},[])
+ useEffect(()=>setDiscarded(false),[api,record.id,record.ownerId])
  useEffect(()=>{
   const token=++generation.current;setLoading(true);setPreview(undefined);setConfirmed(false);setError('');setSelection(undefined)
   void api.get(record).then(value=>{if(token===generation.current)setSelection(value)},cause=>{if(token===generation.current)setError(localizeWorkError(locale,cause))}).finally(()=>{if(token===generation.current)setLoading(false)})
@@ -17,7 +18,7 @@ export function SkillSelectionPanel({api,record,onChanged}:{api:SkillSelectionAp
  },[api,record.id,record.version,record.ownerId,record.bundleHash,record.trustHash,record.native.name,revision,locale])
  const run=async(action:(isCurrent:()=>boolean)=>Promise<void>)=>{
   if(operation.current)return
-  const token=generation.current;operation.current=true;setBusy(true);setError('')
+  const token=generation.current;operation.current=true;setBusy(true);setError('');setDiscarded(false)
   try{await action(()=>mounted.current&&token===generation.current)}catch(cause){if(mounted.current&&token===generation.current)setError(localizeWorkError(locale,cause))}finally{operation.current=false;if(mounted.current)setBusy(false)}
  }
  const pending=api.pending(),recoveryError=api.recoveryMessage(),pendingHere=!!pending&&pending.ownerId===record.ownerId&&pending.command.nativeName===record.native.name&&pending.command.targetInstallationId===record.id,otherPending=!!pending&&!pendingHere
@@ -35,7 +36,9 @@ export function SkillSelectionPanel({api,record,onChanged}:{api:SkillSelectionAp
   {loading?<p role="status">{t('market.skill.selection.loading')}</p>:selection&&<p role="status">{t(current?'market.skill.selection.current':'market.skill.selection.otherCurrent')}</p>}
   <p>{t('market.skill.selection.boundary')}</p>
   {settled&&<p role="status">{t('market.skill.selection.settled')}</p>}
+  {discarded&&<p role="status">{t('recovery.discarded')}</p>}
   {(error||recoveryError)&&<p role="alert">{error||localizeWorkError(locale,recoveryError)}</p>}
+  {recoveryError&&<p>{t('recovery.nextStep')}</p>}
   {otherPending&&<p role="status">{t('market.skill.selection.otherPending')}</p>}
   {pendingHere&&<p role="status">{t('market.skill.selection.pending')}</p>}
   {preview&&<section aria-label={t('market.skill.selection.previewTitle')}>
@@ -50,7 +53,7 @@ export function SkillSelectionPanel({api,record,onChanged}:{api:SkillSelectionAp
    {!preview&&selection&&!current&&<button type="button" disabled={loading||busy||!!pending||!!recoveryError} onClick={()=>void run(async isCurrent=>{const result=await api.preview(record);if(!isCurrent())return;setPreview(result);setConfirmed(false);setSettled(false)})}>{t('market.skill.selection.preview')}</button>}
    {pendingHere&&<button type="button" disabled={busy||!!recoveryError} onClick={()=>void apply(true)}>{t('market.skill.selection.recover')}</button>}
    <button type="button" disabled={busy||loading} onClick={()=>{setRevision(value=>value+1);setSettled(false)}}>{t('market.skill.selection.refresh')}</button>
-   {(pendingHere||recoveryError)&&<button type="button" disabled={busy} onClick={()=>void run(async()=>{api.discard(record);setRevision(value=>value+1);setSettled(false)})}>{t('market.skill.selection.discard')}</button>}
+   {(pendingHere||recoveryError)&&<button type="button" disabled={busy} onClick={()=>void run(async isCurrent=>{const didDiscard=api.discard(record);if(!isCurrent())return;setDiscarded(didDiscard);setRevision(value=>value+1);setSettled(false)})}>{t('recovery.discard')}</button>}
   </div>
   {(pendingHere||recoveryError)&&<p>{t('market.skill.selection.discardBoundary')}</p>}
  </section>

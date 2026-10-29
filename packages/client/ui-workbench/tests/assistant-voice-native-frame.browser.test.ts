@@ -1,4 +1,4 @@
-import test from 'node:test'
+import test,{before,after} from 'node:test'
 import assert from 'node:assert/strict'
 import {createRequire} from 'node:module'
 import {mkdtemp,readFile,readdir,rm,writeFile} from 'node:fs/promises'
@@ -10,9 +10,11 @@ import ts from 'typescript'
 import {launchOptions,loadPlaywright} from './fixtures/load-playwright.mjs'
 import {DSH_VERSION,dshFrontendBootStart} from './fixtures/dsh-official.ts'
 
-test('官方 UiSession/Workspace 原助手入口不依赖打开后的目录刷新，原生子作用域取消留言',{timeout:30000},async t=>{
+let fixtureScript:string,fixtureStyles:string,fixtureTemp:string|undefined
+// 官方静态前端的读取与构建是隔离夹具准备；交互场景仍独立保留原30秒上限。
+before(async()=>{
  const root=fileURLToPath(new URL('../../../../',import.meta.url)),client=fileURLToPath(new URL('../src/client/',import.meta.url)),require=createRequire(new URL('../package.json',import.meta.url))
- const temp=await mkdtemp(join(root,'.runtime-assistant-native-'));t.after(()=>rm(temp,{recursive:true,force:true}))
+ const temp=await mkdtemp(join(root,'.runtime-assistant-native-'));fixtureTemp=temp
  const dshRequire=createRequire(createRequire(join(root,'package.json')).resolve('@deepseek-ai/dsh/package.json'))
  const frontend=join(dirname(dshRequire.resolve('@deepseek-ai/dsh-web-frontend/package.json')),'dist/assets')
  const frontendSource=await readFile(join(frontend,(await readdir(frontend)).find(name=>/^index-.*\.js$/.test(name))!),'utf8')
@@ -55,7 +57,12 @@ test('官方 UiSession/Workspace 原助手入口不依赖打开后的目录刷�
  const seedId='\0official-seeds',reactId='\0official-react',jsxId='\0official-jsx',domId='\0official-dom',domCoreId='\0official-dom-core'
  const built=await build({configFile:false,root,logLevel:'error',define:{'process.env.NODE_ENV':'"development"'},plugins:[{name:'native-seeds',enforce:'pre',resolveId:(id,importer)=>id==='official-static-seeds'?seedId:id==='react'?reactId:id==='react/jsx-runtime'?jsxId:id==='react-dom/client'?domId:id==='react-dom'?domCoreId:importer===seedId&&id.startsWith('.')?resolve(frontend,id):null,load:id=>id===seedId?seedSource:id===reactId?"import {staticSeeds} from 'official-static-seeds';const value=staticSeeds.react;export default value;export const {useImperativeHandle,useTransition,startTransition,createRef,useState,useEffect,useLayoutEffect,useRef,useMemo,useCallback,useSyncExternalStore,createContext,useContext,useId,useReducer,memo,cloneElement,Children,isValidElement,Suspense,forwardRef,createElement,Fragment}=value;":id===jsxId?"import {staticSeeds} from 'official-static-seeds';export const {jsx,jsxs,Fragment}=staticSeeds['react/jsx-runtime'];":id===domId?"import {staticSeeds} from 'official-static-seeds';export const {createRoot,hydrateRoot}=staticSeeds['react-dom/client'];":id===domCoreId?"import {staticSeeds} from 'official-static-seeds';const value=staticSeeds['react-dom'];export default value;export const {createPortal,flushSync}=value;":null},{name:'unrelated-pages',enforce:'pre',load:async id=>{const names=['WorkDirectory','WorkHome','TaskPage','TeamPage','MarketPage','TeamCapabilitiesPage','ResourceManager','CollaborationPage','ContinuousPage','ArtifactPanel','ProjectOverviewPage','CapabilityTargetPanel','SavedIndustryDirectory','AutoDreamSettingsPage'];if(!names.some(name=>id===join(client,name+'.tsx')))return;const source=await readFile(id,'utf8');return [...source.matchAll(/export (?:async )?(?:function|const|class) (\w+)/g)].map(m=>'export const '+m[1]+'=()=>null;').join('\n')}}],build:{write:false,minify:false,rollupOptions:{external:(id:string)=>id.startsWith('node:'),treeshake:{moduleSideEffects:false}},lib:{entry:join(temp,'fixture.tsx'),name:'NativeAssistantFixture',formats:['iife']}}})
  const bundle=Array.isArray(built)?built[0]:built;assert.ok(bundle&&'output'in bundle)
- const script=bundle.output.find(item=>item.type==='chunk')!.code,styles=bundle.output.flatMap(item=>item.type==='asset'&&item.fileName.endsWith('.css')?[String(item.source)]:[]).join('\n')
+ fixtureScript=bundle.output.find(item=>item.type==='chunk')!.code;fixtureStyles=bundle.output.flatMap(item=>item.type==='asset'&&item.fileName.endsWith('.css')?[String(item.source)]:[]).join('\n')
+},{timeout:120000})
+after(async()=>{if(fixtureTemp)await rm(fixtureTemp,{recursive:true,force:true})})
+
+test('官方 UiSession/Workspace 原助手入口不依赖打开后的目录刷新，原生子作用域取消留言',{timeout:30000},async t=>{
+ const script=fixtureScript,styles=fixtureStyles
  // node:test 超时只中止 t.signal 并立即运行已登记的 after，测试体仍继续：超时后不再启动浏览器，已启动的随中止关闭以结束挂起的页面调用。
  t.signal.throwIfAborted()
  const browser=await loadPlaywright().chromium.launch({...launchOptions(),args:['--use-fake-device-for-media-stream','--use-fake-ui-for-media-stream']}),closeBrowser=()=>browser.close();t.after(closeBrowser);t.signal.addEventListener('abort',closeBrowser,{once:true})

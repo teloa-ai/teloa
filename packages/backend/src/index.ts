@@ -43,7 +43,7 @@ export {EmployeeIntegrationService,initializeEmployeeIntegrations,type EmployeeI
 export {EmployeeApiWorkService,initializeEmployeeApiWork,type EmployeeApiRuntime} from './work/employee-api-work.ts'
 export {EmployeeApiWebhooks} from './work/employee-api-webhooks.ts'
 export type {ConversationTaskIdentity} from './work/conversation-task-request.ts'
-export {ConversationWorkService,initializeConversationWork,readStoredConversationWorkContext,readStoredConversationWorkRequest,workRequestChildId,type ConversationWorkContext,type ConversationWorkRequest,type ConversationWorkReserveInput,type WorkRequestTarget,type WorkResponsibilitySnapshot} from './work/conversation-work.ts'
+export {ConversationWorkService,initializeConversationWork,readStoredConversationWorkContext,readStoredConversationWorkRequest,workRequestChildId,conversationWorkInstructionLimit,assertConversationWorkInstruction,type ConversationWorkContext,type ConversationWorkRequest,type ConversationWorkReserveInput,type WorkRequestTarget,type WorkResponsibilitySnapshot} from './work/conversation-work.ts'
 export {BusinessReassignmentService,initializeBusinessReassignments,reserveInputFromReassignment,type ReassignmentRunIdentity,type ReassignmentRunTargets} from './work/business-reassignment.ts'
 export { ProjectService,initializeProjects } from './work/projects.ts'
 export {ProjectContextService,initializeProjectContext,subscribeProjectContextChanges,registerProjectMemoryAvailability} from './work/project-context.ts'
@@ -211,6 +211,7 @@ export {TaskRunGoalService,initializeTaskRunGoals} from './work/task-run-goals.t
 
 export {TaskCompletionService,type CompletionVerifierInput,type CompletionVerification,type CompletionVerifier,type TaskCompletionPorts} from './work/task-completion.ts'
 export {WorkBudgetService,initializeWorkBudgets,defaultWorkBudgetPolicy,type RunBudgetTerminal} from './work/work-budget.ts'
+export {ConversationBudgetSettingsService,initializeConversationBudgetSettings,type ConversationBudgetSettings} from './work/conversation-budget-settings.ts'
 export * from './work/work-control.ts'
 export * from './work/work-recovery.ts'
 export * from './work/task-run-stop-recovery.ts'

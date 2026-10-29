@@ -62,6 +62,19 @@ test('明确选择负责人是服务端约束；暂停与范围不匹配在预�
  assert.equal(reserved.targets[0]?.roleId,role.id)
  assert.equal((await service.context(owner,{sessionId}))?.locked,true)
 })
+test('完整原指令与归一化目标的7400边界仍由后端最终守卫，超限不预约且错误不回显材料',async()=>{
+ const {owner,sessionId,service,role}=await fixture()
+ const input={requestId:randomUUID(),sessionId,messageId:'instruction-limit',messageSeq:2,kind:'task' as const,scope:'SOC',title:'核对',goal:'目标',roleId:role.id,expectedRoleVersion:role.version,sourceText:'私'.repeat(7399)}
+ await assert.rejects(service.reserve(owner,input),error=>{
+  assert.ok(error instanceof WorkError);assert.equal(error.code,'teloa/invalid-input')
+  assert.deepEqual(error.details,{reason:'work-instruction-too-long',actualLength:7401,maxLength:7400,lengthUnit:'utf16-code-units'})
+  assert.ok(!JSON.stringify(error).includes(input.sourceText));return true
+ })
+ assert.deepEqual(await service.list(owner,{sessionId}),[])
+ const accepted=await service.reserve(owner,{...input,sourceText:'私'.repeat(7398)})
+ assert.equal(accepted.sourceText!.length+accepted.goal.length,7400)
+ assert.equal((await service.list(owner,{sessionId})).length,1)
+})
 test('通用工作不等于全部业务；SOC会话内明确跨业务仅改变协调请求，不改原上下文',async()=>{
  const {owner,sessionId,service,role}=await fixture()
  const general=await new RoleService(pool,identity).create(owner,{requestId:randomUUID(),fields:{name:'通用同事',kind:'employee',scopes:['general'],duty:'通用',dataScope:'资料',executionScope:'只读',skills:[],knowledge:[],responsibility:testRoleResponsibility}})

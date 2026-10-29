@@ -14,7 +14,7 @@ export class ResourceAdoptionCatalog implements ResourceSourceCatalog{
   authorizeResourceActor(context.actor,row.owner_id,[row.target_scope])
   if(!context.scopeIds?.includes(row.target_scope))throw new WorkError('teloa/forbidden','当前工作范围无权读取此业务资料。')
   const origin=row.origin as WorkResource
-  return {id:row.source_id,title:origin.title,source:`resource:${origin.id}@${origin.version} ← ${row.origin_source}`,version:origin.sourceVersion,bytes:Number(row.bytes)}
+  return {id:row.source_id,title:origin.title,source:`resource:${origin.id}@${origin.version} 来源：${row.origin_source}`,version:origin.sourceVersion,bytes:Number(row.bytes)}
  }
  async list(context?:ResourceSourceContext){
   if(!context)throw new WorkError('teloa/forbidden','业务资料采用来源需要有效主体。')

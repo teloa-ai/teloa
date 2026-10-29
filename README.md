@@ -410,6 +410,8 @@ See the [installation guide](https://docs.teloa.ai/en/start/quickstart) and [loc
 4. For work that needs tracking, create or approve a task. Follow actual progress, handle requests in **Needs your attention**, and review the deliverable.
 5. Organize related work in a business or project, then add a dashboard or schedule as needed.
 
+Expand **New task limits** in your main conversation before delegation to set token, round, concurrency, and rolling 24-hour model-time limits, or select **Unlimited** for each resource. Execution still requires the native delegation approval. Existing tasks expose **Work limits** in their details. Increasing limits keeps active work running; lowering a limit invalidates its earlier execution permission. Work and owner limits both apply, and recorded usage is retained. Unlimited does not remove tool permissions, approvals, manual stopping, retry limits, or no-progress protection.
+
 ## What you can do
 
 | Capability | How it helps |

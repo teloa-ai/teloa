@@ -45,6 +45,16 @@ function App(){const [epoch,setEpoch]=useState(0),[selected,setSelected]=useStat
    const commands=await page.evaluate(()=>(window as any).fixture.commands);assert.equal(commands.length,2);assert.deepEqual(commands[1],request);assert.equal(await page.evaluate(()=>localStorage.getItem('selection-journal')),null);assert.deepEqual(errors,[])
   }finally{await page.close()}
  })
+ await t.test('损坏恢复记录可明确丢弃并回显，保留不会撤销已发切换的说明',async()=>{
+  const {page,errors}=await mount('direct');try{
+   await page.evaluate(()=>{localStorage.setItem('selection-journal','{broken');(window as any).fixture.remount()})
+   await page.getByText('可丢弃这条恢复记录后重试；若上一次请求已经生效，请到对应目录核对。',{exact:true}).waitFor()
+   await page.getByText('放弃恢复记录不会撤销已经发送的切换。请刷新当前选择后再决定下一步。',{exact:true}).waitFor()
+   await page.getByRole('button',{name:'丢弃这条恢复记录',exact:true}).click()
+   await page.getByText('已丢弃本地恢复记录；如果上一次请求已经生效，请到目录里核对。',{exact:true}).waitFor()
+   assert.equal(await page.evaluate(()=>localStorage.getItem('selection-journal')),null);assert.equal(await page.evaluate(()=>(window as any).fixture.commands.length),0);assert.deepEqual(errors,[])
+  }finally{await page.close()}
+ })
  await t.test('A目标迟到的预览不能出现在已切至B的面板，也不会触发onChanged或change',async()=>{
   const {page,errors}=await mount('direct');try{
    await page.evaluate(()=>(window as any).fixture.hold=true);await page.getByRole('button',{name:'预览设为默认版本',exact:true}).click();await page.waitForFunction(()=>typeof (window as any).fixture.release==='function')

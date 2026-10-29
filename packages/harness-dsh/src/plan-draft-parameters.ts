@@ -4,6 +4,7 @@ import {WorkError,isRecord,readPageCreatePlanDraft,scheduleTimezones,workEventKi
 // DSH 只支持类型、字面值和 oneOf；长度、正数范围及跨字段约束仍由原严格 reader 核对。
 const text={type:'string',required:true} as const
 const positive={type:'integer',required:true,description:'正整数，至少为 1；不能写成字符串或 0。'} as const
+const resourceLimit={oneOf:[{type:'integer'},{type:'null'}],required:true,description:'正安全整数；只有本人明确选择不限时填 null，不能省略。'} as const
 const retries={type:'integer',required:true,description:'非负整数；0 表示不重试，不能写成字符串。'} as const
 const uuid={type:'string',required:true,description:'从正式回执取得的 UUID，不自行编造，也不要求本人填写。'} as const
 const nullableId={oneOf:[{type:'string',description:'正式回执中的 UUID。'},{type:'null'}]} as const
@@ -25,7 +26,7 @@ const triggers={type:'array',required:true,description:'1 至 16 项，不重复
 ]}} as const
 const money={oneOf:[{type:'null'},{type:'object',additionalProperties:false,properties:{currency:{type:'string',required:true,description:'三个大写字母的币种代码。'},maxMinorUnits:positive}}]} as const
 const budget={type:'object',additionalProperties:false,required:true,description:'完整的本人已批准工作额度；数值用整数，不将示例当作授权。',properties:{
- maxGoalRounds:positive,maxTokens:positive,maxElapsedMs:positive,maxConcurrent:positive,maxRetries:retries,stagnationRounds:positive,
+ maxGoalRounds:resourceLimit,maxTokens:resourceLimit,maxElapsedMs:resourceLimit,maxConcurrent:resourceLimit,maxRetries:retries,stagnationRounds:positive,
  money:{...money,required:true},
 }} as const
 const work={type:'object',additionalProperties:false,required:true,properties:{completion:{...completion,required:true},triggers,budget,overlap:{type:'string',enum:['forbid','independent'],required:true},missed:{type:'string',const:'coalesce',required:true},safeRecovery:{type:'boolean',required:true,description:'JSON 布尔值 true 或 false，不能使用字符串。'}}} as const
@@ -78,7 +79,8 @@ export function planDraftArgumentErrors(value:unknown,path='plan'):string[]{
  if(issues.length||!isRecord(value)||!isRecord(value.work)||!isRecord(value.work.budget))return issues
   // SDK只核integer形状；不补额度或转换数值，零重试保留为零。
   for(const [key,spec]of Object.entries(budget.properties)){
-   if(spec!==positive&&spec!==retries)continue
+   if(spec!==positive&&spec!==retries&&spec!==resourceLimit)continue
+   if(spec===resourceLimit&&value.work.budget[key]===null)continue
    const minimum=spec===retries?0:1
    if(!Number.isSafeInteger(value.work.budget[key])||Number(value.work.budget[key])<minimum)issues.push(`${path}.work.budget.${key} must be a safe integer with minimum ${minimum}`)
   }

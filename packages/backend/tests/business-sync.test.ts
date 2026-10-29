@@ -62,8 +62,8 @@ const compareMapping=(id='soc-compare')=>{const value:Record<string,unknown>={..
 const rawMapping=()=>readBusinessSourceMappingDefinition({format:'teloa.business-source-mapping/v1',id:'soc-port',version:'1.0.0',domain:'SOC',title:'端口原样',objectType:'soc-alert',source:{kind:'business-data-port',sourceId:'security-alert-http'},mapping:[],primaryKey:['id'],deletionSemantics:'compare',schedule:{kind:'every',seconds:60},acknowledgeShortInterval:false})
 
 const record=(definition:unknown)=>({source:{loadId:'load-1',scope:'SOC',localId:(definition as {id:string}).id,version:'1.0.0',contentHash:'c',fileHash:'f',definitionHash:'a'.repeat(64),origin:'local'},definition})
-function definitionsOf(mappings:BusinessSourceMappingDefinition[]):Pick<BusinessDefinitionSourceReader,'forScope'>{
- return {forScope:async(_db:PoolClient,_owner:string,scope:string)=>scope!=='SOC'?[]:[{origin:{kind:'market',loadId:'load-1'},scope:'SOC',domain:'SOC',objectTypes:[record(alertType)],views:[],actions:[],mappings:mappings.map(record),widgets:[],dashboards:[],sources:new Map()}] as never}
+function definitionsOf(mappings:BusinessSourceMappingDefinition[],objectType:BusinessObjectTypeDefinition=alertType):Pick<BusinessDefinitionSourceReader,'forScope'>{
+ return {forScope:async(_db:PoolClient,_owner:string,scope:string)=>scope!=='SOC'?[]:[{origin:{kind:'market',loadId:'load-1'},scope:'SOC',domain:'SOC',objectTypes:[record(objectType)],views:[],actions:[],mappings:mappings.map(record),widgets:[],dashboards:[],sources:new Map()}] as never}
 }
 
 /** 按页脚本返回的同步源：pageToken 以 page: 开头即续页，否则从第一页起；`cursors` 记端口视角的游标（续页标记优先，否则水位）。 */
@@ -84,12 +84,12 @@ class ScriptSource implements BusinessSyncSourcePort{
  }
 }
 
-function harness(mappings:BusinessSourceMappingDefinition[],sources:Record<string,BusinessSyncSourcePort>,options:{pool?:Pool}={}){
+function harness(mappings:BusinessSourceMappingDefinition[],sources:Record<string,BusinessSyncSourcePort>,options:{pool?:Pool;objectType?:BusinessObjectTypeDefinition}={}){
  const owner='sync:'+randomUUID(),actor:BusinessSyncActor={ownerId:owner,scopeIds:['SOC']}
  const clock={now:'2026-09-25T12:00:00.000Z'}
  const identity={id:randomUUID,now:()=>clock.now}
  const warehouse=new BusinessWarehouseService(options.pool??pool,identity)
- const service=new BusinessSyncService(options.pool??pool,identity,definitionsOf(mappings),warehouse,async mapping=>sources[mapping.id]!)
+ const service=new BusinessSyncService(options.pool??pool,identity,definitionsOf(mappings,options.objectType),warehouse,async mapping=>sources[mapping.id]!)
  const run=(mappingId:string)=>service.run(actor,{scope:'SOC',mappingId,trigger:'manual'})
  const cursor=async(mappingId:string)=>(await pool.query('select * from teloa_business_sync_cursors where owner_id=$1 and scope_id=$2 and mapping_id=$3',[owner,'SOC',mappingId])).rows[0] as Record<string,unknown>|undefined
  const versions=async(objectId:string)=>(await pool.query('select object_version,snapshot,snapshot_hash from teloa_business_object_snapshots where owner_id=$1 and scope_id=$2 and object_id=$3 order by object_version',[owner,'SOC',objectId])).rows as Array<{object_version:number;snapshot:Record<string,unknown>;snapshot_hash:string}>
@@ -947,4 +947,43 @@ test('共享 session 加锁回包丢失：连接隔离，不泄漏锁或新增�
  assert.equal(calls,0)
  assert.equal(await h.cursor('soc-sync'),undefined)
  await h.pause()
+})
+
+
+test('固定对象role-result超限拒绝零写入，修正后中文多行与边界文本逐字保存，既有v1不被失败改写',async()=>{
+ const resultType:BusinessObjectTypeDefinition={...alertType,id:'investigation-result',sourceId:'records',fields:[{name:'id',label:'告警标识',from:'告警标识',type:'text',required:true},{name:'report',label:'调查报告',from:'调查报告',type:'text',required:true},{name:'evidence_references',label:'证据引用',from:'证据引用',type:'text',required:true}]}
+ const roleId=randomUUID(),mapping=mappingOf({id:'strict-result',objectType:resultType.id,source:{kind:'role-result',roleId},mapping:[{path:'$.object.id',field:'id'},{path:'$.result.title',field:'title'},{path:'$.result.summary',field:'summary'},{path:'$.result.report',field:'report'},{path:'$.result.evidenceReferences',field:'evidence_references'}],primaryKey:['id']}),h=harness([mapping],{},{objectType:resultType})
+ const original=readBusinessObjectSnapshot({scope:'SOC',type:'raw-alert',id:'REPORT-1',version:1,title:'合成来源记录',source:'fixture',observedAt:CAPTURED,receivedAt:CAPTURED,quality:'complete',summary:'固定原始事实',fields:[]},'SOC'),reference={scope:'SOC',type:original.type,id:original.id,version:1,snapshotHash:businessObjectSnapshotHash(original)}
+ await pool.query('insert into teloa_business_object_snapshots values($1,$2,$3,$4,$5,$6,$7,$8,$9)',[h.owner,'SOC',original.type,original.id,1,reference.snapshotHash,JSON.stringify(original),'raw-source',CAPTURED])
+ const execution={runId:randomUUID(),sessionId:'synthetic-result-session',taskId:randomUUID(),roleId,createdAt:CAPTURED,reference},base={title:'调查结果',summary:'摘要',report:'一、中文时间线\r\n- 第一条\t日志\n二、结论：待核对',evidenceReferences:'证据一\n证据二'}
+ const tables=['teloa_business_object_snapshots','teloa_business_sync_object_ids','teloa_business_task_result_receipts','teloa_business_task_result_heads','teloa_business_task_result_references','teloa_business_sync_runs']
+ const counts=async()=>Promise.all(tables.map(async table=>(await pool.query('select count(*)::int n from '+table+' where owner_id=$1',[h.owner])).rows[0].n))
+ const before=await counts()
+ for(const [key,field,maxLength,length] of [['title','title',240,241],['summary','summary',4000,4001],['report','report',2000,2001],['evidenceReferences','evidence_references',2000,2814]] as const){
+  const marker='私密正文',value=(marker+'密'.repeat(length)).slice(0,length)
+  await assert.rejects(h.service.ingestTaskResult(h.actor,{scope:'SOC',mappingId:mapping.id,result:{...base,[key]:value}},async()=>execution),error=>{
+   assert.ok(error instanceof WorkError);assert.equal(error.code,'teloa/invalid-input');assert.deepEqual(error.details,{reason:'field-value-too-long',field,actualLength:length,maxLength,lengthUnit:'utf16-code-units'});assert.ok(!error.message.includes(marker));assert.ok(!JSON.stringify(error.details).includes(marker));return true
+  })
+  assert.deepEqual(await counts(),before,'整笔失败不留下对象版本、身份、回执、head或成功同步记录')
+ }
+ const result={...base,title:'题'.repeat(240),summary:'摘'.repeat(4000),evidenceReferences:'证据😀'.repeat(500)}
+ assert.equal(result.evidenceReferences.length,2000)
+ assert.deepEqual(await h.service.ingestTaskResult(h.actor,{scope:'SOC',mappingId:mapping.id,result},async()=>execution),{upserted:1,tombstoned:0})
+ const saved=(await h.versions(reference.id)).find(row=>row.snapshot.type===resultType.id)!
+ assert.ok(saved);assert.equal(saved.object_version,1);assert.equal(saved.snapshot.title,result.title);assert.equal(saved.snapshot.summary,result.summary);assert.equal(saved.snapshot.quality,'complete')
+ assert.deepEqual(saved.snapshot.fields,[{label:'告警标识',value:reference.id},{label:'调查报告',value:result.report},{label:'证据引用',value:result.evidenceReferences}])
+ const v1=structuredClone(saved),after=await counts()
+ for(const report of ['首行\n尾行\u0000','  首行\n尾行','首行\n尾行\n','密'.repeat(2001)]){
+  await assert.rejects(h.service.ingestTaskResult(h.actor,{scope:'SOC',mappingId:mapping.id,result:{...result,report}},async()=>({...execution,runId:randomUUID(),createdAt:'2026-09-25T11:59:01.000Z'})),{code:'teloa/invalid-input'})
+  assert.deepEqual(await counts(),after);assert.deepEqual((await h.versions(reference.id)).find(row=>row.snapshot.type===resultType.id),v1)
+ }
+})
+
+test('role-result普通成果批次完整验证后才写入；外部MCP同步保持既有清洗与截断规则',async()=>{
+ const mapping=mappingOf({id:'strict-batch',source:{kind:'role-result'},mapping:[{path:'$.result.id',field:'id'},{path:'$.result.report',field:'severity'}]}),h=harness([mapping],{})
+ await assert.rejects(h.service.ingest(h.actor,{scope:'SOC',mappingId:mapping.id,sourceId:'role-result:fixture',items:[{result:{id:'FIRST',report:'中文\n多行'}},{result:{id:'SECOND',report:'密'.repeat(2001)}}]}),{code:'teloa/invalid-input'})
+ assert.equal((await pool.query('select count(*)::int n from teloa_business_object_snapshots where owner_id=$1',[h.owner])).rows[0].n,0)
+ assert.equal((await pool.query('select count(*)::int n from teloa_business_sync_object_ids where owner_id=$1',[h.owner])).rows[0].n,0)
+ const external=mapSourceItem(mappingOf(),alertType,{alert_id:'OLD',sev:'  中文\n'+('长'.repeat(2100))+'  '},CAPTURED)
+ assert.ok(!('skipped' in external));assert.equal(external.snapshot.fields.find(field=>field.label==='严重度')!.value.length,2000);assert.ok(!external.snapshot.fields.find(field=>field.label==='严重度')!.value.includes('\n'))
 })

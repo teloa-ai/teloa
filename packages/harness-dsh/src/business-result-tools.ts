@@ -1,6 +1,6 @@
 import type {Context} from '@deepseek-ai/cordis'
 import {defineTool,type PreToolDecision,type ToolExecution} from '@deepseek-ai/dsh-tools'
-import {WorkError,businessDashboardLimits,businessScopeKeyRule,isBusinessScopeKey,isRecord,usesBusinessTaskResultContext,readBusinessDashboardPage,readBusinessWidgetDefinition,taskInput} from '@teloa/contract'
+import {WorkError,businessDashboardLimits,businessRecordValueLimits,businessScopeKeyRule,isBusinessScopeKey,isRecord,usesBusinessTaskResultContext,readBusinessDashboardPage,readBusinessWidgetDefinition,taskInput} from '@teloa/contract'
 import type {BusinessDashboardService,BusinessDefinitionSourceReader,BusinessSyncService,BusinessWidgetService} from '@teloa/backend'
 import type {TaskToolPolicyReader} from './task-tool-guard.ts'
 
@@ -24,6 +24,7 @@ export type BusinessResultToolsPorts={
 const recordItemsLimit=50
 /** 试算回给模型的行数上限：查询仍按完整执行边界跑，只截返回。 */
 const trialRows=50
+const resultValueGuide=`成果映射按完整原值校验：目标 title 最多 ${businessRecordValueLimits.title}，摘要 summary 最多 ${businessRecordValueLimits.summary}，每个对象业务字段最多 ${businessRecordValueLimits.field}（含同名 summary 业务字段），均按 UTF-16 代码单元计。超限整次拒绝且不写入，不自动截断。保留正文内部换行、回车和制表符，不接受首尾空白或其他控制字符。字段过长时精简结构化字段，完整报告另存工作成果后引用。`
 const keys:Record<ToolName,readonly string[]>={teloa_business_result_record:['scope','mappingId','items'],teloa_business_dashboard_read:['scope','dashboardId'],teloa_business_sql_trial:['scope','sql'],teloa_business_object_result_record:['mappingId','result']}
 const names=new Set<string>(businessResultToolNames)
 const forbidden=(message:string)=>new WorkError('teloa/forbidden',message)
@@ -123,10 +124,10 @@ export function registerBusinessResultTools(ctx:Context,ports:BusinessResultTool
  }
 
  const definitions=[
-  {name:businessResultToolNames[0],description:'把本次任务得出的业务成果按 AI 员工成果映射记为业务对象（本人范围，1–50 条）。只在绑定了业务的任务会话可用；条目字段按映射声明的路径取值。固定对象、员工和执行身份的映射须用 teloa_business_object_result_record，不接受批量条目自行提供宿主上下文。',parameters:{scope:{type:'string',required:true},mappingId:{type:'string',required:true},items:{type:'array',items:{type:'object',additionalProperties:true},required:true}}},
+  {name:businessResultToolNames[0],description:'把本次任务得出的业务成果按 AI 员工成果映射记为业务对象（本人范围，1–50 条）。只在绑定了业务的任务会话可用；条目字段按映射声明的路径取值。固定对象、员工和执行身份的映射须用 teloa_business_object_result_record，不接受批量条目自行提供宿主上下文。'+resultValueGuide,parameters:{scope:{type:'string',required:true},mappingId:{type:'string',required:true},items:{type:'array',description:resultValueGuide,items:{type:'object',additionalProperties:true},required:true}}},
   {name:businessResultToolNames[1],description:'读取本人一张业务看板的最近结果快照（不触发刷新）：看板声明、组件声明与各组件结果、更新时刻。',parameters:{scope:{type:'string',required:true},dashboardId:{type:'string',required:true}}},
   {name:businessResultToolNames[2],description:'在看板执行边界内试算一条只读 SQL（逻辑表为本范围对象类型），最多返回 50 行，不保存。SQL 不合规时返回 error.reason，据此修改后再试。',parameters:{scope:{type:'string',required:true},sql:{type:'string',required:true}}},
-  {name:businessResultToolNames[3],description:'记录当前任务固定业务对象的最终结构化成果。按本轮 businessContext.resultMappings 的目标字段及约束填写 result，不传本人、对象或版本；宿主绑定原对象与执行轮次。只有一个已授权映射时可省略 mappingId，由宿主确定；多个映射时从该目录选择 mappingId，不猜测标识，也不要求用户提供内部标识。成果映射必须是 role-result，以 $.object.id 为主键，用 $.result.<字段> 读取结果。每轮每映射只能提交一份最终成果；重放不重复统计，重新处理请发起新轮次。写入后看板在自动更新开启时持续汇总。',parameters:{mappingId:{type:'string'},result:{type:'object',additionalProperties:true,required:true}}},
+  {name:businessResultToolNames[3],description:'记录当前任务固定业务对象的最终结构化成果。按本轮 businessContext.resultMappings 的目标字段及约束填写 result，不传本人、对象或版本；宿主绑定原对象与执行轮次。只有一个已授权映射时可省略 mappingId，由宿主确定；多个映射时从该目录选择 mappingId，不猜测标识，也不要求用户提供内部标识。成果映射必须是 role-result，以 $.object.id 为主键，用 $.result.<字段> 读取结果。每轮每映射只能提交一份最终成果；重放不重复统计，重新处理请发起新轮次。写入后看板在自动更新开启时持续汇总。'+resultValueGuide,parameters:{mappingId:{type:'string'},result:{type:'object',description:resultValueGuide+' result 整体 JSON 编码最多 65536 UTF-8 字节。',additionalProperties:true,required:true}}},
  ] as const
  // 工具参数各不相同：参数由 argumentsOf 严格核对，固定对象工具的 scope 由宿主派生；运行时 schema 原样注册。
  for(const definition of definitions)ctx.tools.register(defineTool({...definition,parameters:definition.parameters as {readonly scope:{readonly type:'string';readonly required:true}},output:{schema:{type:'string'} as const,render:(_args:unknown,value:string)=>[{type:'text' as const,text:value}]},execute:async(args,exec)=>{

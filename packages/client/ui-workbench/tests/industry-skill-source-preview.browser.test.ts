@@ -39,14 +39,14 @@ test('行业包技能原文预览不冒充安装状态，本地与公共引用�
  for(const id of ['local-0','public-skill']){
   await page.getByRole('option',{name:new RegExp('^'+id+' ')}).click()
   assert.equal(await page.locator('pre').textContent(),'---\nname: investigation\ndescription: 固定调查方法\n---\n只读调查原文。')
-  await page.getByText('技能原文已读取。本页展示包内内容；当前安装与可用状态请到“市场 → 我的应用与技能”核对，绑定情况请到“员工 → 能力”查看。',{exact:true}).waitFor()
+  await page.getByText('技能原文已读取。本页展示包内内容；当前安装与可用状态请到“市场 > 我的应用与技能”核对，绑定情况请到“员工 > 能力”查看。',{exact:true}).waitFor()
   assert.equal(await page.getByText(/尚未安装|格式、依赖和运行条件还没检查/).count(),0)
  }
  assert.deepEqual(await page.evaluate(()=>(window as any).skillSourceFixture.inspections.filter((row:any)=>row.definition?.kind==='skill').map((row:any)=>row.state)),Array(10).fill('pending'),'预览不能跳过宿主核验或升级为运行就绪')
  await page.evaluate(()=>(window as any).skillSourceFixture.setLocale('en'))
  await page.getByRole('option').filter({hasText:'Source preview available'}).first().waitFor()
  assert.equal(await page.getByRole('option').filter({hasText:'Source preview available'}).count(),10)
- await page.getByText(/Check Market → My apps and skills/).waitFor()
+ await page.getByText(/Check Market > My apps and skills/).waitFor()
  await page.evaluate(()=>{(window as any).skillSourceFixture.setLocale('zh-CN');(window as any).skillSourceFixture.setOther(true)})
  await page.getByRole('status').getByText(/已读取：1 项可预览，2 项需修正，1 项引用待核对，1 项待专用核验/).waitFor()
  assert.equal(await page.getByRole('option').filter({hasText:'原文可预览'}).count(),0)

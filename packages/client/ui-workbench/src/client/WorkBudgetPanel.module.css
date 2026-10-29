@@ -1,0 +1,11 @@
+.panel{min-width:0;overflow-wrap:anywhere}
+.panel>summary{cursor:pointer;font-size:var(--teloa-font-control);font-weight:var(--teloa-weight-medium)}
+.usage{display:grid;gap:12px;margin:14px 0 18px;min-width:0}
+.usage>div{min-width:0;display:grid;grid-template-columns:minmax(130px,180px) minmax(0,1fr);gap:8px 16px;line-height:1.7}
+.usage dt{font-size:var(--teloa-font-control);font-weight:var(--teloa-weight-medium)}
+.usage dd{margin:0;color:var(--teloa-muted);font-size:var(--teloa-font-control);font-variant-numeric:tabular-nums}
+.hint{color:var(--teloa-muted);font-size:var(--teloa-font-caption)!important;line-height:1.7!important;margin:5px 0!important}
+.confirm{display:flex!important;flex-direction:row!important;align-items:flex-start;gap:8px!important;line-height:1.7}
+.confirm input{flex:none;margin-top:4px}
+.panel :focus-visible{outline:2px solid var(--teloa-focus);outline-offset:2px}
+@media(max-width:620px){.usage>div{grid-template-columns:minmax(0,1fr);gap:3px}}

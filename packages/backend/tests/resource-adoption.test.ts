@@ -40,7 +40,7 @@ test('16项旧业务资料经本人显式准备/采用后可在新业务使用�
  const newActor={...w.human,kind:'agent' as const,scopeIds:['business-new']},contents=await w.service.executionKnowledge(newActor,['business-new'],resources.map(row=>row.id))
  assert.equal(contents.length,16);assert.ok(contents.every(row=>row.text.includes('告警先核对')))
  assert.deepEqual((await w.retrieval.status(w.human,embedder.profileHash)).items.map(row=>row.resourceId),[old[0]!.id],'不复用或改写原索引')
- const fixed=await w.adopted.read(resources[0]!.sourceId,resources[0]!.sourceVersion,{actor:newActor,scopeIds:['business-new']});assert.match(fixed.source,/resource:.*@1 ← market:fixed-soc/)
+ const fixed=await w.adopted.read(resources[0]!.sourceId,resources[0]!.sourceVersion,{actor:newActor,scopeIds:['business-new']});assert.match(fixed.source,/resource:.*@1 来源：market:fixed-soc/)
  await w.service.withdraw(w.human,{resourceId:old[0]!.id,expectedVersion:old[0]!.version});w.unavailable.add(old[0]!.sourceId)
  assert.equal((await w.service.executionKnowledge(newActor,['business-new'],resources.map(row=>row.id))).length,16,'采用固定版本不跟随原资料撤回或来源变化')
  await w.retrieval.enroll(w.human,{sourceIds:[resources[0]!.sourceId]});await w.retrieval.buildPending(w.human,embedder,signal())

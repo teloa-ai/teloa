@@ -1,7 +1,7 @@
 import {createHash} from 'node:crypto'
 import {isDeepStrictEqual} from 'node:util'
 import type {Pool,PoolClient} from 'pg'
-import {WorkError,readWorkLineage,readWorkSource,type WorkLineage,type WorkSource} from '@teloa/contract'
+import {WorkError,readWorkLineage,readWorkSource,type WorkLineage,type WorkSource,type WorkBudgetPolicy} from '@teloa/contract'
 import {readStoredTask} from './tasks.ts'
 import {conversationTaskRequest,type ConversationTaskIdentity} from './conversation-task-request.ts'
 import {defaultWorkBudgetPolicy} from './work-budget.ts'
@@ -137,7 +137,7 @@ export class WorkLineageService{
   }catch{throw corrupt()}
  }
  private fresh(){const id=this.identity.id();if(!uuid(id))throw corrupt();return id.toLowerCase()}
- private async newBudget(db:Database,owner:string,now:string,workTokenLimit?:number){const id=this.fresh();await db.query('insert into teloa_work_budget_accounts(id,owner_id,created_at,policy) values($1,$2,$3,$4)',[id,owner,now,workTokenLimit===undefined?null:JSON.stringify({...defaultWorkBudgetPolicy,maxTokens:workTokenLimit})]);return id}
+ private async newBudget(db:Database,owner:string,now:string,policy?:WorkBudgetPolicy){const id=this.fresh();await db.query('insert into teloa_work_budget_accounts(id,owner_id,created_at,policy) values($1,$2,$3,$4)',[id,owner,now,policy===undefined?null:JSON.stringify(policy)]);return id}
  private async newControl(db:Database,owner:string,kind:'round'|'definition',root:string|null,budget:string,now:string){
   const id=this.fresh();await db.query("insert into teloa_work_controls(id,owner_id,kind,root_task_id,budget_account_id,state,generation,created_at,updated_at) values($1,$2,$3,$4,$5,'active',1,$6,$6)",[id,owner,kind,root,budget,now]);return id
  }
@@ -150,7 +150,7 @@ export class WorkLineageService{
   // 额度来自已锁定的原生批准父请求；公开 Task 输入与调用方都不能直接提供新上限。
   const fixed=conversation?await conversationTaskRequest(client,owner,conversation):undefined
   if(fixed&&(source.kind!=='owner-task'||fixed.task.requestId!==task.request_id))throw forbidden()
-  const workTokenLimit=fixed?.request.workTokenLimit
+  const workTokenLimit=fixed?.request.workTokenLimit,policy=fixed?.request.workBudgetPolicy??(workTokenLimit===undefined?undefined:{...defaultWorkBudgetPolicy,maxTokens:workTokenLimit})
   let lineage:WorkLineage
   const now=this.identity.now();if(!Number.isFinite(Date.parse(now)))throw corrupt()
   if(source.kind==='owner-task'||source.kind==='integration'||source.kind==='plan-occurrence'){
@@ -163,7 +163,7 @@ export class WorkLineageService{
     const binding=(await client.query('select * from teloa_work_plan_bindings where owner_id=$1 and plan_id=$2 and config_version=$3',[owner,definition.planId,definition.definitionVersion])).rows[0]
     if(binding){const control=await this.control(client,owner,binding.definition_control_id);if(control.kind!=='definition'||control.budget_account_id!==binding.budget_account_id||!stamp(binding.created_at))throw corrupt();budget=binding.budget_account_id;definitionControl=binding.definition_control_id}
     else{budget=await this.newBudget(client,owner,now);definitionControl=await this.newControl(client,owner,'definition',null,budget,now);await client.query('insert into teloa_work_plan_bindings(owner_id,plan_id,config_version,definition_control_id,budget_account_id,created_at) values($1,$2,$3,$4,$5,$6)',[owner,definition.planId,definition.definitionVersion,definitionControl,budget,now])}
-   }else budget=await this.newBudget(client,owner,now,workTokenLimit)
+   }else budget=await this.newBudget(client,owner,now,policy)
    const round=await this.newControl(client,owner,'round',task.id,budget,now)
    lineage={schema:'teloa.work-lineage/v1',ownerId:owner,rootTaskId:task.id,definition,parentRunId:null,definitionControlId:definitionControl,roundControlId:round,controlGeneration:1,budgetAccountId:budget}
   }else{

@@ -34,7 +34,7 @@ test('普通目标默认保存通用任务草稿，同调用重放原ID且不交
  assert.equal((await e.call('teloa_task_configuration_create',{...args,business:'不存在的业务'})).isError,true)
  assert.equal((await e.call('teloa_task_configuration_create',{...args,scope:'SOC'})).isError,true)
  const description=e.ctx.tools.schemas(e.agent).find(row=>row.name==='teloa_task_configuration_create')!.description
- assert.match(description,/teloa_work_directory → teloa_work_dispatch/)
+ assert.match(description,/先读取 teloa_work_directory，再通过 teloa_work_dispatch/)
  assert.match(description,/不能复用本草稿.*批准后会创建并开始工作/)
 })
 test('创建回包丢后群改名归档或任务改名，原调用恢复不可变v1且选择变化拒绝',async t=>{

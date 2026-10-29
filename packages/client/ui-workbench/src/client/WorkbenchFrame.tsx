@@ -1,4 +1,5 @@
 import {EmployeeApiWorkPanel} from './EmployeeApiWorkPanel.js'
+import {ConversationBudgetSettings} from './ConversationBudgetSettings.js'
 import {createRoleSkillTitleReader} from './capability-skill-runtime.js'
 import {createIndustryTeamMaterials} from './industry-team-materials.js'
 import {findIndustryTeam,industryTeamSeed,type IndustryTeamSeed} from './industry-team.js'
@@ -2596,6 +2597,7 @@ export function WorkbenchFrame({assistantActivity,assistantChat,groupWorkLinks,e
             <button type="button" disabled={recordInsertBusy||dailyBusy||!businessReady} onClick={()=>requestDaily(recordPreparation.reference.scope,recordPreparation.title,true,recordPreparation.reference)}>{t('business.records.newForReference')}</button>
             <button type="button" disabled={recordInsertBusy} onClick={()=>setRecordPreparation(undefined)}>{t('business.records.cancel')}</button></div>
           </section>}
+          {!builderVisible&&(conversationVisible||state.view==='home'&&homeSessionId===current)&&current&&!contextRole&&!contextTask&&<ConversationBudgetSettings key={'new-work-budget:'+current} sessionId={current} api={workControlApi.newWorkSettings}/>}
           <AssistantConversationTitleContext.Provider key="native-conversation" value={assistantCurrent&&current?{sessionId:current,name:assistantName}:undefined}><div className={clsx(css.nativeConversation,(!nativeMainVisible||nativePanelVisible)&&css.hidden)} aria-label={t('frame.nativeConversationAria')}>{renderSlot('teloa.conversation',{
             content:renderSlot('main',{}, {entryKey:'conversation'}),
             openTaskForm:(goal,scope)=>{if(!current)return;setHomeTaskGroupId(null);setHomeTaskSourceSession(current);setHomeTaskDrafts(drafts=>drafts[current]?drafts:{...drafts,[current]:{title:'',goal,scope,skills:[],groupId:null}});setHomeCreation('task')},

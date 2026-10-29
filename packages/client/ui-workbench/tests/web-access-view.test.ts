@@ -171,6 +171,7 @@ test('现有搜索授权回显勾选；新增打开网页按完整集合保存�
  const app=mountComponent('RoleToolGrants.tsx','RoleToolGrants',{role:pausedEmployee(),api,resources,changed:()=>{}})
  await app.flush()
  assert.ok(app.find(el=>el.type==='li'&&app.contentOf(el)===zh('roleGrant.web.search')),'已授权清单应显示「搜索网页」而不是空白')
+ assert.ok(!app.wholeContent().includes(zh('roleGrant.pauseHint')),'已暂停且可编辑时不再提示先暂停员工')
  const searchLabel=app.find(el=>el.type==='label'&&app.contentOf(el).includes(zh('roleGrant.web.search'))&&app.contentOf(el).includes(zh('roleGrant.web.searchHint')))
  const searchInput=searchLabel.props.children[0]
  assert.equal(searchInput.props.checked,true,'现有搜索网页授权必须回显')

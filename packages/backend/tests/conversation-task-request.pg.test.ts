@@ -1,6 +1,7 @@
 import test,{before,after} from 'node:test'
 import assert from 'node:assert/strict'
 import {randomUUID} from 'node:crypto'
+import type {WorkBudgetPolicy} from '@teloa/contract'
 import {Pool,stopTestContainer} from './postgres-test-lifecycle.ts'
 import {PostgreSqlContainer,type StartedPostgreSqlContainer} from '@testcontainers/postgresql'
 import {RoleService,initializeRoles} from '../src/work/roles.ts'
@@ -15,9 +16,9 @@ let container:StartedPostgreSqlContainer,pool:Pool,locks:Pool
 const identity={id:randomUUID,now:()=>new Date().toISOString()}
 before(async()=>{container=await new PostgreSqlContainer('postgres:17-alpine').start();pool=new Pool({connectionString:container.getConnectionUri(),max:1,connectionTimeoutMillis:1000,statement_timeout:4000});locks=new Pool({connectionString:container.getConnectionUri(),max:1});await initializeRoles(pool);await initializeTasks(pool);await initializeConversationWork(pool);await initializeBusinessData(pool);await initializeBusinessTasks(pool);await initializeWorkBudgets(pool)})
 after(async()=>{await locks?.end();await pool?.end();await stopTestContainer(container)})
-async function fixture(object=false,workTokenLimit?:number,reserve=true){
+async function fixture(object=false,workTokenLimit?:number|null,reserve=true,workBudgetPolicy?:WorkBudgetPolicy){
  const owner=randomUUID(),sessionId='origin-'+randomUUID(),role=await new RoleService(pool,identity).create(owner,{requestId:randomUUID(),fields:{name:'固定同事',kind:'employee',scopes:['SOC'],duty:'调查',dataScope:'资料',executionScope:'只读',skills:[],knowledge:[],responsibility:testRoleResponsibility}})
- const sourceText='原始指令：保留  空格与\n换行',request={requestId:randomUUID(),sessionId,messageId:'original',messageSeq:1,kind:'task' as const,...(workTokenLimit===undefined?{}:{workTokenLimit}),scope:'SOC',title:'固定目标',goal:'检查业务原件',sourceText,roleId:role.id,expectedRoleVersion:role.version}
+ const sourceText='原始指令：保留  空格与\n换行',request={requestId:randomUUID(),sessionId,messageId:'original',messageSeq:1,kind:'task' as const,...(workTokenLimit===undefined?{}:{workTokenLimit}),...(workBudgetPolicy===undefined?{}:{workBudgetPolicy}),scope:'SOC',title:'固定目标',goal:'检查业务原件',sourceText,roleId:role.id,expectedRoleVersion:role.version}
  let reference:undefined|{scope:string;type:string;id:string;version:number;snapshotHash:string}
  if(object){const snapshot={scope:'SOC',type:'alert',id:'object',version:1,title:'固定记录',source:'fixture',observedAt:identity.now(),receivedAt:identity.now(),quality:'complete' as const,summary:'原摘要',fields:[]},page=await new BusinessDataService(pool,{id:'test',scopes:['SOC'],query:async()=>({schema:'teloa.data-source-page/v1',sourceId:'test',scope:'SOC',capturedAt:identity.now(),items:[snapshot]})}).query({ownerId:owner,scopeIds:['SOC']},{scope:'SOC',limit:10}),item=page.items[0]!;reference={scope:item.scope,type:item.type,id:item.id,version:item.version,snapshotHash:item.snapshotHash}}
  const service=new ConversationWorkService(pool,identity.now,async()=>({ownerId:owner,sessionId,status:'ready',submitted:false}),undefined,undefined,locks)
@@ -138,7 +139,7 @@ test('初始6M预算与新Task创建失败一起回滚；非法额度与汇报�
  const broken=new TaskService(pool,{...identity,id:()=>{if(++ids===3)throw Error('controlled failure after budget insert');return randomUUID()}})
  await assert.rejects(broken.createForConversation(f.owner,f.parent),/controlled failure after budget insert/)
  for(const table of ['teloa_tasks','teloa_work_budget_accounts','teloa_work_controls'])assert.equal((await pool.query('select count(*)::int n from '+table+' where owner_id=$1',[f.owner])).rows[0].n,0,table)
- for(const workTokenLimit of [0,-1,1.5,Number.MAX_SAFE_INTEGER+1,'6000000',null])await assert.rejects(f.service.reserve(f.owner,{...f.request,requestId:randomUUID(),workTokenLimit}),{code:'teloa/invalid-input'})
+ for(const workTokenLimit of [0,-1,1.5,Number.MAX_SAFE_INTEGER+1,'6000000'])await assert.rejects(f.service.reserve(f.owner,{...f.request,requestId:randomUUID(),workTokenLimit}),{code:'teloa/invalid-input'})
  await assert.rejects(f.service.reserve(f.owner,{...f.request,requestId:randomUUID(),kind:'report',roleId:undefined,expectedRoleVersion:undefined}),{code:'teloa/invalid-input'})
  assert.equal((await pool.query('select count(*)::int n from teloa_conversation_work_requests where owner_id=$1',[f.owner])).rows[0].n,1)
  await f.tasks.createForConversation(f.owner,f.parent)
@@ -157,4 +158,21 @@ test('并发同父请求不同额度只允许一份原批准意图，失败方�
   assert.equal((await new WorkBudgetService(pool,identity).read(f.owner,{budgetAccountId:lineage.budgetAccountId})).policy.maxTokens,accepted)
   assert.equal((await pool.query('select count(*)::int n from teloa_work_budget_accounts where owner_id=$1',[f.owner])).rows[0].n,1)
  }finally{await concurrent.end()}
+})
+
+
+for(const object of [false,true])test('完整'+(object?'固定对象':'员工')+'新工作额度或显式token不限从父spec原子创建，互斥/变参拒绝且本人有限总额仍适用',async()=>{
+ const policies:WorkBudgetPolicy[]=[{maxTokens:6_000_000,maxGoalRounds:12,maxConcurrent:2,maxElapsedMs:120_000,maxRetries:0,stagnationRounds:4,money:null},{...defaultWorkBudgetPolicy,maxTokens:null,maxGoalRounds:null,maxConcurrent:null,maxElapsedMs:null}]
+ for(const policy of policies){
+  const f=await fixture(object,undefined,true,policy),input={...f.request,...(f.reference?{reference:f.reference}:{})}
+  assert.deepEqual((await f.service.reserve(f.owner,input)).workBudgetPolicy,policy)
+  await assert.rejects(f.service.reserve(f.owner,{...input,workTokenLimit:null}),{code:'teloa/invalid-input'})
+  await assert.rejects(f.service.reserve(f.owner,{...input,workBudgetPolicy:{...policy,maxRetries:policy.maxRetries+1}}),{code:'teloa/conflict'})
+  const task=object?(await f.business.createForConversation(f.actor,f.parent)).task:await f.tasks.createForConversation(f.owner,f.parent),lineage=await new WorkLineageService(pool,identity).read(f.owner,{taskId:task.id});assert.ok(lineage)
+  const budgets=new WorkBudgetService(pool,identity);assert.deepEqual((await budgets.read(f.owner,{budgetAccountId:lineage.budgetAccountId})).policy,policy)
+  await assert.rejects(budgets.reserve(f.owner,{budgetAccountId:lineage.budgetAccountId,controlGeneration:1,modelRequestId:randomUUID(),kind:'goal',tokens:9_000_000,rounds:0}),{code:'teloa/budget-exhausted'})
+ }
+ const f=await fixture(object,null),task=object?(await f.business.createForConversation(f.actor,f.parent)).task:await f.tasks.createForConversation(f.owner,f.parent),lineage=await new WorkLineageService(pool,identity).read(f.owner,{taskId:task.id});assert.ok(lineage)
+ assert.deepEqual((await new WorkBudgetService(pool,identity).read(f.owner,{budgetAccountId:lineage.budgetAccountId})).policy,{...defaultWorkBudgetPolicy,maxTokens:null})
+ assert.equal((await f.service.get(f.owner,{sessionId:f.parent.sessionId,requestId:f.request.requestId}))!.workTokenLimit,null)
 })

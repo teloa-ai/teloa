@@ -7,7 +7,7 @@ import type { IndustryManifest } from './industry-manifest.ts'
 
 export type IndustryDefinition={kind:'skill';text:string;files:{path:string;hash:string;size:number}[]}|IndustryPlanDefinition|{kind:'role';fields:RoleTemplateDefinition;ignoredModelSelection?:boolean}|{kind:'knowledge';text:string}|{kind:'work-template';manifest:Extract<MarketManifest,{format:'teloa.work-template/v1'}>}|{kind:'data-source';definition:IndustryDataSourceDefinition}|{kind:'mcp';definition:IndustryMcpConnectionDefinition}|{kind:'plugin';definition:IndustryPluginDefinition}|{kind:'object-type';definition:BusinessObjectTypeDefinition}|{kind:'business-view';definition:BusinessViewDefinition}|{kind:'business-action';definition:BusinessActionDefinition}|{kind:'business-configuration';definition:BusinessDashboardResourceDefinition}
 export type IndustryInspection={id:string;state:'parsed'|'invalid'|'pending'|'missing'|'unresolved';message:string;definition?:IndustryDefinition}
-export const industrySkillPreviewMessage='技能原文已读取。本页展示包内内容；当前安装与可用状态请到“市场 → 我的应用与技能”核对，绑定情况请到“员工 → 能力”查看。'
+export const industrySkillPreviewMessage='技能原文已读取。本页展示包内内容；当前安装与可用状态请到“市场 > 我的应用与技能”核对，绑定情况请到“员工 > 能力”查看。'
 /** 原文可读与宿主安装核验是两件事；不把静态预览升级成安装或运行就绪。 */
 export function isIndustrySkillPreview(inspection:Pick<IndustryInspection,'state'>&Partial<Pick<IndustryInspection,'definition'>>|undefined):boolean{
  return inspection?.state==='pending'&&inspection.definition?.kind==='skill'

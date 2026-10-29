@@ -6,6 +6,7 @@ import type {GoalObservationContext} from '@teloa/contract'
 import {observeTaskRunTimeline} from './task-run-observation.ts'
 import {readSessionEvents} from './session-events.ts'
 import {referenceReadTool} from './role-tool-grants.ts'
+import {isDeliveryReviewInProgress} from './task-delivery-review.ts'
 
 type Counts={requested:number;returned:number;succeeded:number;failed:number;pending:number}
 type Reason='unobserved-request'|'invalid-events'|'unverified-mcp-name'|'invalid-tool-pair'|'unproven-ptc'|'child-sessions-excluded'|'unreturned-at-end'|'changed-during-read'|'outside-active-run'
@@ -92,6 +93,9 @@ export function leaseTaskRunToolUsage(agent:Agent,run:Pick<TaskRun,'id'|'session
  const removeStep=agent.ctx.on('agent/pre-step',async(payload,next)=>{
   const decision=await next()
   if(decision.kind==='reject'||payload.agent!==agent||!active)return decision
+  // 复核只调用内部回执工具，不产生新的 MCP 请求。保留进入复核前的同一计数快照，
+  // 避免官方 runtime-context 更新夹入 R1 尾段；R2 仍严格拒绝任何未知历史节点。
+  if(isDeliveryReviewInProgress(agent))return decision
   snapshot=undefined
   if(agent.session!==session||session.id!==run.sessionId)return decision
   const events=readSessionEvents(session)

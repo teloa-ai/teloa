@@ -11,7 +11,8 @@ const fixture=`import React from 'react';import{createRoot}from'react-dom/client
 const snapshot={locale:'en',dshLocale:'en',revision:1},runtime={t:(key,params)=>translateMessage('en',key,params),subscribe:()=>()=>{},getSnapshot:()=>snapshot},at='2026-10-16T00:00:00Z',f=window.planWorkLayout={calls:[],changes:[],openConfiguration:()=>focusObjectAnchor(document.body,'plan-work','note')};
 const plan={id:'plan-original',ownerId:'local:owner',roleId:'role-original',roleVersion:3,title:'Original plan',goal:'Original goal',dataScope:'Original source scope',delivery:'Original output',scope:'general',state:document.documentElement.dataset.mode==='active'?'active':'paused',version:4,trigger:{kind:'schedule',cadence:'daily',weekday:1,time:'09:00',timezone:'Asia/Singapore'},createdAt:at,updatedAt:at};
 if(document.documentElement.dataset.mode==='business'){plan.scope='SOC';plan.workDefinition={schema:'teloa.plan-work/v3',definitionVersion:2,triggers:[{kind:'local-event',eventKind:'business-object-version',sourceRef:{kind:'business-object',scope:'SOC',type:'lead-record',id:'original-key'},coalesce:'latest'}],completion:{kind:'manual'},budget:{maxGoalRounds:32,maxTokens:2000000,maxConcurrent:1,maxElapsedMs:21600000,maxRetries:3,stagnationRounds:3,money:null},safeRecovery:false}};
-if(document.documentElement.dataset.mode==='owner'){plan.roleId=null;plan.roleVersion=null;plan.executor={kind:'owner',grantId:'plan-original',grantVersion:2};plan.workDefinition={schema:'teloa.plan-work/v3',definitionVersion:2,authorization:plan.executor,triggers:[{kind:'schedule',schedule:plan.trigger}],completion:{kind:'manual'},budget:{maxGoalRounds:9,maxTokens:65536,maxConcurrent:1,maxElapsedMs:300000,maxRetries:1,stagnationRounds:3,money:null},safeRecovery:false}};
+if(document.documentElement.dataset.mode.startsWith('owner')){plan.roleId=null;plan.roleVersion=null;plan.executor={kind:'owner',grantId:'plan-original',grantVersion:2};plan.workDefinition={schema:'teloa.plan-work/v3',definitionVersion:2,authorization:plan.executor,triggers:[{kind:'schedule',schedule:plan.trigger}],completion:{kind:'manual'},budget:{maxGoalRounds:9,maxTokens:65536,maxConcurrent:1,maxElapsedMs:300000,maxRetries:1,stagnationRounds:3,money:null},safeRecovery:false}};
+if(document.documentElement.dataset.mode==='owner-unlimited')for(const key of ['maxGoalRounds','maxTokens','maxConcurrent','maxElapsedMs'])plan.workDefinition.budget[key]=null;
 const role={storage:'persistent',id:plan.roleId,version:3,state:'active',kind:'employee',scopes:[plan.scope],workAccess:{roleId:plan.roleId,roleVersion:3,delegations:[{id:'delegation-original',version:2,roleId:plan.roleId,roleVersion:3,scope:plan.scope,state:'active',allowedTools:['read'],knowledgeIds:[]}]}};
 const api={configureWorkConfirmed:async(...args)=>{f.calls.push(args);throw Object.assign(Error('Result unconfirmed'),{code:'teloa/network'})}};
 createRoot(document.getElementById('root')).render(<I18nProvider runtime={runtime}><section className={css.page}><PlanWorkSettings plan={plan} role={plan.executor?undefined:role} api={api} resources={undefined} groups={[{id:'group-original',name:'Original group',scope:'general'}]} changed={row=>f.changes.push(row)} openRole={()=>{}}/></section></I18nProvider>);`
@@ -29,8 +30,8 @@ test('本人计划配置使用原本人日程授权，不要求虚构员工或�
  const edit=page.getByRole('button',{name:'Edit work configuration',exact:true})
  await edit.click()
  assert.equal(await page.getByText('Configure role delegation',{exact:true}).count(),0)
- assert.equal(await page.getByRole('combobox').count(),1)
- const trigger=page.getByRole('combobox')
+ assert.equal(await page.getByRole('combobox').count(),5,'日程与四项资源限制方式均可核对')
+ const trigger=page.getByRole('combobox',{name:'Wake when',exact:true})
  assert.equal(await trigger.locator('option').count(),1)
  await page.getByRole('textbox',{name:'Work goal',exact:true}).fill('Keep my owner plan goal')
  const retries=page.getByRole('spinbutton',{name:'Retry limit per operation',exact:true})
@@ -47,4 +48,14 @@ test('本人计划配置使用原本人日程授权，不要求虚构员工或�
  assert.equal(calls[0]?.[1].budget.maxRetries,0)
  assert.deepEqual(calls[0]?.[1].triggers,[{kind:'schedule',schedule:{kind:'schedule',cadence:'daily',weekday:1,time:'09:00',timezone:'Asia/Singapore'}}])
  assert.deepEqual(await page.evaluate(()=>window.planWorkLayout.changes),[])
+})
+
+
+test('原有长期定义的四项不限不被默认数字覆盖，重试仍有限；未知回执保留表单',async t=>{
+ const page=await mount(t,'owner-unlimited');await page.getByRole('button',{name:'Edit work configuration',exact:true}).click()
+ assert.equal(await page.getByRole('spinbutton').count(),2)
+ for(const resource of ['Total token limit','Total round limit','Concurrent work limit','Model time limit per 24 hours (minutes)'])assert.equal(await page.getByRole('combobox',{name:'Limit mode for '+resource,exact:true}).inputValue(),'unlimited')
+ const retries=page.getByRole('spinbutton',{name:'Retry limit per operation',exact:true});await retries.fill('');assert.equal(await retries.getAttribute('aria-invalid'),'true');await retries.fill('0')
+ await page.getByLabel('I confirm these schedule, completion policy, and cumulative limits within my existing authorization.',{exact:true}).check();await page.getByRole('button',{name:'Confirm and save definition',exact:true}).click();await page.getByRole('alert').waitFor()
+ const calls=await page.evaluate(()=>window.planWorkLayout.calls) as Array<[unknown,{budget:Record<string,unknown>}]>;assert.equal(calls.length,1);for(const key of ['maxGoalRounds','maxTokens','maxConcurrent','maxElapsedMs'])assert.equal(calls[0]?.[1].budget[key],null);assert.equal(calls[0]?.[1].budget.maxRetries,0);assert.deepEqual(await page.evaluate(()=>window.planWorkLayout.changes),[]);assert.equal(await page.getByRole('status').count(),0)
 })

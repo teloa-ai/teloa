@@ -96,6 +96,34 @@ async function runtime(){
  return {ctx,agent}
 }
 
+for(const snapshotBeforeWait of [false,true])test('后台状态等待关联读取期间新 Job 登记并结束初轮，不得把旧 Job 快照当作丢失：'+(snapshotBeforeWait?'关联快照早于登记':'关联快照晚于登记'),async t=>{
+ const {ctx,agent}=await runtime(),stored=linkStore()
+ let armed=false,entered!:()=>void,release!:()=>void,finish!:(outcome:JobOutcome)=>void
+ const reading=new Promise<void>(resolve=>{entered=resolve}),gate=new Promise<void>(resolve=>{release=resolve})
+ const links:TaskRunRuntimeLinks={put:stored.put,list:async input=>{
+  if(!armed)return stored.list(input)
+  armed=false
+  const snapshot=snapshotBeforeWait?await stored.list(input):undefined
+  entered();await gate
+  return snapshot??stored.list(input)
+ }}
+ const run={id:'run',sessionId:agent.id,nativeRequestId:'native'},background=createTaskRunBackground(ctx,links)
+ t.after(async()=>{release();finish?.({status:'killed'});background.dispose();await ctx.fiber.dispose()})
+ await background.start(run)
+ agent.session.append('turn/start',{turn:0})
+ agent.session.append('user/message',createUserMessage({content:[],source:{kind:'user',rpcId:brandString<SessionRequestId>('native')}}),{surfaceOp:'append'})
+ armed=true
+ const observing=background.state(run)
+ await reading
+ const jobId=ctx.jobs.start({kind:'bash',label:'created during journal read',owner:agent.id,run:()=>({done:new Promise<JobOutcome>(resolve=>{finish=resolve}),cancel:()=>{}})})
+ agent.session.append('turn/end',{turn:0,reason:{kind:'completed'}})
+ await background.flush(run.sessionId)
+ assert.equal(ctx.jobs.get(jobId,agent.id).status,'running')
+ assert.equal(agent.status,'idle')
+ release()
+ assert.deepEqual(await observing,{outstanding:true,interrupted:false})
+})
+
 test('官方 job 尚在运行或停止中时，初始轮完成不能把业务 Run 交付',async t=>{
  const {ctx,agent}=await runtime()
  let finish!:(outcome:JobOutcome)=>void

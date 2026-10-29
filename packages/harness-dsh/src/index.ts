@@ -1,4 +1,6 @@
 import {ArtifactService,taskArtifactSource,taskArtifactSessions,ArtifactRevisionRequestService,MethodReuseService} from '@teloa/backend'
+import {ConversationBudgetSettingsService} from '@teloa/backend'
+import {captureOwnerRunOrchestration} from './owner-run-orchestration.ts'
 import {createMethodReuseMessageReader} from './method-reuse-native-source.ts'
 import {assertOwnerReviewMessage,readOwnerReviewMessage} from './conversation-work-instruction.ts'
 import {createOwnerPlanHost} from './owner-plan-host.ts'
@@ -331,7 +333,7 @@ export const name='teloa-harness-dsh'
 export const inject=['goals','sessionProjections','systemPrompt','teloaNativeInput','llm','connection','sessions','sessionController','teloaModelCatalog','workspaceRegistry','storageDomain','workingDirectory','tools','skills','agentPresets','agents','subagents','agentTeams','sessionPersistence','jobs','approval','permissionPresets','sandboxPolicy','tokenMeter','fs','fileReferences','attachments','webServer','settings','credentials']
 const projectRoot=fileURLToPath(new URL('../../../',import.meta.url))
 const owner='local:teloa-owner'
-const conversationWorkContextEndpoints=['conversations/assistant','work-context/read','work-context/set','work-context/eligibility','work-requests/list','work-requests/status','work-requests/stop','work-requests/resume'] as const
+const conversationWorkContextEndpoints=['conversations/assistant','work-context/read','work-context/set','work-context/eligibility','conversation-budgets/read','conversation-budgets/configure','work-requests/list','work-requests/status','work-requests/stop','work-requests/resume'] as const
 export const handoffEndpoints=['handoffs/list','handoffs/resolve','handoffs/change'] as const
 const endpointSet=new Set([...externalHarnessEndpoints,...businessWorkEndpoints,...groupWorkLinkEndpoints,...conversationWorkContextEndpoints,...projectEndpoints,...projectContextEndpoints,...projectRuntimeEndpoints,...securityActionEndpoints,...businessSpaceEndpoints,...businessScopeEndpoints,...businessDataEndpoints,...businessBuilderEndpoints,...businessDashboardResourceEndpoints,...businessImportEndpoints,...businessResponsibilityEndpoints,...businessDefinitionEndpoints,businessDashboardShareEndpoint,...businessDashboardEndpoints,...pageCreateDraftEndpoints,...skillEditEndpoints,...businessTaskEndpoints,...githubSourceEndpoints,...marketPluginInstallationEndpoints,...skillUpgradePreviewEndpoints,...skillSelectionEndpoints,...skillAvailabilityEndpoints,...skillInstallationEndpoints,...industryPlanEndpoints,...industryTaskEndpoints,...industryRoleEndpoints,...industryKnowledgeEndpoints,...industryDataSourceEndpoints,...industryExecutionToolEndpoints,...industryMcpConnectionEndpoints,...connectorEndpoints,...industryPluginEndpoints,...managedMcpConnectionEndpoints,...industryLoadEndpoints,...industryPrepareEndpoints,'tasks/attention','work-attention',...planScheduleEndpoints,...planEndpoints,...marketContentEndpoints,...marketCatalogEndpoints,...roleToolGrantEndpoints,...webAccessEndpoints,...taskMaterialEndpoints,...taskRunEndpoints,...taskRunFlowEndpoints,'tasks/context','object-conversations/list','object-conversations/session','object-conversations/change','conversations/create','conversations/read','conversations/ensure','conversations/adopt','conversations/list','conversations/search','session-capabilities/read','copies/create','copies/list','copies/resolve','copies/release','capabilities/read','capabilities/home-skills','resource-use/list','roles/lifecycle',...handoffEndpoints,...resourceEndpoints.filter(endpoint=>!['resources/register-local-material','resources/read-content','resources/prepare-adoption'].includes(endpoint)),...artifactEndpoints,...artifactFileEndpoints,...roleEndpoints,...roleMemoryEndpoints,...roleDailyLogEndpoints,...groupEndpoints,...groupAgentGrantEndpoints,...groupTaskEndpoints,...groupAttachmentEndpoints,...taskEndpoints.filter(endpoint=>endpoint!=='tasks/create-confirmed'),...imChannelEndpoints,...bundledExtensionEndpoints,...retrievalEndpoints,...localModelEndpoints,...modelOptionEndpoints,composerSuggestionEndpoint,'requests/pending/list','requests/pending/recover','requests/pending/ack'])
 
@@ -1144,7 +1146,8 @@ async function applyHost(ctx:Context,projectRoot:string):Promise<void> {
     signal.throwIfAborted()
     const agent=ctx.agents.get(brandString<SessionId>(sessionId))
     if(!agent||agent.session.header.agentPreset!==agentPresetId)throw new WorkError('teloa/forbidden','本人执行会话配置已变化。')
-    const rules=taskRunToolRules([...nativeToolRules(ctx,agent),...await workspaceFileToolRules(ctx,agent),...webToolRules(true)])
+    const orchestration=await captureOwnerRunOrchestration(ctx,agent,agentPresetId,signal)
+    const rules=taskRunToolRules([...nativeToolRules(ctx,agent),...await workspaceFileToolRules(ctx,agent),...webToolRules(true)],orchestration.names)
     const externalRules=ownerExternalHarnessToolRules(['subagent_codex','subagent_claude_code'].filter(name=>ctx.tools.get(name,agent)!==undefined),realpathSync(await ctx.workingDirectory.ensure(agent,signal)))
     const ownerRules=[...rules,...externalRules]
     const planned=(await(await runService()).preparationTarget(owner,{taskId:target.taskId,expectedTaskVersion:target.taskVersion})).ownerPlanPolicy
@@ -1154,14 +1157,14 @@ async function applyHost(ctx:Context,projectRoot:string):Promise<void> {
       if(planned.allowedTools.some(name=>!currentNames.has(name)))throw new WorkError('teloa/forbidden','原计划工具在当前宿主不可用。')
       validateOwnerToolRules(planned.argumentRules??[],ownerRules)
       if((await(await taskMaterialService()).list(owner,{taskId:target.taskId})).length)throw new WorkError('teloa/forbidden','本人计划不能借后加任务资料扩大原范围。')
-      signal.throwIfAborted();return {allowedTools:[...planned.allowedTools],...(planned.argumentRules?{argumentRules:structuredClone(planned.argumentRules)}:{}),knowledge:[]}
+      orchestration.assertCurrent();return {allowedTools:[...planned.allowedTools],...(planned.argumentRules?{argumentRules:structuredClone(planned.argumentRules)}:{}),knowledge:[]}
     }
     const materials=await(await taskMaterialService()).list(owner,{taskId:target.taskId})
     if(materials.some(item=>!item.available))throw new WorkError('teloa/version-conflict','本人选择的任务资料已变化，请核对原引用。')
     const knowledge=readRunKnowledge(await readExecutionKnowledge({...target,knowledgeIds:materials.map(item=>item.resourceId)},materials.map(item=>item.resourceId),signal,['general']))
     if(materials.some(item=>!knowledge.some(resource=>resource.id===item.resourceId&&resource.version===item.resourceVersion)))throw new WorkError('teloa/version-conflict','任务资料未按选定版本交接。')
     const selectedRules=materials.length?rules:ownerRules
-    signal.throwIfAborted();return {allowedTools:selectedRules.map(rule=>rule.name),argumentRules:selectedRules,knowledge}
+    orchestration.assertCurrent();return {allowedTools:selectedRules.map(rule=>rule.name),argumentRules:selectedRules,knowledge}
   }
   settleOwnerArtifact=async(actor,run)=>{
     if(run.executor?.kind!=='owner'||run.state!=='ended'||run.evidence?.state!=='ended'||run.evidence.reason!=='completed'||run.stopRequestedAt!==null)return
@@ -1861,6 +1864,9 @@ async function applyHost(ctx:Context,projectRoot:string):Promise<void> {
    const reason=binding.status!=='ready'?'pending':resolved.agent.session.header.origin==='subagent'?'subagent':await service.isTaskRunReserved(owner,sessionId)?'task-run':(await workLinks.bySession(owner,{sessionId})).some(link=>link.kind==='role')?'role':await isTaskConversation(sessionId)?'task':await isBuilderConversation(sessionId)?'builder':null
    return {sessionId,eligible:reason===null,reason}
   }
+  const conversationBudgetSettings=new ConversationBudgetSettingsService(database.pool,()=>new Date().toISOString(),async(actor,sessionId)=>{
+   if(actor!==owner||!(await conversationWorkEligibility(sessionId)).eligible)throw new WorkError('teloa/forbidden','只能在本人主会话中设置新任务额度。')
+  })
   const conversationWork:ConversationWorkService=new ConversationWorkService(database.pool,()=>new Date().toISOString(),async(actor,sessionId)=>{
    const binding=await service.bySession(actor,sessionId),resolved=await ctx.sessionController.resolveAgent(brandString<SessionId>(sessionId))
    if('error' in resolved)throw new WorkError('teloa/session-unavailable','当前会话尚不可读取。')
@@ -2118,6 +2124,7 @@ async function applyHost(ctx:Context,projectRoot:string):Promise<void> {
    isRoleConversation:async sessionId=>(await workLinks.bySession(owner,{sessionId})).some(link=>link.kind==='role'),
    isTaskConversation,isBuilder:isBuilderConversation,isPendingDaily:sessionId=>businessBindings.isPendingDaily(owner,sessionId),
    context:sessionId=>conversationWork.context(owner,{sessionId}),freeze:sessionId=>conversationWork.freeze(owner,{sessionId}),
+   workBudgetSettings:sessionId=>conversationBudgetSettings.read(owner,{sessionId}),
    roles:async()=>{const {pool,identity,plans}=await autoDreamPlans();return new RoleService(pool,identity,{plans}).list(owner,{})},scopes:async()=>['general',...await businessScopeIds()],
    business:businessWorkSelection,reference:async reference=>{const fixed=await (await businessTaskService()).reference(await businessBuilderActor(),reference);return {title:fixed.object.title}},
    revisionGoal:source=>new ArtifactRevisionRequestService(database.pool,workIdentity.now).goalForSource(owner,source),
@@ -2560,6 +2567,8 @@ async function applyHost(ctx:Context,projectRoot:string):Promise<void> {
         await register();await db.query('commit');return true
       }catch(error){await db.query('rollback').catch(()=>{});throw error}finally{db.release()}
     }))
+    if(endpoint==='conversation-budgets/read')return conversationBudgetSettings.read(owner,payload)
+    if(endpoint==='conversation-budgets/configure')return conversationBudgetSettings.configure(owner,payload)
     if(endpoint==='work-context/read')return conversationWork.context(owner,payload)
     if(endpoint==='work-context/set')return conversationWork.setContext(owner,payload)
     if(endpoint==='work-context/eligibility'){const input=taskInput(payload,['sessionId']);return conversationWorkEligibility(input.sessionId as string)}

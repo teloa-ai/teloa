@@ -45,7 +45,7 @@ const snapshot={locale:'zh-CN',dshLocale:'zh-CN',revision:1},i18n={t:(key,params
   }finally{await page.close()}
  })
  await t.test('文件、信任和原生变化逐项提示，不能显示沿用按钮或自动安装',async()=>{
-  for(const [mode,label] of [['files','完整文件摘要'],['trust','信任说明'],['native','原生名称、正文或调用配置']] as const){
+  for(const [mode,label] of [['files','全部文件校验值'],['trust','信任说明'],['native','原生名称、正文或调用配置']] as const){
    const {page,errors}=await mount(mode);try{
     await page.getByText('已有安装与当前来源不一致',{exact:true}).waitFor();assert.match(await page.getByRole('status').innerText(),new RegExp(label))
     assert.equal(await page.getByRole('button',{name:/沿用到当前加载/}).count(),0)

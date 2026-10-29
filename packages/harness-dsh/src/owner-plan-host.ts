@@ -14,6 +14,7 @@ import {resolveDshTaskPreset} from './task-run-dsh.ts'
 import {readSessionEvents} from './session-events.ts'
 import {ownerExternalHarnessToolRules} from './external-harness-policy.ts'
 import {skillHttpGrantedSkills,skillHttpToolName} from './skill-http-tool.ts'
+import {captureOwnerRunOrchestration} from './owner-run-orchestration.ts'
 type PoolClient=Parameters<OwnerPlanAuthority['verifySource']>[0]
 
 type Ports={
@@ -105,14 +106,15 @@ export function createOwnerPlanHost(ctx:Context,ports:Ports):OwnerPlanAuthority{
    }
    current()
    if(await resolveDshTaskPreset(ctx,presetId,signal)!==presetId)throw changed()
-   const rules=[...taskRunToolRules([...nativeToolRules(ctx,agent),...await workspaceFileToolRules(ctx,agent),...webToolRules(true)]),...ownerExternalHarnessToolRules(['subagent_codex','subagent_claude_code'].filter(name=>ctx.tools.get(name,agent)!==undefined),await realpath(await ctx.workingDirectory.ensure(agent,signal)))]
-   current()
+   const orchestration=await captureOwnerRunOrchestration(ctx,agent,presetId,signal)
+   const rules=[...taskRunToolRules([...nativeToolRules(ctx,agent),...await workspaceFileToolRules(ctx,agent),...webToolRules(true)],orchestration.names),...ownerExternalHarnessToolRules(['subagent_codex','subagent_claude_code'].filter(name=>ctx.tools.get(name,agent)!==undefined),await realpath(await ctx.workingDirectory.ensure(agent,signal)))]
+   current();orchestration.assertCurrent()
    // 只读取原路由身份；显式备用仍由原模型策略读口验证，绝不猜全局默认备用。
    const modelPolicy=readTaskRunModelPolicy(await resolveTaskModelPolicy(ctx,{model:selected.primary,...(selected.fallback?{fallbackModel:selected.fallback}:{})},signal))
-   current()
+   current();orchestration.assertCurrent()
    const policy=readOwnerPlanPolicy({...(run?.executor?.kind==='owner'?ownerGrantedTools(run.allowedTools,run.argumentRules):ownerGrantedTools(rules.map(rule=>rule.name),rules)),modelPolicy,agentPresetId:presetId})
    const definitions=policy.allowedTools.map(name=>[name,ctx.tools.get(name,agent)] as const)
-   const admission=combineWorkAccessLeases([sourceLease,await workAccess.authorize({kind:'capability',capability:'automation',ownerId:owner,sessionId:source.acceptedSource?.sessionId??null,objectId:input.requestId,operation:'create'}),{assertCurrent:()=>{current();if(definitions.some(([name,definition])=>ctx.tools.get(name,agent)!==definition))throw changed()}}])
+   const admission=combineWorkAccessLeases([sourceLease,await workAccess.authorize({kind:'capability',capability:'automation',ownerId:owner,sessionId:source.acceptedSource?.sessionId??null,objectId:input.requestId,operation:'create'}),{assertCurrent:()=>{current();orchestration.assertCurrent();if(definitions.some(([name,definition])=>ctx.tools.get(name,agent)!==definition))throw changed()}}])
    admission.assertCurrent();return {policy,admission}
   },
   authorize:async(owner,input)=>{

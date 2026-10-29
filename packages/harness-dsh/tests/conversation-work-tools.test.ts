@@ -19,7 +19,7 @@ const coordinationSummary='当前工作的业务与接手约定'
 test('单次交办仅新增可选workTokenLimit，八项既有工具参数协议保持',async t=>{
  const f=await setup();t.after(()=>f.ctx.fiber.dispose())
  const schemas=f.ctx.tools.schemas(f.agent).filter(tool=>(conversationWorkToolNames as readonly string[]).includes(tool.name)).sort((a,b)=>a.name.localeCompare(b.name))
- const withoutDescriptions=(value:unknown):unknown=>Array.isArray(value)?value.map(withoutDescriptions):value&&typeof value==='object'?Object.fromEntries(Object.entries(value).filter(([key])=>key!=='description'&&key!=='workTokenLimit').sort(([a],[b])=>a.localeCompare(b)).map(([key,child])=>[key,withoutDescriptions(child)])):value
+ const withoutDescriptions=(value:unknown):unknown=>Array.isArray(value)?value.map(withoutDescriptions):value&&typeof value==='object'?Object.fromEntries(Object.entries(value).filter(([key])=>key!=='description'&&key!=='workTokenLimit'&&key!=='workBudgetPolicy').sort(([a],[b])=>a.localeCompare(b)).map(([key,child])=>[key,withoutDescriptions(child)])):value
  assert.equal(schemas.length,8)
  assert.match(JSON.stringify(schemas.find(tool=>tool.name==='teloa_work_dispatch')!.parameters),/workTokenLimit/)
  for(const tool of schemas.filter(tool=>tool.name!=='teloa_work_dispatch'))assert.doesNotMatch(JSON.stringify(tool.parameters),/workTokenLimit/)
@@ -287,6 +287,44 @@ test('pending daily在工具与本人消息消费两门拒绝，完成绑定后�
 
 const args={scope:'SOC',title:'核对客户',goal:'核对客户信息，给出依据和待确认事项',roleId,expectedRoleVersion:1}
 const responsibility={scope:'SOC',version:2,roleId:null,selectedRoleVersion:null,availability:'none' as const,currentRoleVersion:null}
+test('官方Loop超长本人原指令即使缩短目标仍在原生审批前拒绝，零审批零交办', {timeout:10000},async t=>{
+ const base=await setup();t.after(()=>base.ctx.fiber.dispose())
+ const f=await loopWorkFixture(t,true),approvals:string[]=[]
+ f.ctx.provide('approval',{request:async(input:{reason:string})=>{approvals.push(input.reason);return 'allowed-once'}})
+ registerConversationWorkTools(f.ctx,base.ports)
+ const instruction='合成材料'.repeat(2232)+'甲',goals=['请按材料核对并给出完整报告','核对']
+ assert.equal(instruction.length,8929)
+ goals.forEach((goal,index)=>{
+  const argumentsText=JSON.stringify({...args,goal}),id=ToolCallId('oversize-'+index)
+  f.adapter.scripts.push(loopTool.map(chunk=>chunk.type==='tool-call-delta'?{...chunk,id,name:'teloa_work_dispatch',argumentsDelta:argumentsText}:chunk.type==='block-end'&&chunk.block.type==='tool-call'?{...chunk,block:{...chunk.block,id,name:'teloa_work_dispatch',arguments:argumentsText}}:chunk))
+ })
+ f.adapter.scripts.push(loopText)
+ f.agent.followup(createUserMessage({source:{kind:'user',rpcId:'oversize-owner-instruction'},content:[{type:'text',text:instruction}]}));await f.agent.whenIdle()
+ const results=f.events.filter(event=>event.type==='tool/result')
+ assert.equal(results.length,2);assert.equal(f.adapter.requests.length,3)
+ for(const result of results){
+  assert.equal(result.data.message.isError,true)
+  const text=result.data.message.content.filter(block=>block.type==='text').map(block=>block.text).join('\n')
+  assert.match(text,/7400/);assert.match(text,/新的精简本人指令中引用/);assert.match(text,/仅缩短目标不能删除原指令/)
+  assert.ok(!text.includes(instruction),'错误只披露长度，不回显原材料')
+ }
+ assert.equal(approvals.length,0);assert.equal(base.dispatched.length,0)
+ assert.equal(f.events.filter(event=>event.type==='turn/end').length,1)
+})
+test('审批按完整原文与最终目标合计7400边界校验，包含宿主固定的修订目标',async t=>{
+ for(const total of [7400,7401]){
+  const f=await setup();t.after(()=>f.ctx.fiber.dispose())
+  f.agent.session.append('turn/start',{turn:1} as never)
+  f.agent.session.append('user/message',createUserMessage({source:{kind:'user'},content:[{type:'text',text:'文'.repeat(total-400)}]}),{surfaceOp:'append'})
+  const result=await f.call('teloa_work_dispatch',{...args,goal:'标'.repeat(400)})
+  assert.equal(result.isError,total>7400);assert.equal(f.approvals.length,total>7400?0:1);assert.equal(f.dispatched.length,total>7400?0:1)
+ }
+ const f=await setup({roles:async()=>[],revisionGoal:async()=> '反馈'.repeat(3700)});t.after(()=>f.ctx.fiber.dispose())
+ f.agent.session.append('turn/start',{turn:1} as never)
+ f.agent.session.append('user/message',createUserMessage({source:{kind:'user'},content:[{type:'text',text:'请修订 [teloa-revision:11111111-1111-4111-8111-111111111111]'}]}),{surfaceOp:'append'})
+ assert.equal((await f.call('teloa_work_dispatch',{scope:'general',executor:'general',title:'修订',goal:'短目标'})).isError,true)
+ assert.equal(f.approvals.length,0);assert.equal(f.dispatched.length,0)
+})
 test('采用业务的真实负责人投影与完整一次确认，普通读取不交办，拒绝不预约',async t=>{
  const f=await setup({business:async()=>({title:'客户业务',responsibility})});t.after(()=>f.ctx.fiber.dispose())
  const directory=await f.call('teloa_work_directory');assert.match(JSON.stringify(directory),/responsibility/);assert.equal(f.dispatched.length,0)
@@ -597,7 +635,7 @@ test('模型可见的恢复说明与主会话指引明确区分成果续改与�
 test('原生交办卡明示token上限且传递原值；非法、额外policy和汇报提额在审批前拒绝',async t=>{
  const f=await setup();t.after(()=>f.ctx.fiber.dispose())
  const input={scope:'SOC',title:'独立新轮',goal:'仅本次核对，不变更其他边界',roleId,expectedRoleVersion:1}
- for(const workTokenLimit of [0,-1,1.1,Number.MAX_SAFE_INTEGER+1,'6000000',null])assert.equal((await f.call('teloa_work_dispatch',{...input,workTokenLimit})).isError,true)
+ for(const workTokenLimit of [0,-1,1.1,Number.MAX_SAFE_INTEGER+1,'6000000'])assert.equal((await f.call('teloa_work_dispatch',{...input,workTokenLimit})).isError,true)
  for(const extra of [{budgetPolicy:{maxTokens:6_000_000}},{maxTokens:6_000_000},{workTokenLimit:6_000_000,ownerTokenLimit:10_000_000}])assert.equal((await f.call('teloa_work_dispatch',{...input,...extra})).isError,true)
  assert.equal((await f.call('teloa_work_collect_reports',{scope:'SOC',title:'汇报',goal:'读取回报',workTokenLimit:6_000_000})).isError,true)
  assert.equal(f.approvals.length,0);assert.equal(f.dispatched.length,0)
@@ -607,4 +645,17 @@ test('原生交办卡明示token上限且传递原值；非法、额外policy和
  assert.equal((await f.call('teloa_work_dispatch',input)).isError,false)
  assert.equal(Object.hasOwn(f.dispatched[1] as object,'workTokenLimit'),false,'旧省略请求保持旧规范，不偷偷补字段')
  assert.match(f.approvals[1]!,/2,000,000/)
+})
+
+
+test('明确不限和完整工作额度在原生卡可见且绑定原值；互斥及停止保护不放宽',async t=>{
+ const f=await setup();t.after(()=>f.ctx.fiber.dispose())
+ const input={scope:'SOC',title:'新独立工作',goal:'按本人明确选择的新额度核对',roleId,expectedRoleVersion:1},workBudgetPolicy={maxTokens:null,maxGoalRounds:40,maxConcurrent:2,maxElapsedMs:null,maxRetries:0,stagnationRounds:4,money:null}
+ for(const value of [{...input,workTokenLimit:null,workBudgetPolicy},{...input,workBudgetPolicy:{...workBudgetPolicy,maxRetries:null}},{...input,workBudgetPolicy:{...workBudgetPolicy,money:{currency:'USD',maxMinorUnits:1}}}])assert.equal((await f.call('teloa_work_dispatch',value)).isError,true)
+ assert.equal(f.approvals.length,0)
+ assert.equal((await f.call('teloa_work_dispatch',{...input,workTokenLimit:null})).isError,false)
+ assert.equal((f.dispatched[0] as {workTokenLimit:null}).workTokenLimit,null);assert.match(f.approvals[0]!,/token 上限：不限/)
+ assert.equal((await f.call('teloa_work_dispatch',{...input,workBudgetPolicy})).isError,false)
+ assert.deepEqual((f.dispatched[1] as {workBudgetPolicy:unknown}).workBudgetPolicy,workBudgetPolicy)
+ for(const fact of ['token 上限：不限','累计轮次：40','并发请求：2','模型耗时上限：不限','错误重试：0','连续无进展保护：4'])assert.ok(f.approvals[1]!.includes(fact),fact)
 })
