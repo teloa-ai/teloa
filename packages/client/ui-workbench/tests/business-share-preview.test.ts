@@ -144,8 +144,8 @@ test('分享摘要词表十一列齐全、零回落，且四组封闭枚举逐�
 test('分享摘要词条接进核心词表且每个键都真被界面引用',async()=>{
  const core=CORE_PAGE_MESSAGE_ROWS.map(row=>row[0])
  assert.equal(new Set(core).size,core.length,'核心词表出现重复键')
- // 落点键由 industry-template-presentation 的共同真源提供，两个消费组件不再各自抄一份数组。
- const wired=(await Promise.all(['IndustryContents.tsx','IndustryResourceBrowser.tsx','IndustryLoadForm.tsx','BusinessShareForm.tsx','industry-template-presentation.ts'].map(name=>readFile(new URL('../src/client/'+name,import.meta.url),'utf8')))).join('\n')
+ // 落点键由共同真源提供；完整导出与拒绝原因分别由表单和错误本地化消费。
+ const wired=(await Promise.all(['IndustryContents.tsx','IndustryResourceBrowser.tsx','IndustryLoadForm.tsx','BusinessShareForm.tsx','CompleteBusinessExportForm.tsx','industry-template-presentation.ts','i18n/errors.ts'].map(name=>readFile(new URL('../src/client/'+name,import.meta.url),'utf8')))).join('\n')
  for(const [key] of BUSINESS_SHARE_MESSAGE_ROWS){
   assert.ok(core.includes(key),'未接进核心词表：'+key)
   // 四组枚举按 `前缀 + 枚举值` 拼键，源码里只看得到前缀，两种写法都算接线。

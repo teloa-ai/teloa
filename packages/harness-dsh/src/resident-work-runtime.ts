@@ -53,6 +53,11 @@ const hash=(value:unknown)=>createHash('sha256').update(JSON.stringify(canonical
 const requestId=(value:unknown)=>{const s=hash(value);return s.slice(0,8)+'-'+s.slice(8,12)+'-5'+s.slice(13,16)+'-a'+s.slice(17,20)+'-'+s.slice(20,32)}
 const unavailable=()=>new WorkError('teloa/unavailable','当前宿主的受控工作端口尚未就绪。')
 
+/** 只承接原执行范围已核验的授权；普通资料事件不使用此读取口。 */
+export function readResidentRunKnowledge(resources:Pick<ResourceService,'executionKnowledgeInTransaction'>,db:Parameters<ResourceService['executionKnowledgeInTransaction']>[0],authorization:ReturnType<typeof taskKnowledgeAuthorization>,ids:readonly string[]){
+ return resources.executionKnowledgeInTransaction(db,authorization.actor,authorization.targetScopes,ids,undefined,authorization.fixedKnowledgeRead)
+}
+
 /** 同一宿主共享持久服务和最终许可；启动/本人 RPC 的生命周期由 index 拥有。 */
 export async function createResidentWorkRuntime(ctx:Context,options:ResidentWorkRuntimeOptions){
  const {owner,pool,identity,nativeInput,runs,resources,dailyLogs}=options
@@ -176,7 +181,7 @@ export async function createResidentWorkRuntime(ctx:Context,options:ResidentWork
      const target=await options.executionScope(db,value,run.id,'active'),auth=taskKnowledgeAuthorization(value,target,run.roleSnapshot?.scopes)
      const ids=[...new Set(result.results.map(hit=>hit.resourceId))]
      if(auth.knowledgeIds!==undefined&&auth.knowledgeIds!==null&&ids.some(id=>!auth.knowledgeIds!.includes(id)))continue
-     const current=await resources.executionKnowledgeInTransaction(db,auth.actor,auth.targetScopes,ids)
+     const current=await readResidentRunKnowledge(resources,db,auth,ids)
      if(result.results.some(hit=>!current.some(row=>row.id===hit.resourceId&&row.version===hit.resourceVersion&&row.sourceId===hit.sourceId&&row.sourceVersion===hit.sourceVersion)))continue
      const facts=current.map(row=>[row.id,row.version,row.sourceId,row.sourceVersion]).sort((a,b)=>String(a[0]).localeCompare(String(b[0])))
      for(const fact of facts)evidence.push({runId:run.id,seq:Number(event.seq),kind:'tool-receipt' as const,referenceId:hash(fact)})
@@ -277,7 +282,7 @@ export async function createResidentWorkRuntime(ctx:Context,options:ResidentWork
  const verifiers=createTaskCompletionVerifiers({digest:async input=>(await dailyLogs()).completeEvidenceInTransaction(input.db,input.ownerId,input.run.id),saveDigestArtifact:async(input,evidence)=>{const saved=await artifacts.createInTransaction(input.db,input.ownerId,{requestId:requestId(['daily-digest-artifact',input.ownerId,input.run.id]),source:await taskArtifactSource(input.db,input.ownerId,input.task.id,true),content:systemDigestArtifactContent(input.task.title,evidence.log)});return {id:saved.artifactId,version:saved.number}},material:async(input,source)=>{
   const target=await options.executionScope(input.db,input.ownerId,input.run.id,'completion'),auth=taskKnowledgeAuthorization(input.ownerId,target,input.run.roleSnapshot?.scopes)
   if(auth.knowledgeIds!==undefined&&auth.knowledgeIds!==null&&!auth.knowledgeIds.includes(source.resourceId))throw unavailable()
-  const current=(await resources.executionKnowledgeInTransaction(input.db,auth.actor,auth.targetScopes,[source.resourceId]))[0];if(!current)throw unavailable();return current
+  const current=(await readResidentRunKnowledge(resources,input.db,auth,[source.resourceId]))[0];if(!current)throw unavailable();return current
  },saveMaterialSummaryArtifact:async(input,delivery)=>({receiptId:delivery.requestId,artifact:await artifacts.createInTransaction(input.db,input.ownerId,{requestId:delivery.requestId,source:await taskArtifactSource(input.db,input.ownerId,input.task.id,true),content:delivery.content})})})
  const settleRun=async(value:string,run:TaskRun)=>{
   assertOwner(value);try{await settleRunOwner(run)}catch(error){options.report(error instanceof WorkError?error.code:'teloa/unavailable')}await settleRunBudget(run);if(run.evidence?.state!=='ended'||run.evidence.reason!=='completed'||!binding)return

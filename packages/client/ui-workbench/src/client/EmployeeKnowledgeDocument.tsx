@@ -52,14 +52,20 @@ export function EmployeeKnowledgeDocument({api,role,resource,onClose,onDirtyChan
   const cas={requestId:value.requestId,...target,expectedBodyVersion:value.base.bodyVersion,expectedContentHash:value.base.contentHash}
   const request:EmployeeKnowledgeCommand=existing??(kind==='revise'?{kind,input:{...cas,markdown:value.markdown}}:{kind,input:{...cas,restoreVersion:selected.bodyVersion}})
   remember({...value,pending:request});setBusy(true);setError(undefined);setNotice(undefined);const token=generation.current
+  let receiptAbsent=false
   try{
    const receipt=recover?await api.status(request.input.requestId,target):null
+   receiptAbsent=recover&&receipt===null
    const saved=receipt??await (request.kind==='revise'?api.revise(request.input):api.restore(request.input))
+   receiptAbsent=false
    await finish(saved,request,token)
   }catch(cause){
    if(current(token)){
-    // 仅第一次写入得到可信拒绝才能解锁草稿；未知回执重试仍必须保留原命令。
-    if(!recover&&cause&&typeof cause==='object'&&'rejected'in cause&&cause.rejected===true){remember(value);if('code'in cause&&['teloa/conflict','teloa/version-conflict','teloa/file-changed'].includes(String(cause.code)))setConflict(true)}
+    // 重试仅在核对无回执且原写入明确遭遇版本冲突后解锁；其余未知结果保留原命令。
+    if(cause&&typeof cause==='object'&&'rejected'in cause&&cause.rejected===true&&(!recover||receiptAbsent&&'code'in cause&&cause.code==='teloa/version-conflict')){
+     const {pending:_pending,...editable}=value;remember(editable)
+     if('code'in cause&&['teloa/conflict','teloa/version-conflict','teloa/file-changed'].includes(String(cause.code)))setConflict(true)
+    }
     setError(localizeWorkError(locale,cause))
    }
   }finally{if(current(token))setBusy(false)}

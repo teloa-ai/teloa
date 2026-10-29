@@ -43,6 +43,44 @@ test('员工知识真实组件：明确目标、首次保存副本、历史恢�
    await page.evaluate(()=>(window as any).fixture.ready());await page.getByRole('button',{name:'刷新正文状态',exact:true}).first().click();await page.getByText('当前正文已可检索',{exact:true}).waitFor();assert.deepEqual(errors,[])
   }finally{await context.close()}
  })
+ for(const operation of ['revise','restore'])await t.test(`未知${operation}确认未保存后遇到版本冲突，可保留正文并明确按新版保存`,async()=>{
+  const {context,page,errors,load}=await setup();try{
+   await open(page)
+   const body=page.getByLabel('Markdown 正文',{exact:true}),original=await body.inputValue()
+   if(operation==='restore'){
+    await body.fill('# 第二版正文');await page.getByRole('button',{name:'保存新版本',exact:true}).click();await page.getByText('当前正文 v2',{exact:true}).waitFor()
+    await page.locator('summary[aria-label="更多知识操作"]').click();await page.getByRole('button',{name:'页面信息与版本',exact:true}).click();await page.getByRole('button',{name:'查看版本 v1',exact:true}).click()
+   }else await body.fill('# 网络失败前的草稿')
+   const expected=operation==='restore'?original:'# 网络失败前的草稿'
+   await page.evaluate(()=>(window as any).fixture.mode('offline'))
+   await page.getByRole('button',{name:operation==='restore'?'恢复为新版本':'保存新版本',exact:true}).click();await page.getByRole('button',{name:'核对保存结果',exact:true}).waitFor()
+   const request=await page.evaluate((operation:string)=>(window as any).fixture.calls.filter((row:any)=>row.endpoint==='employee-knowledge/'+operation).at(-1).input,operation)
+   await page.getByRole('button',{name:'核对保存结果',exact:true}).click();await page.getByRole('button',{name:'核对保存结果',exact:true}).waitFor({state:'visible'})
+   assert.equal(await page.getByRole('button',{name:'读取最新版并保留草稿',exact:true}).count(),0)
+   await load();await open(page);assert.equal(await body.inputValue(),expected)
+   await page.evaluate(async()=>{await (window as any).fixture.bump();(window as any).fixture.mode('success')})
+   await page.getByRole('button',{name:'核对保存结果',exact:true}).click();await page.getByRole('button',{name:'读取最新版并保留草稿',exact:true}).waitFor()
+   assert.equal(await body.inputValue(),expected);assert.equal(await page.getByRole('button',{name:'核对保存结果',exact:true}).count(),0)
+   await page.screenshot({path:`${report}/knowledge-recovery-${operation}.png`,fullPage:true})
+   const replay=await page.evaluate((operation:string)=>(window as any).fixture.calls.filter((row:any)=>row.endpoint==='employee-knowledge/'+operation).at(-1).input,operation)
+   assert.deepEqual(replay,request)
+   await page.getByRole('button',{name:'读取最新版并保留草稿',exact:true}).click();assert.equal(await body.inputValue(),expected)
+   await page.getByRole('button',{name:'保存新版本',exact:true}).click();await page.getByText(operation==='restore'?'当前正文 v4':'当前正文 v3',{exact:true}).waitFor()
+   const saved=await page.evaluate(()=>(window as any).fixture.calls.filter((row:any)=>row.endpoint==='employee-knowledge/revise').at(-1).input)
+   assert.notEqual(saved.requestId,request.requestId);assert.equal(saved.markdown,expected);assert.deepEqual(errors,[])
+  }finally{await context.close()}
+ })
+ await t.test('已有保存回执但核对接口拒绝时不解除pending或再次发送',async()=>{
+  const {context,page,errors}=await setup();try{
+   await open(page);await page.getByLabel('Markdown 正文',{exact:true}).fill('# 已保存但待核对')
+   await page.evaluate(()=>(window as any).fixture.mode('lost'));await page.getByRole('button',{name:'保存新版本',exact:true}).click();await page.getByRole('button',{name:'核对保存结果',exact:true}).waitFor()
+   await page.evaluate(()=>(window as any).fixture.mode('status-conflict'));await page.getByRole('button',{name:'核对保存结果',exact:true}).click()
+   await page.getByRole('alert').filter({hasText:/版本已过期/}).waitFor()
+   assert.equal(await page.getByRole('button',{name:'读取最新版并保留草稿',exact:true}).count(),0);assert.equal(await page.getByRole('button',{name:'保存新版本',exact:true}).isDisabled(),true)
+   assert.equal(await page.evaluate(()=>(window as any).fixture.calls.filter((row:any)=>row.endpoint==='employee-knowledge/revise').length),1)
+   await page.evaluate(()=>(window as any).fixture.mode('success'));await page.getByRole('button',{name:'核对保存结果',exact:true}).click();await page.getByText('当前正文 v2',{exact:true}).waitFor();assert.deepEqual(errors,[])
+  }finally{await context.close()}
+ })
  await t.test('员工页直接进入当前员工；冲突保留草稿；换员工与重开不丢草稿',async()=>{
   const {context,page,errors}=await setup();try{
    await page.evaluate(()=>(window as any).fixture.view('role'));await page.getByRole('button',{name:'编辑员工知识 · 调查操作手册',exact:true}).click();await page.getByLabel('Markdown 正文',{exact:true}).fill('# 草稿留给员工甲')

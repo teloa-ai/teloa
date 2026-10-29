@@ -11,7 +11,10 @@ test('业务范围页只经 WorkbenchFrame 装配分享 API，并把入口传给
  assert.match(page,/<BusinessShareForm scope=\{target\.scope\} api=\{businessShareApi\} draftKey=\{shareDraftKey\} openMarket=\{market\}/)
  assert.match(frame,/shareDraftKey=\{builderState\.namespace\?JSON\.stringify\(\[builderState\.namespace,options\.target\.scope,'legacy'\]\):undefined\}/)
  assert.match(form,/useBusinessShareMetadata\(api,scope,draftKey,/)
- assert.match(frame,/createBusinessShareApi\(createBusinessShareSource\(/)
+ // 精简分享与完整业务导出必须消费同一个声明来源，允许装配时先命名复用。
+ assert.match(frame,/const source=createBusinessShareSource\(/)
+ assert.match(frame,/createCompleteBusinessSource\(\{declarations:source,/)
+ assert.match(frame,/return createBusinessShareApi\(source,marketContentApi,complete\)/)
  assert.match(frame,/businessShareApi=\{businessShareApi\}/)
  assert.match(form,/api\.plan\(input\)/)
  assert.match(form,/api\.download\(item,inspection\.digest,draft\.description\)/)

@@ -51,8 +51,10 @@ test('加载只有一屏核对摘要并须显式确认，不在默认详情堆�
   assert.match(loadForm, /<dt>\{t\('market\.industry\.load\.destination'\)\}<\/dt><dd>\{summary\.target\}<\/dd>/)
   assert.match(loadForm, /<dt>\{t\('market\.industry\.load\.effect'\)\}<\/dt><dd>\{summary\.effect\}<\/dd>/)
   assert.doesNotMatch(loadForm, /\bstage\b|market\.industry\.load\.(back|next|stepLocation|stepReview)|<select|<input|<form/)
-  // 写入只有一个入口：显式「加载」按钮触发 submit，submit 内唯一一次 load(...)。
-  assert.equal(loadForm.match(/\bload\(/g)?.length, 1)
+  // 首次加载与覆盖本地知识各自要求明确确认；第二次沿用原请求，只追加当前覆盖摘要。
+  assert.match(loadForm, /const submit=\(\)=>run\(async\(\)=>\{[\s\S]*?await load\(input\)/)
+  assert.match(loadForm, /const confirmKnowledgeReset=\(\)=>run\(async\(\)=>\{[\s\S]*?reset\.key!==selection\.current[\s\S]*?await load\(\{\.\.\.reset\.input,knowledgeResetDigest:reset\.preview\.digest\}\)/)
+  assert.match(loadForm, /<KnowledgeResetConfirmation[^\n]*confirm=\{\(\)=>void confirmKnowledgeReset\(\)\}/)
   assert.match(loadForm, /onClick=\{\(\)=>void submit\(\)\}>\{busy\?t\('market\.industry\.load\.loading'\):t\('market\.industry\.load\.confirm'\)\}/)
 })
 

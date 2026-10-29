@@ -38,9 +38,10 @@ const api=createResourceApi(async(endpoint,input:any)=>{
  }
  if(endpoint==='employee-knowledge/read'){const row=input.version?rows.find(row=>row.bodyVersion===input.version):head;return ready&&row?{...row,indexState:'ready'}:row}
  if(endpoint==='employee-knowledge/versions')return rows.map(row=>({version:row.bodyVersion,contentHash:row.contentHash,bytes:row.bytes,resourceId:row.resource.id,createdAt:at} satisfies EmployeeKnowledgeVersion))
- if(endpoint==='employee-knowledge/status')return receipts[input.requestId]??null
+ if(endpoint==='employee-knowledge/status'){if(mode==='status-conflict')throw Object.assign(Error('Receipt unavailable'),{code:'teloa/version-conflict',rejected:true});return receipts[input.requestId]??null}
  if(endpoint==='employee-knowledge/revise'||endpoint==='employee-knowledge/restore'){
   if(receipts[input.requestId])return receipts[input.requestId]
+  if(mode==='offline')throw Error('Connection lost before save')
   if(head?.bodyVersion!==input.expectedBodyVersion||head.contentHash!==input.expectedContentHash)throw Object.assign(Error('Version changed'),{code:'teloa/version-conflict',rejected:true})
   const markdown=endpoint.endsWith('/restore')?rows.find(row=>row.bodyVersion===input.restoreVersion)!.markdown:input.markdown,next=await saveVersion(input.roleId,markdown),receipt:EmployeeKnowledgeRevision={requestId:input.requestId,operation:endpoint.endsWith('/restore')?'restore':'revise',forked:head.editing==='fork-on-write',document:next}
   receipts[input.requestId]=receipt;store();if(mode==='lost')throw Error('Connection lost after save');return receipt

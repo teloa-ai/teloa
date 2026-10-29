@@ -1,6 +1,6 @@
 import type {Context} from '@deepseek-ai/cordis'
 import {defineTool,type ParameterSchemaSpec,type PreToolDecision} from '@deepseek-ai/dsh-tools'
-import {WorkError,isEmployeeKnowledgeContent,type DigitalRole} from '@teloa/contract'
+import {WorkError,isEmployeeKnowledgeContent,isEmployeeKnowledgeRevision,promptFullTextMaxBytes,type DigitalRole} from '@teloa/contract'
 import type {ResourceActor} from '@teloa/backend'
 import {authorizeConversationInstructionMutation,assertConversationInstructionMutationAuthorization,conversationInstructionMutationRequestId,type ConversationInstructionMutationInput,type ConversationInstructionMutationAuthorization} from './conversation-mutation.ts'
 import {employeeKnowledgeInput,verifyEmployeeKnowledgeResult,employeeKnowledgeRole,assertEmployeeKnowledgeModelRead,type EmployeeKnowledgeServicePort} from './employee-knowledge.ts'
@@ -45,7 +45,12 @@ export function registerEmployeeKnowledgeTools(ctx:Context,ports:EmployeeKnowled
   if(definition.operation==='status'&&value!==null&&boundRole!==null&&(value as {document:{roleId:string}}).document.roleId!==boundRole)throw new WorkError('teloa/forbidden','该编辑回执不属于当前员工。')
   if(isEmployeeKnowledgeContent(value))assertEmployeeKnowledgeModelRead(value)
   if(write)ports.changed()
-  return JSON.stringify({schema:'teloa.employee-knowledge-result/v1',operation:definition.operation,sourceSession:auth.sessionId,...(requestId?{requestId}:{}),result:value})
+  let receipt:{result:unknown;markdownOmitted?:true;notice?:string}={result:value}
+  if(isEmployeeKnowledgeRevision(value)&&value.document.bytes>promptFullTextMaxBytes){
+   const {markdown:_markdown,...document}=value.document
+   receipt={result:{...value,document},markdownOmitted:true,notice:'正文超过整段进模型上限，已省略；请使用已授权本地检索摘录。'}
+  }
+  return JSON.stringify({schema:'teloa.employee-knowledge-result/v1',operation:definition.operation,sourceSession:auth.sessionId,...(requestId?{requestId}:{}),...receipt})
  }}))
  return ctx.on('tools/pre-execute',async(exec,next):Promise<PreToolDecision>=>{
   const definition=definitions.find(row=>row.name===exec.name)

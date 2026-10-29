@@ -100,7 +100,9 @@ test('必须保留、只是移位：状态句、已加载入口、其他用法�
  assert.match(industryBranch, /\{draft&&<button type="button" aria-label=\{t\('market\.intent\.view'\)\}/)
  assert.match(industryBranch, /aria-label=\{t\('market\.conversation\.use'\)\}/)
  assert.match(industryBranch, /<IndustryReferences item=\{item\} items=\{props\.state\.items\} save=\{props\.saveResolved\}\/>/)
- assert.match(industryBranch, /<IndustryUpdatePreview item=\{item\} items=\{props\.state\.items\} spaces=\{props\.spaces\} \{\.\.\.props\.industryReview\}\/>/)
+ const updatePreview=industryBranch.match(/<IndustryUpdatePreview\b[^>]*\/>/)?.[0]
+ assert.ok(updatePreview,'来源与版本保留更新预览')
+ for(const contract of ['item={item}','items={props.state.items}','spaces={props.spaces}','{...props.industryReview}','hydrate:props.contentApi.hydrate'])assert.ok(updatePreview.includes(contract),'更新预览缺少调用契约：'+contract)
  assert.match(industryBranch, /<IndustryExport item=\{item\}\/>/)
  assert.match(industryBranch, /\{item\.raw&&<section className=\{css\.sourceSection\}>/)
  assert.match(industryBranch, /SHA-256：\{item\.hash\}/)
@@ -134,9 +136,10 @@ test('同事小卡数量由 solutionMembers 逐个 role 资源生成，与 Indus
  assert.match(industryBranch, /\{members\.map\(member=><span key=\{member\.id\}><StaffAvatar initial=\{member\.initial\} seed=\{member\.seed\} size="md"\/><strong>\{member\.title\}<\/strong><\/span>\)\}/)
 })
 
-test('一键添加只有一个调用点：只保留一次 setActionPanel(\'load\')，且不直接绕过 IndustryLoadForm 调用 industryLoads.save', () => {
- const calls = industryBranch.match(/setActionPanel\('load'\)/g) ?? []
- assert.equal(calls.length, 1, '只应有一个按钮触发一键添加')
+test('添加与显式重新导入共用确认面板，不直接绕过 IndustryLoadForm 写入', () => {
+ const reload=industryBranch.match(/\{matchingLoads\.length>0&&<button[^\n]*employeeKnowledge\.reset\.reloadPackage[^\n]*<\/button>\}/)?.[0]
+ assert.ok(reload,'已有相同版本时必须提供显式重新导入入口')
+ assert.match(reload,/onClick=\{\(\)=>setActionPanel\('load'\)\}/)
  assert.doesNotMatch(industryBranch, /props\.industryLoads\.save\(/)
  assert.match(industryBranch, /actionPanel==='load'\?<SolutionLoadPanel \{\.\.\.props\} item=\{item\} close=\{\(\)=>setActionPanel\(null\)\}\/>/)
  assert.match(loadPanel, /<IndustryLoadForm embedded item=\{item\}[^>]*load=\{props\.industryLoads\.save\}/, 'IndustryLoadForm 仍应拿到 save 引用，走它自己的显式核对确认')
