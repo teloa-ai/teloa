@@ -1,11 +1,15 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import {createHash} from 'node:crypto'
+import {mkdtemp,rm} from 'node:fs/promises'
+import {tmpdir} from 'node:os'
+import {join} from 'node:path'
 import {Context} from '@deepseek-ai/cordis'
 import {LlmRuntime,ToolCallId} from '@deepseek-ai/dsh-llm'
 import {ToolRuntime} from '@deepseek-ai/dsh-tools'
 import {SystemPrompt} from '@deepseek-ai/dsh-system-prompt'
-import {SessionStore,SessionId,Session} from '@deepseek-ai/dsh-session'
+import {SessionStore,SessionId} from '@deepseek-ai/dsh-session'
+import * as SessionPersistenceJsonl from '@deepseek-ai/dsh-session-persistence-jsonl'
 import {AgentRegistry} from '@deepseek-ai/dsh-agent'
 import {AgentLoop} from '@deepseek-ai/dsh-agent-loop'
 import {SessionProjectionRegistry} from '@deepseek-ai/dsh-session-projection'
@@ -93,21 +97,28 @@ test('授权tuple与审批旧request/session/role/scope不一致时零停止',as
 
 test('后继结果notice保留old/new/source固定关联，原生Session冷恢复不重复且未本人验收不completed',async t=>{
  const f=fixture(),status=await f.dispatcher.supersede(f.snapshot,AbortSignal.timeout(5000),async()=>{})
- const ctx=new Context();t.after(()=>ctx.fiber.dispose());await ctx.plugin(LlmRuntime);await ctx.plugin(SystemPrompt);await ctx.plugin(ToolRuntime);await ctx.plugin(SessionStore);await ctx.plugin(SessionProjectionRegistry);await ctx.plugin(AgentRegistry);await ctx.plugin(AgentLoop,{agents:[]})
- const {agent}=await ctx.agents.create({sessionId:SessionId(status.sessionId),agentOptions:{provider:'test',model:'test'}})
- let activeSession=agent.session
- ctx.provide('sessionController',{resolveAgent:async()=>({agent:{session:activeSession}})})
- const sessions:unknown=Reflect.get(ctx,'sessions')
- assert.ok(sessions instanceof SessionStore,'夹具必须使用实际官方 SessionStore 服务')
- t.mock.method(sessions,'flush',async()=>true)
- await publishConversationWorkStatus(ctx,status,async()=>{})
+ const root=await mkdtemp(join(tmpdir(),'teloa-reassignment-notice-')),contexts:Context[]=[]
+ t.after(async()=>{for(const ctx of contexts)await ctx.fiber.dispose();await rm(root,{recursive:true,force:true})})
+ const open=async(resume=false)=>{
+  const ctx=new Context();contexts.push(ctx)
+  await ctx.plugin(LlmRuntime);await ctx.plugin(SystemPrompt);await ctx.plugin(ToolRuntime);await ctx.plugin(SessionStore);await ctx.plugin(SessionPersistenceJsonl,{root,compression:'none'});await ctx.plugin(SessionProjectionRegistry);await ctx.plugin(AgentRegistry);await ctx.plugin(AgentLoop,{agents:[]})
+  const options={agentOptions:{provider:'test',model:'test'}}
+  const {agent}=resume?await ctx.agents.resume({...options,resumeSessionId:SessionId(status.sessionId)}):await ctx.agents.create({...options,sessionId:SessionId(status.sessionId)})
+  ctx.provide('sessionController',{resolveAgent:async()=>({agent})})
+  assert.ok(Reflect.get(ctx,'sessions') instanceof SessionStore,'夹具必须使用实际官方 SessionStore 服务')
+  return {ctx,agent}
+ }
+ const {ctx,agent}=await open()
+ assert.equal(await publishConversationWorkStatus(ctx,status,async()=>{}),true)
  const notice=readSessionEvents(agent.session).find(event=>event.type==='user/message')!
  assert.equal(notice.type,'user/message')
  if(notice.type==='user/message'){assert.deepEqual(Reflect.get(notice.data.source,'reassignment'),f.receipt);assert.deepEqual(Reflect.get(notice.data.source,'sourceReference'),f.snapshot.reference);assert.match(JSON.stringify(notice.data.content),/原交办/);assert.ok(JSON.stringify(notice.data.content).includes(oldRequestId))}
- const restored=Session.create(SessionId(status.sessionId),JSON.parse(JSON.stringify(readSessionEvents(agent.session))),agent.session.header)
- activeSession=restored
- await publishConversationWorkStatus(ctx,{...status,observedAt:date},async()=>{})
- assert.equal(readSessionEvents(restored).filter(event=>event.type==='user/message').length,1)
+ const history=JSON.parse(JSON.stringify(readSessionEvents(agent.session)))
+ await ctx.fiber.dispose()
+ const restored=await open(true)
+ assert.deepEqual(readSessionEvents(restored.agent.session).slice(0,history.length),history,'冷恢复保留真实持久日志，仅允许追加原生生命周期事件')
+ assert.equal(await publishConversationWorkStatus(restored.ctx,{...status,observedAt:date},async()=>{}),true)
+ assert.equal(readSessionEvents(restored.agent.session).filter(event=>event.type==='user/message').length,1)
  assert.equal(f.tasks.get(newTask)!.state,'ready')
 })
 test('原dispatch冷读服务端后继receipt，保留关联；损坏receipt不能回流正文',async()=>{
