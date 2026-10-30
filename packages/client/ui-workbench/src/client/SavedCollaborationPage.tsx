@@ -58,6 +58,7 @@ import {twinDisplayName} from './team-presentation.js'
 import {useI18n} from './i18n/provider.js'
 import {localizeWorkError} from './i18n/errors.js'
 import {scheduleGroupMessageRefresh} from './group-message-refresh.js'
+import {readGroupContentPart} from './group-content-loading.js'
 import {useGroupReading} from './use-group-reading.js'
 import {loadGroupMessageWindow,readGroupMessageWindow} from './group-message-window.js'
 import type {GroupMessageSearchResult,GroupTopicSummary} from '@teloa/contract'
@@ -250,14 +251,22 @@ export function SavedCollaborationPage({workResources,artifactRail,templateMater
  // 群身份是读取的前提；消息或资料单口失败不抹掉已核验的成员与其他成功内容。
  const readGroupContents=async(id:string,generation:number,focusRoot?:string,focusMessage?:string)=>{
   const reading=++groupReadGeneration.current
-  const [identity,main,materials,replies]=await Promise.allSettled([api.get(id),focusMessage&&!focusRoot?loadGroupMessageWindow(api,id,undefined,{around:focusMessage}):readMessages(id),api.resources(id),focusRoot?(focusMessage?loadGroupMessageWindow(api,id,focusRoot,{around:focusMessage}):readMessages(id,focusRoot)):Promise.resolve(undefined)])
-  if(reading!==groupReadGeneration.current||generation!==viewGeneration.current||selectedGroup.current!==id||!visibleRef.current)return
+  const current=()=>reading===groupReadGeneration.current&&generation===viewGeneration.current&&selectedGroup.current===id&&visibleRef.current
+  const identityRead=api.get(id).then(value=>{if(current())setSnapshot(value);return value})
+  const mainRead=focusMessage&&!focusRoot?loadGroupMessageWindow(api,id,undefined,{around:focusMessage}):readMessages(id)
+  const topicRead=focusRoot?(focusMessage?loadGroupMessageWindow(api,id,focusRoot,{around:focusMessage}):readMessages(id,focusRoot)):Promise.resolve(undefined)
+  const [identity,main,materials,replies]=await Promise.allSettled([
+   identityRead,
+   readGroupContentPart(identityRead,mainRead,current,value=>setMessages(value.items)),
+   readGroupContentPart(identityRead,api.resources(id),current,value=>setResources(value.items)),
+   readGroupContentPart(identityRead,topicRead,current,value=>{if(value)setTopic(value.items)}),
+  ])
+  if(!current())return
   if(identity.status==='rejected'){setReadFailures(current=>[...new Set([...current,'group' as const])]);setError(localizeWorkError(locale,identity.reason));return}
   const next=identity.value,failed:('messages'|'resources'|'topic')[]=[]
-  setSnapshot(next)
-  if(main.status==='fulfilled')setMessages(main.value.items);else failed.push('messages')
-  if(materials.status==='fulfilled')setResources(materials.value.items);else failed.push('resources')
-  if(replies.status==='fulfilled'){if(replies.value)setTopic(replies.value.items)}else failed.push('topic')
+  if(main.status==='rejected')failed.push('messages')
+  if(materials.status==='rejected')failed.push('resources')
+  if(replies.status==='rejected')failed.push('topic')
   setReadFailures(failed)
   if(focusMessage){const focused=focusRoot?replies:main;if(focused.status==='fulfilled'&&focused.value?.items.some(message=>message.id===focusMessage&&message.groupId===id&&(message.rootId??undefined)===focusRoot))setFocusedMessage({groupId:id,...(focusRoot?{rootId:focusRoot}:{}),messageId:focusMessage});else{setError(localizeWorkError(locale,Object.assign(Error(),{code:'teloa/source-unavailable'})));return}}
   const failure=[main,materials,replies].find(row=>row.status==='rejected')

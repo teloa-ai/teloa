@@ -132,13 +132,15 @@ export class BindingClient {
       if(creation&&conversation.purpose==='assistant'&&(target.purpose!=='assistant'||target.status!=='ready'||target.sessionId!==conversation.sessionId))throw Error('助手恢复回执与原预约不一致。')
       const recovery=creation??(this.creation?.requestId===target.requestId?this.creation:undefined)
       if(recovery)this.assertCreationResult(target,recovery)
+      if(signal?.aborted||opening!==this.opening||generation!==this.generation||navigation&&(this.port.current()!==previous||navigation.mayOpen?.()===false))return 'cancelled'
       const sessionId=target.purpose==='task-run'?await (this.port.readRunSession?.(target.sessionId)??Promise.reject(Error('运行专用会话只读目录尚未接入。'))):await this.port.adopt(target.sessionId,target.requestedWorkspaceId)
       if(sessionId!==target.sessionId)throw Error('原生会话领养身份不一致。')
       if(recovery&&this.creation?.requestId===recovery.requestId)this.creation=undefined
       if(signal?.aborted||opening!==this.opening||generation!==this.generation||navigation&&(this.port.current()!==previous||navigation.mayOpen?.()===false))return 'cancelled'
       navigation?.commit()
       this.port.open(sessionId)
-      void this.refreshDirectory()
+      // 打开已有会话不会改变目录；原生摘要负责最近活动，真正新增/变更仍由目录订阅补读。
+      if(this.directory.status==='failed'||!this.directory.rows.some(row=>row.sessionId===sessionId&&row.id===target.id&&row.version===target.version&&row.status===target.status))void this.refreshDirectory()
       return 'opened'
     }finally{
       signal?.removeEventListener('abort',cancel)

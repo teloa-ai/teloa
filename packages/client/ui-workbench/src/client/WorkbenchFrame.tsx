@@ -618,7 +618,7 @@ export function WorkbenchFrame({assistantActivity,assistantChat,groupWorkLinks,e
   const [groupCreateRequest,setGroupCreateRequest]=useState(0)
   const [teamMaterialsRequest,setTeamMaterialsRequest]=useState<{groupId:string;serial:number}>(),teamMaterialsSerial=useRef(0)
   const requestTeamMaterials=(groupId:string)=>setTeamMaterialsRequest({groupId,serial:++teamMaterialsSerial.current})
-  useEffect(()=>{if(['messages','tasks','plans','attention'].includes(state.view)||homeCreation==='task'||restoredDetailView==='tasks'||restoredDetailView==='plans')void conversationGroups.refresh()},[state.view,homeCreation,restoredDetailView,conversationGroups])
+  useEffect(()=>{if(['messages','tasks','plans','attention'].includes(state.view)||homeCreation==='task'||restoredDetailView==='tasks'||restoredDetailView==='plans')void conversationGroups.ensureLoaded()},[state.view,homeCreation,restoredDetailView,conversationGroups])
   const closeNarrowDirectory=()=>{if(window.matchMedia('(max-width:740px)').matches)actions.closeSidebar()}
   // 交办弹层与任务详情共用同一份已保存群目录：只列未归档的，范围过滤在 TaskForm 内按主责范围做。
   const savedGroupOptions=groupDirectorySnapshot.items.filter(group=>!group.archived).map(group=>({id:group.id,name:group.name,scope:group.scope}))
@@ -2170,11 +2170,11 @@ export function WorkbenchFrame({assistantActivity,assistantChat,groupWorkLinks,e
     roleConversationOpening.current.add(roleId)
     const navigationKey=crypto.randomUUID();setRoleNavigationStatus({key:navigationKey,message:t('roleDelegation.openingConversation',{name:tasksRef.current.roles.find(role=>role.id===roleId)?.name??t('navigation.v2.colleagues')})})
     try{
-    const role=await readLatestConversationRole(roleId)
+    const [role,links]=await Promise.all([readLatestConversationRole(roleId),objectConversationApi.list('role',roleId),work.refreshDirectory()])
+    const directory=work.getDirectorySnapshot()
+    if(directory.status!=='ready')throw directory.error??Error(t('frame.p5.conversationChangedOpen'))
     const object:ConversationObject={kind:'role',id:role.id,title:role.kind==='twin'?twinDisplayName(profile.displayName,t):role.name,version:role.version,canStart:roleCanStartConversation(role.state)}
-    const links=await objectConversationApi.list('role',role.id)
     mergeObjectLinks(links)
-    await work.refreshDirectory()
     const recent=latestRoleConversation(presentConversations(work.getDirectorySnapshot().rows,Object.values(searchNative)),links,management.getSnapshot().archived)
     if(!recent){
       if(!object.canStart)return false
