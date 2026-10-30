@@ -46,7 +46,7 @@ const work=new BindingClient({list:async()=>{if(f.holdVoiceDirectory){f.voicePre
 // 此分支复用真实首页 ownership，避免无条件输出 overview 的槽探针掩盖归属不符。
 const homeSession=new HomeNativeController({storage:sessionStorage,identity:()=>'fixture-home-return',isBlank:()=>true,create:async id=>{f.homeCreates=(f.homeCreates||0)+1;const row={id:crypto.randomUUID(),ownerId:'self',title:'本人首页待用会话',version:1,status:'ready',sessionId:id,requestedSessionId:id,requestId:crypto.randomUUID(),scopeIds:['general'],createdAt:stamp};rows.set(id,row);byId[id]={...row,displayTitle:row.title};return id},adopt:async()=>{}});
 const waitHomeBinding=signal=>new Promise(resolve=>{let off=()=>{};const finish=()=>{off();signal.removeEventListener('abort',finish);resolve()};off=work.subscribe(()=>{if(work.getSnapshot().status==='ready')finish()});signal.addEventListener('abort',finish,{once:true});if(signal.aborted||work.getSnapshot().status==='ready')finish()});
-const prepareFrameHome=async signal=>{f.prepares++;(f.homePrepareSignals??=[]).push(signal);if(startup.coldHomeBootstrap&&!selected)await new Promise(resolve=>{f.releaseHomeCurrent=resolve});if(startup.ensureHandshake){await waitHomeBinding(signal);signal.throwIfAborted();await controller.followSession(selected)}if(f.holdHomePrepare)await new Promise(resolve=>{(f.homePrepareResolvers??=[]).push(resolve);f.releaseHomePrepare=()=>{f.holdHomePrepare=false;f.homePrepareResolvers.splice(0).forEach(resolve=>resolve())}});signal.throwIfAborted();if(startup.hydrateOnHomePrepare){const snapshot=controller.getSnapshot();(f.homePrepareNativeReady??=[]).push(snapshot.nativeReady);(f.homePrepareFacts??=[]).push({hasCurrent:!!selected,checked:snapshot.checkedSessionId===selected,nativeReady:snapshot.nativeReady});f.native(true)}if(!startup.realHome)return selected;const id=await homeSession.prepare();signal.throwIfAborted();await work.openSessionResult(id,signal);return id};
+const prepareFrameHome=async signal=>{f.prepares++;(f.homePrepareSignals??=[]).push(signal);if(f.homePrepareCode)throw Object.assign(Error('首页准备被拒绝'),{code:f.homePrepareCode});if(f.homeRequiresNativeReady&&!controller.getSnapshot().nativeReady)throw Error('原生输入仍在恢复');if(f.homePrepareFailures>0){f.homePrepareFailures--;throw TypeError('暂时无法连接原生会话')}if(startup.coldHomeBootstrap&&!selected)await new Promise(resolve=>{f.releaseHomeCurrent=resolve});if(startup.ensureHandshake){await waitHomeBinding(signal);signal.throwIfAborted();await controller.followSession(selected)}if(f.holdHomePrepare)await new Promise(resolve=>{(f.homePrepareResolvers??=[]).push(resolve);f.releaseHomePrepare=()=>{f.holdHomePrepare=false;f.homePrepareResolvers.splice(0).forEach(resolve=>resolve())}});signal.throwIfAborted();if(startup.hydrateOnHomePrepare){const snapshot=controller.getSnapshot();(f.homePrepareNativeReady??=[]).push(snapshot.nativeReady);(f.homePrepareFacts??=[]).push({hasCurrent:!!selected,checked:snapshot.checkedSessionId===selected,nativeReady:snapshot.nativeReady});f.native(true)}if(!startup.realHome)return selected;const id=await homeSession.prepare();signal.throwIfAborted();await work.openSessionResult(id,signal);return id};
 if(startup.ensureHandshake){const row={id:crypto.randomUUID(),ownerId:'self',title:'首页待用会话',version:1,status:'ready',sessionId:selected,requestedSessionId:selected,scopeIds:['general'],createdAt:stamp};rows.set(selected,row);byId[selected]={...row,displayTitle:row.title};void work.select(selected)}
 const api={recentDaily:async({scope})=>{f.recentReads=(f.recentReads||0)+1;if(f.failRecent)throw Error('recent unavailable');return [...reservations.values()].filter(b=>b.kind==='daily'&&b.scope===scope).at(-1)||null},bySession:async({sessionId})=>{f.bindingReads++;if(startup.ensureHandshake&&work.getSnapshot().status!=='ready')throw Object.assign(Error('not yet bound'),{code:'teloa/not-bound'});if(f.failBinding||f.failBindingAt===f.bindingReads)throw Error('binding transient');return [...reservations.values()].find(b=>b.sessionId===sessionId||b.requestId===rows.get(sessionId)?.requestId)||null},byRequest:async({requestId})=>reservations.get(requestId),reserve:async p=>{if(f.failReserve)throw Object.assign(Error('reservation conflict'),{code:'teloa/conflict'});let b=reservations.get(p.requestId);if(!b){b={...p,...(p.kind==='builder'?{draftId:crypto.randomUUID()}:{}),createdAt:stamp,updatedAt:stamp};reservations.set(p.requestId,b);draft={id:b.draftId,ownerId:'self',scope:'sales',revision:1,baseVersion:0,status:'draft',hash:'a'.repeat(64),createdAt:stamp,updatedAt:stamp,candidate:{format:'teloa.business-configuration/v1',scope:'sales',title:'验收业务',sources:[],definitions:[],pages:[]}}}return b},bind:async p=>{const b={...reservations.get(p.requestId),sessionId:p.sessionId};reservations.set(p.requestId,b);return b},draft:async()=>draft,list:async()=>({items:[...reservations.values()].filter(b=>b.kind==='builder').map(binding=>({binding,draft:{id:binding.draftId,scope:'sales',title:'验收业务',revision:1,status:'draft',updatedAt:stamp}}))}),current:async()=>{f.calls.push('current');return f.formal?formal:null},page:async()=>({mode:'saved',scope:'sales',configurationVersion:1,configurationHash:'a'.repeat(64),page:{kind:'records',definition:pageDefinition,objectType,emptyState:'no-records'}})};
 const pageDefinition={id:'records',title:'客户记录',kind:'records',objectType:'customer',fields:['name'],allowCreate:false,allowEdit:false,allowArchive:false};const objectType={format:'teloa.business-object-type/v1',id:'customer',domain:'sales',version:'1.0.0',title:'客户',unit:'条',lead:'客户',sourceId:'local',fields:[{name:'name',label:'名称',from:'名称',type:'text',required:false}]};const formal={scope:'sales',version:1,hash:'a'.repeat(64),createdAt:stamp,manifest:{format:'teloa.business-configuration/v1',scope:'sales',title:'验收业务',sources:[{sourceId:'local',kind:'local-records'}],definitions:[{kind:'object-type',localId:'customer',version:1,definitionHash:'a'.repeat(64)}],pages:[pageDefinition],homePageId:'records'}};
@@ -330,6 +330,85 @@ test('R2 刷新保留原稿后从业务首页继续当前builder不弹无意义�
  assert.equal(await page.evaluate(()=>(window as any).frameFixture.current()),before)
  assert.deepEqual(await page.evaluate(()=>{const f=(window as any).frameFixture;return [f.creates,f.prepares,f.mounts,f.unmounts]}),[1,0,1,0])
  assert.equal(await page.getByRole('textbox',{name:'slot-probe'}).inputValue(),'原生输入草稿')
+})
+
+test('工作台再次进入保留已核验的输入与草稿，后台复核不闪加载提示',async t=>{
+ const page=await mount(t,'zh-CN',{realHome:true})
+ await page.evaluate(()=>(window as any).frameFixture.navigate('home'))
+ await page.locator('[data-teloa-home][aria-busy="false"]').waitFor()
+ const input=page.getByRole('textbox',{name:'slot-probe'}),original=await input.elementHandle()
+ await input.fill('切回工作台时保留的未发送草稿')
+ for(const width of [1400,430]){
+  await page.setViewportSize({width,height:1000})
+  const before=await input.boundingBox()
+  await page.evaluate(()=>{const f=(window as any).frameFixture;f.holdHomePrepare=true;f.navigate('tasks')})
+  await input.waitFor({state:'hidden'})
+  await page.evaluate(()=>(window as any).frameFixture.navigate('home'))
+  await page.waitForFunction(()=>(window as any).frameFixture.homePrepareResolvers?.length>0)
+  assert.equal(await input.isVisible(),true,'复核期间保持已核验的同一输入框可见')
+  assert.equal(await page.getByText('正在准备输入…',{exact:true}).count(),0)
+  assert.equal(await page.getByRole('heading',{name:'继续工作',exact:true}).isVisible(),true)
+  assert.equal(await input.evaluate((node:HTMLElement)=>!!node.closest('[inert]')),true,'复核结束前保持原来的发送保护')
+  assert.equal(await input.inputValue(),'切回工作台时保留的未发送草稿')
+  assert.deepEqual(await input.boundingBox(),before,'准备状态不能挤动输入框')
+  if(process.env.TELOA_HOME_RETURN_CAPTURE)await page.screenshot({path:join(process.env.TELOA_HOME_RETURN_CAPTURE,'home-retained-'+width+'.png'),fullPage:true})
+  await page.evaluate(()=>(window as any).frameFixture.releaseHomePrepare())
+  await page.locator('[data-teloa-home][aria-busy="false"]').waitFor()
+  assert.equal(await input.evaluate((node:HTMLElement,prior:HTMLElement)=>node===prior,original),true)
+  assert.equal(await input.evaluate((node:HTMLElement)=>!!node.closest('[inert]')),false)
+ }
+ assert.deepEqual(await page.evaluate(()=>{const f=(window as any).frameFixture;return [f.homeCreates,f.mounts,f.unmounts]}),[1,1,0])
+})
+
+test('工作台缺少执行目录时仍立即提示选择位置，不被输入未就绪掩盖',async t=>{
+ const page=await mount(t,'zh-CN',{realHome:true})
+ await page.evaluate(()=>{const f=(window as any).frameFixture;f.native(false);f.homePrepareCode='teloa/home-location-required';f.navigate('home')})
+ await page.getByRole('heading',{name:'选择工作位置',exact:true}).waitFor()
+ assert.equal(await page.getByRole('heading',{name:'暂时无法恢复工作台',exact:true}).count(),0)
+ assert.equal(await page.getByRole('button',{name:'选择工作位置',exact:true}).count(),1)
+ assert.equal(await page.evaluate(()=>(window as any).frameFixture.prepares),1,'明确的前置条件不进入自动重试')
+})
+
+test('工作台准备短暂断连自动恢复，不把一次失败显示成恢复失败',async t=>{
+ const page=await mount(t,'zh-CN',{realHome:true})
+ await page.evaluate(()=>{const f=(window as any).frameFixture;f.homePrepareFailures=1;f.navigate('home')})
+ await page.locator('[data-teloa-home][aria-busy="false"]').waitFor()
+ assert.equal(await page.getByRole('heading',{name:'暂时无法恢复工作台',exact:true}).count(),0)
+ assert.deepEqual(await page.evaluate(()=>{const f=(window as any).frameFixture;return [f.homePrepareFailures,f.homeCreates,f.current()]}),[0,1,'fixture-home-return'])
+})
+
+test('工作台等待原生输入时不误报失败，就绪变化后自动继续准备',async t=>{
+ const page=await mount(t,'zh-CN',{realHome:true,clock:true})
+ await page.evaluate(()=>(window as any).frameFixture.navigate('home'))
+ await page.locator('[data-teloa-home][aria-busy="false"]').waitFor()
+ await page.evaluate(()=>{const f=(window as any).frameFixture;f.homeRequiresNativeReady=true;f.native(false);f.navigate('tasks')})
+ await page.getByRole('textbox',{name:'slot-probe'}).waitFor({state:'hidden'})
+ const before=await page.evaluate(()=>(window as any).frameFixture.prepares)
+ await page.evaluate(()=>(window as any).frameFixture.navigate('home'))
+ await page.waitForFunction((before:number)=>(window as any).frameFixture.prepares>before,before)
+ await page.clock.runFor(2000)
+ assert.equal(await page.getByRole('heading',{name:'暂时无法恢复工作台',exact:true}).count(),0,'未就绪属于等待状态')
+ await page.evaluate(()=>(window as any).frameFixture.native(true))
+ await page.locator('[data-teloa-home][aria-busy="false"]').waitFor()
+ assert.equal(await page.getByRole('textbox',{name:'slot-probe'}).isVisible(),true)
+ assert.equal(await page.evaluate(()=>(window as any).frameFixture.homeCreates),1)
+})
+
+test('工作台连续失败仍给出可重试入口，显式重试恢复同一草稿',async t=>{
+ const page=await mount(t,'zh-CN',{realHome:true})
+ await page.evaluate(()=>(window as any).frameFixture.navigate('home'))
+ await page.locator('[data-teloa-home][aria-busy="false"]').waitFor()
+ await page.getByRole('textbox',{name:'slot-probe'}).fill('失败后仍保留的原草稿')
+ await page.evaluate(()=>{const f=(window as any).frameFixture;f.homePrepareFailures=10;f.navigate('tasks')})
+ await page.getByRole('textbox',{name:'slot-probe'}).waitFor({state:'hidden'})
+ await page.evaluate(()=>(window as any).frameFixture.navigate('home'))
+ await page.getByRole('heading',{name:'暂时无法恢复工作台',exact:true}).waitFor()
+ assert.equal(await page.getByRole('textbox',{name:'slot-probe'}).isVisible(),false)
+ await page.evaluate(()=>{(window as any).frameFixture.homePrepareFailures=0})
+ await page.locator('#teloa-main').getByRole('button',{name:'重试',exact:true}).click()
+ await page.locator('[data-teloa-home][aria-busy="false"]').waitFor()
+ assert.equal(await page.getByRole('textbox',{name:'slot-probe'}).inputValue(),'失败后仍保留的原草稿')
+ assert.equal(await page.evaluate(()=>(window as any).frameFixture.homeCreates),1)
 })
 
 test('真实HomeNative归属：业务草案保留后回工作台显示正文，回原入口仍是同一原稿',async t=>{

@@ -56,7 +56,7 @@ test('真实发送后返回首页，旧ready与回执不能抢在延迟准备前
  new Function('require','exports','React',js)((id:string)=>id==='react'?react:{default:new Proxy({},{get:(_,key)=>key})},exports,react)
  const storage=new Map<string,string>();let ids=0,release:(()=>void)|undefined
  const controller=new HomeNativeController({storage:{getItem:key=>storage.get(key)??null,setItem:(key,value)=>{storage.set(key,value)},removeItem:key=>{storage.delete(key)}},identity:()=>`s-${++ids}`,isBlank:()=>true,create:async id=>{if(id==='s-2')await new Promise<void>(resolve=>{release=resolve});return id},adopt:async()=>{}})
- const navigation:string[]=[],render=(sessionId:string,accepted:boolean)=>exports.HomeNativeConversation({home:true,ready:true,sessionId,overview:'overview',content:'native',isHomeDraft:()=>controller.owns(sessionId),accept:()=>controller.accept(sessionId),acceptance:{subscribe:()=>()=>{},getSnapshot:()=>accepted},engaged:(id:string)=>navigation.push(id),useSession:(select:any)=>select({blank:!accepted,promptAttempted:accepted,pendingSubmissions:[]})})
+ const navigation:string[]=[],render=(sessionId:string,accepted:boolean)=>exports.HomeNativeConversation({home:true,ready:true,retainingInput:true,sessionId,overview:'overview',content:'native',isHomeDraft:()=>controller.owns(sessionId),accept:()=>controller.accept(sessionId),acceptance:{subscribe:()=>()=>{},getSnapshot:()=>accepted},engaged:(id:string)=>navigation.push(id),useSession:(select:any)=>select({blank:!accepted,promptAttempted:accepted,pendingSubmissions:[]})})
  assert.equal(await controller.prepare(),'s-1')
  render('s-1',true);effects.splice(0).forEach(effect=>effect());assert.deepEqual(navigation,['s-1'])
  // 模拟子 effect 先于 Frame 的清理 effect：owner ready 与当前会话仍是旧值。

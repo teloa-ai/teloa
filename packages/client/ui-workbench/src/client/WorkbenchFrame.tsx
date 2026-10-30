@@ -53,6 +53,7 @@ import {ensureHomeObjectContext} from './home-object-context.js'
 import type {HomeContextApi} from './home-native-controller.js'
 import {homeNativeCopy} from './home-native-copy.js'
 import {HomeNativePreparationNotice} from './HomeNativePreparationNotice.js'
+import {canRetryHomeNativeInput,recoverHomeNativeInput} from './home-native-preparation.js'
 import {taskArtifactPort} from './task-artifact-port.js'
 import type {RuntimeSettingsSurface} from './runtime-settings-surface.js'
 import {StatusLabel} from './StatusLabel.js'
@@ -442,9 +443,11 @@ export function WorkbenchFrame({assistantActivity,assistantChat,groupWorkLinks,e
   const [assistantActive,setAssistantActive]=useState(()=>{try{return navigationStorage.getItem('teloa.assistant-visible/v1')==='true'}catch{return false}})
   const setCompanionActive=(active:boolean)=>{setAssistantActive(active);try{navigationStorage.setItem('teloa.assistant-visible/v1',String(active))}catch{/* 仅偏好不可写时仍允许本页使用。 */}}
   const homeManagement=useSyncExternalStore(management.subscribe,management.getSnapshot)
-  const [homeSessionId,setHomeSessionId]=useState<string>(),[homeInputError,setHomeInputError]=useState<'restore'|'location'|'slow'>(),[homeRetry,setHomeRetry]=useState(0)
+  const [homeSessionId,setHomeSessionId]=useState<string>(),[homeInputError,setHomeInputError]=useState<'restore'|'location'|'slow'>(),[homeRetry,setHomeRetry]=useState(0),[homeInputChecking,setHomeInputChecking]=useState(true)
+  const homeInputValid=homeSessionId!==undefined&&homeSessionId===current&&homeManagement.ready&&!homeInputError&&!knownBusinessSession&&(!businessBuilder||builderState.status==='ready'&&builderState.nativeReady&&!builderState.error)
   useEffect(()=>{
     if(state.view!=='home')return
+    setHomeInputChecking(true)
     if(!homeManagement.ready){
       // 连接层未就绪时准备器不会启动；同样要有到点恢复态，不能让首页永久显示“正在准备”。
       const timer=setTimeout(()=>setHomeInputError('slow'),12000)
@@ -452,6 +455,7 @@ export function WorkbenchFrame({assistantActivity,assistantChat,groupWorkLinks,e
     }
     // 准备器先只读水合恢复中的原生会话，归属确认后才允许认领或新建首页。
     if(businessBuilder&&builderState.error&&!knownBusinessSession)return
+    if(businessBuilder&&builderState.status!=='ready'){setHomeInputError(undefined);return}
     // 业务会话不是首页待用稿；回工作台沿原准备器恢复本人首页，保留业务草案归属。
     const controller=new AbortController()
     // 慢连接到点显示可重试态，但仍允许同一有效恢复完成；离开页面或重试才撤销旧准备器。
@@ -459,11 +463,22 @@ export function WorkbenchFrame({assistantActivity,assistantChat,groupWorkLinks,e
       if(controller.signal.aborted)return
       setHomeInputError('slow')
     },12000)
-    setHomeSessionId(undefined);setHomeInputError(undefined)
+    // 同一份已核验草稿保留画面，复核完成前由会话外壳阻止交互；换身份仍须重新准备。
+    setHomeSessionId(id=>id===current&&!knownBusinessSession?id:undefined);setHomeInputError(undefined)
     if(knownBusinessSession)setBuilderError(undefined)
-    void prepareHomeSession(controller.signal).then(id=>{if(!controller.signal.aborted)setHomeSessionId(id)}).catch(cause=>{if(!controller.signal.aborted)setHomeInputError(cause&&typeof cause==='object'&&cause.code==='teloa/home-location-required'?'location':'restore')}).finally(()=>clearTimeout(timeout))
+    void recoverHomeNativeInput(prepareHomeSession,controller.signal).then(id=>{
+      if(controller.signal.aborted)return
+      clearTimeout(timeout);setHomeSessionId(id);setHomeInputChecking(false)
+    }).catch(cause=>{
+      if(controller.signal.aborted)return
+      const latest=businessBuilder?.getSnapshot()
+      // 尚在连接或等待原生输入时维持准备态，由就绪订阅继续；不能把短暂缺少归属当成失败。
+      if(canRetryHomeNativeInput(cause)&&latest&&!latest.error&&(latest.status==='loading'||!latest.nativeReady||latest.checkedSessionId!==(mainSession.getSnapshot()??null)))return
+      clearTimeout(timeout);setHomeSessionId(undefined);setHomeInputChecking(false)
+      setHomeInputError(cause&&typeof cause==='object'&&cause.code==='teloa/home-location-required'?'location':'restore')
+    })
     return()=>{clearTimeout(timeout);controller.abort()}
-  },[state.view,homeRetry,prepareHomeSession,homeManagement.ready,businessBuilder,current,builderState.checkedSessionId,builderState.sessionKind,builderState.error,builderVisible])
+  },[state.view,homeRetry,prepareHomeSession,homeManagement.ready,businessBuilder,current,builderState.status,builderState.nativeReady,builderState.checkedSessionId,builderState.sessionKind,builderState.error,builderVisible])
 
   const title=useSessions(value=>current?value.byId[current]?.displayTitle:undefined)
   const taskChatSource=current&&taskRunChat?taskRunChat.forSession(current):emptyTaskRunChatSource
@@ -2605,9 +2620,9 @@ export function WorkbenchFrame({assistantActivity,assistantChat,groupWorkLinks,e
           <AssistantConversationTitleContext.Provider key="native-conversation" value={assistantCurrent&&current?{sessionId:current,name:assistantName}:undefined}><div className={clsx(css.nativeConversation,(!nativeMainVisible||nativePanelVisible)&&css.hidden)} aria-label={t('frame.nativeConversationAria')}>{renderSlot('teloa.conversation',{
             content:renderSlot('main',{}, {entryKey:'conversation'}),
             openTaskForm:(goal,scope)=>{if(!current)return;setHomeTaskGroupId(null);setHomeTaskSourceSession(current);setHomeTaskDrafts(drafts=>drafts[current]?drafts:{...drafts,[current]:{title:'',goal,scope,skills:[],groupId:null}});setHomeCreation('task')},
-            home:state.view==='home',ready:state.view!=='home'||homeSessionId!==undefined&&homeSessionId===current,
+            home:state.view==='home',ready:state.view!=='home'||homeInputValid&&!homeInputChecking,retainingInput:homeInputValid&&homeInputChecking,
             engaged:sessionId=>{if(latestState.current.view==='home'&&mainSession.getSnapshot()===sessionId)actions.openMessages('native')},
-            notice:state.view==='home'&&(homeSessionId===undefined||homeSessionId!==current)?<HomeNativePreparationNotice locale={locale} error={homeInputError} retry={()=>setHomeRetry(value=>value+1)} reload={()=>window.location.reload()} ready={homeManagement.ready} resetKey={homeRetry} chooseLocation={()=>requestCreation({},true)}/>:undefined,
+            notice:state.view==='home'&&(!homeInputValid||homeInputChecking)?<HomeNativePreparationNotice locale={locale} error={homeInputError} retry={()=>setHomeRetry(value=>value+1)} reload={()=>window.location.reload()} ready={homeManagement.ready} resetKey={homeRetry} chooseLocation={()=>requestCreation({},true)}/>:undefined,
             overview:<WorkHome assistantName={assistantName} current={current} workTasks={tasks.tasks} colleagues={tasks.roles} conversationLinks={activeObjectLinks} attention={actions.openAttention} attentionStatus={attentionStatus} planStatus={planStatus} management={management} plans={()=>actions.openPlans()} visible={state.view==='home'} work={work} useSessions={useSessions} open={()=>actions.navigate('messages')} openTask={actions.openTask} openTasks={()=>actions.navigate('tasks')}/>,
           })}</div></AssistantConversationTitleContext.Provider>
           {builderState.sessionKind==='daily'&&(state.view==='home'||conversationVisible)&&dailyStatus}
