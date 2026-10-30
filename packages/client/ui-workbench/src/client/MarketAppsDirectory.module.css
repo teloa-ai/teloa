@@ -1,13 +1,13 @@
 /* 应用：沿用工作台主题令牌；双列紧凑行，详情使用平台抽屉。 */
-.directory{display:grid;grid-template-columns:minmax(0,1fr);gap:16px;min-width:0}
-.title{display:flex;flex-wrap:wrap;align-items:center;justify-content:flex-end;gap:16px;min-width:0}
-/* 1.0：应用是市场的一个分类，页头与选中的「应用」页签已说明位置；标题只给读屏，标题行只留「我的应用」与「添加」。 */
+.directory{container:teloa-market-apps / inline-size;display:grid;grid-template-columns:minmax(0,1fr);gap:16px;min-width:0}
+.title{display:flex;flex-wrap:wrap;align-items:center;gap:10px 12px;min-width:0}
+/* 搜索与目录操作属于同一工具行，空间不足时整组回流；保留标题的读屏语义。 */
 .title h2{position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}
 .title button,.link,.categories button,.groupHead button,.empty button,.emptyActions button,.notice button,.lines button,.advanced button{font:inherit;font-size:var(--teloa-font-control);color:var(--teloa-text);background:var(--teloa-surface);border:1px solid var(--teloa-border);border-radius:999px;padding:5px 12px;cursor:pointer;white-space:nowrap}
 .title button[aria-pressed="true"],.categories button[aria-pressed="true"]{background:var(--teloa-text);border-color:var(--teloa-text);color:var(--teloa-surface)}
-.searchRow{display:flex;align-items:center;gap:10px}
-.search{flex:1;display:flex;align-items:center;gap:8px;min-width:0;height:40px;padding:0 14px;border:1px solid var(--teloa-border);border-radius:999px;background:var(--teloa-surface);color:var(--teloa-muted)}
-.search input{flex:1;min-width:0;border:0;background:transparent;font:inherit;font-size:var(--teloa-font-body);color:var(--teloa-text);outline:none}
+.search{box-sizing:border-box;flex:1 1 calc(var(--teloa-font-control) * 14 + 48px);display:flex;align-items:center;gap:8px;min-width:0;min-height:40px;padding:8px 12px;border:1px solid var(--teloa-control-border);border-radius:9px;background:var(--teloa-surface);color:var(--teloa-muted)}
+.search>svg{flex:none}
+.search input{flex:1;min-width:0;border:0;background:transparent;font:inherit;font-size:var(--teloa-font-control);line-height:1.4;color:var(--teloa-text);outline:none}
 .search:focus-within{border-color:var(--teloa-text);box-shadow:0 0 0 1px var(--teloa-border)}
 .search input:focus,.search input:focus-visible{outline:0;box-shadow:none}
 .categories{display:flex;flex-wrap:wrap;gap:6px}
@@ -77,18 +77,19 @@
 .advancedInfo{margin-top:16px;font-size:var(--teloa-font-caption)}
 .advancedInfo .info{margin-top:8px}
 .mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:var(--teloa-font-caption);word-break:break-all}
-@media (max-width:720px){.grid{grid-template-columns:1fr}.searchRow{flex-wrap:wrap}}
+@container teloa-market-apps (max-width:42em){.grid{grid-template-columns:minmax(0,1fr)}}
 @media (max-width:600px){.detailBody{padding:20px}.detailHead{flex-wrap:wrap}.detailIdentity{flex-basis:calc(100% - 64px)}.detailHead .primary{margin-left:64px}}
 
 /* 创建与导入收为一个轻入口，不另设配置页。 */
-.titleActions{display:flex;flex-wrap:wrap;justify-content:flex-end;align-items:center;gap:10px;min-width:0}
+.titleActions{display:flex;flex:0 1 auto;flex-wrap:wrap;justify-content:flex-end;align-items:center;gap:8px;min-width:0;max-width:100%;margin-inline-start:auto}
+.directory .titleActions>button{box-sizing:border-box;min-height:40px;max-width:100%;min-width:0;padding:8px 12px;line-height:1.4;white-space:normal;overflow-wrap:anywhere}
 .addMenu{position:relative}
-.addMenu>summary{display:grid;place-items:center;width:32px;height:32px;list-style:none;border-radius:var(--teloa-design-r1);cursor:pointer;color:var(--teloa-muted)}
+.addMenu>summary{box-sizing:border-box;display:grid;place-items:center;width:max(40px,calc(var(--teloa-font-control) * 1.4 + 16px));min-height:max(40px,calc(var(--teloa-font-control) * 1.4 + 16px));list-style:none;border-radius:var(--teloa-design-r1);cursor:pointer;color:var(--teloa-muted)}
 .addMenu>summary::-webkit-details-marker{display:none}
 .addMenu>summary:hover{background:var(--teloa-hover);color:var(--teloa-text)}
 .addMenu>summary:focus-visible{outline:2px solid var(--teloa-focus);outline-offset:2px}
-.addMenu>div{position:absolute;top:calc(100% + 6px);right:0;z-index:var(--teloa-z-menu);min-width:170px;padding:5px;border:1px solid var(--teloa-border);border-radius:var(--teloa-design-r2);background:var(--teloa-surface);box-shadow:var(--teloa-shadow)}
-.addMenu button{display:block;width:100%;padding:9px 12px;border:0;border-radius:var(--teloa-design-r1);background:transparent;color:var(--teloa-text);font:inherit;font-size:var(--teloa-font-control);text-align:left;cursor:pointer}
+.addMenu>div{box-sizing:border-box;position:absolute;top:calc(100% + 6px);right:0;z-index:var(--teloa-z-menu);width:max-content;min-width:min(170px,100cqi);max-width:min(24rem,100cqi);padding:5px;border:1px solid var(--teloa-border);border-radius:var(--teloa-design-r2);background:var(--teloa-surface);box-shadow:var(--teloa-shadow)}
+.addMenu button{display:block;width:100%;padding:9px 12px;border:0;border-radius:var(--teloa-design-r1);background:transparent;color:var(--teloa-text);font:inherit;font-size:var(--teloa-font-control);text-align:left;white-space:normal;overflow-wrap:anywhere;cursor:pointer}
 .addMenu button:hover{background:var(--teloa-hover)}
 
 .drawer.drawer{width:min(520px,100vw)}
