@@ -11,6 +11,30 @@ function deferred<T>(){let resolve!:(value:T)=>void,reject!:(error:Error)=>void;
 const turn=()=>new Promise(resolve=>setImmediate(resolve))
 const row=(id:string):Conversation=>({id:'work-'+id,sessionId:id,requestedSessionId:id,ownerId:'owner',title:id,scopeIds:['general'],version:1,status:'ready',createdAt:'2026-10-30T00:00:00Z'})
 
+test('已有目录后台刷新保持ready和原行，已核验的空目录也不切回首屏加载',async()=>{
+ for(const initial of [[],[row('A')]]){
+  const pending=deferred<Conversation[]>(),port:WorkPort={list:async()=>initial,read:async id=>row(id),ensure:async id=>row(id),isNativeChild:()=>false,catalog:async()=>{throw Error()},block:()=>{},create:async()=>{throw Error()},adopt:async id=>id,open:()=>{},current:()=>undefined}
+  const work=new BindingClient(port);await work.refreshDirectory();const before=work.getDirectorySnapshot()
+  port.list=()=>pending.promise;const reading=work.refreshDirectory()
+  assert.equal(work.getDirectorySnapshot().status,'ready');assert.equal(work.getDirectorySnapshot().rows,before.rows);assert.equal(work.getDirectorySnapshot().refreshing,true)
+  pending.resolve([row('B')]);await reading
+  assert.equal(work.getDirectorySnapshot().status,'ready');assert.equal(work.getDirectorySnapshot().refreshing,false);assert.equal(work.getDirectorySnapshot().rows[0]?.sessionId,'B')
+ }
+})
+
+test('首次读取与重叠的后台读取取消后恢复已落定快照，不遗留loading或refreshing',async()=>{
+ const pending=deferred<Conversation[]>(),port:WorkPort={list:()=>pending.promise,read:async id=>row(id),ensure:async id=>row(id),isNativeChild:()=>false,catalog:async()=>{throw Error()},block:()=>{},create:async()=>{throw Error()},adopt:async id=>id,open:()=>{},current:()=>undefined}
+ const work=new BindingClient(port),initial=new AbortController(),first=work.refreshDirectory(initial.signal)
+ assert.equal(work.getDirectorySnapshot().status,'loading');initial.abort();assert.equal(work.getDirectorySnapshot().status,'idle')
+ pending.resolve([]);await first
+ port.list=async()=>[row('A')];await work.refreshDirectory();const baseline=work.getDirectorySnapshot()
+ const stale=deferred<Conversation[]>(),latest=deferred<Conversation[]>(),cancelled=new AbortController()
+ port.list=()=>stale.promise;const a=work.refreshDirectory()
+ port.list=()=>latest.promise;const b=work.refreshDirectory(cancelled.signal);cancelled.abort()
+ assert.equal(work.getDirectorySnapshot(),baseline)
+ latest.resolve([row('B')]);stale.resolve([row('C')]);await Promise.all([a,b]);assert.equal(work.getDirectorySnapshot(),baseline)
+})
+
 test('已有会话点击不重复重读整个目录；目录外目标仍补读',async()=>{
  let rows=[row('A')],reads=0
  const opened:string[]=[],port:WorkPort={list:async()=>{reads++;return rows},read:async id=>row(id),ensure:async id=>rows.find(item=>item.sessionId===id)??row(id),isNativeChild:()=>false,catalog:async()=>{throw Error('不读取能力')},block:()=>{},create:async()=>{throw Error('不创建')},adopt:async id=>id,open:id=>opened.push(id),current:()=>undefined}

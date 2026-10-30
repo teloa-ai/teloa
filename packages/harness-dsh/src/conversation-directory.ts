@@ -6,6 +6,11 @@ export class ConversationDirectoryChanges {
  private closed=false
  private readonly waiters=new Set<()=>void>()
 
+ /** 观察真正落盘的写入；已有绑定的核验、幂等重放不使目录失效。 */
+ trackWrites<Row>(repository:{read():Promise<Row[]>;write(rows:Row[]):Promise<void>}){
+  return {read:()=>repository.read(),write:(rows:Row[])=>this.mutate(()=>repository.write(rows))}
+ }
+
  async mutate<T>(operation:()=>Promise<T>):Promise<T>{
   const value=await operation()
   if(!this.closed){this.revision++;for(const wake of this.waiters)wake()}

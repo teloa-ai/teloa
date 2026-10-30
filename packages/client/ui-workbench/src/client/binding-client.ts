@@ -37,7 +37,9 @@ export class BindingClient {
   private opening=0
   private releaseOpeningBlock:(()=>void)|undefined
   private listing=0
-  private directory:{status:'idle'|'loading'|'ready'|'failed';rows:Conversation[];error:unknown|undefined}={status:'idle',rows:[],error:undefined}
+  private directoryReady=false
+  private directory:{status:'idle'|'loading'|'ready'|'failed';rows:Conversation[];error:unknown|undefined;refreshing?:boolean}={status:'idle',rows:[],error:undefined}
+  private directorySettled=this.directory
   constructor(port:WorkPort) {this.port=port}
   getSnapshot=():BindingState=>this.state
   getDirectorySnapshot=()=>this.directory
@@ -74,9 +76,14 @@ export class BindingClient {
   async refreshDirectory(signal?:AbortSignal):Promise<void> {
     if(signal?.aborted)return
     const listing=++this.listing
-    this.directory={...this.directory,status:'loading',error:undefined};this.publish({})
-    try {const rows=await this.port.list(signal);if(listing===this.listing&&!signal?.aborted){this.directory={status:'ready',rows,error:undefined};this.publish({})}}
-    catch(error){if(listing===this.listing&&!signal?.aborted){this.directory={...this.directory,status:'failed',error};this.publish({})}}
+    const previous=this.directory
+    // 已有目录时后台重读，保留搜索、列表和身份显示；首次加载仍明确等待真源。
+    this.directory={...previous,status:this.directoryReady?'ready':'loading',error:undefined,refreshing:true};this.publish({})
+    const cancelled=()=>{if(listing===this.listing){this.directory=this.directorySettled;this.publish({})}}
+    signal?.addEventListener('abort',cancelled,{once:true})
+    try {if(signal?.aborted){cancelled();return}const rows=await this.port.list(signal);if(listing===this.listing&&!signal?.aborted){this.directoryReady=true;this.directory={status:'ready',rows,error:undefined,refreshing:false};this.directorySettled=this.directory;this.publish({})}}
+    catch(error){if(listing===this.listing&&!signal?.aborted){this.directory={...this.directory,status:'failed',error,refreshing:false};this.directorySettled=this.directory;this.publish({})}}
+    finally{signal?.removeEventListener('abort',cancelled)}
   }
   async openSession(sessionId:string,signal?:AbortSignal,mayOpen?:()=>boolean):Promise<void> {
     await this.openSessionResult(sessionId,signal,mayOpen)

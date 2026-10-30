@@ -105,27 +105,33 @@ export function WorkDirectory({beforeOpen,organization:providedOrganization,work
   // 仅群分类下不读隐藏单聊；当前打开的单聊仍核验一次，包括首条消息前尚未入列表的空白会话。
   const readyIds=rows.filter(row=>row.conversation.status==='ready').map(row=>row.conversation.sessionId)
   const currentReadId=current!==undefined&&directoryRows.some(row=>row.sessionId===current&&row.status==='ready')?current:undefined
-  const roleReadIds=directoryType==='group'?(currentReadId?[currentReadId]:[]):[...(currentReadId?[currentReadId]:[]),...readyIds.filter(id=>id!==currentReadId).sort()],roleIdsKey=JSON.stringify(roleReadIds),roleReadKey=JSON.stringify(roles.map(role=>[role.id,role.name,role.avatarKey,role.kind]))
-  const [directoryRoles,setDirectoryRoles]=useState<{key:string;rows:typeof directoryRows|null;api:typeof objectApi;items:Record<string,PreviewRole>;checked:Record<string,true>}>({key:'',rows:null,api:undefined,items:{},checked:{}})
-  const roleRead=useRef<{key:string;rows:typeof directoryRows;api:typeof objectApi;requested:Set<string>;controller:AbortController}>()
+  const roleReadIds=directoryType==='group'?(currentReadId?[currentReadId]:[]):[...(currentReadId?[currentReadId]:[]),...readyIds.filter(id=>id!==currentReadId).sort()],roleIdsKey=JSON.stringify(roleReadIds),roleReadKey=JSON.stringify(roles.map(role=>[role.id,role.name,role.avatarKey,role.kind] as const).sort(([a],[b])=>a.localeCompare(b)))
+  const [directoryRoles,setDirectoryRoles]=useState<{key:string;rows:typeof directoryRows|null;api:typeof objectApi;items:Record<string,PreviewRole>;checked:Record<string,true>;complete:boolean}>({key:'',rows:null,api:undefined,items:{},checked:{},complete:false})
+  const sameRoleSource=directoryRoles.api===objectApi&&directoryRoles.key===roleReadKey
+  const roleBaseline=sameRoleSource&&directoryRoles.complete
+  const roleRead=useRef<{key:string;rows:typeof directoryRows;api:typeof objectApi;requested:Set<string>;pending:Set<string>;items:Record<string,PreviewRole>;checked:Record<string,true>;atomic:boolean;controller:AbortController}>()
   useEffect(()=>{
     if(!objectApi||!available||!roles.length)return
     let read=roleRead.current
-    if(!read||read.rows!==directoryRows||read.key!==roleReadKey||read.api!==objectApi){read?.controller.abort();read={key:roleReadKey,rows:directoryRows,api:objectApi,requested:new Set(),controller:new AbortController()};roleRead.current=read}
+    if(!read||read.rows!==directoryRows||read.key!==roleReadKey||read.api!==objectApi){read?.controller.abort();read={key:roleReadKey,rows:directoryRows,api:objectApi,requested:new Set(),pending:new Set(),items:{},checked:{},atomic:roleBaseline,controller:new AbortController()};roleRead.current=read}
     const ids=roleReadIds.filter(id=>!read.requested.has(id));if(!ids.length)return
-    for(const id of ids)read.requested.add(id)
+    for(const id of ids){read.requested.add(id);read.pending.add(id)}
     const currentRead=read
     void readDirectoryRoleIdentities(ids,sessionId=>objectApi.bySession(sessionId),roles,{signal:read.controller.signal,onResolved:(sessionId,role)=>{
       if(roleRead.current!==currentRead)return
-      setDirectoryRoles(previous=>{const same=previous.rows===currentRead.rows&&previous.key===currentRead.key&&previous.api===currentRead.api;return {key:currentRead.key,rows:currentRead.rows,api:currentRead.api,items:{...(same?previous.items:{}),...(role?{[sessionId]:role}:{})},checked:{...(same?previous.checked:{}),[sessionId]:true}}})
+      if(role)currentRead.items[sessionId]=role
+      currentRead.checked[sessionId]=true;currentRead.pending.delete(sessionId)
+      // 首次加载逐条显示；后台重查先保留已核验的显示投影，整轮结束后一次替换。
+      // 这份显示缓存不参与会话绑定、员工权限或打开操作的核验。
+      if(!currentRead.atomic||currentRead.pending.size===0)setDirectoryRoles({key:currentRead.key,rows:currentRead.rows,api:currentRead.api,items:{...currentRead.items},checked:{...currentRead.checked},complete:currentRead.pending.size===0})
     }})
   },[objectApi,roleReadKey,roleIdsKey,directoryRows,available])
   useEffect(()=>()=>{roleRead.current?.controller.abort();roleRead.current=undefined},[])
   const currentRoles=directoryRoles.rows===directoryRows&&directoryRoles.key===roleReadKey&&directoryRoles.api===objectApi
-  const roleIdentities=currentRoles?directoryRoles.items:{},roleChecked=currentRoles?directoryRoles.checked:{}
+  const roleIdentities=sameRoleSource?directoryRoles.items:{},roleChecked=currentRoles?directoryRoles.checked:{}
   // N48 分类只按真实员工会话关联（object-conversations 的 active role 链接）：有关联即员工单聊，未核实或无关联留在会话，不按标题猜身份。
   const directCategory=(sessionId:string):'session'|'employee'=>roleIdentities[sessionId]?'employee':'session'
-  const identitiesLoading=!!objectApi&&roles.length>0&&roleReadIds.some(id=>!roleChecked[id])
+  const identitiesLoading=!roleBaseline&&!!objectApi&&roles.length>0&&roleReadIds.some(id=>!roleChecked[id])
   const groupRows=visibleSavedGroups(groupDirectory.items,query,'all',archived)
   const manual=workspace.kind==='workspace'&&order==='manual'&&!archived
   const unifiedRows=[
@@ -249,7 +255,7 @@ export function WorkDirectory({beforeOpen,organization:providedOrganization,work
       <button type="button" disabled={!!preferences.error} onClick={()=>beginFolderName('')}>{dialogueCopy(locale,'createFolder')}</button>
       <button type="button" disabled={!available} onClick={()=>setAdopting(true)}>{t('workDirectory.adopt')}</button>
     </div></DirectoryFilterPopover>
-<DirectoryFilterPopover label={t('conversationDirectory.filters')}><div className={directoryCss.filterPanel}><fieldset><legend>{t('conversationDirectory.state')}</legend><label><input type="radio" name={archiveRadioName} checked={!archived} onChange={()=>setArchived(false)}/>{t('workDirectory.tab.active')}</label><label><input type="radio" name={archiveRadioName} checked={archived} onChange={()=>setArchived(true)}/>{t('workDirectory.tab.archived')}</label></fieldset>{directoryType!=='group'&&!hostAssigned&&<><p className={css.filterScope}>{t('conversationDirectory.direct')}</p><fieldset><legend>{t('workDirectory.workspace.label')}</legend><select aria-label={t('workDirectory.workspace.filterAria')} value={workspace.kind==='workspace'?'workspace:'+workspace.id:workspace.kind} onChange={event=>{const value=event.target.value;setWorkspace(value==='all'?{kind:'all'}:value==='unassigned'?{kind:'unassigned'}:{kind:'workspace',id:value.slice(10)});setError(undefined);setNotice(undefined)}}><option value="all">{t('workDirectory.workspace.all')}</option><option value="unassigned">{t('workDirectory.workspace.unassigned')}</option>{managed.workspaces.map(row=><option key={row.workspaceId} value={'workspace:'+row.workspaceId}>{row.title}</option>)}{missing&&workspace.kind==='workspace'&&<option value={'workspace:'+workspace.id}>{t('workDirectory.workspace.removed')}</option>}</select></fieldset><fieldset><legend>{t('workDirectory.order.label')}</legend><select aria-label={t('workDirectory.order.aria')} value={workspace.kind==='workspace'?order:'recent'} disabled={workspace.kind!=='workspace'||missing} onChange={event=>setOrder(event.target.value as 'recent'|'manual')}><option value="recent">{t('workDirectory.order.recent')}</option><option value="manual">{t('workDirectory.order.manual')}</option></select></fieldset></>}<div className={css.panelActions}><button type="button" onClick={()=>{void work.refreshDirectory();void groups.refresh()}} disabled={directory.status==='loading'||groupDirectory.status==='loading'}><RefreshCw size={15}/>{t('workDirectory.refresh')}</button><button type="button" onClick={onClose}><X size={15}/>{t('workDirectory.close')}</button></div></div></DirectoryFilterPopover>
+<DirectoryFilterPopover label={t('conversationDirectory.filters')}><div className={directoryCss.filterPanel}><fieldset><legend>{t('conversationDirectory.state')}</legend><label><input type="radio" name={archiveRadioName} checked={!archived} onChange={()=>setArchived(false)}/>{t('workDirectory.tab.active')}</label><label><input type="radio" name={archiveRadioName} checked={archived} onChange={()=>setArchived(true)}/>{t('workDirectory.tab.archived')}</label></fieldset>{directoryType!=='group'&&!hostAssigned&&<><p className={css.filterScope}>{t('conversationDirectory.direct')}</p><fieldset><legend>{t('workDirectory.workspace.label')}</legend><select aria-label={t('workDirectory.workspace.filterAria')} value={workspace.kind==='workspace'?'workspace:'+workspace.id:workspace.kind} onChange={event=>{const value=event.target.value;setWorkspace(value==='all'?{kind:'all'}:value==='unassigned'?{kind:'unassigned'}:{kind:'workspace',id:value.slice(10)});setError(undefined);setNotice(undefined)}}><option value="all">{t('workDirectory.workspace.all')}</option><option value="unassigned">{t('workDirectory.workspace.unassigned')}</option>{managed.workspaces.map(row=><option key={row.workspaceId} value={'workspace:'+row.workspaceId}>{row.title}</option>)}{missing&&workspace.kind==='workspace'&&<option value={'workspace:'+workspace.id}>{t('workDirectory.workspace.removed')}</option>}</select></fieldset><fieldset><legend>{t('workDirectory.order.label')}</legend><select aria-label={t('workDirectory.order.aria')} value={workspace.kind==='workspace'?order:'recent'} disabled={workspace.kind!=='workspace'||missing} onChange={event=>setOrder(event.target.value as 'recent'|'manual')}><option value="recent">{t('workDirectory.order.recent')}</option><option value="manual">{t('workDirectory.order.manual')}</option></select></fieldset></>}<div className={css.panelActions}><button type="button" onClick={()=>{void work.refreshDirectory();void groups.refresh()}} disabled={directory.status==='loading'||!!directory.refreshing||groupDirectory.status==='loading'}><RefreshCw size={15}/>{t('workDirectory.refresh')}</button><button type="button" onClick={onClose}><X size={15}/>{t('workDirectory.close')}</button></div></div></DirectoryFilterPopover>
     </div>
     <div className={folderCss.types} role="group" aria-label={dialogueCopy(locale,'type')} onKeyDown={event=>{
       if(!['ArrowRight','ArrowLeft','Home','End'].includes(event.key))return
@@ -268,7 +274,6 @@ export function WorkDirectory({beforeOpen,organization:providedOrganization,work
     {notice&&<p role="status">{notice}</p>}
     {Boolean(error||(directoryType!=='group'&&directory.error))&&<p role="alert">{error??localizeWorkError(locale,directory.error)}</p>}
     {directoryType!=='group'&&identitiesLoading&&<p role="status">{t('workDirectory.syncing')}</p>}
-    {openingSession&&<p role="status">{t('home.recent.opening')}</p>}
     {archived&&<p>{dialogueCopy(locale,'archiveHint')}</p>}
     {directoryType!=='group'&&(!managed.baseline?<p role="status">{t('workDirectory.syncing')}</p>:!managed.ready&&<p role="status">{t('workDirectory.managementUnavailable')}</p>)}
     {directoryType!=='group'&&phase==='loading'&&<p role="status">{t('workDirectory.contentSearch.loading')}</p>}

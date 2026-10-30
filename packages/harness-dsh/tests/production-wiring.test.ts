@@ -16,6 +16,13 @@ import {readSecurityActionPanel} from '@teloa/contract'
 const ownerId='local:teloa-owner'
 const principal={ownerId,approverId:ownerId,scopeIds:['SOC']}
 
+function conversationHost(options:Parameters<typeof host>[0]={}){
+  const runtime=host(options)
+  // 本例不发送模型首问；只承接已核对的标题 provider 注册口，生成行为由标题专门用例验证。
+  runtime.ctx.provide('sessionTitle',{register:()=>()=>{}} as never)
+  return runtime
+}
+
 function page(){
   const item={
     scope:'SOC',type:'alert',id:'evt-production-wiring',version:1,title:'prod-03 异常脚本',source:'EDR',
@@ -96,7 +103,7 @@ test('production apply 以真实 Context、临时 PG 与实际 /teloa handler �
   process.env.DOCKER_HOST='unix://'+join(homedir(),'.orbstack/run/docker.sock')
   process.env.TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE='/var/run/docker.sock'
   const container=await new PostgreSqlContainer('postgres:17-alpine').withDatabase('teloa').start()
-  const connectionString=container.getConnectionUri(),alerts=await source(),runtime=host()
+  const connectionString=container.getConnectionUri(),alerts=await source(),runtime=conversationHost()
   await mkdir(join(root,'.runtime/teloa'),{recursive:true,mode:0o700})
   const config=join(root,'.runtime/teloa/database.json')
   await writeFile(config,JSON.stringify({connectionString}),{mode:0o600})
@@ -136,8 +143,16 @@ test('production apply 以真实 Context、临时 PG 与实际 /teloa handler �
   assert.equal(rejected.ok,false,'覆盖仓库的工作区不能用于新建会话')
   assert.equal(rejected.error?.code,'teloa/forbidden')
   // 专用工作区照旧可用：收敛的是仓库根及其祖先，不是整个工作区设置。
-  const ordinary=await call(rpc,'conversations/create',{requestId:randomUUID(),title:'专用工作区会话'}) as {status:string}
+  const beforeConversation=await call(rpc,'conversations/watch',{}) as {revision:number}
+  const ordinaryRequest={requestId:randomUUID(),title:'专用工作区会话'}
+  const ordinary=await call(rpc,'conversations/create',ordinaryRequest) as {status:string;sessionId:string}
   assert.equal(ordinary.status,'ready')
+  const afterConversation=await call(rpc,'conversations/watch',{}) as {revision:number}
+  assert.ok(afterConversation.revision>beforeConversation.revision,'真实落盘使其他浏览器发现新增会话')
+  for(let i=0;i<3;i++)await call(rpc,'conversations/ensure',{sessionId:ordinary.sessionId})
+  await call(rpc,'conversations/create',ordinaryRequest)
+  await call(rpc,'conversations/adopt',{...ordinaryRequest,sessionId:ordinary.sessionId})
+  assert.deepEqual(await call(rpc,'conversations/watch',{}),afterConversation,'正式RPC链路反复打开、创建重放和接入重放不发送无效目录通知')
 
   const data=await call(rpc,'business-data/query',{scope:'SOC',limit:1}) as {items:Array<Record<string,unknown>>}
   const item=data.items[0]
@@ -208,7 +223,7 @@ test('production apply 以真实 Context、临时 PG 与实际 /teloa handler �
   assert.deepEqual(await call(rpc,'security-actions/attention',{}),[])
 
   await runtime.ctx.fiber.dispose()
-  const restarted=host()
+  const restarted=conversationHost()
   try{
     await restarted.ready(join(root,'.runtime/dsh'))
     await apply(restarted.ctx,{projectRoot:root})
@@ -222,7 +237,7 @@ test('production apply 以真实 Context、临时 PG 与实际 /teloa handler �
   // 业务身份闸明确拒绝 general，直接把 scopeIds:[task.scope] 交给业务服务会让整次执行准备
   // 以 teloa/forbidden 中断——隔离宿主上表现为计划到点建了任务却永远产生不出 Run。
   // 这一段必须走真实装配：只测抽出来的判据函数，接线改回旧写法时不会变红。
-  const runtimeHost=host({agents:true})
+  const runtimeHost=conversationHost({agents:true})
   try{
     await runtimeHost.ready(join(root,'.runtime/dsh'))
     await apply(runtimeHost.ctx,{projectRoot:root})
