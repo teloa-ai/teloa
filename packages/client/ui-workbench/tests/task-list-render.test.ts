@@ -25,29 +25,38 @@ const routed=(id:string)=>task(id,{source:{groupId:'g',messageId:'m',rootId:'r',
 const rows=[row(task('f1')),row(task('f2',{storage:'persistent'}),{unverified:true}),row(routed('r1')),row(routed('r2')),row(routed('r3'))]
 const props={filter:'all' as const,selected:null as string|null,select:()=>{},stateLabel:(state:PreviewTask['state'])=>state,attentionLabel:(kind:string)=>kind,stamp:(at:string)=>at}
 
-test('两条正式加三条群内回应：正式行两个 option，群组折成一个收起按钮',()=>{
+test('两条正式加三条群内回应：正式行保留原生表格与按钮语义，群组折成一个收起按钮',()=>{
   const html=render(createElement(TaskList,{...props,rows}))
   assert.equal(html.match(/aria-expanded="false"/g)?.length,1)
   assert.match(html,/群内回应 · 3 条/)
-  assert.equal(html.match(/role="option"/g)?.length,2)
-  assert.match(html,/role="listbox"[^>]*aria-label="任务列表"/)
+  assert.equal(html.match(/data-teloa-task-open/g)?.length,2)
+  assert.match(html,/<table aria-label="任务列表"/)
+  assert.doesNotMatch(html,/role="(?:listbox|option)"/)
 })
 
 test('只看正式时没有群组按钮',()=>{
   const html=render(createElement(TaskList,{...props,rows,filter:'formal'}))
   assert.doesNotMatch(html,/aria-expanded/)
   assert.doesNotMatch(html,/群内回应/)
-  assert.equal(html.match(/role="option"/g)?.length,2)
+  assert.equal(html.match(/data-teloa-task-open/g)?.length,2)
+})
+
+test('筛选隐藏当前任务时首个可见任务仍能 Tab 进入',()=>{
+ const html=render(createElement(TaskList,{...props,rows,selected:'r1'}))
+ const buttons=[...html.matchAll(/<button[^>]*data-teloa-task-open[^>]*>/g)].map(match=>match[0])
+ assert.doesNotMatch(buttons[0]!,/tabindex="-1"/)
+ assert.doesNotMatch(buttons[1]!,/tabindex="-1"/)
+ assert.doesNotMatch(buttons.join(''),/aria-current/)
 })
 
 test('表头恰五列：任务/负责人/状态/需要你/更新时间',()=>{
   const html=render(createElement(TaskList,{...props,rows}))
-  assert.deepEqual([...html.matchAll(/<th>([^<]*)<\/th>/g)].map(match=>match[1]),['任务','负责人','状态','需要你','更新时间'])
+  assert.deepEqual([...html.matchAll(/<th scope="col">([^<]*)<\/th>/g)].map(match=>match[1]),['任务','负责人','状态','需要你','更新时间'])
 })
 
 test('打开详情后负责人并入任务单元，状态单列，完整姓名不会挤成几字',()=>{
  const html=render(createElement(TaskList,{...props,rows,selected:'f1'}))
- assert.deepEqual([...html.matchAll(/<th>([^<]*)<\/th>/g)].map(match=>match[1]),['任务','状态'])
+ assert.deepEqual([...html.matchAll(/<th scope="col">([^<]*)<\/th>/g)].map(match=>match[1]),['任务','状态'])
  assert.match(html,/<td colSpan="2">/)
  assert.doesNotMatch(html,/<td colSpan="5">/)
  assert.match(html,/尚未核对/)
@@ -55,26 +64,26 @@ test('打开详情后负责人并入任务单元，状态单列，完整姓名�
  assert.match(named,/<span class="rowOwner"[^>]*>开发验收·资料编辑已保存<\/span>/)
 })
 
-test('选中行 aria-selected 且 tabIndex 0，其它 -1；持久且未核对的行显示尚未核对',()=>{
+test('当前任务按钮 aria-current，所有原生按钮均可 Tab 进入；持久且未核对的行显示尚未核对',()=>{
   const html=render(createElement(TaskList,{...props,rows,selected:'f2'}))
-  const options=[...html.matchAll(/<tr[^>]*role="option"[^>]*>/g)].map(match=>match[0])
+  const options=[...html.matchAll(/<button[^>]*data-teloa-task-open[^>]*>/g)].map(match=>match[0])
   assert.equal(options.length,2)
-  const selectedRow=options.find(line=>line.includes('data-teloa-entry="f2"'))!
-  assert.match(selectedRow,/aria-selected="true"/)
-  assert.match(selectedRow,/tabindex="0"/)
-  const otherRow=options.find(line=>line.includes('data-teloa-entry="f1"'))!
-  assert.match(otherRow,/aria-selected="false"/)
-  assert.match(otherRow,/tabindex="-1"/)
+  const selectedRow=options.find(line=>line.includes('title="任务 f2"'))!
+  assert.match(selectedRow,/aria-current="page"/)
+  assert.doesNotMatch(selectedRow,/tabindex="-1"/)
+  const otherRow=options.find(line=>line.includes('title="任务 f1"'))!
+  assert.doesNotMatch(otherRow,/aria-current/)
+  assert.doesNotMatch(otherRow,/tabindex="-1"/)
   assert.match(html,/尚未核对/)
 })
 
 test('无选中时首行可 Tab 进入；有关注原因的行置顶并标记 listPinned',()=>{
   const html=render(createElement(TaskList,{...props,rows:[row(task('f1')),row(task('f2'),{attention:{kinds:['approval'],reason:'approval'}})]}))
-  const options=[...html.matchAll(/<tr[^>]*role="option"[^>]*>/g)].map(match=>match[0])
-  assert.match(options[0]!,/data-teloa-entry="f2"/)
-  assert.match(options[0]!,/listPinned/)
-  assert.match(options[0]!,/tabindex="0"/)
-  assert.match(options[1]!,/tabindex="-1"/)
+  const options=[...html.matchAll(/<button[^>]*data-teloa-task-open[^>]*>/g)].map(match=>match[0])
+  assert.match(options[0]!,/title="任务 f2"/)
+  assert.match(html,/<tr[^>]*class="[^"]*listPinned[^>]*data-teloa-entry="f2"/)
+  assert.doesNotMatch(options[0]!,/tabindex="-1"/)
+  assert.doesNotMatch(options[1]!,/tabindex="-1"/)
 })
 
 test('英文列表将内部本机任务标签翻译为 Local task，不改业务对象原文',()=>{

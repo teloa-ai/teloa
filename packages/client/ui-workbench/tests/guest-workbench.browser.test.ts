@@ -129,7 +129,7 @@ test('宿主设置复用平台布局与主题，导航保留真实节点及草�
  assert.deepEqual(await page.evaluate(()=>(window as any).guestTest.calls),[])
  assert.equal(await settings.getByRole('navigation',{name:'设置',exact:true}).getByRole('button',{name:'账号',exact:true}).getAttribute('aria-current'),'page')
  assert.equal(await page.evaluate(()=>getComputedStyle((window as any).guestTest.account).color),'rgb(28, 27, 25)')
- assert.equal(await page.evaluate(()=>getComputedStyle((window as any).guestTest.account).getPropertyValue('--teloa-font-body').trim()),'14px')
+ assert.equal(await page.evaluate(()=>getComputedStyle((window as any).guestTest.account).fontSize),'14px','宿主内容默认仍渲染为 14px，不依赖字号令牌使用 px 或 rem')
  await page.getByLabel('宿主输入',{exact:true}).fill('宿主保留的新输入')
  await settings.getByRole('button',{name:'外观',exact:true}).click()
  assert.equal(await page.locator('#original section').first().evaluate((node:HTMLElement)=>node===(window as any).guestTest.account),true)

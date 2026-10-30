@@ -5,3 +5,16 @@
 .rows{min-width:0;padding:0 8px!important;gap:0!important}.row{box-sizing:border-box;width:100%;min-width:0;margin:0!important;padding:11px 8px!important;border:0!important;border-radius:0!important;border-bottom:1px solid var(--teloa-border)!important;box-shadow:none!important;background:transparent!important}.row:hover{background:var(--teloa-subtle)!important}.row[aria-current=page],.row[data-active]{background:var(--teloa-hover)!important}.rowBody{display:block;min-width:0;flex:1}.title{display:flex;align-items:center;gap:7px;min-width:0}.title>strong{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:var(--teloa-font-list);font-weight:var(--teloa-weight-medium);line-height:var(--teloa-leading-label)}.title>:not(strong){flex:none;white-space:nowrap}.summary{display:-webkit-box;min-width:0;overflow:hidden;-webkit-box-orient:vertical;-webkit-line-clamp:1;margin-top:3px;color:var(--teloa-muted);font-size:var(--teloa-font-caption);line-height:1.55}.metadata{display:block;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-top:4px;color:var(--teloa-muted);font-size:var(--teloa-font-caption);line-height:1.5}.leadingIcon{display:grid;place-items:center;flex:0 0 32px;width:32px;height:32px;border-radius:8px;background:var(--teloa-subtle);color:var(--teloa-muted)}
 .footer{flex:none;border-top:1px solid var(--teloa-border);padding:10px 14px}.footer button{justify-content:flex-start!important;width:100%;min-height:32px!important;padding:5px 0!important;border:0!important;background:transparent!important;color:var(--teloa-muted)!important;text-align:left;font-size:var(--teloa-font-caption)!important}.footer button:hover{color:var(--teloa-text)!important}
 @media(max-width:760px){.pane{width:100%;max-width:100%;overflow-x:hidden}.header{padding:14px 14px 8px}.search{min-height:44px}.filterTrigger{min-width:44px;min-height:44px;justify-content:center}.filterPanel{position:fixed;top:auto;right:14px;bottom:14px;left:14px;width:auto;max-width:none}.filterPanel label{min-height:40px}.row{padding:13px 7px!important}.footer{padding-bottom:max(10px,env(safe-area-inset-bottom))}}
+/* 目录可在窄分栏和放大字体下重排，标题、状态及操作各有空间。 */
+.header h2{margin:0;white-space:normal;overflow-wrap:anywhere}
+.title{flex-wrap:wrap;row-gap:4px}
+.title>strong{flex:1 1 10ch;white-space:normal;overflow-wrap:anywhere}
+.search input::placeholder{color:var(--teloa-muted);opacity:1}
+@media(pointer:coarse){
+ .headerActions{gap:4px}
+ .iconAction{width:44px;height:44px;min-height:44px!important}
+ .search{min-height:44px;padding-block:0}
+ .search>button{width:44px;height:44px;min-height:44px!important}
+ .filterTrigger,.filterPanel label,.footer button{min-height:44px!important}
+}
+.search,.filterPanel select{border-color:var(--teloa-control-border)}

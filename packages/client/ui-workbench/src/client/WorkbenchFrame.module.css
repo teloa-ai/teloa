@@ -132,3 +132,14 @@
 .quickActions .newWorkGroup .newWorkMenu{position:fixed;right:auto;width:240px;max-width:calc(100vw - 24px)}
 
 .navigationProgress {position:fixed;inset-inline-start:24px;bottom:24px;z-index:var(--teloa-z-shell-overlay);max-width:min(480px,calc(100vw - 48px));padding:12px 16px;background:var(--teloa-surface);color:var(--teloa-text);border:1px solid var(--teloa-border);border-radius:8px;box-shadow:var(--teloa-shadow);font-size:var(--teloa-font-body);line-height:1.5;}
+
+/* 长页名和较大字体先换行，主导航与工具操作始终可达。 */
+.topbar{flex-wrap:wrap;padding-block:6px;row-gap:6px}
+.crumbs{flex:1;flex-wrap:wrap;gap:4px 8px}
+.crumbs>.crumb,.crumbText{min-width:0;max-width:100%;white-space:normal;overflow-wrap:anywhere}
+.toolbar{max-width:100%;flex-wrap:wrap}
+.navItem>span{min-width:0;overflow-wrap:anywhere}
+@media(pointer:coarse){
+ .navigation .navItem,.mobileNavigation,.mobileClose,.crumb{min-height:44px}
+ .mobileNavigation,.mobileClose{min-width:44px;flex:none}
+}

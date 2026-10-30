@@ -47,3 +47,15 @@
 .directory>header{align-items:center;margin:0 0 16px}
 
 .cardProgress{display:flex;align-items:center;gap:10px;font-size:var(--teloa-font-caption);color:var(--teloa-muted);margin-top:8px}.cardProgress progress{flex:1;min-width:24px;height:4px;accent-color:var(--teloa-text)}.cardProgress>span:last-child{margin-left:auto}
+
+.form header h2{min-width:0;overflow-wrap:anywhere}
+.form header>button{flex:none;min-width:32px;min-height:32px;padding:0}
+.form footer{flex-wrap:wrap}
+.form footer>button{max-width:100%;white-space:normal;overflow-wrap:anywhere}
+@media(max-width:600px){
+ .dialog .form header>button,.dialog .form footer>button{min-width:44px;min-height:44px}
+ .dialog .form :is(input:not([type=checkbox]),textarea,select){min-width:0;max-width:100%;font-size:var(--teloa-font-touch-input)}
+}
+.dialog .form :is(input:where(:not([type=checkbox],[type=radio])),textarea,select){border-color:var(--teloa-control-border)}
+.dialog .form :is(input,textarea)[aria-invalid=true]{border-color:var(--teloa-danger)}
+.dialog .form :is(input,textarea)::placeholder{color:var(--teloa-muted);opacity:1}
