@@ -243,20 +243,20 @@ test('已消费的应用请求跨真实key重挂不重复清掉后续搜索草�
 })
 
 
-test('已添加长文本卡片复用市场固定尺寸，详情仍完整且返回原卡片',async t=>{
+test('已添加长文本卡片随内容适配高度，详情完整且返回原卡片',async t=>{
  const page=await mount(t);await page.setViewportSize({width:1440,height:1000});await page.evaluate(()=>(window as any).addInstalledCardFixtures());await page.getByRole('button',{name:/^已添加 ·/}).click()
  const ids=['installed-long-cn','installed-short-cn','installed-long-en','installed-short-en']
  const cards=ids.map(id=>page.locator('[data-teloa-entry="'+id+'"]'));for(const card of cards)await card.waitFor()
  const facts=async()=>Promise.all(cards.map(card=>card.evaluate((node:HTMLElement)=>{
-  const rect=node.getBoundingClientRect(),title=node.querySelector('strong')!,pitch=node.querySelector('[class*="gridPitch"],[class*="bundlePitch"]')!,credit=node.querySelector('[class*="cardCredit"]'),foot=node.querySelector('[class*="cardFoot"]');return {height:rect.height,y:rect.y,width:rect.width,overflow:node.scrollWidth-node.clientWidth,titleHeight:title.getBoundingClientRect().height,titleLine:parseFloat(getComputedStyle(title).lineHeight),pitchHeight:pitch.getBoundingClientRect().height,pitchLine:parseFloat(getComputedStyle(pitch).lineHeight),creditHeight:credit?.getBoundingClientRect().height??0,footBottom:foot?rect.bottom-foot.getBoundingClientRect().bottom:null}
+  const rect=node.getBoundingClientRect(),title=node.querySelector('strong')!,pitch=node.querySelector('[class*="gridPitch"],[class*="bundlePitch"]')!,credit=node.querySelector('[class*="cardCredit"]'),foot=node.querySelector('[class*="cardFoot"]');return {height:rect.height,y:rect.y,width:rect.width,overflow:node.scrollWidth-node.clientWidth,titleHeight:title.getBoundingClientRect().height,titleLine:parseFloat(getComputedStyle(title).lineHeight),pitchHeight:pitch.getBoundingClientRect().height,pitchLine:parseFloat(getComputedStyle(pitch).lineHeight),creditHeight:credit?.getBoundingClientRect().height??0,creditLine:credit?parseFloat(getComputedStyle(credit).lineHeight):0,footBottom:foot?rect.bottom-foot.getBoundingClientRect().bottom:null}
  })))
  if(process.env.TELOA_ADDED_CARD_CAPTURE)await page.screenshot({path:join(process.env.TELOA_ADDED_CARD_CAPTURE,'added-long-text-desktop.png'),fullPage:true})
  assert.ok((await cards[0]!.locator('[class*="cardCredit"]').innerText()).length>100);assert.ok((await cards[2]!.locator('[class*="cardCredit"]').innerText()).length>100);
- const wide=await facts();t.diagnostic(JSON.stringify(wide));assert.ok(wide.every(row=>row.height===wide[0]!.height&&row.height<=210&&row.overflow<=1));assert.ok(wide.every(row=>row.y===wide[0]!.y),'四张卡片同排且同高')
- assert.ok(wide.every(row=>row.titleHeight<=row.titleLine*2+1&&row.pitchHeight<=row.pitchLine*2+1&&row.creditHeight<=18))
+ const wide=await facts();t.diagnostic(JSON.stringify(wide));assert.ok(wide.every(row=>row.height===wide[0]!.height&&row.height>=220&&row.height<=360&&row.overflow<=1));assert.ok(wide.every(row=>row.y===wide[0]!.y),'四张卡片同排且同高')
+ assert.ok(wide.every(row=>row.titleHeight<=row.titleLine*2+1&&row.pitchHeight<=row.pitchLine*2+1&&row.creditHeight<=row.creditLine+1))
  assert.ok(wide.every(row=>row.footBottom!==null&&Math.abs(row.footBottom-wide[0]!.footBottom!)<=1),'底部入口位置对齐')
  for(const [index,tail] of [[0,'中文描述结尾标记'],[2,'English description end marker']] as const){await cards[index]!.click();const detail=page.getByRole('dialog');await detail.waitFor();assert.match(await detail.innerText(),new RegExp(tail));await page.keyboard.press('Escape');await cards[index]!.waitFor();assert.equal(await cards[index]!.getAttribute('aria-current'),'page')}
- await page.setViewportSize({width:900,height:1000});const narrow=await facts();assert.ok(narrow.every(row=>row.height===wide[0]!.height&&row.overflow<=1));assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true)
+ await page.setViewportSize({width:900,height:1000});const narrow=await facts();assert.ok(narrow.every(row=>row.height>=220&&row.height<=400&&row.overflow<=1));assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true)
  if(process.env.TELOA_ADDED_CARD_CAPTURE)await page.screenshot({path:join(process.env.TELOA_ADDED_CARD_CAPTURE,'added-long-text-narrow.png'),fullPage:true})
  assert.deepEqual(await page.evaluate(()=>(window as any).marketPrimaryFixture.added),[]);assert.deepEqual(await page.evaluate(()=>(window as any).marketPrimaryFixture.addRoles),[])
 })

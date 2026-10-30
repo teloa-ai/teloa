@@ -227,16 +227,16 @@
 .alignedPage.overviewPage .overviewLayout .search{width:100%;margin-left:0;margin-right:0}.alignedPage.overviewPage .overviewLayout .filterBar{padding-left:0;padding-right:0}.alignedPage.overviewPage .overviewLayout .rows{padding:0!important}
 
 /* 1.0 待办目录：事项、来源和真实更新时间分列，窄屏保留同一项的上下文。 */
-.attentionColumns{display:grid;grid-template-columns:minmax(0,1fr) 200px 140px 40px;gap:16px;padding:12px 16px;border-bottom:1px solid var(--teloa-border);color:var(--teloa-muted);font-size:12px}
+.attentionColumns{display:grid;grid-template-columns:minmax(0,1fr) 200px 140px 40px;gap:16px;padding:12px 16px;border-bottom:1px solid var(--teloa-border);color:var(--teloa-muted);font-size:var(--teloa-font-caption)}
 .alignedPage .attentionList .attentionRow{display:grid;grid-template-columns:minmax(0,1fr) 200px 140px;gap:16px;border:0;border-radius:0;background:transparent;padding:16px;align-items:center}
-.attentionItemCell{display:flex;align-items:center;gap:12px;min-width:0}.attentionItemCell>span:last-child{min-width:0;flex:1}.attentionReason{display:block;color:var(--teloa-muted);font-size:12px;margin-top:5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.attentionSourceCell,.attentionTimeCell{font-size:12px;color:var(--teloa-muted);text-align:left}.attentionTimeCell{font-variant-numeric:tabular-nums}.attentionSourceCell{overflow-wrap:anywhere}
+.attentionItemCell{display:flex;align-items:center;gap:12px;min-width:0}.attentionItemCell>span:last-child{min-width:0;flex:1}.attentionReason{display:block;color:var(--teloa-muted);font-size:var(--teloa-font-caption);margin-top:5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.attentionSourceCell,.attentionTimeCell{font-size:var(--teloa-font-caption);color:var(--teloa-muted);text-align:left}.attentionTimeCell{font-variant-numeric:tabular-nums}.attentionSourceCell{overflow-wrap:anywhere}
 .attentionRowLine{border-bottom:1px solid var(--teloa-border);border-radius:0}.attentionRowLine:hover{background:var(--teloa-hover)}
 /* 工作目录沿用控件 / 说明两级字号，阅读正文与详情字号不随目录调整。 */
 .alignedPage.overviewPage .tableLink,.alignedPage.overviewPage .attentionRow strong{font-size:var(--teloa-font-control)}
 .alignedPage.overviewPage>.taskHeader p{font-size:var(--teloa-font-control);font-weight:var(--teloa-weight-medium)}
 .alignedPage.overviewPage .attentionTabs button{font-size:var(--teloa-font-control);font-weight:var(--teloa-weight-regular)}
 .alignedPage.overviewPage .attentionTabs button[aria-current=page]{font-weight:var(--teloa-weight-medium)}
-@media(max-width:760px){.attentionColumns{grid-template-columns:minmax(0,1fr) 120px 40px}.attentionColumns>span:nth-child(3){display:none}.alignedPage .attentionList .attentionRow{grid-template-columns:minmax(0,1fr) 120px}.attentionTimeCell{grid-column:2;font-size:11px}.attentionItemCell{grid-row:1/3}.attentionSourceCell{font-size:11px}}
+@media(max-width:760px){.attentionColumns{grid-template-columns:minmax(0,1fr) 120px 40px}.attentionColumns>span:nth-child(3){display:none}.alignedPage .attentionList .attentionRow{grid-template-columns:minmax(0,1fr) 120px}.attentionTimeCell{grid-column:2;font-size:var(--teloa-font-caption)}.attentionItemCell{grid-row:1/3}.attentionSourceCell{font-size:var(--teloa-font-caption)}}
 @media(max-width:480px){.attentionColumns{display:none}.alignedPage .attentionList .attentionRow{grid-template-columns:minmax(0,1fr);gap:6px;padding:14px 8px}.attentionItemCell{grid-row:auto}.attentionSourceCell,.attentionTimeCell{grid-column:1;margin-left:29px}.attentionReason{white-space:normal}}
 
 /* 编辑轻窗：说明紧随标题，字段与操作按 8/16/24 节奏分组。 */
@@ -254,3 +254,46 @@
 .alignedDialog :is(input,textarea)::placeholder{color:var(--teloa-muted);opacity:1}
 .form .primaryAction{background:var(--teloa-primary);border-color:var(--teloa-primary);color:var(--teloa-on-primary);font-weight:var(--teloa-weight-medium)}
 .form .primaryAction:hover:not(:disabled){background:var(--teloa-primary);filter:brightness(.9)}
+
+/* 页面与表格：标题负责定位，工具条负责筛选，只有目录本身滚动。 */
+.overviewPage>.pageHeader h1{position:static;width:auto;height:auto;margin:0 0 6px;overflow:visible;clip:auto;white-space:normal}
+.alignedPage.overviewPage>.taskHeader,.alignedPage.overviewPage>.attentionHeader{position:static;box-sizing:border-box;display:flex;width:100%;height:auto;margin:0;overflow:visible;clip:auto;white-space:normal;padding:28px var(--teloa-page-gutter) 16px;align-items:flex-start}
+.alignedPage.overviewPage>.taskHeader p{font-size:var(--teloa-font-control);font-weight:400;color:var(--teloa-muted)}
+.alignedPage.overviewPage{overflow:hidden}.alignedPage.overviewPage>.pageHeader{max-width:var(--teloa-content-width);margin-inline:auto;flex:none}
+.alignedPage .overviewLayout{box-sizing:border-box;flex:1;min-height:0;width:100%;max-width:var(--teloa-content-width);padding:0 var(--teloa-page-gutter) 24px}
+.alignedPage.overviewPage .overviewLayout{padding-inline:var(--teloa-page-gutter);max-width:var(--teloa-content-width)}
+.alignedPage .overviewLayout>.directory{overflow:hidden;min-height:0}
+.alignedPage .tableWrap{flex:1;min-height:0;overflow:auto;margin-top:12px;background:var(--teloa-surface);scroll-padding-top:48px;overscroll-behavior:contain}
+.alignedPage .tableWrap th{position:sticky;top:0;z-index:1;padding:11px 16px;background:var(--teloa-panel);box-shadow:0 1px 0 var(--teloa-border);font-weight:500}
+.alignedPage .tableWrap td{padding:12px 16px;line-height:1.5;vertical-align:middle;font-variant-numeric:tabular-nums}
+.alignedPage.overviewPage .tableLink{font-size:var(--teloa-font-list);font-weight:500;line-height:1.5}
+.alignedPage .tableWrap small{margin-top:4px}.alignedPage .listRow:hover,.alignedPage .listRow:focus-within{background:var(--teloa-hover)}
+.alignedPage .listRow[data-active]{background:var(--teloa-active)}
+.alignedPage .overviewLayout .search{min-height:40px;border-radius:9px;padding:8px 12px}
+.alignedPage .overviewLayout .attentionTabs{flex:none;margin-top:4px;margin-bottom:12px;flex-wrap:wrap}
+.alignedPage .attentionTabs button{height:auto;min-height:36px;padding-block:6px}
+.alignedPage .overviewLayout .attentionList{flex:1;overflow:auto;min-height:0}
+.attentionColumns{background:var(--teloa-panel);font-size:var(--teloa-font-caption)}
+.attentionReason,.attentionSourceCell,.attentionTimeCell{font-size:var(--teloa-font-caption);line-height:1.6}
+.alignedPage .attentionRow .rowTitle>strong{font-size:var(--teloa-font-list)}
+.alignedPage .detail{padding:28px;max-width:100%;box-sizing:border-box}
+.dialog{overflow:auto;box-shadow:var(--teloa-design-shadow-modal)}
+.alignedDialog{width:min(600px,calc(100vw - 32px));padding:28px;border-radius:16px}
+.alignedDialog .form{gap:20px}.alignedDialog .form>header{align-items:flex-start;padding-bottom:16px;border-bottom:1px solid var(--teloa-border)}
+.alignedDialog .form>footer{position:sticky;bottom:-28px;z-index:2;margin:4px -28px -28px;padding:16px 28px;background:var(--teloa-surface);border-top:1px solid var(--teloa-border)}
+.alignedDialog .form>label{gap:8px}.alignedDialog .form :is(input,textarea,select){border-radius:8px}.alignedDialog .form label{font-size:var(--teloa-font-control);line-height:1.6}
+@media(max-width:760px){
+ .alignedPage.overviewPage>.taskHeader,.alignedPage.overviewPage>.attentionHeader{padding:20px 20px 16px;gap:12px}
+ .alignedPage.overviewPage>.taskHeader>.buttons{margin:0;justify-content:flex-start}
+ .alignedPage.overviewPage .overviewLayout{padding-inline:20px;padding-bottom:16px}
+ .alignedPage .tableWrap table{min-width:0;display:block}.alignedPage .tableWrap thead{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%)}
+ .alignedPage .tableWrap tbody{display:block}.alignedPage .tableWrap tr.listRow{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:10px 16px;padding:16px;border-bottom:1px solid var(--teloa-border)}
+ .alignedPage .tableWrap tr.listRow:last-child{border-bottom:0}.alignedPage .tableWrap .listRow td{display:block;min-width:0;border:0;padding:0;white-space:normal;overflow-wrap:anywhere}
+ .alignedPage .tableWrap .listRow td:first-child{grid-column:1/-1}.alignedPage .tableWrap .listRow td[data-label]::before{display:block;content:attr(data-label);margin-bottom:3px;color:var(--teloa-muted);font-size:var(--teloa-font-caption)}
+ .alignedPage .tableLink{min-height:0;min-width:0}.alignedPage .tableWrap td:nth-child(2){white-space:normal}
+ .alignedPage .tableWrap .listGroupRow{display:block}.alignedPage .tableWrap .listGroupRow td{display:block}
+ .alignedDialog{padding:20px;border-radius:14px}.alignedDialog .form>footer{bottom:-20px;margin:4px -20px -20px;padding:16px 20px}
+}
+@media(max-height:600px){.alignedPage.overviewPage>.taskHeader{padding-top:16px;padding-bottom:10px}.alignedPage.overviewPage>.taskHeader h1{font-size:var(--teloa-font-detail)}}
+
+.alignedPage.overviewPage.selectedPage>.taskHeader{display:none}

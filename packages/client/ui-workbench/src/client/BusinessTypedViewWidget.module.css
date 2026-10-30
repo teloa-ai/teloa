@@ -28,3 +28,5 @@
 .swatch[data-series='1']{background:var(--teloa-good,#648768)}
 .swatch[data-series='2']{background:var(--teloa-warn,#bd9449)}
 .swatch[data-series='3']{background:var(--teloa-muted)}
+
+.tableWrap{max-height:360px;overflow:auto;overscroll-behavior:contain;scroll-padding-top:40px}.table th{position:sticky;top:0;background:var(--teloa-panel);z-index:1}.table th,.table td{padding:11px 12px;line-height:1.6}.metric strong{font-weight:500;line-height:1.3}.barRows{gap:12px}.barTrack{height:10px}

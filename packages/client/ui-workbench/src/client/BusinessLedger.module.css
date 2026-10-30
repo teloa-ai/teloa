@@ -10,10 +10,10 @@
 .block .blockOpen{align-items:stretch;justify-content:flex-start;border:0;border-radius:0}.block:hover{border-color:var(--teloa-border-strong)}.blockOpen:hover .blockTitle strong{text-decoration:underline;text-underline-offset:3px}
 .blockTitle{order:-1}
 .blockTitle{display:flex;align-items:center;justify-content:space-between;gap:10px}
-.blockTitle strong{font-size:15px;font-weight:var(--teloa-weight-heading);line-height:1.5}
+.blockTitle strong{font-size:var(--teloa-font-body);font-weight:var(--teloa-weight-heading);line-height:1.5}
 .blockTitle svg{flex:none;color:var(--teloa-muted)}
 .lead{font-size:var(--teloa-font-caption);color:var(--teloa-muted);line-height:1.8}
-.count{margin-top:4px;font-size:24px;font-weight:var(--teloa-weight-heading);font-variant-numeric:tabular-nums;line-height:1.3}
+.count{margin-top:4px;font-size:var(--teloa-font-page);font-weight:var(--teloa-weight-heading);font-variant-numeric:tabular-nums;line-height:1.3}
 .count i{margin-left:6px;font-size:var(--teloa-font-caption);font-style:normal;color:var(--teloa-muted);letter-spacing:0}
 .blockSummary{min-height:3.4em;color:var(--teloa-muted);font-size:var(--teloa-font-caption);line-height:1.75}
 .blockSummary small{display:block;margin-top:3px;font-size:var(--teloa-font-caption);color:var(--teloa-muted)}

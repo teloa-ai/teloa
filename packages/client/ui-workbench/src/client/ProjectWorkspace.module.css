@@ -30,9 +30,9 @@
 .overviewActions{display:flex;align-items:center;gap:8px}.workspace .overviewActions>.primary{min-height:32px;padding:0 14px;border-radius:8px;font-size:var(--teloa-font-control);font-weight:var(--teloa-weight-medium);background:var(--teloa-primary);border-color:var(--teloa-primary);color:var(--teloa-on-primary)}
 .toolbar select{min-height:32px;padding:5px 10px;border-radius:8px;font-size:var(--teloa-font-caption)}
 .headCount{margin-left:8px;color:var(--teloa-muted);font-size:var(--teloa-font-caption);font-weight:var(--teloa-weight-regular)}
-.directory h2{font-size:15px}
+.directory h2{font-size:var(--teloa-font-body)}
 .cardTitle strong{font-size:var(--teloa-font-body);font-weight:var(--teloa-weight-heading)}
-.workspace .statePill{flex:none;padding:1px 8px;border-radius:999px;background:var(--teloa-subtle);color:var(--teloa-secondary);font-size:var(--teloa-font-caption);line-height:20px}
+.workspace .statePill{flex:none;padding:1px 8px;border-radius:999px;background:var(--teloa-subtle);color:var(--teloa-secondary);font-size:var(--teloa-font-caption);line-height:1.5}
 .state_running{background:var(--teloa-info-bg)!important;color:var(--teloa-info)!important}.state_review{background:var(--teloa-warn-bg)!important;color:var(--teloa-warn)!important}.state_completed{background:var(--teloa-good-bg)!important;color:var(--teloa-good)!important}
 .cardScope{color:var(--teloa-muted);font-size:var(--teloa-font-caption)}
 .cardFoot{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:6px;padding-top:10px;border-top:1px solid var(--teloa-border);color:var(--teloa-muted);font-size:var(--teloa-font-caption);font-variant-numeric:tabular-nums}.cardFoot .due{margin:0}
@@ -59,3 +59,15 @@
 .dialog .form :is(input:where(:not([type=checkbox],[type=radio])),textarea,select){border-color:var(--teloa-control-border)}
 .dialog .form :is(input,textarea)[aria-invalid=true]{border-color:var(--teloa-danger)}
 .dialog .form :is(input,textarea)::placeholder{color:var(--teloa-muted);opacity:1}
+
+/* 项目卡片的标题、目标、进度与元信息分层。 */
+.overviewHeader{max-width:var(--teloa-content-width);width:100%;box-sizing:border-box;margin-inline:auto;padding:28px var(--teloa-page-gutter) 24px;flex-wrap:wrap}
+.overviewBody{box-sizing:border-box;width:100%;max-width:var(--teloa-content-width);margin-inline:auto;padding:0 var(--teloa-page-gutter) 28px}
+.projectList{grid-template-columns:repeat(auto-fill,minmax(min(100%,320px),1fr));gap:20px;align-items:stretch}
+.workspace .projectCard{padding:22px;gap:12px;border-radius:14px;min-width:0}.workspace .projectCard:hover{border-color:var(--teloa-control-border);box-shadow:var(--teloa-composer-shadow)}
+.cardTitle{align-items:flex-start;flex-wrap:wrap}.cardTitle strong{font-size:var(--teloa-font-section);line-height:1.5;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.cardGoal{font-size:var(--teloa-font-control);line-height:1.7;-webkit-line-clamp:3}.cardFoot{padding-top:14px;margin-top:auto;flex-wrap:wrap}.cardProgress{margin-top:0}
+.overviewBody .toolbar{flex-wrap:wrap;gap:12px;padding:12px 0 20px}.toolbar select{min-height:38px;border-color:var(--teloa-control-border);font-size:var(--teloa-font-control)}
+.dialog{width:min(620px,calc(100vw - 32px));border-radius:16px}.form{padding:28px;gap:20px}.form>header{align-items:flex-start;padding-bottom:16px;border-bottom:1px solid var(--teloa-border)}
+.form>footer{position:sticky;bottom:-28px;z-index:2;background:var(--teloa-surface);border-top:1px solid var(--teloa-border);margin:4px -28px -28px;padding:16px 28px}
+@media(max-width:600px){.overviewHeader{padding:20px}.overviewBody{padding:0 20px 24px}.projectList{gap:14px}.form{padding:20px}.form>footer{bottom:-20px;margin-inline:-20px;margin-bottom:-20px;padding:16px 20px}.overviewActions{flex-wrap:wrap}.overviewBody .toolbar select{width:100%;min-width:0}}

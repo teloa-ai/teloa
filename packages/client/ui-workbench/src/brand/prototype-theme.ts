@@ -2,14 +2,14 @@
 const shared={
   "--teloa-design-font": "-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif",
   "--teloa-design-mono": "'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace",
-  // 以正文为同一字号轴：默认仍为 12/13/14/15/18/24/30，跟随本人字号与浏览器默认字体。
-  "--teloa-design-text-xs": "calc(var(--teloa-design-text-base) * 12 / 14)",
-  "--teloa-design-text-sm": "calc(var(--teloa-design-text-base) * 13 / 14)",
+  // 14px 是用户字号的基准轴；产品层级为说明 13、控件 14、正文 15、阅读 16、页标题 28。
+  "--teloa-design-text-xs": "calc(var(--teloa-design-text-base) * 13 / 14)",
+  "--teloa-design-text-sm": "var(--teloa-design-text-base)",
   "--teloa-design-text-base": ".875rem",
-  "--teloa-design-text-body": "calc(var(--teloa-design-text-base) * 15 / 14)",
+  "--teloa-design-text-body": "calc(var(--teloa-design-text-base) * 16 / 14)",
   "--teloa-design-text-lg": "calc(var(--teloa-design-text-base) * 18 / 14)",
-  "--teloa-design-text-xl": "calc(var(--teloa-design-text-base) * 24 / 14)",
-  "--teloa-design-text-title": "calc(var(--teloa-design-text-base) * 30 / 14)",
+  "--teloa-design-text-xl": "calc(var(--teloa-design-text-base) * 28 / 14)",
+  "--teloa-design-text-title": "calc(var(--teloa-design-text-base) * 32 / 14)",
   "--teloa-design-lh": "1.6",
   "--teloa-design-s1": "4px",
   "--teloa-design-s2": "8px",

@@ -1,4 +1,4 @@
-import {useEffect,useSyncExternalStore,type ReactNode} from 'react'
+import {useEffect,useRef,useSyncExternalStore,type ReactNode} from 'react'
 import type {PropsRuntime} from '@deepseek-ai/dsh-client-ui-slots'
 import css from './HomeNativeConversation.module.css'
 
@@ -13,10 +13,43 @@ export function HomeNativeConversation({home,ready,overview,content,notice,engag
  const homeReady=ready&&(!home||isHomeDraft())
  const hero=session===undefined||session.blank&&!session.promptAttempted&&session.pendingSubmissions.length===0
  const showOverview=home&&hero
+ const shell=useRef<HTMLElement>(null)
+ // 原生候选菜单按窗口顶边计算高度；首页还有工作台页签，边界应取自己的可见工作区。
+ useEffect(()=>{
+  const element=shell.current
+  if(!showOverview||!element)return
+  let frame=0,observedCard:HTMLElement|undefined,observedSeat:HTMLElement|undefined
+  const update=()=>{
+   const card=element.querySelector<HTMLElement>('[data-composer-card]')
+   if(!card)return
+   if(card!==observedCard){
+    if(observedCard)resize.unobserve(observedCard)
+    if(observedSeat)resize.unobserve(observedSeat)
+    observedCard=card;observedSeat=card.closest<HTMLElement>('[data-composer-seat]')??undefined
+    resize.observe(card);if(observedSeat)resize.observe(observedSeat)
+   }
+   const bounds=element.getBoundingClientRect()
+   let box=card.getBoundingClientRect()
+   if(element.querySelector('[role=listbox]')&&(box.top<bounds.top||box.bottom>Math.min(innerHeight,bounds.bottom))){
+    card.scrollIntoView({block:'nearest'})
+    box=card.getBoundingClientRect()
+   }
+   const above=box.top-Math.max(0,bounds.top)-8,below=Math.min(innerHeight,bounds.bottom)-box.bottom-8
+   const side=above>=160||above>=below?'above':'below'
+   element.dataset.teloaHomeMenuSide=side
+   element.style.setProperty('--teloa-home-menu-height',Math.max(40,Math.min(400,side==='above'?above:below))+'px')
+   element.style.setProperty('--teloa-home-card-height',box.height+8+'px')
+  }
+  const schedule=()=>{cancelAnimationFrame(frame);frame=requestAnimationFrame(update)}
+  const resize=new ResizeObserver(schedule),mutation=new MutationObserver(schedule)
+  resize.observe(element);mutation.observe(element,{subtree:true,childList:true})
+  element.addEventListener('scroll',schedule,true);window.addEventListener('resize',schedule);schedule()
+  return()=>{cancelAnimationFrame(frame);resize.disconnect();mutation.disconnect();element.removeEventListener('scroll',schedule,true);window.removeEventListener('resize',schedule)}
+ },[showOverview,homeReady])
  useEffect(()=>{if(sessionId&&accepted&&isHomeDraft()){accept();if(home&&homeReady)engaged?.(sessionId)}},[home,homeReady,sessionId,accepted,engaged,accept,isHomeDraft])
- return <section className={showOverview?css.home:css.conversation} data-teloa-home={home||undefined} aria-busy={home&&!homeReady}>
+ return <section ref={shell} className={showOverview?css.home:css.conversation} data-teloa-home={home||undefined} aria-busy={home&&!homeReady}>
   <>{notice}{openTaskForm&&taskCreation?.(openTaskForm)}</>
-  <div className={showOverview?css.homeConversation:css.body} hidden={home&&!homeReady}>
+  <div className={showOverview?css.homeConversation:css.body} data-teloa-home-input={showOverview||undefined} hidden={home&&!homeReady}>
    {content}
   </div>
   {showOverview&&homeReady&&overview}

@@ -30,7 +30,7 @@ test('两条正式加三条群内回应：正式行保留原生表格与按钮�
   assert.equal(html.match(/aria-expanded="false"/g)?.length,1)
   assert.match(html,/群内回应 · 3 条/)
   assert.equal(html.match(/data-teloa-task-open/g)?.length,2)
-  assert.match(html,/<table aria-label="任务列表"/)
+  assert.match(html,/<table role="table" aria-label="任务列表"/)
   assert.doesNotMatch(html,/role="(?:listbox|option)"/)
 })
 

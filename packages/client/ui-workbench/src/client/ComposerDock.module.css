@@ -1,7 +1,7 @@
 /* 输入框停靠条（1.0 设计第 53 屏）：贴在输入框上沿，左右比输入框内缩，底边藏进输入框边框之下。
    几何沿用 DSH 原生停靠面板的同一组变量（--dsh-composer-side-clearance / -dock-inset / -stack-gap），
    原生排队条与 Teloa 各停靠条因此同宽、同一贴合方式；不在原生会话外使用时按默认值回退。 */
-.strip{box-sizing:border-box;flex:none;display:flex;align-items:center;flex-wrap:wrap;gap:6px 12px;width:calc(100% - 2 * var(--dsh-composer-side-clearance,16px) - 2 * var(--dsh-composer-dock-inset,8px));max-width:calc(var(--dsh-composer-card-max-width,760px) - 2 * var(--dsh-composer-dock-inset,8px));margin:0 auto calc(0px - var(--dsh-composer-stack-gap,6px) - 3px);padding:9px 16px calc(9px + var(--dsh-composer-stack-gap,6px) + 3px);border:1px solid var(--teloa-border-strong);border-bottom:0;border-radius:10px 10px 0 0;background:var(--teloa-panel);color:var(--teloa-secondary);font-size:13px;line-height:1.5}
+.strip{box-sizing:border-box;flex:none;display:flex;align-items:center;flex-wrap:wrap;gap:6px 12px;width:calc(100% - 2 * var(--dsh-composer-side-clearance,16px) - 2 * var(--dsh-composer-dock-inset,8px));max-width:calc(var(--dsh-composer-card-max-width,760px) - 2 * var(--dsh-composer-dock-inset,8px));margin:0 auto calc(0px - var(--dsh-composer-stack-gap,6px) - 3px);padding:9px 16px calc(9px + var(--dsh-composer-stack-gap,6px) + 3px);border:1px solid var(--teloa-border-strong);border-bottom:0;border-radius:10px 10px 0 0;background:var(--teloa-panel);color:var(--teloa-secondary);font-size:var(--teloa-font-control);line-height:1.5}
 .strip>p{flex:1 1 220px;min-width:0;margin:0;overflow-wrap:anywhere}
 .warn{background:var(--teloa-warn-bg)}
 .danger{background:var(--teloa-danger-bg)}

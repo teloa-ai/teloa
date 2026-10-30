@@ -6,7 +6,7 @@ import {build} from 'vite'
 // @ts-expect-error 复用既有无头本机浏览器加载器。
 import {loadPlaywright,launchOptions} from './fixtures/load-playwright.mjs'
 
-test('工作总览、需要你、任务与自动化沿用目录字号，说明/时间降一层且不改阅读正文',async t=>{
+test('工作总览、需要你、任务与自动化采用同一可缩放字号层级',async t=>{
  const root=fileURLToPath(new URL('../../../../',import.meta.url)),client=fileURLToPath(new URL('../src/client/',import.meta.url)),virtual=root+'__work_directory_density.tsx'
  const entry=`import React,{useState} from 'react';import {createRoot} from 'react-dom/client';import {TaskPage} from '${client}TaskPage.tsx';import {ContinuousPage} from '${client}ContinuousPage.tsx';import {WorkHome} from '${client}WorkHome.tsx';import {emptyTaskPreview,changeTaskPreview} from '${client}task-preview.ts';import {projectSavedPlan} from '${client}plan-api.ts';import {I18nProvider} from '${client}i18n/provider.tsx';import {translateMessage} from '${client}i18n/messages.ts';import {prototypeThemes} from '${client}../brand/prototype-theme.ts';import tokens from '${client}theme-tokens.module.css';
  const stamp='2026-10-21T11:00:00Z',noop=()=>{},f=window.density={writes:0},never=()=>{f.writes++;throw Error('只读界面夹具不得执行')};
@@ -25,10 +25,10 @@ test('工作总览、需要你、任务与自动化沿用目录字号，说明/�
  const size=(locator:any)=>locator.evaluate((node:HTMLElement)=>({size:getComputedStyle(node).fontSize,weight:getComputedStyle(node).fontWeight,line:getComputedStyle(node).lineHeight}))
  for(const theme of ['light','dark'])for(const mode of ['overview','attention','tasks','automation']){
   await page.evaluate(({theme,mode}:{theme:string;mode:string})=>{(window as any).density.theme(theme);(window as any).density.view(mode)},{theme,mode})
-  if(mode==='overview'){await page.getByText('研究产品接入流程',{exact:true}).waitFor();assert.equal((await size(page.getByText('研究产品接入流程',{exact:true}))).size,'13px');assert.equal((await size(page.getByRole('heading',{name:'继续工作',exact:true}))).size,'14px')}
-  if(mode==='attention'){await page.getByText('需要核对资料来源',{exact:true}).waitFor();assert.equal((await size(page.getByText('需要核对资料来源',{exact:true}))).size,'13px')}
-  if(mode==='tasks'){const row=page.getByText('核对本次交付资料',{exact:true});await row.waitFor().catch(async(error:unknown)=>{t.diagnostic(JSON.stringify({errors,text:await page.locator('body').innerText()}));throw error});assert.equal((await size(row)).size,'13px');assert.equal((await size(page.locator('th').first())).size,'12px')}
-  if(mode==='automation'){await page.getByRole('heading',{name:'你想让员工持续做什么？',exact:true}).waitFor();assert.equal((await size(page.getByRole('heading',{name:'你想让员工持续做什么？',exact:true}))).size,'16px');assert.equal((await size(page.getByText('每周资料核对',{exact:true}))).size,'13px')}
+  if(mode==='overview'){await page.getByText('研究产品接入流程',{exact:true}).waitFor();assert.equal((await size(page.getByText('研究产品接入流程',{exact:true}))).size,'14px');assert.equal((await size(page.getByRole('heading',{name:'继续工作',exact:true}))).size,'18px')}
+  if(mode==='attention'){await page.getByText('需要核对资料来源',{exact:true}).waitFor();assert.equal((await size(page.getByText('需要核对资料来源',{exact:true}))).size,'15px')}
+  if(mode==='tasks'){const row=page.getByText('核对本次交付资料',{exact:true});await row.waitFor().catch(async(error:unknown)=>{t.diagnostic(JSON.stringify({errors,text:await page.locator('body').innerText()}));throw error});assert.equal((await size(row)).size,'15px');assert.equal((await size(page.locator('th').first())).size,'13px')}
+  if(mode==='automation'){await page.getByRole('heading',{name:'你想让员工持续做什么？',exact:true}).waitFor();assert.equal((await size(page.getByRole('heading',{name:'你想让员工持续做什么？',exact:true}))).size,'18px');assert.equal((await size(page.getByText('每周资料核对',{exact:true}))).size,'14px')}
   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true)
   if(process.env.TELOA_UI_POLISH_CAPTURE)await page.screenshot({path:process.env.TELOA_UI_POLISH_CAPTURE+'/'+mode+'-'+theme+'.png'})
  }

@@ -41,3 +41,14 @@
 .componentStatus{min-width:0;max-width:820px}.sectionHeading{margin-bottom:20px}.sectionHeading p{margin:0;color:var(--teloa-muted);font-size:var(--teloa-font-body);line-height:var(--teloa-leading-body)}
 @media(max-width:760px){.sectionHeading{margin-bottom:16px}}
 @media(prefers-reduced-motion:reduce){.webPolicy>summary svg{transition:none}}
+
+/* 所有设置子页的阅读轴、字段和分组标题。 */
+@media(min-width:761px){.layout{grid-template-columns:220px minmax(0,1fr)}}
+.navigation{padding:20px 12px}.navigation button{min-height:38px;padding:8px 12px;font-size:var(--teloa-font-control)}.navigationGroup{padding-left:12px;color:var(--teloa-muted);font-weight:600;letter-spacing:0}
+.navigationEntry:has(>.navigationGroup){border-top:0;margin-top:20px;padding-top:0}.content{padding:32px var(--teloa-page-gutter) 48px;scroll-padding-top:24px}
+.general{max-width:880px}.pageTitle,.sectionHeading{margin-bottom:24px}.general>.pageTitle{padding-bottom:20px;border-bottom:1px solid var(--teloa-border)}
+.shell :where(input:not([type=checkbox],[type=radio]),textarea,select){max-width:100%;font-family:inherit;min-height:38px}
+.shell :where(input:not([type=checkbox],[type=radio]),textarea){border-color:var(--teloa-control-border)}
+.shell :where(label,p){overflow-wrap:anywhere}.developerTools{padding-block:20px;gap:20px}.developerTools strong{font-size:var(--teloa-font-body)}
+.connection{max-width:880px;padding:14px 16px}.webPolicy{margin-top:24px;border-radius:12px}.runtimeSurface,.componentStatus{max-width:960px}
+@media(max-width:760px){.layout{padding:20px;gap:16px}.navigation{padding:0 32px 4px 0;gap:24px}.navigation button{min-height:44px;padding:8px 0}.navigationEntry:has(>.navigationGroup){margin-top:0}.content{padding:4px 0 24px}.general>.pageTitle{padding-bottom:16px}.developerTools{align-items:flex-start}.shell :where(input:not([type=checkbox],[type=radio]),textarea,select){min-width:0}}

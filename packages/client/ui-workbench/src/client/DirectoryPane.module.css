@@ -18,3 +18,11 @@
  .filterTrigger,.filterPanel label,.footer button{min-height:44px!important}
 }
 .search,.filterPanel select{border-color:var(--teloa-control-border)}
+
+/* 窄目录以标题和摘要为主，截断只发生在可打开的条目中。 */
+.header{padding:20px 18px 14px}.header h2{font-size:var(--teloa-font-section)}
+.search{min-height:40px;margin-bottom:12px;padding:9px 11px;border-radius:9px}.filterBar{padding-bottom:12px}
+.row{padding:14px 10px!important;border-radius:8px!important;border-bottom-color:transparent!important;margin-bottom:3px!important}
+.title>strong{font-weight:600;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}.summary{line-height:1.6}.metadata{margin-top:6px;font-variant-numeric:tabular-nums}
+.filterTrigger{min-height:36px}.filterPanel{padding:12px;border-radius:12px;border-color:var(--teloa-border-strong);box-shadow:var(--teloa-design-shadow-menu)}.filterPanel label{min-height:38px}
+@media(max-width:760px){.header{padding:18px 16px 12px}.search,.filterTrigger{min-height:44px}}

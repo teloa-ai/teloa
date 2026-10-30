@@ -163,3 +163,9 @@
 .sourceSection{padding:12px 0;border-top:1px solid var(--teloa-border);min-width:0}
 .provenanceBody .provenanceGroup .sheet{border:0;border-top:1px solid var(--teloa-border);border-radius:0;background:transparent;padding:12px 0;margin:0}
 .provenanceBody .sourceSection pre{max-height:40dvh;overflow:auto}
+
+/* 市场与工作目录共享版心，卡片随可用宽度增加列数。 */
+.container{max-width:var(--teloa-content-width);padding:28px var(--teloa-page-gutter);margin-inline:auto}.pageHeader{align-items:flex-start;flex-wrap:wrap;gap:16px}.pageHeader h1{margin:0}.categories{gap:24px}.itemList{gap:12px}
+.itemCard{border-radius:12px;padding:18px;min-width:0}.resourceTitle{font-size:var(--teloa-font-section);line-height:1.5;font-weight:600}.resourceDescription{line-height:1.7;font-size:var(--teloa-font-control)}
+.bundleGrid{grid-template-columns:repeat(auto-fill,minmax(min(100%,360px),1fr));gap:20px}.bundleCard{padding:22px;min-width:0;border-radius:14px}.bundleTop{flex-wrap:wrap;gap:8px}.bundleTop strong{font-size:var(--teloa-font-section);line-height:1.5}.bundlePitch{font-size:var(--teloa-font-control);line-height:1.7}
+@media(max-width:760px){.container{padding:20px}.categories{gap:24px}.itemCard,.bundleCard{padding:16px}.page .filters{grid-template-columns:minmax(0,1fr)}.page .filters select{max-width:100%}}

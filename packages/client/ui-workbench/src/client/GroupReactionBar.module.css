@@ -1,5 +1,5 @@
 .bar{display:flex;flex-wrap:wrap;align-items:center;gap:6px}
-.chip{display:inline-flex;align-items:center;gap:4px;border:1px solid var(--teloa-border);border-radius:999px;background:var(--teloa-surface);color:var(--teloa-text);padding:1px 8px;font-size:var(--teloa-font-caption);line-height:20px}
+.chip{display:inline-flex;align-items:center;gap:4px;border:1px solid var(--teloa-border);border-radius:999px;background:var(--teloa-surface);color:var(--teloa-text);padding:1px 8px;font-size:var(--teloa-font-caption);line-height:1.5}
 .chip[aria-pressed=true]{border-color:var(--teloa-accent);background:var(--teloa-accent-bg);color:var(--teloa-accent)}
 .chip:disabled{opacity:.6;cursor:default}
 .addAnchor{position:relative;display:inline-flex}

@@ -1,3 +1,5 @@
+import {useCollectionWindow} from './collection-window.js'
+import {CollectionFooter} from './CollectionFooter.js'
 import {findMarketItem,matchingMarketItems,mergeMarketItems,sameMarketItem,marketItemNavigationIds} from './market-item-identity.ts'
 import {ToolbarIconButton} from './ToolbarIconButton.js'
 import {BusinessDashboardUpgradePanel} from './BusinessDashboardUpgradePanel.js'
@@ -99,7 +101,8 @@ const categoryResourceKinds:Partial<Record<MarketCategory,Array<'role'|'skill'|'
 // 版面照原型 `市场方案.jsx:83` 的 ItemCard 单列列表：一行一条，适用范围与来源并进行内第二行，不再各占一列。
 function MarketCards({items,loads,runtime,selectedId,open}:{items:readonly MarketItem[];loads:readonly IndustryLoadRecord[];runtime:MarketSkillRuntime;selectedId:string|undefined;open:(id:string)=>void}){
   const {locale,t}=useI18n()
-  return <div className={css.itemList}>{items.map(item=>{const display=marketItemPresentation(item,loads,runtime,t),copy=marketCatalogItemCopy(item,locale);return <button type="button" key={item.id} data-teloa-entry={item.id} className={css.itemCard} aria-label={copy.title} aria-current={selectedId===item.id?'page':undefined} onClick={()=>open(item.id)}><ItemArt kind={marketCategoryOf(item)} title={copy.title} seed={item.id}/><span className={css.itemMain}><strong className={css.resourceTitle}>{copy.title}</strong>{copy.summary&&<span className={css.resourceDescription}>{copy.summary}</span>}<span className={css.resourceFacts}>{display.scope} · {display.source}</span></span><StateMark mark={marketItemMark(item,loads,runtime)} t={t}/><ChevronRight size={16}/></button>})}</div>
+  const window=useCollectionWindow(items,item=>item.id,selectedId)
+  return <><div className={css.itemList}>{window.items.map(item=>{const display=marketItemPresentation(item,loads,runtime,t),copy=marketCatalogItemCopy(item,locale);return <button type="button" key={item.id} data-teloa-entry={item.id} className={css.itemCard} aria-label={copy.title} aria-current={selectedId===item.id?'page':undefined} onClick={()=>open(item.id)}><ItemArt kind={marketCategoryOf(item)} title={copy.title} seed={item.id}/><span className={css.itemMain}><strong className={css.resourceTitle}>{copy.title}</strong>{copy.summary&&<span className={css.resourceDescription}>{copy.summary}</span>}<span className={css.resourceFacts}>{display.scope} · {display.source}</span></span><StateMark mark={marketItemMark(item,loads,runtime)} t={t}/><ChevronRight size={16}/></button>})}</div><CollectionFooter {...window}/></>
 }
 
 function MarketCatalog(props:MarketProps&{runtime:MarketSkillRuntime;runtimeChanged?:()=>void}){
