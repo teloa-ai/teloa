@@ -30,6 +30,10 @@
 # Teloa 直接承接原生设置入口，避免工作台再次挂载整套会话侧栏。
 - id: ui-sidebar
   disabled: true
+# 标题仍由原生 SessionTitleService 持久化并投影给客户端；
+# Teloa 用受理过的首条本人消息执行辅助模型请求，避免默认提供方绕过工作因果闸。
+- id: session-title-llm
+  disabled: true
 # 原生提醒记录和投递仍由 Schedule 承载；业务自动化沿用 Teloa 计划，不挂第二个任务页。
 - id: schedule
   disabled: false
