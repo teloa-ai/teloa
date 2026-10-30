@@ -41,3 +41,8 @@
 .rows .more[aria-expanded=true]{opacity:1;background:var(--teloa-hover)}
 .row[draggable=true]{cursor:grab;user-select:none}.row[data-dragging]{opacity:.45}.row[draggable=true] .open{cursor:grab}.row[draggable=true]:active,.row[draggable=true]:active .open{cursor:grabbing}
 @media(max-width:740px){.searchRow>.search{min-height:44px}}
+
+.search{min-height:40px;padding:8px 10px}.search:focus-within{outline:2px solid var(--teloa-focus);outline-offset:2px}
+.organization{display:flex;flex-wrap:wrap}.organization label{flex:1 1 calc(var(--teloa-font-control) * 7 + 24px)}.organization select{min-height:40px;padding:9px 12px;font-size:var(--teloa-font-control)}
+.emptyState{min-width:0;padding:8px;color:var(--teloa-text)}.emptyState>section{min-height:180px;padding:28px 16px}.emptyState h2{font-size:var(--teloa-font-body)}.directory .emptyState button{min-height:38px;padding:8px 12px;border:1px solid var(--teloa-border-strong);background:var(--teloa-surface);border-radius:8px;color:var(--teloa-text)}
+@media(max-width:740px){.search,.organization select,.directory .emptyState button{min-height:44px}}

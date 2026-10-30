@@ -85,10 +85,10 @@ test('正式目录保留加载状态和恢复提醒，页面示例不混入正�
 })
 
 
-test('全局默认目标优先，新建描述不伪装为 AI 生成或自动开启',()=>{
+test('全局默认展示目录，目标创建通过入口打开而不自动展开',()=>{
  const html=paint({navigation:undefined})
- assert.match(html,/你想让员工持续做什么/)
- assert.match(html,/继续设置/)
- assert.match(html,/保存后保持暂停/)
+ assert.match(html,/新建沙盒计划/)
+ assert.doesNotMatch(html,/你想让员工持续做什么|继续设置/)
+ assert.doesNotMatch(html,/<dialog/)
  assert.doesNotMatch(html,/data-teloa-entry=/)
 })

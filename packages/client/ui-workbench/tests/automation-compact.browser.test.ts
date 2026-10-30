@@ -69,7 +69,8 @@ test('固定业务和员工不能借清除筛选扩大范围，外部点击关�
 test('自动化只有计划和执行记录两个导航，目标草稿切换保留且不自动发送',async t=>{
  const page=await mount(t,'plans'),nav=page.getByRole('navigation',{name:'自动化',exact:true})
  assert.deepEqual(await nav.getByRole('button').allTextContents(),['计划 0','执行记录'])
- await page.getByRole('textbox',{name:'持续工作目标'}).fill('每周核对资料')
+ assert.equal(await page.getByRole('dialog',{name:'新建自动化',exact:true}).count(),0);await page.getByRole('button',{name:'新建沙盒计划',exact:true}).first().click()
+ await page.getByRole('textbox',{name:'持续工作目标'}).fill('每周核对资料');await page.keyboard.press('Escape')
  await nav.getByRole('button',{name:'执行记录'}).click();await page.getByRole('button',{name:'新建沙盒计划',exact:true}).first().click()
  assert.equal(await page.getByRole('textbox',{name:'持续工作目标'}).inputValue(),'每周核对资料')
  assert.deepEqual(await page.evaluate(()=>(window as any).automationFixture.opened),[])
@@ -89,13 +90,13 @@ test('计划的业务与归档筛选恢复在按需面板中，清除后回到�
 
 test('丢弃损坏的计划恢复记录只清本地，确认在错误消失后仍可见并保留原目标',async t=>{
  const page=await mount(t,'recovery'),goal=page.getByRole('textbox',{name:'持续工作目标',exact:true})
- await goal.fill('保留这份自动化目标草稿')
  assert.match(await page.getByRole('alert').innerText(),/可丢弃这条恢复记录后重试；若上一次请求已经生效，请到对应目录核对。/)
+ const trigger=page.getByRole('button',{name:'新建自动化',exact:true}).first();await trigger.click();await goal.fill('保留这份自动化目标草稿');await page.keyboard.press('Escape')
  const calls=await page.evaluate(()=>(window as any).automationFixture.calls)
  await page.getByRole('button',{name:'丢弃这条恢复记录',exact:true}).click()
  await page.getByRole('status').filter({hasText:'已丢弃本地恢复记录；如果上一次请求已经生效，请到目录里核对。'}).waitFor()
  assert.equal(await page.getByRole('alert').count(),0,'已清除损坏错误，但确认独立可见')
  const actual=await page.evaluate(()=>(window as any).automationFixture)
  assert.equal(actual.rawJournal,null);assert.equal(actual.discards,1);assert.deepEqual(actual.calls,calls,'丢弃不创建、更新或执行计划');assert.deepEqual(actual.opened,[],'丢弃不自动开启会话')
- assert.equal(await goal.inputValue(),'保留这份自动化目标草稿')
+ await trigger.click();assert.equal(await goal.inputValue(),'保留这份自动化目标草稿')
 })

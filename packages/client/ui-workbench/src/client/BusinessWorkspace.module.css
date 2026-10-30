@@ -1,5 +1,5 @@
 /* 1.0：内页底色同主区（暖白），卡片为白底。 */
-.workspace{height:100%;min-width:0;display:flex;flex-direction:column;color:var(--teloa-text);background:var(--teloa-background);font-size:var(--teloa-font-control)}
+.workspace{container-type:inline-size;container-name:business-workspace;height:100%;min-width:0;display:flex;flex-direction:column;color:var(--teloa-text);background:var(--teloa-background);font-size:var(--teloa-font-control)}
 .scroll{flex:1;min-height:0;overflow:auto;scrollbar-gutter:stable}.container{padding:26px 40px 40px}
 .workspace button{font:inherit;color:inherit;cursor:pointer}.workspace button:focus-visible{outline:2px solid var(--teloa-focus);outline-offset:3px}.workspace button:disabled{opacity:.55;cursor:default}
 .header{display:flex;align-items:flex-start;gap:20px;justify-content:space-between;margin-bottom:18px}.header>div:first-child{min-width:0}.header h1{margin:0;font-size:var(--teloa-font-page);line-height:var(--teloa-leading-heading);font-weight:var(--teloa-weight-heading)}.header p{margin:6px 0 0;color:var(--teloa-muted);font-size:var(--teloa-font-body)}
@@ -45,3 +45,9 @@
 
 .container{max-width:var(--teloa-content-width);margin-inline:auto;padding:28px var(--teloa-page-gutter)}.panel{padding:22px;border-radius:14px}.panel>header{align-items:flex-start;flex-wrap:wrap}.panel>header>h2{font-size:var(--teloa-font-section);font-weight:600}.groupName strong{overflow-wrap:anywhere}.groupTime{font-variant-numeric:tabular-nums}.tableWrap{max-height:480px;overscroll-behavior:contain}.table th{position:sticky;top:0;background:var(--teloa-panel)}
 @media(max-width:740px){.container{padding:20px}.panel{padding:16px}.teamActions{justify-content:flex-start}.overviewGrid{gap:16px}}
+
+/* 业务也会出现在原生侧栏，按实际容器宽度收拢。 */
+.header h1{overflow-wrap:anywhere}.metrics button{min-width:0}.metrics span{line-height:1.5;word-break:normal}.metrics strong{overflow-wrap:anywhere}.tabs{scroll-padding-inline:12px}
+@container business-workspace (max-width:1100px){.overviewGrid{grid-template-columns:minmax(0,1fr)}.container{padding:24px}.header{flex-wrap:wrap;gap:16px}.header>div:first-child{flex:1 1 260px}.actions{flex-wrap:wrap}}
+@container business-workspace (max-width:680px){.container{padding:20px}.metrics{grid-template-columns:repeat(2,minmax(0,1fr))}.metrics button{padding:16px}.metrics button:nth-child(odd){border-left:0}.metrics button:nth-child(n+3){border-top:1px solid var(--teloa-border)}.tabs{overflow-x:auto;flex-wrap:nowrap;gap:20px}.tabs>button,.tabs>.tabSlot{flex:none}.groupTableHead{display:none}.workspace .groupRow{grid-template-columns:32px minmax(0,1fr) auto}.groupTime,.groupRow>span:nth-child(4){display:none}}
+@container business-workspace (max-width:420px){.metrics{grid-template-columns:minmax(0,1fr)}.metrics button+button{border-left:0;border-top:1px solid var(--teloa-border)}.actions{gap:8px}}

@@ -169,3 +169,9 @@
 .itemCard{border-radius:12px;padding:18px;min-width:0}.resourceTitle{font-size:var(--teloa-font-section);line-height:1.5;font-weight:600}.resourceDescription{line-height:1.7;font-size:var(--teloa-font-control)}
 .bundleGrid{grid-template-columns:repeat(auto-fill,minmax(min(100%,360px),1fr));gap:20px}.bundleCard{padding:22px;min-width:0;border-radius:14px}.bundleTop{flex-wrap:wrap;gap:8px}.bundleTop strong{font-size:var(--teloa-font-section);line-height:1.5}.bundlePitch{font-size:var(--teloa-font-control);line-height:1.7}
 @media(max-width:760px){.container{padding:20px}.categories{gap:24px}.itemCard,.bundleCard{padding:16px}.page .filters{grid-template-columns:minmax(0,1fr)}.page .filters select{max-width:100%}}
+
+/* 已加载版本及管理入口归属到对应卡片；缺失目录条目时仍保留管理入口。 */
+.loadedControls{display:grid;gap:12px}.loadedControl{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;min-width:0}.loadedControl>span{flex:1;min-width:0;overflow-wrap:anywhere;font-size:var(--teloa-font-control)}.loadedControl small{display:block;margin-top:4px;font-size:var(--teloa-font-caption);line-height:1.5;color:var(--teloa-muted)}.loadedControl small[data-upgrade]{color:var(--teloa-warn)}.loadedControl button{min-height:38px;max-width:100%;padding:8px 12px;white-space:normal;overflow-wrap:anywhere}.loadedFallbacks{margin-bottom:20px;display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,300px),1fr));gap:16px}.loadedFallback{min-width:0;padding:20px;border:1px solid var(--teloa-border);border-radius:12px;background:var(--teloa-surface)}.loadedFallback h3{margin:0 0 20px;overflow-wrap:anywhere;font-size:var(--teloa-font-section)}
+@media(max-width:600px){.loadedControl button{min-height:44px}}
+
+.loadedControl>span{flex:1 1 calc(var(--teloa-font-control) * 8 + 12px)}.loadedControl button{margin-inline-start:auto}

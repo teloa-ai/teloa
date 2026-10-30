@@ -129,7 +129,7 @@ export function MarketAppsDirectoryView(props:MarketAppsDirectoryViewProps){
    </div>
   </div>
   <div className={css.searchRow}>
-   <label className={css.search}><Search size={16} aria-hidden="true"/><input type="search" value={view.query} placeholder={text('market.apps.search')} aria-label={text('market.apps.search')} onChange={event=>set({query:event.currentTarget.value})}/></label>
+   <label data-teloa-field-shell className={css.search}><Search size={16} aria-hidden="true"/><input type="search" value={view.query} placeholder={text('market.apps.search')} aria-label={text('market.apps.search')} onChange={event=>set({query:event.currentTarget.value})}/></label>
    {props.onOpenTemplates&&<button type="button" className={css.link} onClick={props.onOpenTemplates}>{text('market.apps.templates')}</button>}
   </div>
   <nav className={css.categories} aria-label={text('market.apps.categoryAria')}>

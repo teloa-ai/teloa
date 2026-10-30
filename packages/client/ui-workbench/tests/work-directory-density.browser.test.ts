@@ -28,7 +28,7 @@ test('工作总览、需要你、任务与自动化采用同一可缩放字号�
   if(mode==='overview'){await page.getByText('研究产品接入流程',{exact:true}).waitFor();assert.equal((await size(page.getByText('研究产品接入流程',{exact:true}))).size,'14px');assert.equal((await size(page.getByRole('heading',{name:'继续工作',exact:true}))).size,'18px')}
   if(mode==='attention'){await page.getByText('需要核对资料来源',{exact:true}).waitFor();assert.equal((await size(page.getByText('需要核对资料来源',{exact:true}))).size,'15px')}
   if(mode==='tasks'){const row=page.getByText('核对本次交付资料',{exact:true});await row.waitFor().catch(async(error:unknown)=>{t.diagnostic(JSON.stringify({errors,text:await page.locator('body').innerText()}));throw error});assert.equal((await size(row)).size,'15px');assert.equal((await size(page.locator('th').first())).size,'13px')}
-  if(mode==='automation'){await page.getByRole('heading',{name:'你想让员工持续做什么？',exact:true}).waitFor();assert.equal((await size(page.getByRole('heading',{name:'你想让员工持续做什么？',exact:true}))).size,'18px');assert.equal((await size(page.getByText('每周资料核对',{exact:true}))).size,'14px')}
+  if(mode==='automation'){await page.getByText('每周资料核对',{exact:true}).waitFor();assert.equal((await size(page.getByText('每周资料核对',{exact:true}))).size,'15px');await page.getByRole('button',{name:'新建自动化',exact:true}).click();const drawer=page.getByRole('dialog',{name:'新建自动化',exact:true});await drawer.waitFor();assert.equal((await size(drawer.getByText('你想让员工持续做什么？',{exact:true}))).size,'18px');await page.keyboard.press('Escape');await drawer.waitFor({state:'hidden'})}
   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true)
   if(process.env.TELOA_UI_POLISH_CAPTURE)await page.screenshot({path:process.env.TELOA_UI_POLISH_CAPTURE+'/'+mode+'-'+theme+'.png'})
  }

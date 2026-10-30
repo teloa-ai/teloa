@@ -297,3 +297,16 @@
 @media(max-height:600px){.alignedPage.overviewPage>.taskHeader{padding-top:16px;padding-bottom:10px}.alignedPage.overviewPage>.taskHeader h1{font-size:var(--teloa-font-detail)}}
 
 .alignedPage.overviewPage.selectedPage>.taskHeader{display:none}
+
+/* 列表与详情切换共用页头和目录工具区，保持搜索位置及条目节奏。 */
+.alignedPage.overviewPage.selectedPage:not(.embeddedPage)>.taskHeader{display:flex}
+.alignedPage.overviewPage.selectedPage:not(.embeddedPage) .overviewLayout{max-width:var(--teloa-content-width);padding:0 var(--teloa-page-gutter) 24px;margin-inline:auto}
+.alignedPage .search input{font-size:var(--teloa-font-control)}
+.alignedPage.selectedPage .tableLink{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.5}.alignedPage.selectedPage .tableWrap small{display:block;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;line-height:1.5}
+@container task-page (min-width:1000px){.alignedPage.overviewPage:not(.embeddedPage) .layout.hasSelection{grid-template-columns:minmax(320px,min(420px,38%)) minmax(0,1fr)}.alignedPage.overviewPage:not(.embeddedPage) .layout.hasSelection>.directory{padding-right:20px;border-right:0}.alignedPage.overviewPage:not(.embeddedPage) .layout.hasSelection>.detail{position:static;max-height:none;padding:24px;background:var(--teloa-surface);--teloa-task-detail-background:var(--teloa-surface);border:1px solid var(--teloa-border);border-radius:12px}.alignedPage .layout.hasSelection .tableWrap td{padding:14px 12px}}
+@container task-page (max-width:999px){.alignedPage.overviewPage.selectedPage:not(.embeddedPage)>.taskHeader{display:none}}
+
+.alignedPage .tableWrap small .rowOwner{display:inline;font:inherit;color:inherit;margin:0;white-space:inherit}
+
+@media(prefers-reduced-motion:no-preference){.alignedPage .layout.hasSelection>.detail{animation:taskDetailEnter .16s ease-out both}}
+@keyframes taskDetailEnter{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:translateY(0)}}

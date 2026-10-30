@@ -1,10 +1,10 @@
 /* 任务详情以阅读和交付为主；次要属性在同一个滚动面内按需展开。 */
-.heading{position:sticky;top:0;z-index:3;background:var(--teloa-background);padding-top:4px}
+.heading{position:sticky;top:0;z-index:3;background:var(--teloa-task-detail-background,var(--teloa-background));padding-top:4px}
 .heading>header{padding-bottom:12px;gap:8px}
 .heading h2{flex:1 1 240px;font-size:var(--teloa-font-section);font-weight:var(--teloa-weight-heading);line-height:var(--teloa-leading-heading)}
 .heading h2 [title],.heading h2[title]{-webkit-line-clamp:2}
 .facts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:2px 16px;margin:0 0 16px;padding:4px 0 12px;border-bottom:1px solid var(--teloa-border)}
-.fact,.wideFact{display:grid;grid-template-columns:76px minmax(0,1fr);align-items:start;gap:8px;min-height:34px;padding:2px 0;font-size:var(--teloa-font-control);line-height:1.6}
+.fact,.wideFact{display:grid;grid-template-columns:minmax(4.5em,76px) minmax(0,1fr);align-items:start;gap:8px;min-height:34px;padding:2px 0;font-size:var(--teloa-font-control);line-height:1.6}
 .wideFact{grid-column:1/-1}
 .fact dt,.wideFact dt{color:var(--teloa-muted);font-size:var(--teloa-font-caption);padding-top:4px}
 .fact dd,.wideFact dd{margin:0;min-width:0;display:flex;flex-wrap:wrap;gap:8px;align-items:center;overflow-wrap:anywhere;min-height:30px}
@@ -45,7 +45,7 @@
 .disclosureBody .section{margin:12px 0 20px}
 .mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:var(--teloa-font-caption);overflow-wrap:anywhere;color:var(--teloa-muted)}
 .disclosure :focus-visible,.facts :focus-visible,.resultBlock :focus-visible{outline:2px solid var(--teloa-focus);outline-offset:2px}
-@container (max-width:480px){.facts{grid-template-columns:minmax(0,1fr);gap:4px}.fact,.wideFact{grid-template-columns:72px minmax(0,1fr)}.resultBlock{padding:12px}}
+@container (max-width:480px){.facts{grid-template-columns:minmax(0,1fr);gap:4px}.fact,.wideFact{grid-template-columns:minmax(0,1fr);gap:0;padding:6px 0}.resultBlock{padding:12px}}
 
 /* N46：DOM 与窄视图阅读顺序一致；宽面板只将属性区放到右列，所有表单始终挂载。 */
 .layout{container-type:inline-size;container-name:task-detail-body;min-width:0}

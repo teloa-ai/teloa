@@ -20,6 +20,8 @@ before(async()=>{
  let node:ts.Expression|undefined
  const visit=(item:ts.Node)=>{if(ts.isVariableDeclaration(item)&&item.name.getText(ast)==='entry')node=item.initializer;ts.forEachChild(item,visit)};visit(ast);assert.ok(node)
  let entry=new Function('client','return '+node.getText(ast))(client) as string
+ // 先提交 API 交换，再放行旧读取；避免把 React 尚未提交的 render 当成已切换身份。
+ entry="import {flushSync as commitRoleApiReplacement} from 'react-dom';\n"+entry
  const setup=`
 import {createWorkAttentionApi} from '${client}work-attention-api.ts';
 import {createPageCreateApi} from '${client}page-create-api.ts';
@@ -50,7 +52,7 @@ props.pageCreateApi=createPageCreateApi(async(endpoint,input)=>{
  }
  throw Error('Unexpected page-create endpoint: '+endpoint)
 });
-props.planDraftApi=createPlanDraftApi(async()=>{throw Error('员工原稿不得进入计划确认')});a.openOriginal=()=>props.planDraftApi.openDraft(pageDraft(first));a.replaceRoleApi=()=>{props.roleApi=new Proxy(props.roleApi,{});renderFrame()};
+props.planDraftApi=createPlanDraftApi(async()=>{throw Error('员工原稿不得进入计划确认')});a.openOriginal=()=>props.planDraftApi.openDraft(pageDraft(first));a.replaceRoleApi=()=>{props.roleApi=new Proxy(props.roleApi,{});commitRoleApiReplacement(()=>renderFrame())};
 const oldRoles=props.roleApi;props.roleApi=new Proxy(oldRoles,{get:(target,key)=>key==='list'?async()=>a.created:key==='create'?async fields=>{a.calls.push({endpoint:'roles/create',fields});const id='created-'+(fields.name==='资料研究员甲'?first:second),row={...fields,id,ownerId:'self',state:'active',version:1,createdAt:a.readAt,updatedAt:a.readAt};a.created.push(row);return row}:Reflect.get(target,key)});
 // 真实员工详情会复制资料API；须提供有自有方法的正式空目录，不能沿用空Proxy冒充。
 props.resourceApi={directory:async()=>({drafts:[],resources:[]}),sources:async()=>[]};

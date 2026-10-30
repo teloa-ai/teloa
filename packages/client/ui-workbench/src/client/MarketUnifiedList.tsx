@@ -137,8 +137,8 @@ export function MarketListRows({rows,layout='list',showGroups=false}:{rows:reado
    <span className={css.cardHead}>{art(row,true)}<span className={css.cardIdentity}><span className={css.rowTop}><strong className={css.gridTitle}>{row.title}</strong>{showGroups&&row.group&&<span className={css.resultGroup}>{row.group}</span>}{tag(row)}{(row.mark==='restart'||row.mark==='conflict')&&<StateMark mark={row.mark} t={t}/>}</span>{row.credit&&<span className={css.cardCredit}>{row.credit}</span>}</span></span>
    <span className={css.gridPitch}>{row.summary}</span>
    <span className={css.cardRequirements}>{row.requirements}</span>
-   <span className={css.cardFoot}><span className={clsx(css.cardAction,row.mark==='added'&&css.cardAdded)}>{row.mark==='added'?stateMarkLabel('added',t):t(row.mark==='available'&&row.addable!==false?'market.primary.add':'market.catalog.official.view')}</span></span>
-  </button>
+   {!row.after&&<span className={css.cardFoot}><span className={clsx(css.cardAction,row.mark==='added'&&css.cardAdded)}>{row.mark==='added'?stateMarkLabel('added',t):t(row.mark==='available'&&row.addable!==false?'market.primary.add':'market.catalog.official.view')}</span></span>}
+  </button>{row.after&&<div className={css.rowAfter}>{row.after}</div>}
  </li>)}</ul><CollectionFooter {...window}/></>
  if(layout==='grid')return <><ul className={css.grid}>{window.items.map(row=><li key={row.key} {...(row.catalogId?{'data-teloa-catalog-entry':row.catalogId}:{})}>
   {/* 方案卡内容多（一句话 + 包含），可访问名只取标题、标签与状态 */}
@@ -150,7 +150,7 @@ export function MarketListRows({rows,layout='list',showGroups=false}:{rows:reado
     <span className={css.rowFacts}>{row.facts}</span>
    </span>
    <ArrowUpRight size={16} aria-hidden="true"/>
-  </button>
+  </button>{row.after&&<div className={css.rowAfter}>{row.after}</div>}
  </li>)}</ul><CollectionFooter {...window}/></>
  return <><ul className={css.rows}>{window.items.map(row=><li key={row.key} className={css.row} {...(row.catalogId?{'data-teloa-catalog-entry':row.catalogId}:{})}>
   {/* 单列条目卡不设 aria-label：按钮内容（标题、摘要、状态记号的读屏文字）即可访问名 */}

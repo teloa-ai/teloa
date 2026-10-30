@@ -160,3 +160,8 @@
 
 /* 窄屏目录整体滚动，放大文字后快捷视图不会挤掉资料树的可点击区域。 */
 @media(max-width:720px){.page[data-mobile-detail=directory] .directoryColumn{overflow:auto}.page[data-mobile-detail=directory] .taxonomy{flex:none;overflow:visible}.page[data-mobile-detail=directory] .views{flex:none}}
+
+/* 跨业务资料操作在独立抽屉内完成，长清单单独滚动。 */
+.adoption{box-sizing:border-box;max-width:none;max-height:none;overflow:visible;margin:0;padding:24px;border:0;background:transparent}
+.adoption .editor{max-width:none;margin:0;padding:0;gap:20px}.adoption .editor>p{margin:0;line-height:1.7}.adoption details{min-width:0}.adoption summary{padding:8px 0;cursor:pointer}.adoption ul{max-height:32dvh;overflow:auto;padding-left:20px;overflow-wrap:anywhere}.adoption li{margin:8px 0}.adoption select{box-sizing:border-box;width:100%;min-width:0;min-height:40px;padding:9px 12px;font-size:var(--teloa-font-control)}.adoption .actions{position:sticky;bottom:0;display:flex;flex-wrap:wrap;justify-content:flex-end;gap:8px;padding-top:16px;background:var(--teloa-surface)}
+@media(max-width:600px){.adoption{padding:20px}.adoption select{min-height:44px;font-size:var(--teloa-font-touch-input)}}
