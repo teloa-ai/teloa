@@ -1,3 +1,4 @@
+import {sha256Digest} from './browser-crypto.mjs'
 import {WorkError} from './work-error.ts'
 import {isRecord} from './resources.ts'
 import {artifactContent,savedArtifactSource,type SavedArtifactVersion} from './artifacts.ts'
@@ -84,6 +85,6 @@ export function readMethodReuseIntent(text:unknown,target:MethodReuseTarget):Met
 export function methodReuseBasisText(value:Pick<SavedArtifactVersion,'source'|'content'>):string{return industryUpdateCanonical({source:savedArtifactSource(value.source),content:artifactContent(value.content)})}
 export async function methodReuseBasisHash(value:Pick<SavedArtifactVersion,'source'|'content'>):Promise<string>{
  const basis=methodReuseBasisText(value)
- const digest=await globalThis.crypto.subtle.digest('SHA-256',new TextEncoder().encode(basis))
+ const digest=await sha256Digest(new TextEncoder().encode(basis))
  return Array.from(new Uint8Array(digest),byte=>byte.toString(16).padStart(2,'0')).join('')
 }

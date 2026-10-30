@@ -1,3 +1,4 @@
+import {sha256Digest} from './browser-crypto.mjs'
 import {WorkError} from './work-error.ts'
 import {isRecord} from './resources.ts'
 import {templateShareTextIssue} from './template-share.mjs'
@@ -42,7 +43,7 @@ const list=(value:unknown,label:string):unknown[]=>{
  if(!Array.isArray(value)||value.length>100)throw invalid(label+'须为不超过100项的列表。')
  return value
 }
-const sha=async(bytes:Uint8Array)=>Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',Uint8Array.from(bytes))),byte=>byte.toString(16).padStart(2,'0')).join('')
+const sha=async(bytes:Uint8Array)=>Array.from(new Uint8Array(await sha256Digest(Uint8Array.from(bytes))),byte=>byte.toString(16).padStart(2,'0')).join('')
 const encode=(value:string)=>new TextEncoder().encode(value)
 // 原平台固定应用ID与已审目录服务的对照；不按上传的名字、URL或npm猜测连接器。
 const connectorIds:Readonly<Record<string,readonly string[]>>={

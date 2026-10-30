@@ -1,3 +1,4 @@
+import {sha256Digest} from '@teloa/contract'
 import {marketCatalogUpstreamTreeInput,type MarketCatalogUpstreamSkillEntry} from '@teloa/contract'
 import type {MarketCatalogApi} from './market-catalog-api.ts'
 import type {SkillInstallApi,SkillInstallationRecord,SkillInstallPreview} from './skill-install-api.ts'
@@ -21,7 +22,7 @@ export type AppPackOptions={isCurrent:()=>boolean;onProgress?:(outcome:AppPackOu
 const hex=(bytes:ArrayBuffer)=>Array.from(new Uint8Array(bytes),byte=>byte.toString(16).padStart(2,'0')).join('')
 /** 浏览器异步摘要算出与宿主同一的上游树指纹（规范输入由契约给出）。 */
 export async function appPackTreeHash(entry:MarketCatalogUpstreamSkillEntry):Promise<string>{
- return hex(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(marketCatalogUpstreamTreeInput(entry.upstream))))
+ return hex(await sha256Digest(new TextEncoder().encode(marketCatalogUpstreamTreeInput(entry.upstream))))
 }
 const sameSource=(record:SkillInstallationRecord,preview:SkillInstallPreview)=>record.source.kind==='atomic'&&preview.source.kind==='atomic'&&record.source.contentId===preview.source.contentId
 

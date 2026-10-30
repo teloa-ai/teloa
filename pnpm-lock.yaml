@@ -581,7 +581,11 @@ importers:
         specifier: 0.2.1-rc.2
         version: 0.2.1-rc.2(35798409003075a790d2e345ef752118)
 
-  packages/contract: {}
+  packages/contract:
+    dependencies:
+      fast-sha256:
+        specifier: 1.3.0
+        version: 1.3.0
 
   packages/device-gateway:
     dependencies:

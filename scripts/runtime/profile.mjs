@@ -4,6 +4,7 @@ import {pathToFileURL} from 'node:url'
 import {mkdir,chmod,lstat,realpath,rename,rm,symlink} from 'node:fs/promises'
 import {randomUUID} from 'node:crypto'
 import {spawn} from 'node:child_process'
+import {trustedHostArguments} from './public-web-access.mjs'
 
 export const nativeTeamBundle='@deepseek-ai/dsh-experimental-agent-team-profile'
 export const nativeVoiceBundle='@deepseek-ai/dsh-experimental-voice-input-bundle'
@@ -103,7 +104,7 @@ export async function bundledModuleConflicts(profileDir,specs){
 export function runtimeEnvironment(layout,environment=process.env){
  const allowed=['PATH','HOME','USER','LOGNAME','SHELL','TMPDIR','TMP','TEMP','LANG','LC_ALL','LC_CTYPE','TZ','SYSTEMROOT','WINDIR','COMSPEC','PATHEXT','HTTP_PROXY','HTTPS_PROXY','ALL_PROXY','NO_PROXY','http_proxy','https_proxy','all_proxy','no_proxy',
   // 使用统计排除变量：CI / 验收 / 开发环境里用 npm 版 teloa 启动也不上报（宿主据此优先于 on 排除）。
-  'CI','TELOA_BROWSER_ACCEPTANCE','NODE_ENV',
+  'CI','TELOA_BROWSER_ACCEPTANCE','NODE_ENV','TELOA_DSH_TRUSTED_HOSTS',
   // 升级回执由 supervisor 转交宿主；CLI startService 会先清除调用者 shell 中的同名值。
   'TELOA_PLANNED_RESTART',
   // 凭据存储档位与主密钥来源（规格 §3.4）：显式密钥文件、systemd 凭据目录，以及 Linux 桌面 Secret Service 所需的 D-Bus 两项。
@@ -146,5 +147,6 @@ export async function prepareRuntimeProfile(layout){
 
 export function launchRuntime(layout,{port}){
  const executable=join(layout.programRoot,'scripts/runtime/native-runtime-entry.mjs')
- return spawn(process.execPath,[executable,'--profile',layout.profileName,'--no-open','--host','127.0.0.1','--port',String(port)],{cwd:layout.workspaceRoot,env:runtimeEnvironment(layout),stdio:['ignore','pipe','pipe']})
+ const env=runtimeEnvironment(layout),trustedHosts=trustedHostArguments(env.TELOA_DSH_TRUSTED_HOSTS)
+ return spawn(process.execPath,[executable,'--profile',layout.profileName,'--no-open','--host','127.0.0.1','--port',String(port),...trustedHosts],{cwd:layout.workspaceRoot,env,stdio:['ignore','pipe','pipe']})
 }

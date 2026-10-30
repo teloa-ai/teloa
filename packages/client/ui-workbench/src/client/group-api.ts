@@ -1,3 +1,4 @@
+import {sha256Digest} from '@teloa/contract'
 import {groupAgentGrantChangeInput,groupAgentGrantGetInput,groupTaskCreateInput,groupChangeInput,groupCreateInput,groupListInput,groupMessageListInput,groupResourceGetInput,groupResourceListInput,groupResourceSaveInput,groupResourceWithdrawInput,groupSendInput,isGroup,isGroupAgentGrant,isGroupAgentGrantRead,isGroupTaskSource,isGroupMember,isGroupMessage,isGroupResource,isGroupResourceVersion,type Group,type GroupAgentGrant,type GroupMention,type GroupTaskSource,type WorkTask,type GroupAgentGrantRead,type GroupChangeFields,type GroupCreateInput,type GroupMember,type GroupMessage,type GroupResource,type GroupResourceVersion,type GroupSendInput,type MessageReference} from '@teloa/contract'
 import {groupMentionsInput,readGroupAttention,readGroupMentionsPage} from '@teloa/contract'
 import {recoveryStorageError} from './recovery-error.ts'
@@ -285,7 +286,7 @@ export function createGroupApi(call:Call,journal?:GroupRequestJournal,newId:()=>
    const summary={...expected}
    const value=await call('groups/messages/body',input)
    if(!isGroupMessageBody(value)||value.groupId!==groupId||value.messageId!==messageId||value.chars!==summary.chars||value.sha256!==summary.sha256)throw new WorkError('teloa/source-unavailable','群消息全文与原消息不一致。')
-   const hash=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(value.text))),byte=>byte.toString(16).padStart(2,'0')).join('')
+   const hash=Array.from(new Uint8Array(await sha256Digest(new TextEncoder().encode(value.text))),byte=>byte.toString(16).padStart(2,'0')).join('')
    if(hash!==summary.sha256)throw new WorkError('teloa/source-unavailable','群消息全文与原消息不一致。')
    return clone(value)
   },

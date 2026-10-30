@@ -1,3 +1,4 @@
+import {sha256Digest} from '@teloa/contract'
 import {isResourceUsagePage,type ResourceUsagePage,isResourceAdoptionInput,type ResourceAdoptionInput} from '@teloa/contract'
 import { isKnowledgeResourceRevision,isKnowledgeTree,isKnowledgeTreeMutation,isKnowledgeVersion,isKnowledgeVersionSummary,isResourceDirectory,isResourceDraft,isWorkResource,isSourceReference,isResourceHistoryPage,type KnowledgeResourceRestoreInput,type KnowledgeResourceReviseInput,type KnowledgeResourceRevision,type KnowledgeTree,type KnowledgeTreeMutation,type KnowledgeVersion,type KnowledgeVersionSummary,type ResourceHistoryPage,type ResourceSpec,type ResourceDirectory,type ResourceDraft,type WorkResource,type SourceReference } from '@teloa/contract'
 import { isResourceRecoveryPage,type ResourceRecoveryPage } from '@teloa/contract'
@@ -50,7 +51,7 @@ export function createResourceApi(call:Call,journal?:{read:()=>string|null;write
       if(Object.keys(current).length!==keys.length||keys.some(key=>key==='scopeIds'?JSON.stringify(current.scopeIds)!==JSON.stringify(resource.scopeIds):current[key]!==resource[key]))throw invalid()
       const bytes=new TextEncoder().encode(value.text)
       if(bytes.byteLength>(isAdoptedMaterialSourceId(resource.sourceId)?2*1024*1024:128*1024))throw invalid()
-      const hash=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',bytes)),byte=>byte.toString(16).padStart(2,'0')).join('')
+      const hash=Array.from(new Uint8Array(await sha256Digest(bytes)),byte=>byte.toString(16).padStart(2,'0')).join('')
       signal.throwIfAborted()
       if(hash!==resource.sourceVersion)throw invalid()
       return {resource:current,text:value.text}

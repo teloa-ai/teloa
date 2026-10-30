@@ -1,3 +1,4 @@
+import './browser-crypto-compat.js'
 import {useEffect,useLayoutEffect,useRef,useState,type CSSProperties} from 'react'
 import {createRoot} from 'react-dom/client'
 import {flushSync} from 'react-dom'

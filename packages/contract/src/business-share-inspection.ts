@@ -1,3 +1,4 @@
+import {sha256Digest} from './browser-crypto.mjs'
 import {detectSecrets,type SecretKind} from './secret-shape.ts'
 import {industryFileLimits,validateIndustryFilePath} from './industry-file-boundary.ts'
 
@@ -5,7 +6,7 @@ export type BusinessShareInspectionInput={files:readonly {path:string;bytes:Uint
 export type BusinessShareInspectionOptions={allowBinaryAssets:true}
 export type BusinessShareInspection={digest:string;fileList:readonly {path:string;digest:string}[];findings:readonly {path:string;kind:SecretKind|'url-credentials';start:number;end:number}[]}
 const encoder=new TextEncoder(),decoder=new TextDecoder('utf-8',{fatal:true}),binaryDecoder=new TextDecoder('utf-8')
-const digest=async(bytes:Uint8Array)=>Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',Uint8Array.from(bytes))),byte=>byte.toString(16).padStart(2,'0')).join('')
+const digest=async(bytes:Uint8Array)=>Array.from(new Uint8Array(await sha256Digest(Uint8Array.from(bytes))),byte=>byte.toString(16).padStart(2,'0')).join('')
 function scan(text:string){
  const found:Array<{kind:SecretKind|'url-credentials';start:number;end:number}>=detectSecrets(text)
  for(const match of text.matchAll(/[a-z][a-z0-9+.-]*:\/\/[^\s"'<>]+/gi)){

@@ -1,3 +1,4 @@
+import {sha256Digest} from '@teloa/contract'
 import {useState,type ReactNode} from 'react'
 import type {BusinessObjectSnapshot} from '@teloa/contract'
 import type {ArtifactApi} from './artifact-api.js'
@@ -18,7 +19,7 @@ export function BusinessTeamDecision({record,reviewType,scopeName,sourceName,rev
  const {locale,dateTime}=useI18n(),zh=locale.startsWith('zh'),hant=zh&&/Hant|TW|HK/i.test(locale),tr=(cn:string,tw:string,en:string)=>zh?hant?tw:cn:en
  const [busy,setBusy]=useState(false),[failed,setFailed]=useState(false),[phase,setPhase]=useState<'idle'|'feedback'|'task'> ('idle')
  const submit=async(choice:'accepted'|'changes',reason:string)=>{if(busy||phase!=='idle'&&choice!=='changes')return;setBusy(true);setFailed(false);try{
-  const raw=new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(JSON.stringify([record.scope,teamDecisionSubject(record),choice,reason.trim()]))));const hex=[...raw].map(v=>v.toString(16).padStart(2,'0')).join('');const id=hex.slice(0,8)+'-'+hex.slice(8,12)+'-4'+hex.slice(13,16)+'-8'+hex.slice(17,20)+'-'+hex.slice(20,32)
+  const raw=new Uint8Array(await sha256Digest(new TextEncoder().encode(JSON.stringify([record.scope,teamDecisionSubject(record),choice,reason.trim()]))));const hex=[...raw].map(v=>v.toString(16).padStart(2,'0')).join('');const id=hex.slice(0,8)+'-'+hex.slice(8,12)+'-4'+hex.slice(13,16)+'-8'+hex.slice(17,20)+'-'+hex.slice(20,32)
   if(choice==='changes'){
    if(!returnWork)throw Error('补充任务入口未就绪。')
    const current=await api.get({scope:record.scope,type:record.type,id:record.id});if(current.version!==record.version||current.snapshotHash!==record.snapshotHash)throw Error('对象版本已变化。')

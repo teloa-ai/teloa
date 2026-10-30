@@ -1,3 +1,4 @@
+import {sha256Digest} from '@teloa/contract'
 import {industryTeamSeed,industryTeamRole,type IndustryTeamSeed} from './industry-team.ts'
 import {marketCatalogUpstreamTreeInput,type MarketCatalogEntry,type TemplateShareIntent} from '@teloa/contract'
 import type {RoleFields} from './role-preview.ts'
@@ -69,7 +70,7 @@ export async function readPublicCatalogSkill(catalog:Pick<MarketCatalogApi,'list
  const entry=found.entry,unavailable=()=>Object.assign(Error('Public skill content does not match the current catalog source.'),{code:'teloa/source-unavailable'})
  if(entry.kind!=='skill'||entry.compatibility.status==='unsupported')throw unavailable()
  const files=entry.delivery==='upstream'?entry.upstream.files:found.artifact?.files
- const treeHash=entry.delivery==='upstream'?Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(marketCatalogUpstreamTreeInput(entry.upstream)))),byte=>byte.toString(16).padStart(2,'0')).join(''):found.artifact?.treeHash
+ const treeHash=entry.delivery==='upstream'?Array.from(new Uint8Array(await sha256Digest(new TextEncoder().encode(marketCatalogUpstreamTreeInput(entry.upstream)))),byte=>byte.toString(16).padStart(2,'0')).join(''):found.artifact?.treeHash
  if(!files?.length||!treeHash)throw unavailable()
  const contentId=found.addedContentId===null?(await catalog.add(entry.id,{version,treeHash})).contentId:found.addedContentId
  const item=await content.hydrate({kind:'skill',contentStorage:{contentId,createdAt:new Date().toISOString(),loaded:true}} as MarketItem),skill=item.atomicSkill

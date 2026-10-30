@@ -1,3 +1,4 @@
+import {sha256Digest} from '@teloa/contract'
 import {findMarketItem} from './market-item-identity.ts'
 import type {MarketFunctionKey} from '@teloa/contract'
 import {isIndustryManifest} from './industry-manifest.ts'
@@ -192,14 +193,14 @@ export async function parseMarketManifest(raw:string,recipeOptions?:Parameters<t
     const packageContent:IndustryContent={manifestPath:converted.manifestPath,hash:converted.hash,files:converted.files,resources:manifest.resources.map(resource=>({id:resource.id,state:resource.source.kind==='local'&&paths.has(resource.source.path)?'available':'missing'}))}
     return {manifest,raw:new TextDecoder().decode(file.bytes),hash:file.hash,packageContent,recipeImport:converted.report}
   }
-  const manifest=validateManifest(value),digest=await crypto.subtle.digest('SHA-256',bytes)
+  const manifest=validateManifest(value),digest=await sha256Digest(bytes)
   return {manifest,raw,hash:Array.from(new Uint8Array(digest),value=>value.toString(16).padStart(2,'0')).join('')}
 }
 /** 读取固定原件而非 item.raw（后者是生成的 Teloa 清单）；目录摘要、原件与报告须全部一致。 */
 export async function readGrokRecipeItemSource(item:MarketItem):Promise<{raw:string;recipe:GrokRecipe;sourceHash:string}>{
   const content=item.packageContent
   if(!content||!content.files.length||content.files.length>500)throw Error('需要先读取完整的固定模板包。')
-  const digest=async(bytes:Uint8Array)=>Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',Uint8Array.from(bytes))),byte=>byte.toString(16).padStart(2,'0')).join('')
+  const digest=async(bytes:Uint8Array)=>Array.from(new Uint8Array(await sha256Digest(Uint8Array.from(bytes))),byte=>byte.toString(16).padStart(2,'0')).join('')
   const paths=new Set<string>();let total=0
   for(const file of content.files){
     validateIndustryFilePath(file.path)

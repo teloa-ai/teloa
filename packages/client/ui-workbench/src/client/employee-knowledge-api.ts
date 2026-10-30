@@ -1,3 +1,4 @@
+import {sha256Digest} from '@teloa/contract'
 import {isEmployeeKnowledgeContent,isEmployeeKnowledgeDocument,isEmployeeKnowledgeRevision,isEmployeeKnowledgeVersion,type EmployeeKnowledgeContent,type EmployeeKnowledgeDocument,type EmployeeKnowledgeRevision,type EmployeeKnowledgeReviseInput,type EmployeeKnowledgeRestoreInput,type EmployeeKnowledgeTarget,type EmployeeKnowledgeVersion} from '@teloa/contract'
 import type {WorkbenchNavigationStorage} from './workbench-navigation-state.js'
 
@@ -8,7 +9,7 @@ const invalid=()=>Object.assign(Error('员工知识服务返回的内容格式�
 const sameTarget=(document:EmployeeKnowledgeDocument,target:EmployeeKnowledgeTarget)=>document.roleId===target.roleId&&document.resourceId===target.resourceId
 const checkedContent=async(value:unknown,target?:EmployeeKnowledgeTarget)=>{
  if(!isEmployeeKnowledgeContent(value)||target&&!sameTarget(value,target))throw invalid()
- const digest=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(value.markdown))),byte=>byte.toString(16).padStart(2,'0')).join('')
+ const digest=Array.from(new Uint8Array(await sha256Digest(new TextEncoder().encode(value.markdown))),byte=>byte.toString(16).padStart(2,'0')).join('')
  if(digest!==value.contentHash)throw invalid()
  return value
 }

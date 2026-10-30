@@ -1,3 +1,4 @@
+import {sha256Digest} from '@teloa/contract'
 import type {IndustryLoadApi} from './industry-load-api.ts'
 import {readIndustryFiles} from './industry-directory.ts'
 import {isIndustryManifest} from './industry-manifest.ts'
@@ -10,7 +11,7 @@ type Ports={skills:Pick<SkillInstallApi,'list'|'preview'>;contents:Pick<MarketCo
 export type ShareSkillSelection={installationId:string}
 const unavailable=()=>Object.assign(Error('The installed skill’s fixed sharing source is unavailable.'),{code:'teloa/source-unavailable'})
 const stable=(value:unknown):string=>JSON.stringify(value&&typeof value==='object'?Array.isArray(value)?value.map(item=>JSON.parse(stable(item))):Object.fromEntries(Object.entries(value).sort(([a],[b])=>a<b?-1:a>b?1:0).map(([key,item])=>[key,JSON.parse(stable(item))])):value)
-const digest=async(value:string)=>Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(value))),byte=>byte.toString(16).padStart(2,'0')).join('')
+const digest=async(value:string)=>Array.from(new Uint8Array(await sha256Digest(new TextEncoder().encode(value))),byte=>byte.toString(16).padStart(2,'0')).join('')
 /** SKILL.md 可自行声明单行许可；仅读取首个 frontmatter，不从正文、重复键或复杂 YAML 猜测许可。 */
 function frontmatterLicense(text:string):string|undefined{
  const header=/^\uFEFF?---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/.exec(text)?.[1]

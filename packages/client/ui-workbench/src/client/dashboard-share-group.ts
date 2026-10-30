@@ -1,3 +1,4 @@
+import {sha256Digest} from '@teloa/contract'
 import {isGroupMessage,type GroupMessage,type MessageReference} from '@teloa/contract'
 import type {GroupApi} from './group-api.js'
 import type {GroupAttachmentApi} from './group-attachment-api.js'
@@ -8,7 +9,7 @@ type Input={scope:string;snapshotHash:string;groupId:string;text:string;files:re
 type Intent={scope:string;snapshotHash:string;groupId:string;text:string;files:readonly File[];identities:string[];expectedVersion:number;requestIds:string[];references:MessageReference[];sent?:GroupMessage}
 const fail=(code:string)=>Object.assign(Error(code),{code})
 async function fileIdentity(file:File):Promise<string>{
- const digest=await crypto.subtle.digest('SHA-256',await file.arrayBuffer())
+ const digest=await sha256Digest(await file.arrayBuffer())
  return JSON.stringify([file.name,file.type,file.size,Array.from(new Uint8Array(digest),value=>value.toString(16).padStart(2,'0')).join('')])
 }
 /** 同一明确分享意图保留附件 requestId 与原群消息 journal；未知回执只核对原请求。 */

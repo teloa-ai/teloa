@@ -1,3 +1,4 @@
+import {sha256Digest} from '@teloa/contract'
 import {WorkError,isGroupAgentGrant,type GroupAgentGrant,type MessageReference} from '@teloa/contract'
 import {industryTeamSeed,industryTeamRole,matchingIndustryTeam,type IndustryTeamSeed} from './industry-team.ts'
 import type {GroupApi,GroupSnapshot} from './group-api.ts'
@@ -17,7 +18,7 @@ const stable=(value:unknown):string=>JSON.stringify(value,(_,item)=>item&&typeof
 const same=(a:unknown,b:unknown)=>stable(a)===stable(b)
 const fail=()=>new WorkError('teloa/source-unavailable','模板资料或原群状态已改变，请重新核对。')
 const conflict=()=>new WorkError('teloa/version-conflict','群资料或员工授权已改变，请先核对原请求。')
-const sha=async(value:Uint8Array|string)=>Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',typeof value==='string'?new TextEncoder().encode(value):Uint8Array.from(value))),byte=>byte.toString(16).padStart(2,'0')).join('')
+const sha=async(value:Uint8Array|string)=>Array.from(new Uint8Array(await sha256Digest(typeof value==='string'?new TextEncoder().encode(value):Uint8Array.from(value))),byte=>byte.toString(16).padStart(2,'0')).join('')
 const sourceKey=(id:string)=>'teloa.industry-team-materials/v1/'+id
 const referenceKey=(r:MessageReference)=>r.kind+':'+r.id
 /** 保留原草稿/授权引用；同一对象不同版本不能被静默替换。 */

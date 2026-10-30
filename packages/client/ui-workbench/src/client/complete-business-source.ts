@@ -1,3 +1,4 @@
+import {sha256Digest} from '@teloa/contract'
 import {industryUpdateCanonical,readBusinessDashboardResource,type BusinessDashboardResourceDefinition,type DigitalRole,type EmployeeKnowledgeContent,type WorkResource} from '@teloa/contract'
 import {assertCompleteBusinessKnowledgeScope,completeBusinessCrossScope,type CompleteBusinessPackageInput} from './complete-business-package.ts'
 import type {BusinessShareSource} from './business-share-source.ts'
@@ -26,7 +27,7 @@ const roleKey=(rows:readonly DigitalRole[])=>JSON.stringify([...rows].sort((a,b)
 const documentKey=(rows:readonly Pick<EmployeeKnowledgeContent,'resourceId'|'bodyVersion'|'contentHash'|'resource'>[])=>JSON.stringify(rows.map(row=>[row.resourceId,row.bodyVersion,row.contentHash,row.resource.id,row.resource.version]).sort(([a],[b])=>String(a).localeCompare(String(b))))
 const resourceKey=(rows:readonly WorkResource[])=>industryUpdateCanonical([...rows].sort((a,b)=>a.id.localeCompare(b.id)))
 const configurationKey=(value:{resource:BusinessDashboardResourceDefinition;configurationHash:string}|null|undefined)=>industryUpdateCanonical(value)
-const contentHash=async(text:string)=>Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(text))),byte=>byte.toString(16).padStart(2,'0')).join('')
+const contentHash=async(text:string)=>Array.from(new Uint8Array(await sha256Digest(new TextEncoder().encode(text))),byte=>byte.toString(16).padStart(2,'0')).join('')
 function origin(role:DigitalRole,loads:readonly IndustryLoadRecord[],instances:readonly IndustryRoleInstance[]){
  for(const load of loads)for(const item of load.items){
   if(item.kind!=='role'||item.status==='skipped')continue

@@ -1,3 +1,4 @@
+import {sha256Digest} from '@teloa/contract'
 import {isIndustryManifest} from './industry-manifest.ts'
 import {industryFileLimits,validateIndustryFilePath,isGrokRecipe} from '@teloa/contract'
 import type { ResolvedIndustryReference } from './industry-reference.ts'
@@ -8,7 +9,7 @@ export type IndustryFileInput={path:string;size:number;read:()=>Promise<Uint8Arr
 export type IndustryContent={resolved?:ResolvedIndustryReference[];baseHash?:string;manifestPath:string;hash:string;files:{path:string;hash:string;bytes:Uint8Array}[];resources:{id:string;state:'available'|'missing'|'unresolved'}[]}
 export const INDUSTRY_FILE_LIMIT=industryFileLimits.fileBytes,INDUSTRY_TOTAL_LIMIT=industryFileLimits.totalBytes
 const MAX_FILE=INDUSTRY_FILE_LIMIT,MAX_TOTAL=INDUSTRY_TOTAL_LIMIT
-const digest=async(bytes:Uint8Array)=>Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',Uint8Array.from(bytes))),byte=>byte.toString(16).padStart(2,'0')).join('')
+const digest=async(bytes:Uint8Array)=>Array.from(new Uint8Array(await sha256Digest(Uint8Array.from(bytes))),byte=>byte.toString(16).padStart(2,'0')).join('')
 export const validateIndustryPath=validateIndustryFilePath
 
 /** 只读取用户选择的文件，不执行脚本，不解析符号链接或访问外部来源。 */

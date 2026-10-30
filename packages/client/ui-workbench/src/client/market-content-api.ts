@@ -1,3 +1,4 @@
+import {sha256Digest} from '@teloa/contract'
 import {inspectIndustryContent} from './industry-content.ts'
 import {grokRecipeImportFromFiles} from '@teloa/contract'
 import {isIndustryManifest} from './industry-manifest.ts'
@@ -27,7 +28,7 @@ const date=(value:unknown):value is string=>typeof value==='string'&&Number.isFi
 const record=(value:unknown):value is Record<string,unknown>=>!!value&&typeof value==='object'&&!Array.isArray(value)
 const exact=(value:unknown,keys:readonly string[])=>{if(!record(value)||Object.keys(value).some(key=>!keys.includes(key)))throw Error('市场固定内容响应格式不正确。');return value}
 const safePath=(value:unknown):value is string=>typeof value==='string'&&!!value&&value.length<=500&&!value.startsWith('/')&&!value.split('/').some(part=>!part||part==='.'||part==='..')&&!/[\\:?%#\u0000-\u001f\u007f]/.test(value)
-const digest=async(bytes:Uint8Array)=>Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',Uint8Array.from(bytes))),byte=>byte.toString(16).padStart(2,'0')).join('')
+const digest=async(bytes:Uint8Array)=>Array.from(new Uint8Array(await sha256Digest(Uint8Array.from(bytes))),byte=>byte.toString(16).padStart(2,'0')).join('')
 const stable=(value:unknown):string=>JSON.stringify(value,(_,item)=>record(item)?Object.fromEntries(Object.entries(item).sort(([a],[b])=>a.localeCompare(b))):item)
 const encode=(bytes:Uint8Array)=>{let out='';for(let offset=0;offset<bytes.length;offset+=0x8000)out+=String.fromCharCode(...bytes.subarray(offset,offset+0x8000));return btoa(out)}
 const decode=(value:unknown)=>{

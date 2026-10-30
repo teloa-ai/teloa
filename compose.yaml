@@ -43,6 +43,7 @@ services:
       - credentials-secret:/run/teloa-credentials:ro
     environment:
       TELOA_CREDENTIALS_KEY_FILE: /run/teloa-credentials/key
+      TELOA_DSH_TRUSTED_HOSTS: ${TELOA_DSH_TRUSTED_HOSTS:-}
     depends_on:
       db:
         condition: service_healthy

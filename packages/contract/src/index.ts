@@ -1,3 +1,4 @@
+export * from './browser-crypto.mjs'
 export * from './tasks.ts'
 export * from './devices.ts'
 export * from './assistant-channel.ts'

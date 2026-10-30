@@ -1,3 +1,4 @@
+import {sha256Digest} from './browser-crypto.mjs'
 /** 可移植的模板分享边界；只接受静态文本，正文仍由原资源解析器核验，不产生运行权限。 */
 import {isRoleAvatarKey} from './role-avatars.mjs'
 const encoder = new TextEncoder()
@@ -295,7 +296,7 @@ export function readTemplateShare(value) {
 }
 export function canonicalTemplateShare(value) {const pkg=readTemplateShare(value);return pkg.format==='teloa.template-share/v2'?serializeV2(pkg):serialize(pkg)}
 export async function templateShareDigest(value) {
- const bytes=new Uint8Array(await crypto.subtle.digest('SHA-256',encoder.encode(canonicalTemplateShare(value))))
+ const bytes=new Uint8Array(await sha256Digest(encoder.encode(canonicalTemplateShare(value))))
  return Array.from(bytes,v=>v.toString(16).padStart(2,'0')).join('')
 }
 const SUBMISSION_STATES=['pending','approved','rejected','withdrawn']

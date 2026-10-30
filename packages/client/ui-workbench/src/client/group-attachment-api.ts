@@ -1,3 +1,4 @@
+import {sha256Digest} from '@teloa/contract'
 import type {Artifact} from './artifact-preview.js'
 import {savedArtifactMessage,isGroupAttachment,isGroupAttachmentBytes,isArtifactFile,isGroupResourceVersion,groupAttachmentUploadRoutePath,groupAttachmentImageMediaTypes,groupAttachmentFileMediaTypes,type GroupAttachment,type GroupAttachmentBytes,type GroupAttachmentKind,type ArtifactFile,type MessageReference} from '@teloa/contract'
 import {fileBytes,fileImageType} from './artifact-files.ts'
@@ -49,7 +50,7 @@ const decode=(value:string):Uint8Array<ArrayBuffer>=>{const raw=atob(value),byte
 
 /** 上传原字节的 sha256 摘要（hex）；用于核对上传回执，不依赖宿主是否对图片做归一化重编码。 */
 async function sha256Hex(bytes:Uint8Array<ArrayBuffer>):Promise<string>{
- const digest=await crypto.subtle.digest('SHA-256',bytes)
+ const digest=await sha256Digest(bytes)
  return Array.from(new Uint8Array(digest)).map(byte=>byte.toString(16).padStart(2,'0')).join('')
 }
 /** 按契约白名单判出的图片/文件大类；mime 不在任一清单里时判不出，回 undefined（调用方据此跳过该项核对）。 */

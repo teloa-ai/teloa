@@ -1,3 +1,4 @@
+import {sha256Digest} from '@teloa/contract'
 import {
  businessLedgerLimits,businessFieldTypes,businessViewKinds,businessViewCharts,isBusinessMatchField,isBusinessMatchValue,
  readBusinessObjectTypeDefinition,readBusinessActionDefinition,localizedMetadata,
@@ -39,7 +40,7 @@ function localizedLabel(value:unknown,original:string,max:number){
 /** 与 `businessObjectSnapshotHash`（packages/backend/src/work/business-data.ts:59）同一条：同键序的 JSON 摘要。 */
 async function digest(value:unknown):Promise<string>{
  const bytes=new TextEncoder().encode(JSON.stringify(value))
- const result=await crypto.subtle.digest('SHA-256',bytes)
+ const result=await sha256Digest(bytes)
  return Array.from(new Uint8Array(result),byte=>byte.toString(16).padStart(2,'0')).join('')
 }
 
@@ -68,7 +69,7 @@ function actionRecord(value:unknown,scope:string):BusinessActionRecord{
 }
 
 /**
- * 一条对象：形状核对之后必须用 `crypto.subtle.digest` 重算 `snapshotHash`。
+ * 一条对象：形状核对之后必须用 SHA-256 重算 `snapshotHash`。
  * 判据与 `readBusinessDataPage`（business-data-api.ts:82）逐字相同，不放宽——
  * 台账换了一条读取路径，固定快照的核对强度不该跟着降一档。
  */

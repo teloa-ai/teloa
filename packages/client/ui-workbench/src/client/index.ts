@@ -1,3 +1,4 @@
+import './browser-crypto-compat.js'
 import {createAssistantCompanionActivity} from './assistant-companion-activity.js'
 import {createAssistantMiniChat} from './assistant-mini-chat.js'
 import {createConversationPlanDirectory} from './conversation-plans.js'

@@ -1,3 +1,4 @@
+import {sha256Digest} from '@teloa/contract'
 import {
  readBusinessImportStageInput,readBusinessImportStageReceiptInput,readBusinessImportGetInput,readBusinessImportInspectInput,
  readBusinessImportPreviewInput,readBusinessImportApplyInput,readBusinessImportRevisionInput,readBusinessImportReceiptInput,
@@ -39,7 +40,7 @@ export function createBusinessImportApi(call:Call){
   async workbook(input:BusinessImportWorkbookInputV2,signal?:AbortSignal){
    const data=readBusinessImportWorkbookInputV2(input),bytes=Uint8Array.from(atob(data.dataBase64),c=>c.charCodeAt(0))
    if(bytes.byteLength!==data.bytes)throw invalid()
-   const hash=[...new Uint8Array(await crypto.subtle.digest('SHA-256',bytes))].map(byte=>byte.toString(16).padStart(2,'0')).join('')
+   const hash=[...new Uint8Array(await sha256Digest(bytes))].map(byte=>byte.toString(16).padStart(2,'0')).join('')
    const result=readBusinessImportWorkbookV2(await call('business-imports/workbook',data,signal))
    if(result.bytes!==data.bytes||result.fileHash!==hash)throw invalid();return result
   },
