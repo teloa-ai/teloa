@@ -19,3 +19,5 @@
 .recordHeading strong{max-width:75ch;overflow-wrap:anywhere}
 .summary{max-width:75ch}
 @container business-record-detail (max-width:640px){.facts{grid-template-columns:minmax(0,1fr);gap:16px}}
+
+.header{gap:20px}.recordHeading{align-items:flex-start;flex-wrap:wrap}.recordHeading strong{font-size:var(--teloa-font-list);font-weight:600}.fieldStrip{gap:16px}.record{min-width:0}.detail,.editor{padding:24px;border-radius:14px}.formGrid :is(input,textarea,select){border-color:var(--teloa-control-border)}.formGrid label{line-height:1.6}.facts dd{font-size:var(--teloa-font-body);line-height:1.7;overflow-wrap:anywhere}

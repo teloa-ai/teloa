@@ -38,10 +38,46 @@ export function HomeNativeConversation({home,ready,retainingInput,overview,conte
    if(style.getPropertyValue(key)===applied){if(previous)style.setProperty(key,previous,priority);else style.removeProperty(key)}
   }
  },[showOverview,showInput])
+ // 原生候选菜单按窗口顶边计算高度；首页还有工作台页签，边界应取自己的可见工作区。
+ useEffect(()=>{
+  const element=root.current
+  if(!showOverview||!showInput||!element)return
+  let frame=0,observedCard:HTMLElement|undefined,observedSeat:HTMLElement|undefined
+  const update=()=>{
+   const card=element.querySelector<HTMLElement>('[data-composer-card]')
+   if(!card)return
+   if(card!==observedCard){
+    if(observedCard)resize.unobserve(observedCard)
+    if(observedSeat)resize.unobserve(observedSeat)
+    observedCard=card;observedSeat=card.closest<HTMLElement>('[data-composer-seat]')??undefined
+    resize.observe(card);if(observedSeat)resize.observe(observedSeat)
+   }
+   const bounds=element.getBoundingClientRect()
+   let box=card.getBoundingClientRect()
+   if(element.querySelector('[role=listbox]')&&(box.top<bounds.top||box.bottom>Math.min(innerHeight,bounds.bottom))){
+    card.scrollIntoView({block:'nearest'})
+    box=card.getBoundingClientRect()
+   }
+   // 原生 hero 留有尾部空白；只收回输入之后的空白，避免固定负边距盖住大字输入。
+   const conversation=element.querySelector<HTMLElement>('[data-teloa-home-input]')
+   const trim=conversation?Math.max(0,conversation.getBoundingClientRect().bottom-box.bottom-40):0
+   element.style.setProperty('--teloa-home-hero-trim',trim+'px')
+   const above=box.top-Math.max(0,bounds.top)-8,below=Math.min(innerHeight,bounds.bottom)-box.bottom-8
+   const side=above>=96||above>=below?'above':'below'
+   element.dataset.teloaHomeMenuSide=side
+   element.style.setProperty('--teloa-home-menu-height',Math.max(40,Math.min(400,side==='above'?above:below))+'px')
+   element.style.setProperty('--teloa-home-card-height',box.height+8+'px')
+  }
+  const schedule=()=>{cancelAnimationFrame(frame);frame=requestAnimationFrame(update)}
+  const resize=new ResizeObserver(schedule),mutation=new MutationObserver(schedule)
+  resize.observe(element);mutation.observe(element,{subtree:true,childList:true})
+  element.addEventListener('scroll',schedule,true);window.addEventListener('resize',schedule);schedule()
+  return()=>{cancelAnimationFrame(frame);resize.disconnect();mutation.disconnect();element.removeEventListener('scroll',schedule,true);window.removeEventListener('resize',schedule)}
+ },[showOverview,showInput])
  useEffect(()=>{if(sessionId&&accepted&&isHomeDraft()){accept();if(home&&homeReady)engaged?.(sessionId)}},[home,homeReady,sessionId,accepted,engaged,accept,isHomeDraft])
  return <section ref={root} className={showOverview?css.home:css.conversation} data-teloa-home={home||undefined} aria-busy={home&&!homeReady}>
   <>{!retained&&notice}{openTaskForm&&taskCreation?.(openTaskForm)}</>
-  <div className={showOverview?css.homeConversation:css.body} hidden={home&&!showInput} {...(retained?{inert:''}:{})}>
+  <div className={showOverview?css.homeConversation:css.body} data-teloa-home-input={showOverview||undefined} hidden={home&&!showInput} {...(retained?{inert:''}:{})}>
    {content}
   </div>
   {showOverview&&showInput&&overview}

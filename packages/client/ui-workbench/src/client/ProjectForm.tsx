@@ -5,8 +5,10 @@ import {useI18n} from './i18n/provider.js'
 import {localizeWorkError} from './i18n/errors.js'
 import {openDialog} from './dialog-focus.js'
 import {useDialogDismiss} from './use-dialog-dismiss.js'
+import {useRequiredFieldFeedback} from './use-required-field-feedback.js'
 import {projectStateKeys} from './project-presentation.js'
 import css from './ProjectWorkspace.module.css'
+import feedbackCss from './form-feedback.module.css'
 
 export type ProjectFormDraft={fields:ProjectDefinition;ack:boolean;titleEdited?:boolean}
 // 只拟定可核对的名称；完整描述仍是目标，不从自然语言推断日期、状态或授权。
@@ -23,24 +25,27 @@ export function ProjectForm({initial,draft,changeDraft,pending,editing=false,ope
  useEffect(()=>openDialog(dialog.current,editing?input.current:description.current),[])
  useEffect(()=>{if(!pending)return;let active=true;void pending.then(()=>{if(active)setBusy(false)},e=>{if(active){setError(localizeWorkError(locale,e));setBusy(false)}});return()=>{active=false}},[pending,locale])
  const title=t(editing?'project.edit':'project.create')
- return <dialog ref={dialog} className={css.dialog} aria-label={title} {...dismiss}><form className={css.form} onSubmit={async event=>{event.preventDefault();if(busy||(warning&&!ack))return;setBusy(true);setError('');try{await save(fields)}catch(e){setError(localizeWorkError(locale,e))}finally{setBusy(false)}}}>
+ const nameField={label:t('project.name'),value:fields.title,ref:input},goalField={label:t(editing?'project.goal':'project.create.description'),value:fields.goal,ref:description}
+ const feedback=useRequiredFieldFeedback(editing?{title:nameField,goal:goalField}:{goal:goalField,title:nameField})
+ const requiredName=<div className={feedbackCss.field}><label><span>{t('project.name')}<span aria-hidden="true"> *</span></span><input {...feedback.props('title')} aria-label={t('project.name')} ref={input} required maxLength={120} value={fields.title} disabled={busy} onChange={e=>{setFields({...fields,title:e.target.value},true);feedback.clear('title',e.target.value)}}/></label>{feedback.message('title')&&<p role="alert" className={feedbackCss.error} id={feedback.id('title')}>{feedback.message('title')}</p>}</div>
+ return <dialog ref={dialog} className={css.dialog} aria-label={title} {...dismiss}><form className={css.form} noValidate aria-busy={busy} onSubmit={async event=>{event.preventDefault();if(busy||(warning&&!ack)||!feedback.validate(event.currentTarget))return;setBusy(true);setError('');try{await save(fields)}catch(e){setError(localizeWorkError(locale,e))}finally{setBusy(false)}}}>
   <header><h2>{title}</h2><button type="button" disabled={busy} onClick={close} aria-label={t('project.dialog.close')}><X size={18}/></button></header>
   {error&&<p role="alert" className={css.error}>{error}</p>}
+  <p className={feedbackCss.hint}>{t('form.requiredHint')}</p>
   {editing?<>
-   <label>{t('project.name')}<input aria-label={t('project.name')} ref={input} required maxLength={120} value={fields.title} disabled={busy} onChange={e=>setFields({...fields,title:e.target.value})}/></label>
-   <label>{t('project.goal')}<textarea aria-label={t('project.goal')} required maxLength={8000} rows={4} value={fields.goal} disabled={busy} onChange={e=>setFields({...fields,goal:e.target.value})}/></label>
+   {requiredName}
+   <div className={feedbackCss.field}><label><span>{t('project.goal')}<span aria-hidden="true"> *</span></span><textarea {...feedback.props('goal')} ref={description} aria-label={t('project.goal')} required maxLength={8000} rows={4} value={fields.goal} disabled={busy} onChange={e=>{setFields({...fields,goal:e.target.value});feedback.clear('goal',e.target.value)}}/></label>{feedback.message('goal')&&<p role="alert" className={feedbackCss.error} id={feedback.id('goal')}>{feedback.message('goal')}</p>}</div>
    <label>{t('project.dueDate')}<input aria-label={t('project.dueDate')} type="date" value={fields.dueDate??''} disabled={busy} onChange={e=>setFields({...fields,dueDate:e.target.value||null})}/></label>
   </>:<>
    {scopes&&scopes.length>1?<label>{t('project.create.business')}<select aria-label={t('project.create.business')} value={fields.scope} disabled={busy} onChange={e=>setFields({...fields,scope:e.target.value})}>{scopes.map(item=><option key={item.scope} value={item.scope}>{item.label}</option>)}</select></label>:<p className={css.createScope}>{t('project.create.scope',{name:scopeName??initial.scope})}</p>}
-   <label>{t('project.create.description')}<textarea ref={description} className={css.createDescription} aria-label={t('project.create.description')} aria-describedby="project-description-hint" required maxLength={8000} rows={8} placeholder={t('project.create.example')} value={fields.goal} disabled={busy} onChange={e=>setFields({...fields,goal:e.target.value,...(!titleEdited?{title:descriptionTitle(e.target.value)}:{})})}/></label>
-   <p id="project-description-hint">{t('project.create.hint')}</p>
-   {(fields.goal.trim()||fields.title)&&<label className={css.proposedTitle}>{t('project.name')}<input aria-label={t('project.name')} required maxLength={120} value={fields.title} disabled={busy} onChange={e=>setFields({...fields,title:e.target.value},true)}/></label>}
+   <div className={feedbackCss.field}><label><span>{t('project.create.description')}<span aria-hidden="true"> *</span></span><textarea {...feedback.props('goal')} ref={description} className={css.createDescription} aria-label={t('project.create.description')} aria-describedby={[`${feedback.id('goal')}-hint`,feedback.props('goal')['aria-describedby']].filter(Boolean).join(' ')} required maxLength={8000} rows={8} placeholder={t('project.create.example')} value={fields.goal} disabled={busy} onChange={e=>{const goal=e.target.value,proposed=!titleEdited?descriptionTitle(goal):fields.title;setFields({...fields,goal,title:proposed});feedback.clear('goal',goal);feedback.clear('title',proposed)}}/></label><p className={feedbackCss.hint} id={`${feedback.id('goal')}-hint`}>{t('project.create.hint')}</p>{feedback.message('goal')&&<p role="alert" className={feedbackCss.error} id={feedback.id('goal')}>{feedback.message('goal')}</p>}</div>
+   {(fields.goal.trim()||fields.title)&&requiredName}
    <details className={css.optionalFields}><summary>{t('project.dueDate')}</summary><label>{t('project.dueDate')}<input aria-label={t('project.dueDate')} type="date" value={fields.dueDate??''} disabled={busy} onChange={e=>setFields({...fields,dueDate:e.target.value||null})}/></label></details>
   </>}
   {editing&&<label>{t('project.status')}<select aria-label={t('project.status')} value={fields.state} disabled={busy} onChange={e=>setFields({...fields,state:e.target.value as ProjectDefinition['state']})}>{projectStates.filter(state=>state!=='archived').map(state=><option key={state} value={state}>{t(projectStateKeys[state])}</option>)}</select></label>}
   {warning&&<label className={css.check}><input type="checkbox" checked={ack} disabled={busy} onChange={e=>setAck(e.target.checked)}/>{t('project.completeWarning',{count:openTasks})}</label>}
-  <footer><button type="button" disabled={busy} onClick={close}>{t('task.form.cancel')}</button><button type="submit" className={css.primary} disabled={busy||!fields.title.trim()||!fields.goal.trim()||(warning&&!ack)}>{t(busy?'task.form.saving':editing?'project.save':'project.create')}</button></footer>
- </form></dialog>
+  <footer><button type="button" disabled={busy} onClick={close}>{t('task.form.cancel')}</button><button type="submit" className={css.primary} disabled={busy||(warning&&!ack)}>{t(busy?'task.form.saving':editing?'project.save':'project.create')}</button></footer>
+ </form><p className={feedbackCss.status} role="status">{busy?t('task.form.saving'):''}</p></dialog>
 }
 
 export function ProjectArchiveDialog({close,save}:{close:()=>void;save:()=>Promise<void>}){

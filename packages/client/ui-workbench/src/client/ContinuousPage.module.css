@@ -81,3 +81,13 @@
 /* 计划全部列表与工作台其他页同一版心：主区左右 40px。 */
 .workPage.hubPage .workLayout{max-width:none;margin:0;padding-left:40px;padding-right:40px}
 @media(max-width:760px){.workPage.hubPage .workLayout{padding-left:21px;padding-right:21px}}
+
+/* 自动化同样拥有清晰页头，不再靠绝对定位把操作挤在页签上。 */
+.workPage.hubPage>header{position:static;box-sizing:border-box;width:100%;max-width:var(--teloa-content-width);margin-inline:auto;padding:28px var(--teloa-page-gutter) 16px;gap:16px;flex-wrap:wrap}
+.workPage.hubPage>header h1{position:static;width:auto;height:auto;margin:0;overflow:visible;clip:auto;white-space:normal}
+.workPage .modeTabs{margin:0 var(--teloa-page-gutter) 20px;gap:6px;flex-wrap:wrap}.workPage .modeTabs button{min-height:36px;height:auto;padding-block:6px}
+.workPage .goalStart,.workPage .savedPlans{padding-inline:var(--teloa-page-gutter);max-width:1060px;margin-inline:auto}
+.goalStart{background:var(--teloa-surface);border:1px solid var(--teloa-border);border-radius:14px;padding-block:24px}.goalLabel textarea{border-color:var(--teloa-control-border);min-height:140px}.goalFooter{flex-wrap:wrap}.goalFooter>div{flex-wrap:wrap}
+.workPage.hubPage .workLayout{width:100%;max-width:var(--teloa-content-width);margin-inline:auto;padding-inline:var(--teloa-page-gutter)}
+.workPage button.planRow{padding:16px;border:1px solid var(--teloa-border);border-radius:12px;background:var(--teloa-surface);margin-bottom:10px}.planRowContent strong{font-size:var(--teloa-font-list);line-height:1.5}.planRowContent small{line-height:1.6}
+@media(max-width:600px){.workPage.hubPage>header{padding:20px}.goalStart{width:calc(100% - 40px);padding:20px!important}.goalFooter>div{width:100%}.goalFooter>div>button{flex:1}.workPage button.planRow{flex-wrap:wrap;align-items:flex-start}}

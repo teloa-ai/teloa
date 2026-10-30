@@ -39,7 +39,7 @@ test('任务详情工具栏同一行、长负责人不挤窄列，状态和下�
 
 test('任务状态列表键盘选择、更多菜单Escape和原详情返回契约保留',async t=>{
  const page=await mount(t),detail=page.getByRole('article',{name:'任务详情'}),more=detail.getByRole('button',{name:'更多操作',exact:true})
- await page.getByRole('option').first().focus();await page.keyboard.press('ArrowDown');assert.deepEqual(await page.evaluate(()=>(window as any).taskCompactFixture.selected),['task-second'])
+ await page.getByRole('table',{name:'任务列表'}).getByRole('button').first().focus();await page.keyboard.press('ArrowDown');assert.deepEqual(await page.evaluate(()=>(window as any).taskCompactFixture.selected),['task-second'])
  await more.click();await page.getByRole('menu').waitFor();await more.focus();await page.keyboard.press('Escape');assert.equal(await page.getByRole('menu').count(),0,'打开首帧焦点仍在触发器时 Escape 只关闭菜单');assert.equal(await more.evaluate((node:HTMLElement)=>node===document.activeElement),true);assert.equal(await page.evaluate(()=>(window as any).taskCompactFixture.closed),0)
  await more.click();await page.waitForFunction(()=>document.activeElement?.getAttribute('role')==='menuitem');await page.keyboard.press('Escape');assert.equal(await page.getByRole('menu').count(),0,'焦点进入菜单项后 Escape 同样只关闭菜单');assert.equal(await more.evaluate((node:HTMLElement)=>node===document.activeElement),true);assert.equal(await page.evaluate(()=>(window as any).taskCompactFixture.closed),0)
  await detail.getByRole('button',{name:'返回目录',exact:true}).click();assert.equal(await page.evaluate(()=>(window as any).taskCompactFixture.closed),1)

@@ -14,3 +14,5 @@
 @media(max-width:1380px){.layout{padding-left:30px;padding-right:30px}}
 @media(max-width:760px){.layout{padding:0 21px 24px}.recordHeading{flex-wrap:wrap;gap:8px}.recordHeading>div{flex-basis:calc(100% - 100px)}.recordHeading>button{margin-left:auto}.toolbar{gap:7px}.toolbar>button.clear{margin-left:auto}}
 @media(max-width:760px){.layout{padding:0 21px 24px}}
+
+.layout{max-width:var(--teloa-content-width);margin-inline:auto;padding-inline:var(--teloa-page-gutter)}.records{border:1px solid var(--teloa-border);border-radius:12px;background:var(--teloa-surface)}.record{padding:16px 20px}.record:last-child{border-bottom:0}.recordHeading{flex-wrap:wrap}.recordHeading strong{font-size:var(--teloa-font-list);line-height:1.5}.recordDetails{margin-top:12px}.search{border-color:var(--teloa-control-border);min-height:40px}

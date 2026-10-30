@@ -14,6 +14,8 @@ import { useBusinessScopes } from './business-scope-context.js';
 import { defaultPersonalDisplayName, personalAvatarInitials, personalDisplayName } from './personal-profile.js';
 import { TwinAvatar } from './TwinAvatar.js';
 import rosterCss from './StaffRoster.module.css';
+import {useCollectionWindow} from './collection-window.js'
+import {CollectionFooter} from './CollectionFooter.js'
 
 export type StaffRosterProps = {
     roles: readonly PreviewRole[];
@@ -51,18 +53,25 @@ export function StaffRoster({roles,labels,tasks,onSelect,onTalk,onPhone,onOpenTa
  const copy=(key:Parameters<typeof directoryChoiceCopy>[1])=>directoryChoiceCopy(locale,key)
  const displayName=(role:PreviewRole)=>role.kind==='twin'?twinDisplayName(profileName,t):role.name
  const unique=sortRoster(roles,sort,locale,displayName)
+ const window=useCollectionWindow(unique,item=>item.id)
+ const currentWork=new Map<string,PreviewTask>()
+ for(const task of tasks){
+  if(!task.assigneeId||task.state==='completed'||task.state==='cancelled')continue
+  const previous=currentWork.get(task.assigneeId)
+  if(!previous||task.updatedAt>previous.updatedAt)currentWork.set(task.assigneeId,task)
+ }
  // 内置业务（如 general）的服务端标题是中文原文；按已本地化的业务名显示，目录外的标识才回退标签标题或原值。
  const scopeNames=useBusinessScopes()
  const scopeName=(scope:string)=>scopeNames[scope]??labels.find(label=>label.scope===scope)?.title??scope
- return <div className={rosterCss.rosterStack}><div className={rosterCss.tableViewport}><table className={rosterCss.rosterTable} aria-label={employeeCopy(locale,'employeeDirectory')}><thead><tr><th scope="col">{copy('name')} · {copy('duty')}</th><th scope="col">{copy('business')}</th><th scope="col">{copy('current')}</th><th scope="col">{copy('contact')}</th></tr></thead><tbody>{unique.map(item=>{
+ return <div className={rosterCss.rosterStack}><div className={rosterCss.tableViewport}><table role="table" className={rosterCss.rosterTable} aria-label={employeeCopy(locale,'employeeDirectory')}><thead><tr><th scope="col">{copy('name')} · {copy('duty')}</th><th scope="col">{copy('business')}</th><th scope="col">{copy('current')}</th><th scope="col">{copy('contact')}</th></tr></thead><tbody>{window.items.map(item=>{
   const status=rosterMemberStatus(item),name=item.kind==='twin'?twinDisplayName(profileName,t):item.name
-  const task=tasks.filter(task=>task.assigneeId===item.id&&!['completed','cancelled'].includes(task.state)).sort((a,b)=>b.updatedAt.localeCompare(a.updatedAt))[0]
+  const task=currentWork.get(item.id)
   const statusLabel=t(status==='twin'?'team.roster.status.twin':status==='retired'?'team.roster.status.retired':status==='paused'?'team.roster.status.paused':'team.roster.status.active')
   return <tr key={item.id} data-roster-id={item.id}><td>
    <button type="button" data-teloa-entry={item.id} className={rosterCss.cardIdentity} onClick={()=>onSelect(item.id)}>
     {item.kind==='twin'?<TwinAvatar initials={profileInitials}/>:<EmployeeAvatar avatarKey={item.avatarKey}/>}
     <span className={rosterCss.personMain}><strong>{name}</strong><small>{dutyLead(roleFieldText(item,'duty',t))}</small></span>
-   </button></td><td><small className={rosterCss.cardScopes}>{list(item.scopes.map(scopeName))}</small></td><td>
+   </button></td><td data-label={copy('business')}><small className={rosterCss.cardScopes}>{list(item.scopes.map(scopeName))}</small></td><td data-label={copy('current')}>
    <span className={rosterCss.status} data-roster-status={status}>{status==='twin'?<><Fingerprint size={12}/>{statusLabel}</>:<StatusLabel label={statusLabel} mark={status==='active'?'enabled':status==='paused'?'paused':'retired'} tone={status==='active'?'good':'muted'}/>}</span>
    {task?<button type="button" className={rosterCss.workLink} onClick={()=>onOpenTask?onOpenTask(task.id):onSelect(item.id)} title={task.title}>{task.title}</button>:<small className={rosterCss.cardScopes}>{t('team.roster.idle')}</small>}
    </td><td><div className={rosterCss.contacts}>
@@ -70,5 +79,5 @@ export function StaffRoster({roles,labels,tasks,onSelect,onTalk,onPhone,onOpenTa
    {onPhone&&item.storage==='persistent'&&item.state!=='retired'&&<button type="button" title={copy('phone')} aria-label={name+' · '+copy('phone')} onClick={()=>onPhone(item.id)}><Phone size={16}/></button>}
    </div></td></tr>
  })}</tbody></table></div>
- </div>
+ <CollectionFooter {...window}/></div>
 }

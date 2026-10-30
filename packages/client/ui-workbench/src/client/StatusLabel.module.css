@@ -1,4 +1,4 @@
-.label{display:inline-flex;align-items:center;gap:5px;max-width:100%;font-size:var(--teloa-font-caption);font-style:normal;font-weight:var(--teloa-weight-regular);line-height:20px;color:var(--teloa-muted)}
+.label{display:inline-flex;align-items:center;gap:5px;max-width:100%;font-size:var(--teloa-font-caption);font-style:normal;font-weight:var(--teloa-weight-regular);line-height:1.5;color:var(--teloa-muted)}
 .label>svg{flex:none;color:var(--status-ink,var(--teloa-muted))}
 .label>span{overflow-wrap:anywhere}
 .label[data-tone=good]{--status-ink:var(--teloa-good)}

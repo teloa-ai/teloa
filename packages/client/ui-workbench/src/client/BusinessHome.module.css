@@ -26,8 +26,8 @@
 .spaceTile{display:grid;place-items:center;flex:none;width:36px;height:36px;border-radius:9px;background:var(--teloa-subtle);color:var(--teloa-secondary);font-size:15px;font-weight:var(--teloa-weight-heading)}
 .tile1{background:var(--teloa-tile-1-bg);color:var(--teloa-tile-1-fg)}.tile2{background:var(--teloa-tile-2-bg);color:var(--teloa-tile-2-fg)}.tile3{background:var(--teloa-tile-3-bg);color:var(--teloa-tile-3-fg)}
 .spaceText{display:flex;flex-direction:column;gap:3px;flex:1;min-width:0}
-.defaultBadge{flex:none;padding:0 8px;border:1px solid var(--teloa-border-strong);border-radius:var(--teloa-design-round);background:var(--teloa-panel);color:var(--teloa-secondary);font-size:var(--teloa-font-caption);line-height:18px;cursor:help}
-.spaceName{min-width:0;font-size:15px;font-weight:var(--teloa-weight-heading);line-height:1.5;color:var(--teloa-text)}
+.defaultBadge{flex:none;padding:0 8px;border:1px solid var(--teloa-border-strong);border-radius:var(--teloa-design-round);background:var(--teloa-panel);color:var(--teloa-secondary);font-size:var(--teloa-font-caption);line-height:1.5;cursor:help}
+.spaceName{min-width:0;font-size:var(--teloa-font-body);font-weight:var(--teloa-weight-heading);line-height:1.5;color:var(--teloa-text)}
 .spaceSituation{font-size:var(--teloa-font-caption);color:var(--teloa-muted);line-height:1.6}
 .spaceName,.spaceSituation{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden;overflow-wrap:anywhere}
 .spaceWork{flex:none;font-size:var(--teloa-font-caption);line-height:1.6;color:var(--teloa-secondary)}
@@ -59,3 +59,12 @@
 }
 
 .entryActions{display:flex;flex-wrap:wrap;gap:8px}.page .entryActions>button{display:inline-flex;align-items:center;gap:6px;min-height:32px;padding:0 14px;font-weight:var(--teloa-weight-medium)}.page .entryActions>.primaryAction{background:var(--teloa-primary);color:var(--teloa-on-primary);border-color:var(--teloa-primary)}
+
+/* 业务卡是一份可扫描的工作摘要，业务名和处境优先于组成明细。 */
+.container{max-width:var(--teloa-content-width);margin-inline:auto;padding:28px var(--teloa-page-gutter) 32px}
+.cardList{gap:20px;grid-template-columns:repeat(auto-fill,minmax(min(100%,380px),1fr))}.spaceCard{border-radius:14px;padding:20px;min-width:0}
+.spaceOpen{align-items:flex-start;flex-wrap:wrap;gap:12px}.spaceText{min-width:0;flex:1 1 180px}.spaceName{font-size:var(--teloa-font-section);font-weight:600;line-height:1.5;overflow-wrap:anywhere}.spaceSituation{font-size:var(--teloa-font-control);line-height:1.7;margin-top:6px}
+.spaceWork{font-size:var(--teloa-font-caption);white-space:normal;overflow-wrap:anywhere}.spaceComposition{margin:0;line-height:1.8}.spaceComposition button{line-height:1.7}
+@media(max-width:600px){.container{padding:20px}.spaceCard{padding:18px}.cardList{gap:14px}.spaceWork{margin-left:0}}
+
+.page .spaceOpen{display:grid;grid-template-columns:36px minmax(0,1fr) auto;gap:12px;align-items:start}.spaceOpen .spaceTile{grid-column:1;grid-row:1}.spaceOpen .spaceText{grid-column:2;grid-row:1;min-width:0}.spaceOpen .spaceWork{grid-column:2/-1;grid-row:2;text-align:left}.spaceOpen .defaultBadge{grid-column:3;grid-row:1;align-self:start;line-height:1.6}

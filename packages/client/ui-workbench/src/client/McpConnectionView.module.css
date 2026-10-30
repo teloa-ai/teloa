@@ -21,7 +21,7 @@
 .toolList{list-style:none;margin:4px 0 0;padding:0;display:grid;gap:4px}
 .tool{display:flex;align-items:baseline;gap:8px;font-size:var(--teloa-font-caption);color:var(--teloa-text)}
 .toolName{font-weight:var(--teloa-weight-heading)}
-.toolBadge{font-size:10px;border:1px solid var(--teloa-border);border-radius:999px;padding:1px 6px;color:var(--teloa-muted)}
+.toolBadge{font-size:var(--teloa-font-caption);border:1px solid var(--teloa-border);border-radius:999px;padding:1px 6px;color:var(--teloa-muted)}
 .reason{font-size:var(--teloa-font-caption);color:var(--teloa-muted);margin:0}
 .confirmBox{display:grid;gap:8px;background:var(--teloa-surface-alt,var(--teloa-surface));border:1px solid var(--teloa-border);border-radius:10px;padding:12px}
 .confirmText{margin:0;font-size:var(--teloa-font-caption);color:var(--teloa-text)}

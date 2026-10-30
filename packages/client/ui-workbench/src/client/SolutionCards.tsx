@@ -1,3 +1,5 @@
+import {useCollectionWindow} from './collection-window.js'
+import {CollectionFooter} from './CollectionFooter.js'
 import {ResourceIcon} from './ResourceIcon.js'
 import type {RoleAvatarKey} from '@teloa/contract'
 import {isIndustryManifest} from './industry-manifest.ts'
@@ -55,7 +57,8 @@ export type SolutionCardsProps = {
  */
 export function SolutionCards({ items, loads, selectedId, open }: SolutionCardsProps) {
  const { locale, t } = useI18n()
- return <div className={css.bundleGrid}>{items.map(item => {
+ const window=useCollectionWindow(items,item=>item.id,selectedId)
+ return <><div className={css.bundleGrid}>{window.items.map(item => {
   const copy = marketCatalogItemCopy(item, locale)
   const manifest = isIndustryManifest(item.manifest) ? item.manifest : undefined
   // 没有清单就没有可说的组成，整行不渲染，不显示「0 位同事」。
@@ -71,5 +74,5 @@ export function SolutionCards({ items, loads, selectedId, open }: SolutionCardsP
    </span>
    <ArrowUpRight size={16} />
   </button>
- })}</div>
+ })}</div><CollectionFooter {...window}/></>
 }

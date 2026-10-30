@@ -39,6 +39,11 @@ export function mount(file:string,additional:Record<string,unknown>={},expose:re
  const dismissExports:Record<string,unknown>={}
  new Function('require','exports',dismissCode)(require,dismissExports)
  modules['./use-dialog-dismiss.js']??=dismissExports
+ // 分批目录钩子也使用同一 React 状态容器的真实现，保留原条目身份与选择行为。
+ const windowCode=ts.transpileModule(readFileSync(new URL('../src/client/collection-window.ts',import.meta.url),'utf8'),{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.CommonJS}}).outputText
+ const windowExports:Record<string,unknown>={}
+ new Function('require','exports',windowCode)(require,windowExports)
+ modules['./collection-window.js']??=windowExports
  const code=ts.transpileModule(readFileSync(new URL('../src/client/'+file,import.meta.url),'utf8'),{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.React}}).outputText
  const exported:Record<string,any>={}
  new Function('require','exports','React',code+(file==='MarketPage.tsx'?'\nexports.TestCatalog=MarketCatalog;':'')+expose.map(name=>'\nexports.'+name+'='+name+';').join(''))(require,exported,React)
