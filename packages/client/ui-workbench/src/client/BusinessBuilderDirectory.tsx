@@ -5,7 +5,7 @@ import {openDialog} from './dialog-focus.js'
 import {useI18n} from './i18n/provider.js'
 import dialog from './CreateConversationDialog.module.css'
 import css from './BusinessBuilderDirectory.module.css'
-import {FilePenLine,RefreshCw} from 'lucide-react'
+import {ArrowUpRight,FilePenLine,RefreshCw} from 'lucide-react'
 import {BusinessDraftDiscard} from './BusinessDraftDiscard.js'
 import {ToolbarIconButton} from './ToolbarIconButton.js'
 
@@ -22,12 +22,28 @@ export function BusinessBuilderDirectory({flow,open,recover,ready=true}:{recover
  if(drafts.length===0&&!pending&&!recoveryFailed&&!loading&&!failed&&!state.discardedDraft&&!state.directory?.nextCursor)return null
  return <section className={css.directory} aria-label={t('business.builder.directory')}>
   <header><h2>{t('business.builder.directory')}{drafts.length>0&&<span className={css.count}>{drafts.length}</span>}</h2><ToolbarIconButton label={t('business.records.refresh')} icon={RefreshCw} disabled={loading} onClick={()=>void refresh()}/></header>
-  {pending&&recover&&<div><p>{pending.title}</p><button type="button" disabled={!ready} onClick={()=>recover(pending!.requestId)}>{t('business.builder.restore')}</button></div>}
   {recoveryFailed&&<p role="alert">{t('business.builder.error')}</p>}
   {loading&&<p role="status">{t('business.builder.loading')}</p>}
   {failed&&<p role="alert">{t('business.builder.error')} <button type="button" onClick={()=>void refresh()}>{t('common.retry')}</button></p>}
   {state.discardedDraft&&<p role="status">{t('business.builder.discarded')}</p>}
-  {drafts.map(({binding,draft})=><div className={css.draftRow} key={binding.requestId}><button type="button" className={css.item} disabled={!ready} key={binding.requestId} onClick={()=>open(binding)}><FilePenLine size={16} aria-hidden/><strong>{draft?.title??binding.title}</strong><time dateTime={draft?.updatedAt??binding.updatedAt}>{dateTime(new Date(draft?.updatedAt??binding.updatedAt),{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'})}</time><span className={css.go}>{t(binding.sessionId?'business.builder.continue':'business.builder.restore')}</span></button>{draft?.status==='draft'&&<BusinessDraftDiscard flow={flow} binding={binding} draft={draft} disabled={!ready||loading}/>}</div>)}
+  <div className={css.cards}>
+   {pending&&recover&&<article className={css.draftCard}>
+    <button type="button" className={css.item} disabled={!ready} onClick={()=>recover(pending!.requestId)}>
+     <span className={css.tile} aria-hidden><FilePenLine size={18}/></span>
+     <span className={css.copy}><strong title={pending.title}>{pending.title}</strong><span className={css.go}>{t('business.builder.restore')}<ArrowUpRight size={14} aria-hidden/></span></span>
+    </button>
+   </article>}
+   {drafts.map(({binding,draft})=><article className={css.draftCard} key={binding.requestId}>
+    <button type="button" className={css.item} disabled={!ready} onClick={()=>open(binding)}>
+     <span className={css.tile} aria-hidden><FilePenLine size={18}/></span>
+     <span className={css.copy}><strong title={draft?.title??binding.title}>{draft?.title??binding.title}</strong><span className={css.go}>{t(binding.sessionId?'business.builder.continue':'business.builder.restore')}<ArrowUpRight size={14} aria-hidden/></span></span>
+    </button>
+    <footer className={css.footer}>
+     <time dateTime={draft?.updatedAt??binding.updatedAt}>{dateTime(new Date(draft?.updatedAt??binding.updatedAt),{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'})}</time>
+     {draft?.status==='draft'&&<BusinessDraftDiscard flow={flow} binding={binding} draft={draft} disabled={!ready||loading}/>}
+    </footer>
+   </article>)}
+  </div>
   {state.directory?.nextCursor&&<button type="button" disabled={loading} onClick={()=>void refresh(state.directory!.nextCursor)}>{t('business.records.more')}</button>}
  </section>
 }
