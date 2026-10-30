@@ -1,4 +1,4 @@
-.page{display:flex;flex-direction:column;height:100%;box-sizing:border-box;overflow:hidden;color:var(--teloa-text);background:var(--teloa-background)}
+.page{--teloa-library-content-width:1240px;display:flex;flex-direction:column;height:100%;box-sizing:border-box;overflow:hidden;color:var(--teloa-text);background:var(--teloa-background)}
 .page[hidden]{display:none}
 .workspace{position:relative;display:grid;grid-template-columns:256px minmax(0,1fr);flex:1;min-height:0}
 .directoryColumn{display:flex;flex-direction:column;min-width:0;min-height:0;overflow:hidden;border-right:1px solid var(--teloa-border);background:var(--teloa-panel)}
@@ -48,7 +48,7 @@
 .editor input,.editor select{box-sizing:border-box;width:100%;min-height:38px;padding:7px 10px;border:1px solid var(--teloa-border);border-radius:7px;background:var(--teloa-background);color:var(--teloa-text);font:inherit}
 .moreFacts{margin-top:20px;border-top:1px solid var(--teloa-border)}
 .moreFacts>summary{padding:12px 0;color:var(--teloa-muted);font-size:var(--teloa-font-caption);cursor:pointer}
-.breadcrumbs{display:flex;align-items:center;gap:6px;min-height:28px;margin:0 auto 14px;max-width:920px;color:var(--teloa-muted);font-size:var(--teloa-font-caption)}
+.breadcrumbs{display:flex;align-items:center;flex-wrap:wrap;gap:4px 6px;min-height:28px;margin:0 auto 14px;max-width:var(--teloa-library-content-width);color:var(--teloa-muted);font-size:var(--teloa-font-caption)}
 .breadcrumbs span{display:flex;align-items:center;gap:6px;min-width:0}
 .breadcrumbs i{font-style:normal}
 .breadcrumbs button{overflow:hidden;max-width:180px;padding:2px;border:0;background:transparent;color:inherit;font:inherit;text-overflow:ellipsis;white-space:nowrap;cursor:pointer}
@@ -96,7 +96,8 @@
 .treeSearch input{width:100%;min-width:0;border:0;outline:0;background:transparent;color:var(--teloa-text);font:inherit;font-size:var(--teloa-font-caption)}
 @media(max-width:760px){.treeSearch{min-height:44px}.treeSearch input{font-size:var(--teloa-font-touch-input)}}
 
-.librarySearch{display:flex;flex:1;align-items:center;gap:8px;min-width:0;height:32px;padding:0 10px;border:1px solid var(--teloa-border);border-radius:8px;color:var(--teloa-muted);background:var(--teloa-surface)}
+.librarySearch{display:flex;flex:1;align-items:center;gap:8px;box-sizing:border-box;min-width:0;height:36px;padding:0 10px;border:1px solid var(--teloa-border);border-radius:8px;color:var(--teloa-muted);background:var(--teloa-surface)}
+.librarySearch>svg{flex:none}
 .librarySearch input{width:100%;min-width:0;border:0;outline:0;background:transparent;color:var(--teloa-text);font:inherit;font-size:var(--teloa-font-control)}
 .librarySearch:focus-within{outline:2px solid var(--teloa-focus);outline-offset:2px}
 /* 1.0（设计 09）：快捷视图是目录列里的一组纵向行，无图标；选中用 active 底色。 */
@@ -119,21 +120,28 @@
 .fileScope{display:block;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--teloa-text)}
 .favorite{display:grid;place-items:center;width:30px;height:30px;padding:0;border:0;background:transparent;color:var(--teloa-muted);border-radius:6px;cursor:pointer}
 .favorite[aria-pressed=true]{color:var(--teloa-accent)}
-.documentToolbar{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:16px}
+.documentToolbar{display:flex;flex-wrap:wrap;align-items:center;gap:12px;margin:0 auto 16px}
+.documentToolbarActions{display:flex;flex-wrap:wrap;justify-content:flex-end;align-items:center;gap:8px;min-width:0;margin-left:auto}
+.documentToolbar button{flex:none;white-space:nowrap}
+.detail>.documentToolbar,.detail>.breadcrumbs,.detail>.muted{box-sizing:border-box;width:100%;max-width:var(--teloa-library-content-width);margin-inline:auto}
+.detail>.muted:empty{display:none}
 .unsaved{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:12px 24px;border-bottom:1px solid var(--teloa-border);background:var(--teloa-surface);font-size:var(--teloa-font-control)}
 .unsaved p{margin:0;flex:1}
 .views button:focus-visible,.fileName:focus-visible,.favorite:focus-visible{outline:2px solid var(--teloa-focus);outline-offset:2px}
 .addMenu{position:relative;flex:none}
 .addMenu>summary{display:flex;align-items:center;gap:7px;min-height:38px;padding:6px 12px;border:1px solid var(--teloa-border);border-radius:8px;background:var(--teloa-text);color:var(--teloa-background);font-size:var(--teloa-font-control);list-style:none;cursor:pointer}
 .addMenu>summary::-webkit-details-marker{display:none}
-.addMenu>div{position:absolute;right:0;top:38px;z-index:8;display:grid;min-width:200px;padding:6px;border:1px solid var(--teloa-border);border-radius:9px;box-shadow:var(--teloa-shadow);background:var(--teloa-surface)}
+.addMenu>div{position:absolute;right:0;top:calc(100% + 6px);z-index:8;display:grid;min-width:200px;padding:6px;border:1px solid var(--teloa-border);border-radius:9px;box-shadow:var(--teloa-shadow);background:var(--teloa-surface)}
 .addMenu button{display:flex;align-items:center;gap:8px;min-height:36px;padding:6px 8px;border:0;border-radius:6px;background:transparent;color:var(--teloa-text);font:inherit;font-size:var(--teloa-font-control);text-align:left;cursor:pointer}
 .addMenu button:hover{background:var(--teloa-subtle)}
 .addMenu summary:focus-visible,.addMenu button:focus-visible{outline:2px solid var(--teloa-focus);outline-offset:2px}
 
 /* 1.0 目录列顶部：搜索 + 墨黑方形「添加资料」；页面标题只给读屏。 */
-.libraryToolbar{display:flex;align-items:center;gap:8px;padding:12px 12px 6px}
+.libraryToolbar{position:relative;display:flex;flex:none;align-items:center;gap:8px;padding:12px 12px 6px}
 .srOnly{position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}
-.taxonomy .addMenu>summary{display:grid;place-items:center;width:32px;height:32px;min-height:0;padding:0;border:0;border-radius:8px;background:var(--teloa-primary);color:var(--teloa-on-primary)}
-.taxonomy .addMenu>div{right:auto;left:0}
+.libraryToolbar .addMenu{position:static}
+.libraryToolbar .addMenu>summary{display:grid;place-items:center;box-sizing:border-box;width:36px;height:36px;min-height:36px;padding:0;border:0;border-radius:8px;background:var(--teloa-primary);color:var(--teloa-on-primary)}
+.libraryToolbar .addMenu>summary:hover{opacity:.88}
+.libraryToolbar .addMenu>div{top:100%;right:12px;left:12px;min-width:0}
+@media(max-width:720px){.librarySearch{height:44px}.librarySearch input{font-size:var(--teloa-font-touch-input)}.libraryToolbar .addMenu>summary{width:44px;height:44px;min-height:44px}.documentToolbarActions{flex:1 1 100%}}
 .fileName>svg{display:none}
