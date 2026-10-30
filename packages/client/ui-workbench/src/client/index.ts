@@ -1,4 +1,5 @@
 import './browser-crypto-compat.js'
+import {installDesktopAppVisibility} from './desktop-app-visibility.js'
 import {createAssistantCompanionActivity} from './assistant-companion-activity.js'
 import {createAssistantMiniChat} from './assistant-mini-chat.js'
 import {createConversationPlanDirectory} from './conversation-plans.js'
@@ -217,6 +218,7 @@ export const name = 'teloa-ui-workbench'
 export const inject = ['slots','theme','connection','locale','remote','remote.pluginManager','remote.agentPresets','uiSession']
 
 export async function apply(ctx: Context): Promise<void> {
+  installDesktopAppVisibility(ctx)
   const releasePresentation=await applicationPresentation.configure(window.teloaApplication)
   ctx.effect(()=>releasePresentation)
   const navigationStorage=createWorkbenchNavigationStorage(applicationPresentation.getNavigationStorageScope(),window)
