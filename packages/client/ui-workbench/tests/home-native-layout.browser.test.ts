@@ -64,11 +64,26 @@ Object.entries({...prototypeThemes.light,'--dsw-alias-bg-base':'var(--teloa-desi
   if(evidence)await page.screenshot({path:join(evidence,'menu-'+width+'x'+height+'.png')})
   const bounds=await menuPanel.boundingBox(),homeBounds=await homeRoot.boundingBox();assert.ok(bounds&&homeBounds)
   assert.ok(bounds.y>=homeBounds.y,`菜单顶部 ${bounds.y} 不得被首页滚动边界 ${homeBounds.y} 裁切`)
+  assert.equal(await menuPanel.evaluate((node:HTMLElement)=>{const r=node.getBoundingClientRect(),hit=document.elementFromPoint(r.left+r.width/2,r.top+8);return hit===node||hit!==null&&node.contains(hit)}),true,'菜单顶部必须真实可见，不能只验证首条选项')
+  assert.equal(await menuPanel.evaluate((node:HTMLElement)=>{const menu=node.getBoundingClientRect();for(let parent=node.parentElement;parent;parent=parent.parentElement){if(['hidden','clip','auto','scroll'].includes(getComputedStyle(parent).overflowY)&&menu.top<parent.getBoundingClientRect().top-1)return parent.tagName;if(parent.hasAttribute('data-teloa-home'))break}return null}),null,'菜单顶部不能落在任一祖先的裁剪区域外')
   assert.equal(await page.getByRole('option').first().evaluate((node:HTMLElement)=>{const r=node.getBoundingClientRect();return node.contains(document.elementFromPoint(r.left+r.width/2,r.top+r.height/2))}),true,'首条命令可见且可直接点击')
   const card=await page.locator('[data-composer-card]').boundingBox();assert.ok(card)
+  const attention=homeRoot.locator('[aria-label="首页总览"] > div > section').first(),strip=await attention.boundingBox();assert.ok(strip)
+  const gap=strip.y-card.y-card.height;assert.ok(gap>=16&&gap<=(width===1440?100:64),`输入框与待办提示间距 ${gap}px 应比旧布局紧凑`)
+  assert.equal(await attention.evaluate((node:HTMLElement)=>{const r=node.getBoundingClientRect(),hit=document.elementFromPoint(r.left+r.width/2,r.top+r.height/2);return hit===node||hit!==null&&node.contains(hit)}),true,'待办提示不能被欢迎区覆盖')
   assert.ok(Math.abs(card.x+card.width/2-(homeBounds.x+homeBounds.width/2))<12,'输入框水平居中')
   assert.ok(Math.abs(card.y+card.height/2-(homeBounds.y+homeBounds.height/2))<height*.2,'输入框接近主区垂直中心')
   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true,'窄屏不横向溢出')
+  if(width===1440){
+   // 模拟真实首页的标题区占高：菜单会上探到原生 scrollBody 顶边之外。
+   const scroll=homeRoot.locator('[data-conversation-scroll]').first()
+   await scroll.evaluate((node:HTMLElement)=>{node.style.marginTop='100px';window.dispatchEvent(new Event('scroll'))})
+   await page.waitForTimeout(30)
+   const top=await menuPanel.evaluate((node:HTMLElement)=>{const menu=node.getBoundingClientRect(),scroll=node.closest('[data-conversation-scroll]')!.getBoundingClientRect(),hit=document.elementFromPoint(menu.left+menu.width/2,menu.top+8);return {extendsAboveScroll:menu.top<scroll.top,visible:hit===node||hit!==null&&node.contains(hit)}})
+   assert.equal(top.extendsAboveScroll,true,'夹具应覆盖菜单上探到原生滚动区外的场景')
+   assert.equal(top.visible,true,'上探的菜单顶部仍应可见')
+   await scroll.evaluate((node:HTMLElement)=>{node.style.marginTop='';window.dispatchEvent(new Event('scroll'))})
+  }
   await page.getByRole('option').first().click();assert.equal(await editor.inputValue(),'/command-1 ')
  }
  await editor.fill('保留尚未发送的草稿');const original=await editor.elementHandle()

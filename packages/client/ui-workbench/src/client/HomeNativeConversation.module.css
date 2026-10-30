@@ -1,9 +1,12 @@
 .conversation{display:flex;flex-direction:column;height:100%;min-height:0;min-width:0;background:var(--teloa-background)}
 .body{display:flex;flex-direction:column;flex:1;min-height:0;min-width:0}
 .home{height:100%;overflow:auto;background:var(--teloa-background)}
-.homeConversation{height:clamp(380px,60dvh,640px);min-height:380px;max-width:980px;margin:0 auto;display:flex;flex-direction:column}
-/* 首页由外层统一滚动，原生欢迎区不再建立会裁掉向上菜单的第二个滚动口。 */
-.homeConversation :global([data-content-phase="hero"] [data-conversation-scroll]){overflow:visible;scrollbar-gutter:auto}
+/* 输入框继续在主区居中；只收起其下方未使用的 hero 空间，让总览紧随其后。 */
+.homeConversation{height:clamp(380px,60dvh,640px);min-height:380px;max-width:980px;margin:0 auto clamp(-120px,calc(72px - 20dvh),-48px);display:flex;flex-direction:column}
+/* 原生 hero 的外层同样裁剪溢出；只放开滚动区无法露出斜杠菜单顶部。 */
+.homeConversation :global([data-content-phase="hero"]){overflow:visible}
+/* 首页由外层统一滚动；原生 hero 对内层滚动口有更高优先级的 overflow-y:auto。 */
+.home .homeConversation :global([data-content-phase="hero"] [data-conversation-scroll]){overflow:visible;scrollbar-gutter:auto}
 .notice{max-width:880px;padding:16px;margin:0 auto;font-size:var(--teloa-font-control);color:var(--teloa-muted)}
 .recoveryNotice{width:calc(100% - 48px);max-width:460px;box-sizing:border-box;margin:48px auto 24px;padding:24px;border:1px solid var(--teloa-border);border-radius:12px;background:var(--teloa-surface);color:var(--teloa-text)}
 .recoveryNotice h2{margin:0;font-size:var(--teloa-font-section);font-weight:var(--teloa-weight-heading);line-height:var(--teloa-leading-heading)}
