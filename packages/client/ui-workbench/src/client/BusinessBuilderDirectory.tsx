@@ -10,13 +10,37 @@ import {BusinessDraftDiscard} from './BusinessDraftDiscard.js'
 import {ToolbarIconButton} from './ToolbarIconButton.js'
 
 /** 服务端精简目录是唯一草案列表；分页不拼接另一份本地正文目录。 */
-export function BusinessBuilderDirectory({flow,open,recover,ready=true}:{recover?:(requestId:string)=>void;ready?:boolean;flow:BusinessBuilderFlow;open:(binding:BusinessConversationBinding)=>void}){
+export function BusinessBuilderDirectory({flow,open,recover,restart,ready=true}:{recover?:(requestId:string)=>void;restart?:()=>Promise<void>;ready?:boolean;flow:BusinessBuilderFlow;open:(binding:BusinessConversationBinding)=>void}){
  const {t,dateTime}=useI18n(),state=useSyncExternalStore(flow.subscribe,flow.getSnapshot,flow.getSnapshot)
  let pending:ReturnType<BusinessBuilderFlow['pendingCreation']>|undefined,recoveryFailed=false
  try{pending=flow.pendingCreation()}catch{recoveryFailed=true}
  const [loading,setLoading]=useState(false),[failed,setFailed]=useState(false)
+ const [pendingNeedsRestart,setPendingNeedsRestart]=useState(false)
+ const [restarting,setRestarting]=useState(false),restartFlight=useRef(false)
  const refresh=async(cursor?:string)=>{setLoading(true);setFailed(false);try{await flow.refreshDirectory(cursor)}catch{setFailed(true)}finally{setLoading(false)}}
  useEffect(()=>{void refresh()},[flow])
+ useEffect(()=>{
+  if(!pending?.scope){setPendingNeedsRestart(false);return}
+  let current=true
+  setPendingNeedsRestart(false)
+  void flow.pendingCreationNeedsRestart().then(value=>{if(current)setPendingNeedsRestart(value)},()=>{})
+  return()=>{current=false}
+ },[flow,pending?.requestId,pending?.scope])
+ const openPending=()=>{
+  if(!pending||restartFlight.current)return
+  const request=pending
+  restartFlight.current=true;setRestarting(true)
+  void (async()=>{
+   try{
+    const needsRestart=request.scope?await flow.pendingCreationNeedsRestart():false
+    if(flow.pendingCreation()?.requestId!==request.requestId)return
+    setPendingNeedsRestart(needsRestart)
+    if(needsRestart){if(restart)await restart();else setFailed(true)}
+    else recover?.(request.requestId)
+   }catch{setFailed(true)}
+   finally{restartFlight.current=false;setRestarting(false)}
+  })()
+ }
  // 已应用的草案已经变成正式业务；继续呈现「继续搭建」会让用户以为还没保存。
  const drafts=pendingBuilderDrafts(state.directory)
  if(drafts.length===0&&!pending&&!recoveryFailed&&!failed&&!state.discardedDraft&&!state.directory?.nextCursor)return null
@@ -27,10 +51,11 @@ export function BusinessBuilderDirectory({flow,open,recover,ready=true}:{recover
   {state.discardedDraft&&<p role="status">{t('business.builder.discarded')}</p>}
   <div className={css.cards}>
    {pending&&recover&&<article className={css.draftCard}>
-    <button type="button" className={css.item} disabled={!ready} onClick={()=>recover(pending!.requestId)}>
+    <button type="button" className={css.item} disabled={!ready||restarting||pendingNeedsRestart&&!restart} onClick={openPending}>
      <span className={css.tile} aria-hidden><FilePenLine size={18}/></span>
-     <span className={css.copy}><strong title={pending.title}>{pending.title}</strong><span className={css.go}>{t('business.builder.restore')}<ArrowUpRight size={14} aria-hidden/></span></span>
+     <span className={css.copy}><strong title={pending.title}>{pending.title}</strong><span className={css.go}>{t(pendingNeedsRestart?'business.builder.restart':'business.builder.restore')}<ArrowUpRight size={14} aria-hidden/></span></span>
     </button>
+    {pendingNeedsRestart&&<p className={css.recoveryNote}>{t('business.builder.unconfigured')}</p>}
    </article>}
    {drafts.map(({binding,draft})=><article className={css.draftCard} key={binding.requestId}>
     <button type="button" className={css.item} disabled={!ready} onClick={()=>open(binding)}>

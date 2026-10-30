@@ -63,6 +63,7 @@ export const isTaskWorkOutstandingError=(error:unknown):boolean=>codeOf(error)==
 
 /** 服务端 message 仅供日志；用户提示只由稳定 code 和当前产品词典决定。 */
 export function localizeWorkError(locale: string, error: unknown): string {
+  if(codeOf(error)==='teloa/conflict'&&detailsFieldOf(error,'reason')==='builder-scope-unconfigured')return translateMessage(locale,'business.builder.unconfigured')
   if(codeOf(error)==='teloa/dependency-unavailable'){
     const reason=detailsFieldOf(error,'reason')
     if(reason==='mcp-auth-rejected')return translateMessage(locale,'create.app.errorAuth')

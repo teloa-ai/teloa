@@ -1835,6 +1835,16 @@ export function WorkbenchFrame({assistantActivity,assistantChat,groupWorkLinks,e
       const run=async()=>{try{const bound=await businessBuilder!.recover(requestId,false,token);if(bound.sessionId===mainSession.getSnapshot()&&homeCreationLocation(latestState.current)===location){actions.closeDetail();actions.openMessages('native')}}catch(error){navigationError(error,token,()=>void run(),false)}};void run()
     }catch(error){setBuilderError(localizeWorkError(locale,error))}
   }
+  async function restartUnconfiguredBuilder(){
+    if(!builderFlow||!businessBuilder)return
+    const flow=builderFlow,controller=businessBuilder
+    const location=homeCreationLocation(latestState.current)
+    setBuilderError(undefined)
+    try{
+      await flow.abandonUnconfiguredCreation()
+      if(controller.getSnapshot().flow===flow&&homeCreationLocation(latestState.current)===location)requestCreation({builder:true})
+    }catch(error){setBuilderError(localizeWorkError(locale,error))}
+  }
   function offerRecordPreparation(binding:BusinessConversationBinding|null){
     const selection=recordPreparationRef.current
     if(!selection||selection.api!==businessBuilder?.getSnapshot().api||binding?.kind!=='daily'||!binding.sessionId||binding.scope!==selection.reference.scope||binding.sessionId!==mainSession.getSnapshot())return
@@ -2643,7 +2653,7 @@ export function WorkbenchFrame({assistantActivity,assistantChat,groupWorkLinks,e
           {renderTeamPage({embedded:roleEmbedded,visible:roleEmbedded||state.view==='team',selected:roleEmbedded?detailRole!.id:state.roleId,select:id=>{setTeamFocusScope(null);if(roleEmbedded&&!id)closeObjectPanel();else actions.selectRole(id)},navigation:{state:state.navigationDirectories.team??{},change:patch=>actions.rememberDirectory('team',patch)}})}
           </div>
           <div className={clsx(css.objectHost,businessEmbedded&&css.objectPanel)}>{businessEmbedded&&panelHeader}
-          {businessLedgerHome&&<BusinessHome labels={scopeLabels} directory={{status:businessDirectoryStatus,...(businessDirectoryError?{error:businessDirectoryError}:{}),retry:()=>{void loadBusinessDirectory().catch(()=>{})}}} roles={tasks.roles} dataSources={industryDataSources} sourceObservations={businessSourceObservations} loads={savedIndustryLoads} plans={businessCompositionPlans} goComposition={openComposition} attention={attentionItems} tasks={tasks.tasks} open={openBusinessScope} openStaff={openStaffOfScope} connect={scope=>actions.openIndustryResources({scope})} creationReady={!businessBuilder||businessReady} addBusiness={()=>requestCreation({builder:true})} market={()=>openMarketCategory('home')} builderDirectory={<>{builderError&&<p role="alert">{builderError}</p>}{!!builderState.error&&<p role="alert">{t('business.builder.error')} <button type="button" onClick={()=>void businessBuilder?.retry()}>{t('common.retry')}</button></p>}{builderFlow&&<BusinessBuilderDirectory flow={builderFlow} ready={businessReady} recover={recoverBuilder} open={continueBuilder}/>}</>}/>}
+          {businessLedgerHome&&<BusinessHome labels={scopeLabels} directory={{status:businessDirectoryStatus,...(businessDirectoryError?{error:businessDirectoryError}:{}),retry:()=>{void loadBusinessDirectory().catch(()=>{})}}} roles={tasks.roles} dataSources={industryDataSources} sourceObservations={businessSourceObservations} loads={savedIndustryLoads} plans={businessCompositionPlans} goComposition={openComposition} attention={attentionItems} tasks={tasks.tasks} open={openBusinessScope} openStaff={openStaffOfScope} connect={scope=>actions.openIndustryResources({scope})} creationReady={!businessBuilder||businessReady} addBusiness={()=>requestCreation({builder:true})} market={()=>openMarketCategory('home')} builderDirectory={<>{builderError&&<p role="alert">{builderError}</p>}{!!builderState.error&&<p role="alert">{t('business.builder.error')} <button type="button" onClick={()=>void businessBuilder?.retry()}>{t('common.retry')}</button></p>}{builderFlow&&<BusinessBuilderDirectory flow={builderFlow} ready={businessReady} recover={recoverBuilder} restart={restartUnconfiguredBuilder} open={continueBuilder}/>}</>}/>}
           {renderBusinessPage({embedded:businessEmbedded,visible:businessPageVisible({embedded:businessEmbedded,view:state.view,ledgerHome:businessLedgerHome}),target:businessEmbedded?businessPanel!:state.businessTarget,entry:businessEntry,navigation:{state:state.navigationDirectories.spaces??{},change:patch=>actions.rememberDirectory('spaces',patch)}})}
           </div>
           {state.view==='projects'&&<ProjectOverviewPage api={projectApi} scopeLabels={scopeLabels} labelsReady={businessDirectoryStatus!=='loading'} scopeName={scope=>localizedScopeNames[scope]??scope} navigation={{state:state.navigationDirectories.projects??{},change:patch=>actions.rememberDirectory('projects',patch)}} open={project=>enterBusiness({scope:project.scope as CollaborationScope,section:'projects',id:project.id})} visible={state.view==='projects'}/>}

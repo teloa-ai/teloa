@@ -8,7 +8,7 @@ function fixture(){
  let scopeIds:string[]=[],reads=0
  const result={scope:'sales',version:1,configurationHash:'a'.repeat(64),requestId}
  const services={
-  bindings:{bySession:async()=>binding,byRequest:async()=>binding,list:async()=>({items:[binding]}),reserve:async()=>binding,bind:async()=>binding},
+  bindings:{bySession:async()=>binding,byRequest:async()=>binding,list:async()=>({items:[binding]}),reserve:async()=>binding,abandonUnconfigured:async(_actor?:unknown,_request?:unknown)=>({requestId}),bind:async()=>binding},
   drafts:{get:async()=>({ownerId:'owner',id:draftId,scope:'sales',revision:2,baseVersion:0,status:'draft',hash:'a'.repeat(64),createdAt:now,updatedAt:now,candidate:{format:'teloa.business-configuration/v1',scope:'sales',title:'新名称',sources:[{sourceId:'records',kind:'local-records'}],definitions:[],pages:[]}})},
   configuration:{receipt:async(actor:{scopeIds:string[]})=>{assert.deepEqual(actor.scopeIds,['sales']);return result},apply:async()=>result,current:async()=>undefined},
   preview:{preview:async()=>{reads++;throw Error('不得触达')}},
@@ -39,6 +39,16 @@ test('恢复列表从草案真源投影标题、更新时间，保留预约标�
  assert.equal(JSON.stringify(result).includes('definitions'),false)
  f.services.drafts.get=async()=>{throw Error('读取失败')}
  await assert.rejects(f.handler('business-conversations/list',{}),/读取失败/)
+})
+test('放弃无配置空预约只接收固定创建规格并核对回执',async()=>{
+ const f=fixture(),input={requestId,kind:'builder',title:'新业务',scope:'SOC'}
+ let calls=0
+ f.services.bindings.abandonUnconfigured=async(actor:unknown,request:unknown)=>{calls++;assert.deepEqual(actor,{ownerId:'owner',scopeIds:[]});assert.deepEqual(request,input);return {requestId}}
+ assert.deepEqual(await f.handler('business-conversations/abandon-unconfigured',input),{requestId})
+ await assert.rejects(f.handler('business-conversations/abandon-unconfigured',{...input,ownerId:'other'}),{code:'teloa/invalid-input'})
+ assert.equal(calls,1)
+ f.services.bindings.abandonUnconfigured=async()=>({requestId:randomUUID()})
+ await assert.rejects(f.handler('business-conversations/abandon-unconfigured',input),{code:'teloa/invalid-host-response'})
 })
 test('不同请求的合法形状回执不能伪造成功',async()=>{
  const f=fixture();f.setScopes(['sales'])

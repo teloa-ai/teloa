@@ -8,13 +8,13 @@ import {businessSetupPlanEndpoints,createBusinessSetupPlanHandler} from './busin
 import type {BusinessSetupPlanService} from '@teloa/backend'
 export const businessBuilderEndpoints=[
  ...businessSetupPlanEndpoints,
- 'business-conversations/reserve','business-conversations/bind','business-conversations/by-request','business-conversations/by-session','business-conversations/list','business-conversations/recent-daily',
+ 'business-conversations/reserve','business-conversations/abandon-unconfigured','business-conversations/bind','business-conversations/by-request','business-conversations/by-session','business-conversations/list','business-conversations/recent-daily',
  'business-configuration/draft','business-configuration/discard','business-configuration/preview','business-configuration/apply','business-configuration/receipt','business-configuration/current','business-configuration/page',
  'business-records/create','business-records/edit','business-records/archive','business-records/list','business-records/get','business-records/receipt',
 ] as const
 export type BusinessBuilderServices={
  setup?:BusinessSetupPlanService
- bindings:Pick<BusinessConversationBindingService,'reserve'|'bind'|'byRequest'|'bySession'|'list'|'recentDaily'>
+ bindings:Pick<BusinessConversationBindingService,'reserve'|'abandonUnconfigured'|'bind'|'byRequest'|'bySession'|'list'|'recentDaily'>
  drafts:Pick<BusinessConfigurationDraftService,'get'|'discard'>
  configuration:Pick<BusinessConfigurationService,'apply'|'receipt'|'current'>
  preview:Pick<BusinessConfigurationPreviewService,'preview'>
@@ -45,7 +45,7 @@ export function createBusinessBuilderHandler(owner:string,scopeIds:()=>Promise<r
   if((businessSetupPlanEndpoints as readonly string[]).includes(endpoint))return createBusinessSetupPlanHandler(owner,scopeIds,async()=>{const services=await get();if(!services.setup)throw new WorkError('teloa/dependency-unavailable','业务方案服务尚未连接，原草案已保留。');return {bindings:services.bindings,setup:services.setup}})(endpoint,payload)
   if(!(businessBuilderEndpoints as readonly string[]).includes(endpoint))throw new WorkError('teloa/not-found','未提供此业务搭建接口。')
   const readers:Record<string,(v:unknown)=>unknown>={
-   'business-conversations/recent-daily':readBusinessConversationRecentDaily,'business-conversations/reserve':readBusinessConversationReserve,'business-conversations/bind':readBusinessConversationBind,
+   'business-conversations/recent-daily':readBusinessConversationRecentDaily,'business-conversations/reserve':readBusinessConversationReserve,'business-conversations/abandon-unconfigured':readBusinessConversationReserve,'business-conversations/bind':readBusinessConversationBind,
    'business-conversations/by-request':readBusinessConversationRequest,'business-conversations/by-session':readBusinessConversationSession,'business-conversations/list':readBusinessConversationList,
    'business-records/create':readBusinessRecordCreate,'business-records/edit':readBusinessRecordEdit,'business-records/archive':readBusinessRecordArchive,
    'business-records/list':readBusinessRecordList,'business-records/get':readBusinessRecordGet,'business-records/receipt':readBusinessRecordReceipt,
@@ -56,6 +56,11 @@ export function createBusinessBuilderHandler(owner:string,scopeIds:()=>Promise<r
   const services=await get()
   if(endpoint.startsWith('business-conversations/')){
    const method=endpoint.slice('business-conversations/'.length)
+   if(method==='abandon-unconfigured'){
+    const result=await services.bindings.abandonUnconfigured(actor,request)
+    if(result.requestId!==request.requestId)throw invalid()
+    return result
+   }
    if(method==='recent-daily')return readBusinessConversationRecentDailyResponse(await services.bindings.recentDaily(actor,request,signal),request.scope as string)
    if(method==='list'){
     const page=await services.bindings.list(actor,request),items=[]

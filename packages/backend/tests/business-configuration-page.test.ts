@@ -190,7 +190,7 @@ test('隔时归档端点保留原receivedAt，get/receipt/同请求重试返回�
  const records=new api.BusinessRecordService(f.pool,clock,{definitions:f.definitions,warehouse:new api.BusinessWarehouseService(f.pool,clock),references:new api.BusinessSnapshotReferenceService(f.pool,clock)})
  const unused=async():Promise<never>=>{throw Error('记录端点不应访问会话绑定')}
  const handler=createBusinessBuilderHandler(f.actor.ownerId,async()=>f.actor.scopeIds,async()=>({
-  bindings:{reserve:unused,bind:unused,byRequest:unused,bySession:unused,list:unused,recentDaily:unused},
+  bindings:{reserve:unused,abandonUnconfigured:unused,bind:unused,byRequest:unused,bySession:unused,list:unused,recentDaily:unused},
   drafts:f.drafts,configuration:f.apply,preview:f.preview,pages:f.pages,records,
  }))
  const created=await handler('business-records/create',{scope:f.draft.scope,type:'customer',requestId:randomUUID(),title:'待归档客户',summary:'原始内容',fields:[{name:'stage',value:'洽谈'}]}) as import('@teloa/contract').BusinessObjectSnapshot

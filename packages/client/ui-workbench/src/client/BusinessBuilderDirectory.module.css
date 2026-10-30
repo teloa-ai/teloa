@@ -19,6 +19,7 @@
 .go>svg{flex:none}
 .footer{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-top:auto;padding-top:12px;border-top:1px solid var(--teloa-border)}
 .footer time{color:var(--teloa-muted);font-size:var(--teloa-font-caption);font-variant-numeric:tabular-nums;line-height:1.6}
+.recoveryNote{margin:0;color:var(--teloa-secondary);font-size:var(--teloa-font-caption);line-height:1.6}
 .directory .footer>button{flex:none;min-height:32px;padding:4px 8px;border:0;border-radius:var(--teloa-design-r1);background:transparent;color:var(--teloa-muted);font:inherit;font-size:var(--teloa-font-caption);cursor:pointer}
 .directory .footer>button:hover:not(:disabled){background:var(--teloa-hover);color:var(--teloa-text)}
 .directory .footer>button:disabled{opacity:.5;cursor:default}

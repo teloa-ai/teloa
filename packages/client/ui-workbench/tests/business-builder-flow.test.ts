@@ -25,10 +25,17 @@ function fixture(){
    return b
   }
   if(endpoint==='business-conversations/by-request')return bindings.get(r.requestId)??null
+  if(endpoint==='business-conversations/abandon-unconfigured'){
+   const binding=bindings.get(r.requestId)
+   if(binding?.draftId||binding?.sessionId)throw Error('预约已经有草案或会话')
+   bindings.delete(r.requestId)
+   return {requestId:r.requestId}
+  }
   if(endpoint==='business-conversations/by-session')return [...bindings.values()].find(b=>b.sessionId===r.sessionId)??null
   if(endpoint==='business-conversations/bind'){const b={...bindings.get(r.requestId)!,sessionId:r.sessionId};bindings.set(b.requestId,b);return b}
   if(endpoint==='business-conversations/list')return {items:[...bindings.values()].map(binding=>{const d=drafts.get(binding.draftId!)!;return {binding,draft:{id:d.id,title:d.candidate.title,scope:d.scope,revision:d.revision,status:d.status,updatedAt:d.updatedAt}}})}
   if(endpoint==='business-configuration/draft')return drafts.get(r.draftId)!
+  if(endpoint==='business-configuration/current')return null
   if(endpoint==='business-configuration/discard'){
    const current=drafts.get(r.draftId)!
    const discarded={...current,status:'discarded' as const,revision:r.expectedRevision+1}
@@ -88,6 +95,28 @@ test('预约前持久固定意图，create/bind断点完整刷新后复用唯一
  await restored.recoverCreation(requestId)
  assert.equal(f.conversations.size,1);assert.equal(f.bindings.size,1)
  assert.deepEqual(f.opened,['session-0']);assert.equal(restored.getSnapshot().binding!.sessionId,'session-0');assert.equal(f.journal(),null)
+})
+test('无正式配置的旧范围空预约可清理并以新请求创建业务；失回包保留恢复意图',async()=>{
+ const f=fixture(),request={requestId:randomUUID(),kind:'builder' as const,title:'新业务',scope:'SOC'}
+ f.bindings.set(request.requestId,{...request,createdAt:stamp,updatedAt:stamp})
+ f.storage.setItem('owner/builder',JSON.stringify({schema:'teloa.business-builder-journal/v1',creation:request,save:null}))
+ const flow=f.make()
+ assert.equal(await flow.pendingCreationNeedsRestart(),true)
+ f.setRoute(async(endpoint,input,signal)=>{
+  const result=await f.baseCall(endpoint,input,signal)
+  if(endpoint==='business-conversations/abandon-unconfigured')throw Error('回包丢失')
+  return result
+ })
+ await assert.rejects(flow.abandonUnconfiguredCreation(),/回包丢失/)
+ assert.equal(flow.pendingCreation()?.requestId,request.requestId)
+ assert.equal(f.bindings.has(request.requestId),false)
+ f.setRoute(f.baseCall)
+ await flow.abandonUnconfiguredCreation()
+ assert.equal(flow.pendingCreation(),null)
+ const created=await flow.start({})
+ assert.equal(created.scope,undefined)
+ assert.notEqual(created.requestId,request.requestId)
+ assert.equal(f.conversations.size,1)
 })
 test('日志损坏和写失败不发写请求；未知预约仍按原requestId恢复',async()=>{
  const f=fixture();f.storage.setItem('', 'broken')

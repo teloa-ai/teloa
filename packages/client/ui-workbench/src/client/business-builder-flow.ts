@@ -119,6 +119,27 @@ export class BusinessBuilderFlow{
  }
  pendingCreation=()=>this.journal().creation
  pendingSave=()=>this.journal().save
+ /** 旧范围没有正式配置且预约尚未产出草案/会话时，原请求无法继续。 */
+ async pendingCreationNeedsRestart():Promise<boolean>{
+  const request=this.journal().creation
+  if(!request?.scope)return false
+  const binding=await this.ports.api.byRequest({requestId:request.requestId})
+  if(binding){
+   if(binding.kind!==request.kind||binding.title!==request.title||binding.scope!==request.scope||binding.workspaceId!==request.workspaceId)throw conflict('业务预约与本机恢复记录不一致。')
+   if(binding.draftId||binding.sessionId)return false
+  }
+  return await this.ports.api.current({scope:request.scope})===null
+ }
+ /** 只放弃确认无法恢复的空预约；服务端回执先于本机清除，失回包可按原请求重试。 */
+ async abandonUnconfiguredCreation():Promise<void>{
+  if(this.creationFlight)throw conflict('当前创建仍在进行，请稍后核对。')
+  const journal=this.journal(),request=journal.creation
+  if(!request?.scope||journal.save||!await this.pendingCreationNeedsRestart())throw conflict('原预约状态已变化，请重新核对。')
+  await this.ports.api.abandonUnconfigured(request)
+  this.write({...journal,creation:null},journal)
+  this.publish({phase:'idle',error:null})
+  await this.refreshDirectory().catch(()=>{})
+ }
  async requestLeave():Promise<boolean>{
   const draft=this.state.draft
   if(!draft||draft.status!=='draft'||draft.revision===1&&!this.state.setupPlan)return true
