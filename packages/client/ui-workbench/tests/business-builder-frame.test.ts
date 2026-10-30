@@ -130,7 +130,8 @@ for(const locale of ['zh-CN','en'])test(locale+' 真实Frame新用户新建仅�
 test('实际Frame正式入口重连/身份失败先gate，未核对前不能调用旧台账；显式重试后恢复',async t=>{
  const page=await mount(t)
  await page.evaluate(()=>{const f=(window as any).frameFixture;f.holdIdentity=true;void f.reconnect();f.openFormal('data')})
- await page.getByRole('status').filter({hasText:'正在读取最新预览'}).waitFor()
+ await page.waitForFunction(()=>(window as any).frameFixture.controller.getSnapshot().status==='loading')
+ assert.equal(await page.getByText('正在读取最新预览…',{exact:true}).count(),0)
  assert.deepEqual(await page.evaluate(()=>(window as any).frameFixture.calls),[])
  await page.evaluate(()=>{const f=(window as any).frameFixture;f.identityFails=true;f.releaseIdentity()})
  await page.getByRole('alert').waitFor();assert.deepEqual(await page.evaluate(()=>(window as any).frameFixture.calls),[])

@@ -19,11 +19,10 @@ export function BusinessBuilderDirectory({flow,open,recover,ready=true}:{recover
  useEffect(()=>{void refresh()},[flow])
  // 已应用的草案已经变成正式业务；继续呈现「继续搭建」会让用户以为还没保存。
  const drafts=pendingBuilderDrafts(state.directory)
- if(drafts.length===0&&!pending&&!recoveryFailed&&!loading&&!failed&&!state.discardedDraft&&!state.directory?.nextCursor)return null
+ if(drafts.length===0&&!pending&&!recoveryFailed&&!failed&&!state.discardedDraft&&!state.directory?.nextCursor)return null
  return <section className={css.directory} aria-label={t('business.builder.directory')}>
   <header><h2>{t('business.builder.directory')}{drafts.length>0&&<span className={css.count}>{drafts.length}</span>}</h2><ToolbarIconButton label={t('business.records.refresh')} icon={RefreshCw} disabled={loading} onClick={()=>void refresh()}/></header>
   {recoveryFailed&&<p role="alert">{t('business.builder.error')}</p>}
-  {loading&&<p role="status">{t('business.builder.loading')}</p>}
   {failed&&<p role="alert">{t('business.builder.error')} <button type="button" onClick={()=>void refresh()}>{t('common.retry')}</button></p>}
   {state.discardedDraft&&<p role="status">{t('business.builder.discarded')}</p>}
   <div className={css.cards}>
