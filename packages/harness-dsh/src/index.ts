@@ -327,6 +327,7 @@ import {resolveTeloaDshHome,resolveTeloaDshProfile,resolveTeloaRuntime,resolveTe
 import {assertCompositionSafety,readCompositionRows,readProfileFacts} from './composition-safety.ts'
 import {registerTeloaLogFile} from './teloa-log.ts'
 import {ConversationDirectoryChanges} from './conversation-directory.ts'
+import {registerTeloaSessionTitle} from './session-title-provider.ts'
 
 import {initializeTeloaDatabase} from '@teloa/backend'
 
@@ -334,7 +335,7 @@ export const name='teloa-harness-dsh'
 // 子 Agent 的执行态工具闸需要沿会话谱系读取父 Agent；未声明此依赖时，
 // 子会话首轮会在运行时因 Cordis 拒绝读取 `agents` 而失败。
 // 模型目录和固定 Run 策略直接读取 llm；真实兄弟服务不能靠根 Context 桩隐式访问。
-export const inject=['goals','sessionProjections','systemPrompt','teloaNativeInput','llm','connection','sessions','sessionController','teloaModelCatalog','workspaceRegistry','storageDomain','workingDirectory','tools','skills','agentPresets','agents','subagents','agentTeams','sessionPersistence','jobs','approval','permissionPresets','sandboxPolicy','tokenMeter','fs','fileReferences','attachments','webServer','settings','credentials']
+export const inject=['goals','sessionProjections','systemPrompt','sessionTitle','teloaNativeInput','llm','connection','sessions','sessionController','teloaModelCatalog','workspaceRegistry','storageDomain','workingDirectory','tools','skills','agentPresets','agents','subagents','agentTeams','sessionPersistence','jobs','approval','permissionPresets','sandboxPolicy','tokenMeter','fs','fileReferences','attachments','webServer','settings','credentials']
 const projectRoot=fileURLToPath(new URL('../../../',import.meta.url))
 const owner='local:teloa-owner'
 const conversationWorkContextEndpoints=['conversations/assistant','work-context/read','work-context/set','work-context/eligibility','conversation-budgets/read','conversation-budgets/configure','work-requests/list','work-requests/status','work-requests/stop','work-requests/resume'] as const
@@ -425,6 +426,7 @@ async function applyHost(ctx:Context,projectRoot:string):Promise<void> {
   const signalActivity=createSignalActivity(runtimeRoot,()=>({CI:process.env.CI,NODE_ENV:process.env.NODE_ENV,...trusted}),()=>trusted)
   const reportResourceInstall=createResourceInstallReporter(runtimeRoot,()=>({CI:process.env.CI,NODE_ENV:process.env.NODE_ENV,...trusted}),()=>trusted)
   const workspaceRoot=resolveTeloaWorkspaceRoot(projectRoot,trusted)
+  registerTeloaSessionTitle(ctx,owner)
   const repository=new FileConversationRepository(resolve(runtimeRoot,'conversations.json'))
   // 启动时主动校验；损坏存储不得表现为一个正常的空工作台。
   await repository.read()

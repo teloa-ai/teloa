@@ -180,7 +180,7 @@ export const deniedPatchRowIds=new Set([
  'session-persistence-jsonl','session-log-download','tool-subagent-list-agents',
  'shell-env','session-log-deepseek','llm-pi-ai','open-in-app',
  'tool-skill','skill-filesystem','tool-jobs','tool-fs-search','web-startup',
- 'session-query-sqlite','hmr','client-hmr','ui-layout','ui-sidebar','ui-settings-general','ui-settings-plugins','plugin-manager',
+ 'session-query-sqlite','session-title-llm','hmr','client-hmr','ui-layout','ui-sidebar','ui-settings-general','ui-settings-plugins','plugin-manager',
 ])
 /** 任何 `dsh-mcp-client` 行都能带一条 `transport: stdio` 的任意命令，宿主启动即执行。 */
 const deniedPatchRowName='@deepseek-ai/dsh-mcp-client'
