@@ -229,9 +229,37 @@ export class IndustryLoadService{
    const expectedRelations=snapshot.relations.map(link=>({kind:link.kind,from:byLocal.get(link.from)!.instanceId,to:byLocal.get(link.to)!.instanceId})),expectedEntrypoints=snapshot.entrypoints.map(local=>byLocal.get(local)!.instanceId)
    if(!same(relations,expectedRelations)||!same(entrypoints,expectedEntrypoints))throw Error()
    // 沿用项自己没有实例，状态取来源实例的真实状态——这才是「沿用 vN 实例」在目录上看得见的含义。
-   const projected=items.map(item=>{const state=instanceStates.get(item.instanceId.toLowerCase())??(item.carriedFrom?instanceStates.get(item.carriedFrom.toLowerCase()):undefined);return state?{...item,status:state}:item})
+   // 看板随完整业务配置采用，不走资源实例表；按同一加载的采用回执核对，不能仅因业务内存在其他看板就判已准备。
+   const configurationPrepared=row.status==='active'&&items.some(item=>item.kind==='business-configuration'&&item.status!=='skipped')?await this.configurationPrepared(db,ownerId,row):new Set<string>()
+   const projected=items.map(item=>{const state=item.kind==='business-configuration'&&item.status!=='skipped'&&configurationPrepared.has(item.localId)?'active':instanceStates.get(item.instanceId.toLowerCase())??(item.carriedFrom?instanceStates.get(item.carriedFrom.toLowerCase()):undefined);return state?{...item,status:state as IndustryLoadItemStatus}:item})
    return {id:row.id,ownerId:row.owner_id,contentId:row.content_id,contentHash:row.content_hash,templateId:row.template_id,templateVersion:row.template_version,templateTitle:row.template_title,domain:row.domain,scope:row.scope,description:row.description,targetVersion:row.space_version,space:{id:row.space_id,name:row.space_name,version:row.current_space_version,scope:row.scope},items:projected.map(item=>({...item,...industryResourceModelDependencies(item.kind,snapshot.resources.find(resource=>resource.localId===item.localId)?.modelDependencies)})),relations,entrypoints,createdAt:stamp(row.created_at),mappingHash:row.mapping_hash as string,status:row.status as IndustryLoadStatus,...(row.unloaded_at===null?{}:{unloadedAt:stamp(row.unloaded_at)}),...(upgrade?{upgrade}:{})}
   }catch(error){if(error instanceof WorkError&&error.code==='teloa/forbidden')throw error;throw corrupt()}
+ }
+ /** 配置采用的持久回执与加载身份、固定内容、业务及版本一致时，资源目录显示已采用。 */
+ private async configurationPrepared(db:PoolClient,ownerId:string,load:Record<string,unknown>):Promise<Set<string>>{
+  const prepared=new Set<string>(),present=await this.present(db,['teloa_business_setup_plans','teloa_business_dashboard_preparations','teloa_business_configuration_drafts','teloa_business_configuration_heads','teloa_business_configuration_versions'])
+  if(!present.has('teloa_business_configuration_heads')||!present.has('teloa_business_configuration_versions'))return prepared
+  if(present.has('teloa_business_setup_plans')){
+   const result=await db.query(`select resource->>'id' as resource_id from teloa_business_setup_plans p
+    join teloa_business_configuration_heads h on h.owner_id=p.owner_id and h.scope_id=$3
+    join teloa_business_configuration_versions v on v.owner_id=h.owner_id and v.scope_id=h.scope_id
+     and v.version::text=p.body#>>'{plan,adoption,configuration,version}' and v.hash=p.body#>>'{plan,adoption,configuration,configurationHash}'
+    cross join lateral jsonb_array_elements(p.body#>'{plan,resources}') resource
+    where p.owner_id=$1 and p.body#>>'{plan,state}'='applied' and p.body#>>'{plan,adoption,loadId}'=$2
+     and p.body#>>'{plan,adoption,contentId}'=$4 and p.body#>>'{plan,adoption,contentHash}'=$5
+     and p.body#>>'{plan,adoption,configuration,scope}'=$3 and h.version>=v.version and resource->>'kind'='business-configuration'`,[ownerId,load.id,load.scope,load.content_id,load.content_hash])
+   for(const row of result.rows)if(id(row.resource_id))prepared.add(row.resource_id)
+  }
+  // 兼容原“添加业务”导入：看板准备和采用已有独立持久记录，不能只认新版完整方案。
+  if(present.has('teloa_business_dashboard_preparations')&&present.has('teloa_business_configuration_drafts')){
+   const result=await db.query(`select p.source->>'resourceId' as resource_id from teloa_business_dashboard_preparations p
+    join teloa_business_configuration_drafts d on d.owner_id=p.owner_id and d.id=p.draft_id and d.status='applied' and d.scope_id=$2
+    join teloa_business_configuration_heads h on h.owner_id=d.owner_id and h.scope_id=d.scope_id
+    join teloa_business_configuration_versions v on v.owner_id=d.owner_id and v.scope_id=d.scope_id and v.version=d.base_version+1
+    where p.owner_id=$1 and p.source->>'contentId'=$3 and p.source->>'contentHash'=$4 and h.version>=v.version`,[ownerId,load.scope,load.content_id,load.content_hash])
+   for(const row of result.rows)if(id(row.resource_id))prepared.add(row.resource_id)
+  }
+  return prepared
  }
  /** 只读地汇总给定加载项身份在六张资源实例表中的真实状态；缺表的实例种类直接跳过。 */
  private async instanceStates(db:PoolClient,ownerId:string,itemInstanceIds:readonly string[]):Promise<Map<string,IndustryLoadItemStatus>>{

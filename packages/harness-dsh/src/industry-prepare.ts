@@ -20,7 +20,7 @@ export type PrepareStep='knowledge'|'skill'|'mcp'|'data-source'|'execution-tool'
  * restart-required 已启用、重启后生效；failed 安装失败；drift 固定来源已变化；unreadable 已登记而读不出。
  */
 export type PluginHoldReason='unverified'|'rejected'|'restart-required'|'failed'|'drift'|'unreadable'
-export type ReadinessEntry='model-settings'|'connector-settings'|'skill-confirm'|'skill-link'|'plugin'|'knowledge-retry'|'role-retry'|'role-resume'|'task-form'|'plan-form'
+export type ReadinessEntry='model-settings'|'connector-settings'|'skill-confirm'|'skill-link'|'plugin'|'knowledge-retry'|'role-retry'|'role-resume'|'task-form'|'plan-form'|'business-settings'
 export type ReadinessState='ready'|'auto'|'needs-user'|'optional'|'pending'
 /** trust 只出现在随一键安装、带信任声明的技能行上：确认卡与面板据此逐项列出名称与信任摘要，不静默安装。 */
 export type SkillTrustSummary={publisher:string;license:string|null}
@@ -70,7 +70,7 @@ const revisionOf=(value:unknown)=>Number.isSafeInteger(value)?Number(value):null
 type LoadItem={instanceId:string;carriedFrom?:string;kind:string;title:string;required:boolean;status:string;version?:string;modelDependencies?:IndustryModelDependency[]}
 type Load={id:string;status:string;title:string;version:string;mappingHash:string;items:LoadItem[];relations:{kind:string;from:string;to:string}[]}
 type Fact={state:string;revision:number|null}
-type RoleFact=Fact&{role:{id:string;version:number;state:string}|null}
+type RoleFact=Fact&{role:{id:string;version:number;state:string}|null;preparationPending:boolean}
 /** 已登记安装的完整身份：进入准备摘要，绑定前按同一 usage 逐项重核；只比版本不能发现迁到另一份同版本安装。 */
 type Installed={id:string;version:number|null;source:string;bundleHash:string|null;trustHash:string|null;native:string;name:string|null;bodyHash:string|null}
 type SkillFact={raw:string;revision:number|null;installed:boolean;preparing:boolean;confirm:boolean;link?:boolean;bundleHash:string|null;trustHash:string|null;trust?:SkillTrustSummary;installation?:Installed}
@@ -114,7 +114,7 @@ async function snapshot(ports:IndustryPreparePorts,loadId:string,holds:PluginHol
  const currentRows=(rows:Record<string,unknown>[]):Record<string,unknown>[]=>load.items.flatMap(item=>{const found=rows.find(row=>lower(row.itemInstanceId)===item.instanceId&&lower(row.loadId)===load.id)??(item.carriedFrom?rows.find(row=>lower(row.itemInstanceId)===item.carriedFrom):undefined);return found?[{...found,itemInstanceId:item.instanceId}]:[]})
  const facts=(rows:Record<string,unknown>[])=>new Map(currentRows(rows).map(row=>[lower(row.itemInstanceId),{state:String(row.state),revision:revisionOf(row.revision)}] as const))
  const knowledge=facts(items(await ports.knowledge('industry-knowledge/list',{},signal)))
- const roles=new Map(currentRows(items(await ports.roles('industry-roles/list',{},signal))).map(row=>[lower(row.itemInstanceId),{state:String(row.state),revision:revisionOf(row.revision),role:roleOf(row)}] as const))
+ const roles=new Map(currentRows(items(await ports.roles('industry-roles/list',{},signal))).map(row=>[lower(row.itemInstanceId),{state:String(row.state),revision:revisionOf(row.revision),role:roleOf(row),preparationPending:row.preparationPending===true}] as const))
  // 连接器列表逐行容错：读不出的行只进 errors（只带实例身份），对应条目由 classify 按「已登记但读不出」处理
  const connectors=new Map([...facts(items(await ports.mcp('industry-mcp-connections/list',{},signal))),...facts(items(await ports.dataSources('industry-data-sources/list',{},signal))),...facts(items(await ports.executionTools('industry-execution-tools/list',{},signal)))])
  const plugins=new Map(currentRows(items(await ports.plugins('industry-plugins/list',{},signal))).map(row=>[lower(row.itemInstanceId),pluginOf(row)] as const))
@@ -193,11 +193,12 @@ function classify(s:Snapshot,item:LoadItem):Classified|null{
   }
   case 'role':{
    const v=s.roles.get(id);if(!v)return row('auto','none',null,'role')
-   const raw=[v.state,v.role?.state??'-',v.role?.version??'-'].join('/')
+   const raw=[v.state,v.role?.state??'-',v.role?.version??'-',v.preparationPending].join('/')
    if(v.state==='pending')return row('pending',raw,v.revision)
    if(v.state==='failed')return row('needs-user',raw,v.revision,null,'role-retry')
    if(v.role?.state==='active'||v.state==='active')return row('ready',raw,v.revision)
-   // 原本就暂停（含本人主动暂停）的岗位只给入口，不自动恢复（规格 §4 第 5 步）
+   if(v.preparationPending&&v.role?.state==='paused')return row('auto',raw,v.revision,'role')
+   // 没有首次准备标识的暂停岗位只给入口，不自动恢复（规格 §4 第 5 步）
    return v.role?.state==='paused'||v.state==='paused'?row('needs-user',raw,v.revision,null,'role-resume'):null
   }
   case 'skill':{
@@ -232,6 +233,7 @@ function classify(s:Snapshot,item:LoadItem):Classified|null{
   }
   case 'work-template':return row('optional','-',null,null,'task-form')
   case 'plan':return row('optional','-',null,null,'plan-form')
+  case 'business-configuration':return item.status==='active'?row('ready','applied',null):row('needs-user',item.status,null,null,'business-settings')
   default:return null
  }
 }
@@ -332,20 +334,22 @@ async function execute(owner:string,ports:IndustryPreparePorts,s:Snapshot,readin
  const mid=await snapshot(ports,loadId,s.holds).then(buildReadiness,()=>undefined)
  const states=new Map(mid?.rows.map(row=>[row.itemInstanceId,row.state] as const)??[])
  const linked=(roleItem:string,kinds:readonly string[],requiredOnly:boolean)=>s.load.relations.filter(link=>link.from===roleItem&&kinds.includes(link.kind)).map(link=>s.load.items.find(item=>item.instanceId===link.to)).filter((item):item is LoadItem=>!!item&&item.status!=='skipped'&&item.status!=='detached'&&(!requiredOnly||item.required))
- const resume:ReadinessRow[]=[]
+ const resume:ReadinessRow[]=[],preparedRoles=new Map<string,ReturnType<typeof roleOf>>()
  for(const row of due('role')){
   if(!mid){push(row,'role','skipped',CONTINUE);continue}
   if(linked(row.itemInstanceId,['role-knowledge'],true).some(item=>states.get(item.instanceId)!=='ready')){push(row,'role','skipped','员工依赖的资料仍在启用，稍后再点一次「一键准备」继续。');continue}
-  if(!await attempt(row,'role',()=>ports.roles('industry-roles/instantiate',{requestId:id(row,'role'),loadId,itemInstanceId:row.itemInstanceId})))continue
+  const existing=s.roles.get(row.itemInstanceId)
+  if(!existing?.preparationPending&&!await attempt(row,'role',()=>ports.roles('industry-roles/instantiate',{requestId:id(row,'role'),loadId,itemInstanceId:row.itemInstanceId})))continue
   const settled=await attempt(row,'role',()=>until(async()=>{const v=await roleRow(row.itemInstanceId);return !v||v.state==='pending'?undefined:v}))
   if(!settled)continue
   const found=settled.value
   if(!found){push(row,'role','pending',CONTINUE);continue}
   if(found.state==='failed'){push(row,'role','failed',failureOf(found.failure,{code:'teloa/conflict',message:'员工创建失败，请到员工分组查看原因。'}));continue}
+  if(existing?.preparationPending&&(existing.role?.id!==roleOf(found)?.id||existing.role?.version!==roleOf(found)?.version||found.preparationPending!==true)){push(row,'role','skipped','员工已变化，请重新核对后再准备。');continue}
   push(row,'role','done')
-  resume.push(row)
+  resume.push(row);preparedRoles.set(row.itemInstanceId,roleOf(found))
  }
- // 6a 方法：只给本批首建、未被改过的暂停员工（v1）绑定同一加载已显式安装且实际可用的关联方法，经原 roles/edit（事务与 CAS）保存；
+ // 6a 方法：给未改过定义的首次准备员工（v1）绑定同一加载已安装且可用的方法；已绑定的 v2 只核验沿用，经原 roles/edit（事务与 CAS）保存；
  // 绑定前重新核对关联、安装来源、原生名与实际可用，任一缺项都保持暂停并返回缺项，不让空方法员工上岗。
  const bindMethods=async(row:ReadinessRow,role:{id:string;version:number}):Promise<{version:number}|{gap:string}>=>{
   const methods=linked(row.itemInstanceId,['role-skill'],false)
@@ -355,7 +359,7 @@ async function execute(owner:string,ports:IndustryPreparePorts,s:Snapshot,readin
   const listedRoles=await ports.roleRecords('roles/list',{})
   if(!Array.isArray(listedRoles))throw hostBad()
   const current=listedRoles.find(value=>isRecord(value)&&value.id===role.id)
-  if(!isRecord(current)||current.kind!=='employee'||current.state!=='paused'||current.version!==1||role.version!==1||!Array.isArray(current.skills)||current.skills.length)return gap('员工已被修改，未覆盖其方法设置')
+  if(!isRecord(current)||current.kind!=='employee'||current.state!=='paused'||current.version!==role.version||!Array.isArray(current.skills)||!(role.version===1&&!current.skills.length||s.roles.get(row.itemInstanceId)?.preparationPending&&role.version===2&&current.skills.length>0))return gap('员工已被修改，未覆盖其方法设置')
   const load=readLoad(await ports.loads('industry-loads/get',{loadId}))
   if(load.id!==loadId||load.status!=='active'||load.mappingHash!==s.load.mappingHash)return gap('方案关联已变化，请重新核对后再准备')
   const listed=await ports.skills('skill-installations/list',{})
@@ -384,18 +388,24 @@ async function execute(owner:string,ports:IndustryPreparePorts,s:Snapshot,readin
    if(!isRecord(seen.current)||seen.current.name!==native.name||seen.current.bodyHash!==native.bodyHash)return gap(label+'已被替换为其他内容')
    names.push(native.name)
   }
+  if(current.skills.length){
+   if(current.skills.length!==names.length||current.skills.some((name:unknown)=>!names.includes(String(name))))return gap('员工的方法设置已变化，未覆盖')
+   return {version:role.version}
+  }
   const fields=Object.fromEntries(ROLE_FIELDS.filter(key=>current[key]!==undefined).map(key=>[key,key==='skills'?names:current[key]]))
   const saved=await ports.roleRecords('roles/edit',{roleId:role.id,expectedVersion:1,fields,expectedProfile:{name:current.name,...(current.avatarKey===undefined?{}:{avatarKey:current.avatarKey})}})
   if(!isRecord(saved)||saved.id!==role.id||saved.version!==2||saved.state!=='paused'||!Array.isArray(saved.skills)||saved.skills.join('\0')!==names.join('\0'))throw hostBad()
   return {version:2}
  }
- // 6b 上岗：只恢复本次新建的岗位；恢复会一并启用该岗位的每日小结（role-lifecycle.ts:68）
+ // 6b 上岗：完成新建或待续的首次准备；恢复会一并启用该岗位的每日小结（role-lifecycle.ts:68）
  for(const row of resume){
   const current=await attempt(row,'role-resume',()=>roleRow(row.itemInstanceId))
   if(!current)continue
   const role=current.value?roleOf(current.value):null
   if(!role){push(row,'role-resume','skipped','员工尚未就绪。');continue}
   if(role.state==='active'){push(row,'role-resume','done');continue}
+  const prepared=preparedRoles.get(row.itemInstanceId)
+  if(!prepared||prepared.id!==role.id||prepared.version!==role.version){push(row,'role-resume','skipped','员工已变化，请重新核对后再准备。');continue}
   if(role.state!=='paused'){push(row,'role-resume','skipped','员工当前状态不能上岗。');continue}
   // 方法就绪即先绑定实际安装的原生名：连接仍待本人授权时员工保持暂停，但已经带着真实方法，不留空方法员工。
   const ready=(kinds:readonly string[])=>!linked(row.itemInstanceId,kinds,false).some(item=>states.get(item.instanceId)!=='ready')

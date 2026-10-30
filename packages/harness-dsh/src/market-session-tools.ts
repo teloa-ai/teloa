@@ -723,8 +723,8 @@ async function checkedPrepare(ports:MarketSessionToolsPorts,input:PrepareInput):
  if(readiness.rows.filter(row=>row.state==='auto'&&row.trust).length>MAX_TRUSTED_ON_CARD)throw new WorkError('teloa/conflict',`随一键安装的技能超过 ${MAX_TRUSTED_ON_CARD} 个，确认卡放不下逐项清单，请到行业方案页「准备就绪」里核对后点「一键准备」。`)
  return readiness
 }
-const stepLabels:Record<string,string>={knowledge:'启用资料',skill:'安装技能',mcp:'登记连接','data-source':'登记连接','execution-tool':'登记连接',role:'创建员工'}
-const entryLabels:Record<string,string>={'connector-settings':'连接设置','skill-confirm':'逐个确认技能（联网、执行权限、非官方来源或脚本）',plugin:'应用待你处理（查看权限、重启后核对或重试）','knowledge-retry':'资料启用失败待重试','role-retry':'员工创建失败待重试','role-resume':'恢复暂停的员工','task-form':'按模板建任务','plan-form':'启用周期计划'}
+const stepLabels:Record<string,string>={knowledge:'启用资料',skill:'安装技能',mcp:'登记连接','data-source':'登记连接','execution-tool':'登记连接',role:'完成员工准备并启用'}
+const entryLabels:Record<string,string>={'connector-settings':'连接设置','skill-confirm':'逐个确认技能（联网、执行权限、非官方来源或脚本）',plugin:'应用待你处理（查看权限、重启后核对或重试）','knowledge-retry':'资料启用失败待重试','role-retry':'员工创建失败待重试','role-resume':'恢复暂停的员工','business-settings':'采用业务看板配置','task-form':'按模板建任务','plan-form':'启用周期计划'}
 /** 卡片里的宿主文本（方案标题、版本、条目标题）：去掉控制与格式字符（含双向覆盖 U+202A–202E、U+2066–2069），合并空白，截到 30 字，外包「」。 */
 function cardText(value:string):string{
  const flat=[...value.replace(/[\p{Cc}\p{Cf}]/gu,ch=>/\s/.test(ch)?' ':'').replace(/\s+/g,' ').trim()]
@@ -756,7 +756,7 @@ function trustedListing(rows:Readiness['rows']):string{
 function prepareReason(r:Readiness,prior:string):string{
  const budget={left:CARD_TITLE_BUDGET},trusted=trustedListing(r.rows)+appListing(r.rows)
  // 固定声明放在清单之前：清单只含清洗后的宿主标题，不能伪造成声明
- return `${prior}确认为行业方案${cardText(r.title)}版本${cardText(r.version)}一键准备？新建员工只在关联的资料、技能、连接与应用都已就绪时上岗，上岗会一并启用该员工的每日小结；原本暂停的员工不会自动恢复。密钥与授权只在页面填写，不要发到会话。将自动完成：${listing(r.rows,'auto','step',stepLabels,budget)}。${trusted}需要你到页面处理（不在此处完成）：${listing(r.rows,'needs-user','entry',entryLabels,budget)}。按需使用：${listing(r.rows,'optional','entry',entryLabels,budget)}。`
+ return `${prior}确认为行业方案${cardText(r.title)}版本${cardText(r.version)}一键准备？新建员工只在关联的资料、技能、连接与应用都已就绪时上岗，上岗会一并启用该员工的每日小结；本人主动暂停或修改过的员工不会自动恢复。密钥与授权只在页面填写，不要发到会话。将自动完成：${listing(r.rows,'auto','step',stepLabels,budget)}。${trusted}需要你到页面处理（不在此处完成）：${listing(r.rows,'needs-user','entry',entryLabels,budget)}。按需使用：${listing(r.rows,'optional','entry',entryLabels,budget)}。`
 }
 async function executePrepare(ports:MarketSessionToolsPorts,input:PrepareInput){
  const receipt=await ports.industryPrepare('industry-loads/prepare',{loadId:input.loadId,expectedDigest:input.expectedDigest})

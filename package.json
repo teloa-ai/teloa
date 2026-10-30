@@ -13,7 +13,7 @@
     "check:client": "node scripts/检查客户端构建.mjs",
     "setup:dsh": "node scripts/准备DSH插件.mjs",
     "test:work": "pnpm --filter @teloa/backend test",
-    "test:bindings": "node --test packages/client/ui-workbench/tests/*.test.ts packages/client/ui-workbench/tests/role-skill-query-drafts.browser.test.mjs",
+    "test:bindings": "node --test packages/client/ui-workbench/tests/*.test.ts packages/client/ui-workbench/tests/role-skill-query-drafts.browser.test.mjs packages/client/ui-workbench/tests/industry-package-prepare.browser.test.mjs",
     "test:contract": "node --test packages/contract/tests/*.test.ts packages/contract/tests/*.test.mjs",
     "test:sdk": "node --test packages/sdk/tests/*.test.mjs",
     "dev:dsh": "pnpm build && node scripts/启动DSH.mjs",

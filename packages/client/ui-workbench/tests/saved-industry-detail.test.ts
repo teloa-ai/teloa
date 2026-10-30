@@ -243,3 +243,16 @@ test('两份固定内容字节相同，查看来源仍逐项打开原 contentId�
  assert.deepEqual(opened,['stored-'+load.contentId,'stored-'+other.contentId])
  assert.equal(load.contentHash,other.contentHash)
 })
+
+test('新包看板未采用时提供配置入口并打开同一份固定内容；已有采用事实时显示就绪且不重复引导安装',()=>{
+ const board=item(9,'business-configuration','业务页面'),opened:string[]=[],render=mount({...props([{...load,items:[board]}],unload),readiness,openMarket:(id:string)=>opened.push(id)})
+ let view=render(),browser=browserOf(view),detail=browser.props.render(board)
+ assert.equal(browser.props.status(board),'market.industry.saved.status.businessPending')
+ buttons(detail,'market.industry.prepare.configureBoard')[0]!.props.onClick()
+ assert.deepEqual(opened,['stored-'+load.contentId])
+ const panel=nodes(view).find(node=>typeof node.type==='function'&&node.props.loadId===loadId&&'port'in node.props)!
+ panel.props.onRead({loadId,status:'active',title:load.templateTitle,version:load.templateVersion,digest:'f'.repeat(64),counts:{ready:1,auto:0,needsUser:0,optional:0,pending:0},rows:[{itemInstanceId:board.instanceId,kind:board.kind,title:board.title,state:'ready',step:null,entry:null}]})
+ browser=browserOf(render());detail=browser.props.render(board)
+ assert.equal(browser.props.status(board),'market.industry.saved.status.businessApplied')
+ assert.equal(buttons(detail,'market.industry.prepare.configureBoard').length,0)
+})

@@ -38,7 +38,7 @@ test('升级后已有相同安装但无当前加载关联，明确核对可用�
 })
 test('面板：确认态列出将准备的内容并保留员工暂停；回执显示完成/处理中/失败计数',()=>{
  const confirming=render({confirming:true})
- assert.match(confirming,/新员工保持暂停/);assert.match(confirming,/账号授权和计划需另行配置/);assert.doesNotMatch(confirming,/上岗会|启用.*每日小结/);assert.match(confirming,/启用资料：分诊指南/)
+ assert.match(confirming,/依赖就绪后，启用新员工/);assert.match(confirming,/账号授权和计划需另行配置/);assert.doesNotMatch(confirming,/上岗会|启用.*每日小结/);assert.match(confirming,/启用资料：分诊指南/)
  const many={...readiness,counts:{...readiness.counts,auto:12},rows:[...readiness.rows,...Array.from({length:11},(_,i)=>({itemInstanceId:`a111111${i.toString(16)}-1111-4111-8111-111111111111`,kind:'knowledge',title:'资料'+(i+1),state:'auto',step:'knowledge',entry:null}))]}
  assert.match(render({readiness:many,confirming:true}),/启用资料：分诊指南(、资料\d+){9} 等 12 项/)
  const receipt={loadId,digest:'9'.repeat(64),results:[{itemInstanceId:K,title:'分诊指南',step:'knowledge',outcome:'done',code:null,message:null},{itemInstanceId:R,title:'岗位',step:'role-resume',outcome:'skipped',code:null,message:'x'},{itemInstanceId:M,title:'技能',step:'skill',outcome:'failed',code:'teloa/dependency-unavailable',message:'未生效'}],readiness}
@@ -144,7 +144,7 @@ function tree(props:Record<string,unknown>){
 }
 test('面板：员工关联的技能需要你先确认时，主按钮先去处理该技能，不把建出暂停、无技能员工包装成一键就绪',()=>{
  const html=render({readiness:writing,relations:writingLinks})
- assert.match(html,/先处理 Writing revision，再准备员工 Writing Bot：现在一键准备只会先建出暂停的员工，之后也不会再替它补上技能或上岗。/)
+ assert.match(html,/先处理 Writing revision，再继续准备员工 Writing Bot。员工暂时保持暂停，补齐依赖后可继续一键准备。/)
  assert.match(html,/primaryButton[^>]*>先去处理</)
  assert.doesNotMatch(html,/primaryButton[^>]*>一键准备/)
  assert.match(html,/逐个确认技能（信任说明或脚本）：Writing revision/)
@@ -155,8 +155,8 @@ test('面板：员工关联的技能需要你先确认时，主按钮先去处�
  view.button('仍要先创建暂停的员工')!.props.onClick()
  assert.equal(view.calls.asked,1);assert.equal(view.calls.confirmed,0,'次要入口只打开原确认，不直接执行')
  const confirming=render({readiness:writing,relations:writingLinks,confirming:true})
- assert.match(confirming,/创建员工：Writing Bot/)
- assert.match(confirming,/Writing Bot 会以暂停状态创建；之后再点一键准备也不会替它补上技能或上岗，需要你到员工分组检查后自行恢复。/)
+ assert.match(confirming,/完成员工准备：Writing Bot/)
+ assert.match(confirming,/Writing Bot 会暂时保持暂停；补齐依赖后可继续一键准备。本人主动暂停或修改过的员工仍需检查后恢复。/)
 })
 test('面板：技能已装好、由一键安装的官方技能、与员工无关的待确认项或员工已建好时，保持原一键准备',()=>{
  for(const state of ['ready','auto'] as const){
@@ -177,7 +177,7 @@ test('面板：员工关联的连接需要授权时同样先去处理连接；�
  const both={...writing,rows:[writing.rows[0],conn,writing.rows[1]]},links=[...connLinks,...writingLinks]
  const view=tree({readiness:both,relations:links})
  view.button('先去处理')!.props.onClick();assert.deepEqual(view.calls.opened,['capabilities'])
- assert.match(render({readiness:both,relations:links}),/先处理 Writing revision、Docs MCP，再准备员工 Writing Bot/)
+ assert.match(render({readiness:both,relations:links}),/先处理 Writing revision、Docs MCP，再继续准备员工 Writing Bot/)
 })
 test('面板只把当前核对过的清单回报给目录（行为见 industry-readiness-freshness.test.ts），供同事详情复用同一真实状态',async()=>{
  const source=await readFile(new URL('../src/client/IndustryReadinessPanel.tsx',import.meta.url),'utf8')
@@ -207,4 +207,19 @@ test('面板：依赖应用在确认态列为「安装并启用」，需要你�
  const unlinked={itemInstanceId:H,kind:'plugin',title:'告警应用',state:'needs-user',step:null,entry:'plugin'}
  assert.match(render({readiness:{...withApps,rows:[...readiness.rows,unlinked]}}),/确认扩展安装：告警应用/,'未被员工依赖的应用照旧并入确认扩展安装')
  for(const reason of ['rejected','restart-required','failed','drift','unreadable'])assert.match(render({readiness:{...withApps,rows:[...readiness.rows,{...rows.at(-1),reason}]}}),/告警应用 /,reason)
+})
+
+test('新包面板：支持批量技能时一次确认安装，关联技能不再把主操作分流成逐项处理',()=>{
+ const html=render({readiness:writing,relations:writingLinks,batchSkills:true})
+ assert.match(html,/primaryButton[^>]*>一键准备/)
+ assert.doesNotMatch(html,/先去处理|仍要先创建暂停的员工|逐个确认技能/)
+ assert.match(html,/可一键完成 2/);assert.match(html,/需要你操作 0/)
+ const pending={...writing,counts:{ready:0,auto:0,needsUser:1,optional:0,pending:0},rows:writing.rows.filter(row=>row.kind==='skill')}
+ assert.match(render({readiness:pending,batchSkills:true}),/primaryButton[^>]*>一键准备/,'只有技能待安装也有批量入口')
+})
+
+test('新包面板：未采用看板提供明确业务入口，准备完成不能遗漏看板',()=>{
+ const board={itemInstanceId:WConn,kind:'business-configuration',title:'Support board',state:'needs-user',entry:'business-settings',step:null}
+ const html=render({readiness:{...readiness,counts:{ready:0,auto:0,needsUser:1,optional:0,pending:0},rows:[board]}})
+ assert.match(html,/业务看板尚未采用/);assert.doesNotMatch(html,/都准备好了/)
 })

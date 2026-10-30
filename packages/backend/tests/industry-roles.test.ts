@@ -202,3 +202,23 @@ test('createFromCatalog：目录未升版本但内容变化时回 teloa/conflict
  await assert.rejects(f.service.createFromCatalog(f.owner,input,changed),{code:'teloa/conflict',message:'目录条目已变化，请刷新后重试。'})
  assert.equal((await pool.query('select count(*)::int n from teloa_roles where owner_id=$1',[f.owner])).rows[0].n,1)
 })
+
+test('新包的首次准备标识只覆盖未改动的 v1 和仅绑定方法的 v2；主动暂停与职责改动不能自动恢复',async()=>{
+ const f=await setup(pool)
+ await f.knowledge.instantiate(f.owner,{requestId:randomUUID(),loadId:f.load.id,itemInstanceId:f.guide.instanceId})
+ const created=await f.service.instantiate(f.owner,{requestId:randomUUID(),loadId:f.load.id,itemInstanceId:f.role.instanceId})
+ assert.equal(created.preparationPending,true)
+ const original=created.role!,{id,ownerId,version,state,createdAt,updatedAt,...definition}=original
+ const bound=await f.roles.edit(f.owner,{roleId:id,expectedVersion:version,expectedProfile:{name:original.name},fields:{...definition,skills:['installed-method']}})
+ assert.equal((await f.service.get(f.owner,{instanceId:created.id})).preparationPending,true)
+ const lifecycle=new RoleLifecycleService(pool,identity)
+ const active=await lifecycle.change(f.owner,{roleId:id,expectedVersion:bound.version,action:'resume',reason:'核对完成'})
+ await lifecycle.change(f.owner,{roleId:id,expectedVersion:active.role.version,action:'pause',reason:'本人主动暂停'})
+ assert.equal((await f.service.get(f.owner,{instanceId:created.id})).preparationPending,undefined)
+ const another=await setup(pool)
+ await another.knowledge.instantiate(another.owner,{requestId:randomUUID(),loadId:another.load.id,itemInstanceId:another.guide.instanceId})
+ const fresh=await another.service.instantiate(another.owner,{requestId:randomUUID(),loadId:another.load.id,itemInstanceId:another.role.instanceId})
+ const r=fresh.role!,{id:rid,ownerId:ro,version:rv,state:rs,createdAt:rc,updatedAt:ru,...fields}=r
+ await another.roles.edit(another.owner,{roleId:rid,expectedVersion:rv,expectedProfile:{name:r.name},fields:{...fields,duty:'本人调整后的职责'}})
+ assert.equal((await another.service.get(another.owner,{instanceId:fresh.id})).preparationPending,undefined)
+})

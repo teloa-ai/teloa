@@ -25,3 +25,12 @@
 .confirmActions{display:flex;gap:8px;flex-wrap:wrap;margin:4px 0 0}
 .rows li{padding:2px 0}
 @media(max-width:740px){.panel .primaryButton,.panel .secondaryButton,.panel .textButton{min-height:44px}.panel .primaryButton{justify-self:stretch}}
+
+.batch{display:grid;gap:8px;min-width:0}
+.batch h4,.batch p{margin:0}
+.batch>ul{display:grid;gap:12px;margin:0;padding:0;list-style:none}
+.batch>ul>li{display:grid;gap:6px;padding:12px 0;border-top:1px solid var(--teloa-border);overflow-wrap:anywhere}
+.batch details{font-size:var(--teloa-font-caption)}
+.batch summary{cursor:pointer;min-height:32px;display:flex;align-items:center}
+.batch details ul{padding-inline-start:20px}
+.batch summary:focus-visible{outline:2px solid var(--teloa-focus);outline-offset:2px}

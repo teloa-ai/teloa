@@ -2,6 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import {readFileSync} from 'node:fs'
 import ts from 'typescript'
+import * as skillBatch from '../lib/types/client/industry-skill-batch.js'
 
 // N24 同批收尾：准备清单只把「本加载当前这轮核对读到的」清单回报给目录。重读开始、重读失败、一键后宿主未带最终清单且重读失败时，
 // 旧清单只能作上次结果；迟到的旧读取与其他加载的清单都不能写入。读取与一键准备仍走同一个 port。
@@ -31,7 +32,7 @@ function mount(initial:Record<string,unknown>){
   useRef:(value:unknown)=>{const index=cursor++;return slots[index]??(slots[index]={current:value})},
   useEffect:(run:()=>void|(()=>void),deps:readonly unknown[])=>{const index=cursor++,previous=effects.get(index);if(previous&&deps.every((value,i)=>Object.is(value,previous.deps[i])))return;pending.push(()=>{previous?.cleanup?.();const cleanup=run();effects.set(index,{deps,cleanup:typeof cleanup==='function'?cleanup:undefined})})},
  }
- const require=(id:string)=>id==='react'?React:id.endsWith('.css')?{default:new Proxy({},{get:(_,key)=>String(key)})}:id.endsWith('provider.js')?{useI18n:()=>({locale:'zh-CN',t})}:id.endsWith('errors.js')?{localizeWorkError:(_:string,value:unknown)=>value instanceof Error?value.message:String(value)}:assert.fail('未声明的依赖：'+id)
+ const require=(id:string)=>id.endsWith('industry-skill-batch.js')?skillBatch:id==='react'?React:id.endsWith('.css')?{default:new Proxy({},{get:(_,key)=>String(key)})}:id.endsWith('provider.js')?{useI18n:()=>({locale:'zh-CN',t})}:id.endsWith('errors.js')?{localizeWorkError:(_:string,value:unknown)=>value instanceof Error?value.message:String(value)}:assert.fail('未声明的依赖：'+id)
  const exports:Record<string,any>={}
  new Function('require','exports','React',js)(require,exports,React)
  let props=initial

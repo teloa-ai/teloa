@@ -979,16 +979,16 @@ test('industry_prepare：确认卡按组列出条目标题（每组最多 10 个
  const e=await setup(preparePorts());t.after(()=>e.ctx.fiber.dispose());const reasons=approve(e)
  const result=await e.call('teloa_industry_prepare',{loadId,expectedDigest:hex('9')})
  assert.equal(result.isError,false,textOf(result))
- assert.match(reasons[0]!,/行业方案「安全运营 SOC」版本「1\.2\.0」/);assert.match(reasons[0]!,/将自动完成：启用资料：「分诊指南」；创建员工：「T1 分析师」。/);assert.match(reasons[0]!,/需要你到页面处理（不在此处完成）：连接设置：「SIEM」。/);assert.match(reasons[0]!,/按需使用：按模板建任务：「告警研判」。/)
+ assert.match(reasons[0]!,/行业方案「安全运营 SOC」版本「1\.2\.0」/);assert.match(reasons[0]!,/将自动完成：启用资料：「分诊指南」；完成员工准备并启用：「T1 分析师」。/);assert.match(reasons[0]!,/需要你到页面处理（不在此处完成）：连接设置：「SIEM」。/);assert.match(reasons[0]!,/按需使用：按模板建任务：「告警研判」。/)
  // 固定声明在清单之前，条目标题不能把自己伪装成声明的一部分
  assert.ok(reasons[0]!.indexOf('不要发到会话')<reasons[0]!.indexOf('将自动完成'))
- assert.match(reasons[0]!,/上岗会一并启用该员工的每日小结/);assert.match(reasons[0]!,/原本暂停的员工不会自动恢复/);assert.match(reasons[0]!,/不要发到会话/)
+ assert.match(reasons[0]!,/上岗会一并启用该员工的每日小结/);assert.match(reasons[0]!,/本人主动暂停或修改过的员工不会自动恢复/);assert.match(reasons[0]!,/不要发到会话/)
  const call=e.calls.find(([endpoint])=>endpoint==='industry-loads/prepare')!
  assert.deepEqual(call[1],{loadId,expectedDigest:hex('9')})
  const body=json(result);assert.equal(body.results[0].outcome,'done');assert.equal(body.counts.auto,0);assert.match(body.guide,/去处理/)
  const many=await setup(preparePorts({extra:12}));t.after(()=>many.ctx.fiber.dispose());const manyReasons=approve(many)
  assert.equal((await many.call('teloa_industry_prepare',{loadId,expectedDigest:hex('9')})).isError,false)
- assert.match(manyReasons[0]!,/启用资料：「分诊指南」(、「资料\d+」){9} 等 13 项；创建员工：「T1 分析师」。/)
+ assert.match(manyReasons[0]!,/启用资料：「分诊指南」(、「资料\d+」){9} 等 13 项；完成员工准备并启用：「T1 分析师」。/)
 })
 
 test('industry_prepare：随一键安装的官方技能在确认卡里逐项列出名称与信任摘要',async t=>{
@@ -1056,7 +1056,7 @@ test('industry_prepare：确认卡清洗标题与版本（控制字符、双向�
  const steps=['knowledge','skill','mcp','role'],wide={...readinessBody(),counts:{ready:0,auto:40,needsUser:0,optional:0,pending:0},rows:steps.flatMap((step,g)=>Array.from({length:10},(_,i)=>({itemInstanceId:`${g}${i}`,kind:step,title:long+g+i,state:'auto',step,entry:null})))}
  const capped=await setup({...preparePorts(),industryPrepare:async endpoint=>endpoint==='industry-loads/readiness'?wide:{loadId,digest:hex('9'),results:[],readiness:null}});t.after(()=>capped.ctx.fiber.dispose());const cappedReasons=approve(capped)
  assert.equal((await capped.call('teloa_industry_prepare',{loadId,expectedDigest:hex('9')})).isError,false)
- assert.ok(cappedReasons[0]!.length<=1200,String(cappedReasons[0]!.length));assert.match(cappedReasons[0]!,/创建员工：等 10 项/)
+ assert.ok(cappedReasons[0]!.length<=1200,String(cappedReasons[0]!.length));assert.match(cappedReasons[0]!,/完成员工准备并启用：等 10 项/)
 })
 
 test('industry_prepare：非 active 的加载在确认前拒绝；最终清单待刷新时回执照常返回',async t=>{

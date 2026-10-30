@@ -72,6 +72,8 @@ test('原草案完整采用后才加载scope；员工和自动化真实落地且
  await assert.rejects(f.loads.createForConfiguration(f.actor.ownerId,{...loadInput,requestId:randomUUID()},{scope:f.draft.scope,version:99,hash:adopted.configuration.configurationHash}),{code:'teloa/version-conflict'})
  assert.equal((await pool.query('select 1 from teloa_industry_loads where owner_id=$1',[f.actor.ownerId])).rowCount,0)
  const loaded=await f.setup.prepare(f.actor,{draftId:f.draft.id});assert.ok(loaded.adoption!.loadId);assert.equal(f.prepared(),0)
+ const resourceLoad=await f.loads.get(f.actor.ownerId,{loadId:loaded.adoption!.loadId!})
+ assert.equal(resourceLoad.items.find(item=>item.kind==='business-configuration')!.status,'active','看板由同一加载的配置采用记录投影为已采用')
  const prepared=await f.setup.prepare(f.actor,{draftId:f.draft.id,expectedDigest:'a'.repeat(64)})
  assert.equal(f.prepared(),1)
  const employees=(await pool.query('select state from teloa_roles where owner_id=$1',[f.actor.ownerId])).rows
@@ -214,4 +216,26 @@ test('准备阶段落地后丢回包保存unknown；沿原load恢复不重复员
  assert.equal(restored.adoption!.preparation!.state,'finished');assert.equal(restored.adoption!.loadId,loaded.adoption!.loadId)
  assert.equal((await pool.query('select 1 from teloa_roles where owner_id=$1',[f.actor.ownerId])).rowCount,1)
  assert.equal((await pool.query("select 1 from teloa_plans where owner_id=$1 and state='paused'",[f.actor.ownerId])).rowCount,1)
+})
+
+test('看板就绪绑定本人、加载和固定内容；不能借同业务的其他配置冒充已采用',async()=>{
+ const f=await fixture(false),preview=await f.setup.preview(f.actor,{draftId:f.draft.id,expectedRevision:f.plan.revision,rejected:[]})
+ await f.setup.apply(f.actor,applyInput(preview));f.actor.scopeIds=[f.draft.scope]
+ const prepared=await f.setup.prepare(f.actor,{draftId:f.draft.id}),loadId=prepared.adoption!.loadId!
+ assert.equal((await f.loads.get(f.actor.ownerId,{loadId})).items.find(item=>item.kind==='business-configuration')!.status,'active')
+ await pool.query("update teloa_business_setup_plans set body=jsonb_set(body,'{plan,adoption,contentHash}',to_jsonb($3::text)) where owner_id=$1 and draft_id=$2",[f.actor.ownerId,f.draft.id,'0'.repeat(64)])
+ assert.equal((await f.loads.get(f.actor.ownerId,{loadId})).items.find(item=>item.kind==='business-configuration')!.status,'pending-adapter')
+})
+
+test('旧添加业务入口：沿用同内容、资源和业务的看板采用记录；不同资源不能冒充就绪',async()=>{
+ const f=await fixture(false),preview=await f.setup.preview(f.actor,{draftId:f.draft.id,expectedRevision:f.plan.revision,rejected:[]})
+ await f.setup.apply(f.actor,applyInput(preview));f.actor.scopeIds=[f.draft.scope]
+ const prepared=await f.setup.prepare(f.actor,{draftId:f.draft.id}),loadId=prepared.adoption!.loadId!,load=await f.loads.get(f.actor.ownerId,{loadId})
+ const board=load.items.find(item=>item.kind==='business-configuration')!
+ await pool.query('delete from teloa_business_setup_plans where owner_id=$1',[f.actor.ownerId])
+ const request=randomUUID(),source={contentId:load.contentId,contentHash:load.contentHash,resourceId:board.localId}
+ await pool.query('insert into teloa_business_dashboard_preparations(owner_id,request_id,spec_hash,draft_id,source,result) values($1,$2,$3,$4,$5,$6)',[f.actor.ownerId,request,'a'.repeat(64),f.draft.id,JSON.stringify(source),JSON.stringify({})])
+ assert.equal((await f.loads.get(f.actor.ownerId,{loadId})).items.find(item=>item.kind==='business-configuration')!.status,'active')
+ await pool.query("update teloa_business_dashboard_preparations set source=jsonb_set(source,'{resourceId}',to_jsonb($3::text)) where owner_id=$1 and request_id=$2",[f.actor.ownerId,request,'another-board'])
+ assert.equal((await f.loads.get(f.actor.ownerId,{loadId})).items.find(item=>item.kind==='business-configuration')!.status,'pending-adapter')
 })
