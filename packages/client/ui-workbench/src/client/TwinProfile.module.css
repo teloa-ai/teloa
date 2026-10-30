@@ -1,7 +1,7 @@
 /* 分身个人主页（TwinProfile.tsx）照原型 原型.jsx:459-462 与 原型.module.css 的
    .conversationHeader / .tabs / .message / .memoryCard / .callout 改写，只用既有 --teloa-* 令牌，不新增颜色。
    圆角一律走 --teloa-design-r1/r2（prototype-theme.ts 生成，theme-presenter 运行时挂到 body），与原型 --maxent-preview-r* 对应。
-   页签下划线与分隔线都用中性 --teloa-border/--teloa-text，不用强调色画任何竖条或色线。
+   页签通过中性文字色与字重表示选中状态，不额外画底线。
    页签按钮要盖掉 TaskPage.module.css 的 `.page button` / `.alignedPage button`（0,1,1 比单类名高），
    跨 CSS Module 又拿不到 TeamPage.module.css 的 `.teamPage` 前缀，所以冲突属性用 !important（与 StaffRoster.module.css 同一套做法）。 */
 .twin{display:flex;flex-direction:column;min-width:0}
@@ -15,7 +15,7 @@ dialog.detailDrawer.detailDrawer{width:min(1120px,100vw)}
 .tabs{display:flex;gap:26px;margin:14px 0 -1px;overflow-x:auto}
 .tabs button{min-height:0!important;padding:10px 0!important;border:0!important;border-bottom:2px solid transparent!important;border-radius:0!important;background:transparent!important;color:var(--teloa-muted);font:inherit;font-size:var(--teloa-font-control);white-space:nowrap;cursor:pointer}
 .tabs button:hover{background:transparent!important;color:var(--teloa-text)}
-.tabs button[aria-selected=true]{border-bottom-color:var(--teloa-text)!important;color:var(--teloa-text);font-weight:var(--teloa-weight-medium)}
+.tabs button[aria-selected=true]{color:var(--teloa-text);font-weight:var(--teloa-weight-medium)}
 /* 1.0 页签计数：等宽小号灰字跟在页签名后；计数写在 data-count 上，避免把数字拼进页签名称节点。 */
 .tabs button[data-count]::after{content:attr(data-count);margin-left:6px;font-family:inherit;font-size:var(--teloa-font-caption);font-weight:var(--teloa-weight-regular);color:var(--teloa-muted);font-variant-numeric:tabular-nums}
 .panel{padding-top:22px;min-width:0}

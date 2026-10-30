@@ -50,7 +50,7 @@
 .notes p{margin:0;color:var(--teloa-muted);font-size:var(--teloa-font-caption);line-height:1.6}
 .body .modes{display:flex;gap:18px;border-bottom:1px solid var(--teloa-border);overflow-x:auto}
 .body .modes button{flex:none;display:inline-flex;align-items:center;gap:6px;min-height:34px;padding:6px 0;border:0;border-bottom:2px solid transparent;border-radius:0;background:none;color:var(--teloa-muted);font-size:var(--teloa-font-caption);white-space:nowrap}
-.body .modes button[aria-pressed=true]{border-bottom-color:var(--teloa-text);color:var(--teloa-text);font-weight:var(--teloa-weight-medium)}
+.body .modes button[aria-pressed=true]{color:var(--teloa-text);font-weight:var(--teloa-weight-medium)}
 .body .modes button:hover:not(:disabled){background:none;color:var(--teloa-text)}
 .pickers{display:flex;flex-wrap:wrap;gap:8px}
 .body .picker{position:relative;display:inline-flex;flex-direction:row;align-items:center;gap:8px;min-height:36px;box-sizing:border-box;padding:7px 12px;border:1px solid var(--teloa-text);border-radius:8px;background:var(--teloa-text);color:var(--teloa-surface);font-weight:var(--teloa-weight-medium);cursor:pointer}

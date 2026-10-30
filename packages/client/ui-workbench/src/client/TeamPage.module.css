@@ -177,7 +177,7 @@
 .tabs{display:flex;gap:19px;margin:14px 0 -1px;overflow-x:auto}
 .tabs button{min-height:0!important;padding:10px 0!important;border:0!important;border-bottom:2px solid transparent!important;border-radius:0!important;background:transparent!important;color:var(--teloa-muted);font:inherit;font-size:var(--teloa-font-control);white-space:nowrap;cursor:pointer}
 .tabs button:hover{background:transparent!important;color:var(--teloa-text)}
-.tabs button[aria-selected=true]{border-bottom-color:var(--teloa-text)!important;color:var(--teloa-text);font-weight:var(--teloa-weight-medium)}
+.tabs button[aria-selected=true]{color:var(--teloa-text);font-weight:var(--teloa-weight-medium)}
 
 /* 岗位选择使用紧凑说明，勾选标记不继承说明文字的最小高度。 */
 .jobCard.jobCard{align-items:flex-start;padding:14px 13px;justify-content:flex-start}.jobCard strong{padding-right:20px;font-size:var(--teloa-font-control)}.jobCard>.jobCheck{min-height:0;color:var(--teloa-on-accent);width:16px;height:16px;line-height:1}.jobCard.jobPicked{border-color:var(--teloa-focus);background:var(--teloa-hover)}

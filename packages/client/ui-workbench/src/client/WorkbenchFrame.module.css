@@ -119,7 +119,7 @@
 .hubNavigation{display:flex;flex:none;gap:26px;padding:0 40px;border-bottom:1px solid var(--teloa-border);overflow-x:auto}
 .hubTab{display:inline-flex;align-items:center;gap:8px;flex:none;min-height:42px;padding:0;border:0;border-bottom:2px solid transparent;background:transparent;color:var(--teloa-muted);font:inherit;font-size:var(--teloa-font-control);cursor:pointer}
 .hubTab:hover{color:var(--teloa-text)}
-.hubTabActive{color:var(--teloa-text);border-bottom-color:var(--teloa-text);font-weight:var(--teloa-weight-medium)}
+.hubTab[aria-pressed=true]{color:var(--teloa-text);font-weight:var(--teloa-weight-medium)}
 .hubTab:focus-visible{outline:2px solid var(--teloa-focus);outline-offset:2px;border-radius:4px}
 
 .assistantEntry{position:relative;display:flex;align-items:center;gap:4px;flex:none;margin:14px 0 4px;padding:1px 2px;border:1px solid var(--teloa-border);border-radius:8px;background:var(--teloa-background)}.assistantPrimary{display:flex;align-items:center;gap:9px;min-width:0;flex:1;padding:5px 8px;border:0;border-radius:7px;background:transparent;color:var(--teloa-text);font:inherit;font-size:var(--teloa-font-control);text-align:left;cursor:pointer}.assistantPrimary:hover,.assistantPrimary.active{background:var(--teloa-hover)}.assistantPrimary span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.assistantEntry>.iconButton{width:32px;height:32px;min-width:32px;padding:0;flex:none}.assistantEntry .newWorkMenu{left:0;right:auto;width:100%;min-width:190px}.assistantEntry .newWorkMenu button{display:flex;align-items:center;gap:8px}.assistantEntry .newWorkMenu button>span{flex:1}.assistantEntry button:focus-visible{outline:2px solid var(--teloa-focus);outline-offset:2px}.assistantPrimary:disabled{opacity:.5;cursor:default}

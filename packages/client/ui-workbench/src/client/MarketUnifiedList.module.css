@@ -84,7 +84,7 @@
 .templateDetails{margin-top:16px}
 .detailTabs{display:flex;flex-wrap:wrap;gap:6px 18px;border-bottom:1px solid var(--teloa-border)}
 .detailTabs.detailTabs button{font:inherit;font-size:var(--teloa-font-control);padding:8px 0;border:0;border-radius:0;border-bottom:2px solid transparent;background:transparent;color:var(--teloa-muted);cursor:pointer}
-.detailTabs button[aria-selected=true]{border-bottom-color:var(--teloa-text);color:var(--teloa-text)}
+.detailTabs button[aria-selected=true]{color:var(--teloa-text);font-weight:var(--teloa-weight-medium)}
 .detailTabs button:focus-visible{outline:2px solid var(--teloa-focus);outline-offset:3px}
 .detailPanel{padding-top:16px;font-size:var(--teloa-font-control);line-height:1.8;overflow-wrap:anywhere}
 .detailPanel ul{margin:7px 0;padding-left:20px}

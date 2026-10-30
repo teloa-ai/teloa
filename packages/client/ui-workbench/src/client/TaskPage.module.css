@@ -90,7 +90,7 @@
 .alignedPage.selectedPage .filters>*{width:100%;flex-basis:100%}
 .alignedPage .tabs{display:flex;flex-shrink:0;gap:16px;padding:0 16px;margin:0;border-bottom:1px solid var(--teloa-border);overflow-x:auto}
 .alignedPage .tabs button{flex:none;white-space:nowrap;border:0;border-bottom:2px solid var(--teloa-background);border-radius:0;background:none;color:var(--teloa-muted);padding:10px 0;font-size:var(--teloa-font-caption);min-height:36px}
-.alignedPage .tabs button[aria-pressed=true],.alignedPage .tabs button[aria-current=page]{border-bottom-color:var(--teloa-text);color:var(--teloa-text);font-weight:var(--teloa-weight-medium);background:none}
+.alignedPage .tabs button[aria-pressed=true],.alignedPage .tabs button[aria-current=page]{color:var(--teloa-text);font-weight:var(--teloa-weight-medium);background:none}
 .alignedPage .rows{padding:8px;gap:0}
 .alignedPage .rows .row{padding:12px 10px;margin:2px 0;gap:9px;border:1px solid var(--teloa-background);border-radius:8px;background:none}
 .alignedPage .rows .row:hover{background:var(--teloa-subtle)}
