@@ -7,7 +7,6 @@ import { basename, dirname, resolve, sep } from 'node:path'
 import { projectRoot, verifyDshPackages } from './核对DSH依赖.mjs'
 import { findStartupUrl, guardTeloaReadiness } from './核对宿主就绪.mjs'
 import { stripCredentialEnv, warnRemoved } from './runtime/credential-env.mjs'
-import { trustedHostArguments } from './runtime/public-web-access.mjs'
 import { imCredentialFields } from '../packages/contract/src/im-channels.ts'
 // 与安装适配器、装配期复验共用同一份事实来源；这个模块不依赖契约链，启动路径上足够轻。
 import { pendingBundleConflicts, pendingBundleRefusal, readJsonFile, suppressPendingBundles, withProfileLock, writeProfileManifest } from '../packages/harness-dsh/src/pending-plugins.ts'
@@ -168,7 +167,6 @@ async function checkPort() {
 
 try {
   assertAcceptanceIsolation()
-  const trustedHosts=trustedHostArguments(process.env.TELOA_DSH_TRUSTED_HOSTS)
   if(!Number.isInteger(port)||port<1||port>65535)throw Error('DSH 端口必须是 1 到 65535 之间的整数。')
   if (args.some(arg=>!allowedChecks.includes(arg))) throw Error('启动器仅接受 --help、--version、--dump-config 或 --dump-default-config；服务 profile 与端口由当前环境配置。')
   verifyDshPackages()
@@ -176,7 +174,7 @@ try {
   const manifestPath=createRequire(resolve(projectRoot,'package.json')).resolve('@deepseek-ai/dsh/package.json')
   const command=resolve(dirname(manifestPath),'lib/bin.js')
   await ensureProfile(command,args.length>0)
-  const commandArgs=['--profile',profileName,...(args.length?args:['--no-open','--host','127.0.0.1','--port',String(port),...trustedHosts])]
+  const commandArgs=['--profile',profileName,...(args.length?args:['--no-open','--host','127.0.0.1','--port',String(port)])]
   // 只有真正起服务时才管道 stdout：--dump-config 等检查分支的 stdout 被 准备DSH插件.mjs 逐字读取，
   // 不能改动；服务分支则要边原样转发边找出那一行带令牌的启动地址。
   const serving=!args.length

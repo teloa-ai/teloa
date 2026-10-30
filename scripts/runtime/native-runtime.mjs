@@ -29,6 +29,8 @@ specs.push({name:'@deepseek-ai/dsh-llm-pi-ai',basename:'dsh-llm-pi-ai-'+version+
 specs.push({name:'@deepseek-ai/dsh-experimental-auto-review',basename:'dsh-experimental-auto-review-'+version+'-request-owner',targets:['lib/index.js']})
 // 远端只读提示仅供原生有界并发调度，不替代本人确认、员工授权和参数边界。
 specs.push({name:'@deepseek-ai/dsh-mcp-client',basename:'dsh-mcp-client-'+version+'-tool-concurrency',targets:['lib/index.js','lib/types/tools.d.ts']})
+// 端口映射使用任意访问地址；保留原生同源与身份认证，仅移除 Host 白名单。
+specs.push({name:'@deepseek-ai/dsh-client-connection',basename:'dsh-client-connection-'+version+'-any-host',targets:['lib/index.js']})
 export const nativeRuntimeCompatibilityFiles=Object.freeze(specs.flatMap(spec=>[spec.basename+'.json',spec.basename+'.patch']))
 const hash=value=>createHash('sha256').update(value).digest('hex'),sha=value=>typeof value==='string'&&/^[a-f0-9]{64}$/.test(value)
 const exec=promisify(execFile),trusted=new WeakMap();let installed
