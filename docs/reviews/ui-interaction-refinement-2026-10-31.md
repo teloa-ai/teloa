@@ -40,7 +40,7 @@
 
 - 全仓构建、前后端类型检查、客户端构建边界与 DSH 固定依赖检查均通过。
 - 本轮八份专项文件的 52 项用例全部通过，覆盖上述交互及原有原会话、模板、归属、暂停保存、未知结果恢复行为。
-- 完整客户端回归共 5371 项：5369 项通过、2 项失败、0 项跳过；失败均为下表已在改前基线独立复现的原有用例。本次运行启用了已有的 axe 检查入口。
+- 首次完整客户端回归共 5371 项：5369 项通过、2 项失败、0 项跳过；启用了已有的 axe 检查入口。两项原有失败的后续修复见下文，首次结果保留作为对照。
 
 完整回归使用与 `test:bindings` 相同的文件范围，限制并发为 3：
 
@@ -52,14 +52,16 @@ node --test --test-concurrency=3 packages/client/ui-workbench/tests/*.test.ts \
 
 `TELOA_UI_AUDIT_AXE` 可指向已有的 `axe.min.js`，`TELOA_UI_SCREENSHOT_DIR` 可用于生成本轮专项的浏览器截图。
 
-两项原有原生会话用例已在修改后的代码和从 `dec080e` 导出的原始源码中分别复现相同失败，比较时复用同一套安装依赖：
+两项原有原生会话用例最初在修改后的代码和从 `dec080e` 导出的原始源码中分别复现相同失败，比较时复用同一套安装依赖。后续已定位为测试假设过时，并修复：
 
-| 用例 | 基线与当前一致的失败 |
-| --- | --- |
-| `assistant-voice-native-frame.browser.test.ts`：原助手入口不依赖打开后的目录刷新 | 第 80 行期望目录仍为 `loading`，实际已为 `ready`。 |
-| `business-builder-frame.test.ts`：create 受理丢回包后显式恢复 builder | 第 226 行未找到“恢复搭建会话”按钮而超时。 |
+| 用例 | 原失败原因 | 修复后的验证 |
+| --- | --- | --- |
+| `assistant-voice-native-frame.browser.test.ts`：原助手入口不依赖打开后的目录刷新 | 后台刷新保留已读目录的 `ready` 状态，旧断言却要求退回 `loading`。 | 覆盖首次打开和已有目录；挂住打开后的全部目录请求，确认零回包时通话已经启动、已核验列表仍在；释放后等待所有请求完成。原生导航取消、子会话归属和不写入旧会话的断言继续保留。 |
+| `business-builder-frame.test.ts`：create 受理丢回包后显式恢复 builder | 恢复入口改为带业务标题的整张卡片，旧定位仍精确匹配纯动作名称。 | 在“继续搭建”区域按卡片完整名称点击；新增恢复前后 `requestId`、`sessionId` 一致性检查，并确认原生创建仅一次、没有首页准备、唯一输入槽不重挂。 |
 
-这两项不作为本轮 UI 验收通过项；本轮没有修改对应会话流程或放宽其断言。
+两项定向复测均已通过；修复针对测试定位与验证方式，不需要修改现有会话流程。随后七份相关测试文件的 219 项回归全部通过；在此基础上，原生通话增加首次打开场景，并与已有目录场景一起通过，最终共覆盖 220 项不同用例、无失败、无跳过。客户端类型检查和客户端构建边界检查均通过。本次复测范围为上述相关用例与检查；完整客户端测试保留首次运行的结果。
+
+相关文件为 `assistant-voice-native-frame.browser`、`business-builder-frame`、`binding-client`、`business-builder-controller`、`business-builder-flow`、`business-builder-directory-applied`、`home-native-preparation`，均位于 `packages/client/ui-workbench/tests/` 且以 `.test.ts` 结尾。
 
 ## Web 与原生平台边界
 

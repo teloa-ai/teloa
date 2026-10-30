@@ -223,9 +223,16 @@ test('Task3 create受理丢回包：首页可显式恢复原builder，不需手�
  const page=await mount(t)
  await page.evaluate(()=>{(window as any).frameFixture.loseCreate=true})
  await page.getByRole('button',{name:'新建业务',exact:true}).click()
- await page.getByRole('button',{name:'恢复搭建会话',exact:true}).click()
+ // 恢复卡片的可访问名称同时包含业务标题与动作，不能按旧的纯动作按钮名查找。
+ const recovery=page.getByRole('region',{name:'继续搭建',exact:true}).getByRole('button',{name:'新业务 恢复搭建会话',exact:true})
+ await recovery.waitFor()
+ const accepted=await page.evaluate(()=>{const f=(window as any).frameFixture,row=f.rows()[0];return {sessionId:row.sessionId,requestId:row.requestId,pendingRequestId:f.controller.getSnapshot().flow.pendingCreation().requestId,count:f.rows().length}})
+ assert.equal(accepted.count,1,'丢回包前的创建已经受理')
+ assert.equal(accepted.pendingRequestId,accepted.requestId,'恢复记录必须保留受理时的原请求')
+ await recovery.click()
  await page.getByRole('button',{name:'保存业务',exact:true}).waitFor()
  assert.deepEqual(await page.evaluate(()=>{const f=(window as any).frameFixture;return [f.creates,f.prepares,f.mounts,f.unmounts]}),[1,0,1,0])
+ assert.deepEqual(await page.evaluate(()=>{const f=(window as any).frameFixture,binding=f.controller.getSnapshot().flow.getSnapshot().binding;return {sessionId:f.current(),requestId:binding.requestId,count:f.rows().length}}),{sessionId:accepted.sessionId,requestId:accepted.requestId,count:1},'恢复必须打开原会话，不能换请求重复创建')
 })
 
 for(const locale of ['zh-CN','en'])test('Task3 '+locale+'正式业务继续/另建与全局pending恢复，1000/1400唯一输入不重挂',async t=>{
