@@ -8,7 +8,7 @@ import {HomeNativeController} from '../src/client/home-native-controller.ts'
 test('首页和会话常驻同一个官方 main 节点，外壳不重复声明官方头部',()=>{
  const source=readFileSync(new URL('../src/client/HomeNativeConversation.tsx',import.meta.url),'utf8')
  const js=ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.React}}).outputText
- const react={createElement:(type:unknown,props:unknown,...children:unknown[])=>({type,props,children}),useEffect:()=>{},useSyncExternalStore:(_:unknown,get:()=>boolean)=>get()}
+ const react={createElement:(type:unknown,props:unknown,...children:unknown[])=>({type,props,children}),useRef:()=>({current:null}),useLayoutEffect:()=>{},useEffect:()=>{},useSyncExternalStore:(_:unknown,get:()=>boolean)=>get()}
  const exports:any={};new Function('require','exports','React',js)((id:string)=>id==='react'?react:{default:new Proxy({},{get:(_,key)=>key})},exports,react)
  const native={type:'official-root',props:{},children:[]}
  for(const blank of [true,false]){
@@ -42,7 +42,7 @@ test('真实 DSH SlotCore 接受首页槽注册，官方头部声明仍只有原
 test('空白会话激活和发送尝试均不离开首页，原生受理后才展开对话',()=>{
  const source=readFileSync(new URL('../src/client/HomeNativeConversation.tsx',import.meta.url),'utf8')
  const js=ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.React}}).outputText
- const react={createElement:()=>null,useEffect:(effect:()=>void)=>effect(),useSyncExternalStore:(_:unknown,get:()=>boolean)=>get()},exports:any={}
+ const react={createElement:()=>null,useRef:()=>({current:null}),useLayoutEffect:()=>{},useEffect:(effect:()=>void)=>effect(),useSyncExternalStore:(_:unknown,get:()=>boolean)=>get()},exports:any={}
  new Function('require','exports','React',js)((id:string)=>id==='react'?react:{default:{}},exports,react)
  const calls:string[]=[]
  for(const session of [{blank:true,promptAttempted:false,accepted:false},{blank:true,promptAttempted:true,accepted:false},{blank:false,promptAttempted:false,accepted:false},{blank:false,promptAttempted:true,accepted:true}])exports.HomeNativeConversation({home:true,ready:true,sessionId:'s',isHomeDraft:()=>true,accept:()=>{},acceptance:{subscribe:()=>()=>{},getSnapshot:()=>session.accepted},engaged:(id:string)=>calls.push(id),useSession:(select:any)=>select({...session,pendingSubmissions:[]})})
@@ -52,7 +52,7 @@ test('空白会话激活和发送尝试均不离开首页，原生受理后才�
 test('真实发送后返回首页，旧ready与回执不能抢在延迟准备前再次导航',async()=>{
  const source=readFileSync(new URL('../src/client/HomeNativeConversation.tsx',import.meta.url),'utf8')
  const js=ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.React}}).outputText
- const effects:Array<()=>void>=[],react={createElement:(type:unknown,props:unknown,...children:unknown[])=>({type,props,children}),useEffect:(effect:()=>void)=>effects.push(effect),useSyncExternalStore:(_:unknown,get:()=>boolean)=>get()},exports:any={}
+ const effects:Array<()=>void>=[],react={createElement:(type:unknown,props:unknown,...children:unknown[])=>({type,props,children}),useRef:()=>({current:null}),useLayoutEffect:()=>{},useEffect:(effect:()=>void)=>effects.push(effect),useSyncExternalStore:(_:unknown,get:()=>boolean)=>get()},exports:any={}
  new Function('require','exports','React',js)((id:string)=>id==='react'?react:{default:new Proxy({},{get:(_,key)=>key})},exports,react)
  const storage=new Map<string,string>();let ids=0,release:(()=>void)|undefined
  const controller=new HomeNativeController({storage:{getItem:key=>storage.get(key)??null,setItem:(key,value)=>{storage.set(key,value)},removeItem:key=>{storage.delete(key)}},identity:()=>`s-${++ids}`,isBlank:()=>true,create:async id=>{if(id==='s-2')await new Promise<void>(resolve=>{release=resolve});return id},adopt:async()=>{}})
@@ -71,7 +71,7 @@ test('真实发送后返回首页，旧ready与回执不能抢在延迟准备前
 
 test('待用会话从对话页发送也退役草稿身份，回首页不会把那次发送当成本页新提交',async()=>{
  const source=readFileSync(new URL('../src/client/HomeNativeConversation.tsx',import.meta.url),'utf8'),js=ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.React}}).outputText
- const react={createElement:()=>null,useEffect:(effect:()=>void)=>effect(),useSyncExternalStore:(_:unknown,get:()=>boolean)=>get()},exports:any={}
+ const react={createElement:()=>null,useRef:()=>({current:null}),useLayoutEffect:()=>{},useEffect:(effect:()=>void)=>effect(),useSyncExternalStore:(_:unknown,get:()=>boolean)=>get()},exports:any={}
  new Function('require','exports','React',js)((id:string)=>id==='react'?react:{default:{}},exports,react)
  const storage=new Map<string,string>();let ids=0
  const controller=new HomeNativeController({storage:{getItem:key=>storage.get(key)??null,setItem:(key,value)=>{storage.set(key,value)},removeItem:key=>{storage.delete(key)}},identity:()=>`s-${++ids}`,isBlank:()=>true,create:async id=>id,adopt:async()=>{}}),navigation:string[]=[]

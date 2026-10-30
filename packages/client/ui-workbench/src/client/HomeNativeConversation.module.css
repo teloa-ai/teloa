@@ -1,7 +1,9 @@
 .conversation{display:flex;flex-direction:column;height:100%;min-height:0;min-width:0;background:var(--teloa-background)}
 .body{display:flex;flex-direction:column;flex:1;min-height:0;min-width:0}
 .home{height:100%;overflow:auto;background:var(--teloa-background)}
-.homeConversation{height:410px;min-height:350px;max-width:980px;margin:0 auto;display:flex;flex-direction:column}
+.homeConversation{height:clamp(380px,60dvh,640px);min-height:380px;max-width:980px;margin:0 auto;display:flex;flex-direction:column}
+/* 首页由外层统一滚动，原生欢迎区不再建立会裁掉向上菜单的第二个滚动口。 */
+.homeConversation :global([data-content-phase="hero"] [data-conversation-scroll]){overflow:visible;scrollbar-gutter:auto}
 .notice{max-width:880px;padding:16px;margin:0 auto;font-size:var(--teloa-font-control);color:var(--teloa-muted)}
 .recoveryNotice{width:calc(100% - 48px);max-width:460px;box-sizing:border-box;margin:48px auto 24px;padding:24px;border:1px solid var(--teloa-border);border-radius:12px;background:var(--teloa-surface);color:var(--teloa-text)}
 .recoveryNotice h2{margin:0;font-size:var(--teloa-font-section);font-weight:var(--teloa-weight-heading);line-height:var(--teloa-leading-heading)}
@@ -12,7 +14,6 @@
 .recoveryActions button:focus-visible{outline:2px solid var(--teloa-focus);outline-offset:2px}
 .recoveryActions .recoveryPrimary{background:var(--teloa-primary);border-color:var(--teloa-primary);color:var(--teloa-on-primary)}
 .recoveryActions .recoveryPrimary:hover{background:var(--teloa-primary);color:var(--teloa-on-primary);filter:brightness(.94)}
-@media(max-width:740px){.homeConversation{height:410px}}
 
 .homeConversation[hidden],.body[hidden]{display:none}
 /* 原生 main 仍保留同一份草稿；首页没有详情栏，不暴露它的展开入口。 */
