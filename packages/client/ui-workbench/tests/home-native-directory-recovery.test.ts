@@ -7,7 +7,8 @@ import {createInitialNativeSessionCoordinator,type InitialNativeSessionProvider}
 import {BindingClient} from '../src/client/binding-client.ts'
 import {ConversationSearch} from '../src/client/conversation-search.ts'
 import {presentConversations} from '../src/client/work-presentation.ts'
-import {ConversationService,type StoredConversation} from '../../../backend/src/work/conversations.ts'
+import {ConversationService,personalAssistantTitle,type StoredConversation} from '../../../backend/src/work/conversations.ts'
+import {isConversation} from '@teloa/contract'
 
 const source=readFileSync(new URL('../src/client/index.ts',import.meta.url),'utf8'),ast=ts.createSourceFile('index.ts',source,ts.ScriptTarget.Latest,true)
 const owner='local:owner',draftKey='teloa.home-native-session/v1',uuid=/^[a-f0-9]{8}-[a-f0-9]{4}-[1-5][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i
@@ -25,7 +26,7 @@ const homePort=(name:'create'|'adopt'|'isEligible',ports:Record<string,unknown>)
  if(!ts.isNewExpression(node)||node.expression.getText(ast)!=='HomeNativeController')return
  const options=node.arguments?.[0]
  if(options&&ts.isObjectLiteralExpression(options))for(const property of options.properties)if(ts.isPropertyAssignment(property)&&property.name.getText(ast)===name)return property.initializer
-},ports)
+},{work:{getSnapshot:()=>({}),getDirectorySnapshot:()=>({rows:[]})},...ports})
 const prepareHomeSession=(ports:Record<string,unknown>)=>wired<(signal:AbortSignal)=>Promise<string|undefined>>(node=>ts.isVariableDeclaration(node)&&node.name.getText(ast)==='prepareHomeSession'?node.initializer:undefined,ports,'let initialSessionPrepared=false;')
 const searchScope=(ports:Record<string,unknown>)=>wired<()=>readonly string[]>(node=>ts.isNewExpression(node)&&node.expression.getText(ast)==='ConversationSearch'?node.arguments?.[1]:undefined,ports)
 
@@ -33,10 +34,10 @@ function fixture(sessionId:string,failure?:'lost'|'unavailable'){
  const saved=new Map<string,string>(),storage={getItem:(key:string)=>saved.get(key)??null,setItem:(key:string,value:string)=>{saved.set(key,value)},removeItem:(key:string)=>{saved.delete(key)}}
  let rows:StoredConversation[]=[],counter=0
  const created:string[]=[],requests:any[]=[]
- const service=new ConversationService({read:async()=>rows,write:async value=>{rows=value}}, {create:async id=>{created.push(id);return id},inspect:async id=>{assert.equal(id,sessionId)}},{id:()=>`binding-${++counter}`,now:()=> '2026-10-07T12:00:00.000Z'})
- const sessions={list:{getSnapshot:()=>({byId:{[sessionId]:{title:'原来的工作'}}})},create:async({sessionId:id}:any)=>{created.push(id);return id}}
+ const service=new ConversationService({read:async()=>rows,write:async value=>{rows=value}}, {create:async id=>{created.push(id);return id},inspect:async id=>{assert.ok(id===sessionId||rows.some(row=>row.sessionId===id))}},{id:()=>`binding-${++counter}`,now:()=> '2026-10-07T12:00:00.000Z'})
+ const sessions={list:{getSnapshot:()=>({byId:{[sessionId]:{title:'原来的工作'},...Object.fromEntries(rows.map(row=>[row.sessionId,{title:row.title}]))}})},create:async({sessionId:id}:any)=>{created.push(id);return id}}
  const work=new BindingClient({list:async()=>service.list(owner,{})} as any)
- const ports={requireWorkContext:()=>({sessions}),brandString:(value:string)=>value,mainSession:{getSnapshot:()=>sessionId},management:{getSnapshot:()=>({workspaces:[]})},navigationStorage:storage,isConversation:(value:any)=>value?.sessionId===sessionId,work,call:async(endpoint:string,input:any)=>{
+ const ports={requireWorkContext:()=>({sessions}),brandString:(value:string)=>value,mainSession:{getSnapshot:()=>sessionId},management:{getSnapshot:()=>({workspaces:[]})},navigationStorage:storage,isConversation,work,call:async(endpoint:string,input:any)=>{
   assert.equal(endpoint,'conversations/adopt');requests.push(input)
   if(failure==='unavailable'){failure=undefined;throw Error('host unavailable')}
   const value=await service.adopt(owner,input)
@@ -45,6 +46,46 @@ function fixture(sessionId:string,failure?:'lost'|'unavailable'){
  }}
  return {storage,ports,service,work,created,requests,rows:()=>rows}
 }
+
+function assistantRow(sessionId:string):StoredConversation{return {id:'original-assistant',ownerId:owner,title:personalAssistantTitle,scopeIds:['general'],version:1,status:'ready',requestedSessionId:sessionId,sessionId,createdAt:'2026-10-07T12:00:00.000Z',requestId:'12345678-1234-4234-8234-123456789012',purpose:'assistant'}}
+
+for(const saved of [false,true])test('首页使用真实注册端口排除助手主聊并恢复独立可切换业务的会话 saved='+saved,async()=>{
+ const assistantId='session-assistant',homeId='session-independent-home',f=fixture(homeId)
+ f.rows().push(assistantRow(assistantId));await f.work.refreshDirectory()
+ const original=structuredClone(f.rows()[0]),checked={status:'ready',nativeReady:true,checkedSessionId:assistantId,sessionKind:null,error:null}
+ const eligible=homePort('isEligible',{...f.ports,businessBuilder:{getSnapshot:()=>checked},businessBuilderApi:{bySession:async()=>null}})
+ if(saved)f.storage.setItem(draftKey,assistantId)
+ assert.equal(await eligible(assistantId),false,'空白助手主聊不能作为首页工作草稿')
+ const homeSession=new homeNative.HomeNativeController({storage:f.storage,identity:()=>homeId,isBlank:()=>true,isEligible:eligible,create:homePort('create',f.ports),adopt:homePort('adopt',f.ports)})
+ const opened:string[]=[]
+ const enter=prepareHomeSession({initialSessionLifetime:new AbortController(),initialSession:{prepare:async()=>({sessionId:assistantId,assertCurrent:()=>{},explicit:false})},homeSession,businessBuilder:{getSnapshot:()=>checked},mainSession:{getSnapshot:()=>assistantId},requireWorkContext:()=>({uiWorkspace:{openSession:(id:string)=>opened.push(id)}}),requireActions:()=>({navigate:()=>{}}),brandString:(value:string)=>value})
+ assert.equal(await enter(new AbortController().signal),homeId)
+ assert.deepEqual(opened,[homeId]);assert.equal(homeSession.owns(homeId),true);assert.equal(homeSession.owns(assistantId),false)
+ const requests:any[]=[],context=homeNative.createHomeContextApi(async(endpoint,payload:any)=>{
+  assert.equal(endpoint,'work-context/set');const binding=await f.service.snapshotBySession(owner,payload.sessionId)
+  if(binding.purpose==='assistant')throw Object.assign(Error('小松鼠主聊保留通用身份'),{code:'teloa/forbidden'})
+  requests.push(payload);return {...payload,version:payload.expectedVersion+1,locked:false}
+ },f.storage)
+ assert.equal((await context.set({sessionId:homeId,scopeId:'SOC',roleId:null,expectedVersion:0})).scopeId,'SOC')
+ assert.deepEqual(requests.map(row=>row.sessionId),[homeId]);assert.deepEqual(f.rows().find(row=>row.sessionId===assistantId),original)
+})
+
+test('目录尚未加载时以真实领养回执识别助手，旧缓存退役后保留原助手并另备首页',async()=>{
+ const assistantId='session-assistant',homeId='session-independent-home',f=fixture(homeId)
+ f.rows().push(assistantRow(assistantId));f.storage.setItem(draftKey,assistantId)
+ assert.equal(f.work.getDirectorySnapshot().rows.length,0)
+ const eligible=homePort('isEligible',{...f.ports,businessBuilder:{getSnapshot:()=>({status:'ready',checkedSessionId:assistantId,sessionKind:null,error:null})},businessBuilderApi:{bySession:async()=>null}})
+ const home=new homeNative.HomeNativeController({storage:f.storage,identity:()=>homeId,isBlank:()=>true,isEligible:eligible,create:homePort('create',f.ports),adopt:homePort('adopt',f.ports)})
+ assert.equal(await home.prepare(),homeId)
+ assert.equal(home.owns(assistantId),false);assert.equal(f.storage.getItem(draftKey),homeId)
+ assert.equal(f.rows().find(row=>row.sessionId===assistantId)?.purpose,'assistant')
+ assert.deepEqual(f.requests.map(row=>row.sessionId),[assistantId,homeId])
+})
+
+test('目录尚未加载时当前绑定的助手专属身份也不能被业务空缓存覆盖',async()=>{
+ const sessionId='assistant-current',eligible=homePort('isEligible',{work:{getSnapshot:()=>({conversation:assistantRow(sessionId)}),getDirectorySnapshot:()=>({rows:[]})},businessBuilder:{getSnapshot:()=>({status:'ready',checkedSessionId:sessionId,sessionKind:null,error:null})},businessBuilderApi:{bySession:async()=>{throw Error('不能把助手视为普通工作')}}})
+ assert.equal(await eligible(sessionId),false)
+})
 
 /** 一次页面生命周期的首页入口；未注册初始提供方即社区版自身组合。 */
 function homeEntry(f:ReturnType<typeof fixture>,sessionId:string,provider?:InitialNativeSessionProvider){

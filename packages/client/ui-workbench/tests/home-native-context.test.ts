@@ -29,6 +29,14 @@ function mount(props:any){
 const storage=()=>{const rows=new Map<string,string>();return {getItem:(key:string)=>rows.get(key)??null,setItem:(key:string,value:string)=>{rows.set(key,value)},removeItem:(key:string)=>{rows.delete(key)}}}
 function props(api:any,blocks:any[]){return {sessionId:'s',api,work:{subscribe:()=>()=>{},getSnapshot:()=>({sessionId:'s',status:'ready',conversation:{}})},isNativeChild:()=>false,isAssistantContext:async()=>true,roles:async()=>[{id:'r',name:'同事',scopes:['SOC'],version:1}],block:(...args:any[])=>blocks.push(args),useSession:(select:any)=>select({blank:true,promptAttempted:false,pendingSubmissions:[]}),useInput:(select:any)=>select({attachmentIds:[]})}}
 
+test('已绑定助手专属主聊不显示业务切换框，也不发起可变业务上下文请求',async()=>{
+ const calls:string[]=[],blocks:any[]=[],api=createHomeContextApi(async endpoint=>{calls.push(endpoint);return null},storage())
+ const render=mount({...props(api,blocks),work:{subscribe:()=>()=>{},getSnapshot:()=>({sessionId:'s',status:'ready',conversation:{purpose:'assistant'}})}})
+ render();await tick();const view=render()
+ assert.equal(nodes(view).filter(node=>node.type==='select').length,0)
+ assert.deepEqual(calls,[]);assert.equal(blocks.at(-1)?.[1],undefined)
+})
+
 test('业务工具栏在未知设置未回读时继续阻塞，按钮复用原请求后才解除',async()=>{
  const calls:any[]=[],blocks:any[]=[];let failures=1
  const api=createHomeContextApi(async(endpoint,payload:any)=>{calls.push([endpoint,payload]);if(endpoint.endsWith('/read'))return null;if(failures-->0)throw Error('lost');return {...payload,version:1,locked:false}},storage(),()=> 'request-1')

@@ -78,6 +78,9 @@ test('负责人生产装配：真实RPC、原生审批、单连接池和任务�
  ctx.provide('workspaceRegistry',{archivedSessionIds:archived,create:async(path:string)=>{const prior=[...workspaces.values()].find(item=>item.path===path);if(prior)return prior;const item={id:randomUUID(),path};workspaces.set(item.id,item);return item},get:(id:string)=>workspaces.get(id),list:()=>[...workspaces.values()]})
  ctx.provide('agentPresets',{serviceFor:()=>undefined,acquireScope:async()=>({key:{},async [Symbol.asyncDispose](){}}),resolve:async(id?:string)=>({id:id??'teloa-standard'})})
  ctx.provide('fileReferences',{})
+ // 标题模型不由本夹具调度；保留生产标题 provider 的注册与释放，避免缺失服务阻断业务 RPC。
+ const titleProviders=new Set<unknown>()
+ ctx.provide('sessionTitle',{register:(provider:unknown)=>{titleProviders.add(provider);return()=>{titleProviders.delete(provider)}}})
  const visible:string[]=[],pinnedTitles=new Map<string,string>()
  ctx.provide('sessionController',{
   list:async()=>({items:visible.map(sessionId=>({sessionId}))}),
@@ -113,6 +116,9 @@ test('负责人生产装配：真实RPC、原生审批、单连接池和任务�
   assert.equal(executionLink.ok,false);assert.equal(executionLink.error?.code,'teloa/forbidden')
   const changed=await raw('work-context/set',{requestId:randomUUID(),sessionId:main.sessionId,scopeId:'sales',roleId:null,expectedVersion:1})
   assert.equal(changed.ok,false);assert.equal(changed.error?.code,'teloa/forbidden')
+  const home=await call<{sessionId:string}>('conversations/create',{requestId:randomUUID(),title:'首页独立工作会话'})
+  const homeContext=await call<any>('work-context/set',{requestId:randomUUID(),sessionId:home.sessionId,scopeId:'SOC',roleId:null,expectedVersion:0})
+  assert.equal(homeContext.scopeId,'SOC');assert.equal(homeContext.version,1)
   assert.equal((await call<any>('work-context/read',{sessionId:main.sessionId})).scopeId,'general')
   archived.push(main.sessionId);const archivedReply=await raw('conversations/assistant',{});assert.equal(archivedReply.ok,false);assert.equal(archivedReply.error?.code,'teloa/conflict');archived.pop()
   assert.equal(visible.filter(id=>id===main.sessionId).length,1)

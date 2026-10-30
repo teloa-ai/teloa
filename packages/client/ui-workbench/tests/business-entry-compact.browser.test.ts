@@ -17,7 +17,8 @@ const roles=Array.from({length:3},(_,index)=>({id:'employee-'+index,name:'原员
 const fixture={opened:[],staff:[],connected:[],composition:[],sets:[],blocked:[],locked:false};window.businessEntryFixture=fixture;
 let current={sessionId:'original',scopeId:'general',roleId:null,version:1,locked:false};const storage={getItem:()=>null,setItem:()=>{},removeItem:()=>{}};
 const api=createHomeContextApi(async(endpoint,payload)=>{if(endpoint.endsWith('/read'))return current;fixture.sets.push(payload);return current={...payload,version:payload.expectedVersion+1,locked:false}},storage,()=> 'original-context-request');
-const binding={sessionId:'original',status:'ready',conversation:{}},work={subscribe:()=>()=>{},getSnapshot:()=>binding},useSession=select=>select({blank:!fixture.locked,pendingSubmissions:[]}),useInput=select=>select({attachmentIds:[]}),isNativeChild=()=>false,isAssistantContext=async()=>true,getRoles=async()=>roles,block=(...value)=>fixture.blocked.push(value);
+let binding={sessionId:'original',status:'ready',conversation:{}};const bindingListeners=new Set(),work={subscribe:listener=>{bindingListeners.add(listener);return()=>bindingListeners.delete(listener)},getSnapshot:()=>binding},useSession=select=>select({blank:!fixture.locked,pendingSubmissions:[]}),useInput=select=>select({attachmentIds:[]}),isNativeChild=()=>false,isAssistantContext=async()=>true,getRoles=async()=>roles,block=(...value)=>fixture.blocked.push(value);
+window.replaceHomeBinding=purpose=>{binding={...binding,conversation:purpose?{purpose}:{}};for(const listener of bindingListeners)listener()};
 function App(){const [locked,setLocked]=React.useState(false);window.lockBusinessEntry=()=>{fixture.locked=true;setLocked(true)};return <I18nProvider runtime={runtime}><BusinessScopeProvider labels={labels}><section aria-label="原输入上下文"><HomeComposerContext key={String(locked)} sessionId="original" api={api} work={work} useSession={useSession} useInput={useInput} isNativeChild={isNativeChild} isAssistantContext={isAssistantContext} roles={getRoles} block={block}/></section><BusinessHome labels={labels} directory={{status:'ready',retry:()=>{}}} roles={roles} dataSources={[]} attention={[]} tasks={[]} plans={plans} open={scope=>fixture.opened.push(scope)} openStaff={scope=>fixture.staff.push(scope)} connect={scope=>fixture.connected.push(scope)} addBusiness={()=>{}} goComposition={target=>fixture.composition.push(target)}/></BusinessScopeProvider></I18nProvider>};createRoot(document.getElementById('root')).render(<App/>);
 `
 before(async()=>{
@@ -49,4 +50,15 @@ test('业务选择呈现轻量控件，修改仍固定原会话与版本；已�
  const style=await select.evaluate((node:any)=>({height:node.getBoundingClientRect().height,border:getComputedStyle(node).borderTopWidth}));assert.ok(style.height<=28,'业务选择不使用大表单高度');assert.equal(style.border,'0px')
  await select.selectOption('SOC');await page.waitForFunction(()=>(window as any).businessEntryFixture.sets.length===1);assert.deepEqual(await page.evaluate(()=>(window as any).businessEntryFixture.sets[0]),{sessionId:'original',scopeId:'SOC',roleId:null,expectedVersion:1,requestId:'original-context-request'})
  await page.evaluate(()=>(window as any).lockBusinessEntry());await page.getByText('安全运营',{exact:true}).first().waitFor();assert.equal(await select.count(),0);assert.equal(await page.evaluate(()=>(window as any).businessEntryFixture.sets.length),1)
+})
+
+test('浏览器认回助手专属身份后撤下业务切换，恢复普通首页绑定后可切换安全运营',async t=>{
+ const page=await mount(t),select=page.getByRole('combobox',{name:'业务',exact:true})
+ await select.waitFor();await page.waitForFunction(()=>!document.querySelector<HTMLSelectElement>('select[aria-label="业务"]')?.disabled)
+ await page.evaluate(()=>(window as any).replaceHomeBinding('assistant'));await select.waitFor({state:'hidden'})
+ assert.equal(await page.evaluate(()=>(window as any).businessEntryFixture.sets.length),0)
+ await page.evaluate(()=>(window as any).replaceHomeBinding());await select.waitFor()
+ await page.waitForFunction(()=>!document.querySelector<HTMLSelectElement>('select[aria-label="业务"]')?.disabled)
+ await select.selectOption('SOC');await page.waitForFunction(()=>(window as any).businessEntryFixture.sets.length===1)
+ assert.deepEqual(await page.evaluate(()=>{const f=(window as any).businessEntryFixture;return [f.sets[0].sessionId,f.sets[0].scopeId,f.blocked.at(-1)[1]]}),['original','SOC',undefined])
 })

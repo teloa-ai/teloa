@@ -97,6 +97,17 @@ test('任务专用初始会话不能认领，首页继续准备独立空稿，�
  }
 })
 
+test('迟到的不可领养回执不能退役另一窗口刚替换的首页草稿',async()=>{
+ const storage=memory(),created:string[]=[]
+ storage.setItem('teloa.home-native-session/v1','old-assistant')
+ const controller=new HomeNativeController({storage,identity:()=>{throw Error('不能另建会话')},isBlank:()=>true,create:async id=>{created.push(id);return id},adopt:async()=>{
+  storage.setItem('teloa.home-native-session/v1','newer-home')
+  throw Object.assign(Error('专用会话'),{code:'teloa/session-not-adoptable'})
+ }})
+ await assert.rejects(controller.prepare(),/待用会话身份已变化/)
+ assert.equal(storage.getItem('teloa.home-native-session/v1'),'newer-home');assert.deepEqual(created,['old-assistant'])
+})
+
 test('领养期间选择或待用身份变化时认领失败关闭，不写入待用身份',async()=>{
  for(const change of ['selection','draft'] as const){
   const storage=memory();let current=true

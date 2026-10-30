@@ -673,6 +673,9 @@ export async function apply(ctx: Context): Promise<void> {
   const homeSession=new HomeNativeController({
     storage:navigationStorage,identity:()=>crypto.randomUUID(),
     isEligible:async(id,afterAdopt=false)=>{
+      // 原生空历史不代表普通工作：助手主聊和任务执行会话仍保留自己的固定身份。
+      const selected=work.getSnapshot().conversation
+      if(selected?.sessionId===id&&selected.purpose!==undefined||work.getDirectorySnapshot().rows.some(row=>row.sessionId===id&&row.purpose!==undefined))return false
       const state=businessBuilder.getSnapshot()
       if(!afterAdopt&&state.status==='ready'&&state.checkedSessionId===id&&(!state.error||state.sessionKind!==null))return state.sessionKind===null
       try{return await businessBuilderApi.bySession({sessionId:id})===null}
@@ -702,6 +705,8 @@ export async function apply(ctx: Context): Promise<void> {
       const child=requireWorkContext()
       const binding=await call('conversations/adopt',{sessionId:id,requestId:homeNativeAdoptionRequestId(navigationStorage,id),title:child.sessions.list.getSnapshot().byId[brandString<SessionId>(id)]?.title||'通用工作会话'})
       if(!isConversation(binding)||binding.sessionId!==id)throw Error('待用会话绑定未确认。')
+      // 冷恢复时目录可能尚未读到专用身份；以本次宿主回执收口，不能把助手主聊交给首页。
+      if(binding.purpose!==undefined)throw Object.assign(Error('专用会话不能作为首页工作草稿。'),{code:'teloa/session-not-adoptable'})
       await work.refreshDirectory()
     },
   })
