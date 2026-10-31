@@ -1,4 +1,4 @@
-import {readRetrievalSearchResult,isRecord,resourceTitle,embeddingProviderIds,readEmbeddingPreparationState,readRetrievalPreparationDetails,readRetrievalPrepareInput,WorkError,type EmbeddingProviderId,type EmbeddingDownloadSource,type EmbeddingPreparationState,type RetrievalPreparationDetails,type RetrievalPreparationExpected} from '@teloa/contract'
+import {readRetrievalSearchResult,isRecord,resourceTitle,embeddingProviderIds,retrievalLimits,readEmbeddingPreparationState,readRetrievalPreparationDetails,readRetrievalPrepareInput,WorkError,type EmbeddingProviderId,type EmbeddingDownloadSource,type EmbeddingPreparationState,type RetrievalPreparationDetails,type RetrievalPreparationExpected} from '@teloa/contract'
 
 export type RetrievalProvider={id:string;location:'host-local';catalogId:string;catalogVersion:string;profileHash:string;variant:'fp32'|'int8'|'ollama';totalMemoryBytes:number;memoryRisk:boolean;preparation:EmbeddingPreparationState;preparationDetails?:RetrievalPreparationDetails}
 export type RetrievalModelStatus={enabled:boolean;provider:RetrievalProvider|null;building:boolean;guidance:string|null;selectedProviderId?:EmbeddingProviderId}
@@ -42,6 +42,7 @@ export type LocalRetrievalApi=ReturnType<typeof createLocalRetrievalApi>
 export function createLocalRetrievalApi(call:(endpoint:string,payload:unknown,signal?:AbortSignal)=>Promise<unknown>){
  const model=async(endpoint:string,signal?:AbortSignal,providerId?:EmbeddingProviderId)=>readRetrievalModelStatus(await call(endpoint,providerId?{providerId}:{},signal))
  const index=async(endpoint:string,payload:unknown,signal?:AbortSignal)=>readRetrievalStatus(await call(endpoint,payload,signal))
+ const sourceBatch=(sourceIds:readonly string[])=>{const ids=[...new Set(sourceIds)];if(!ids.length||ids.length>retrievalLimits.maxEnrollments||ids.some(id=>typeof id!=='string'||!/^[a-zA-Z0-9_-]{1,128}$/.test(id)))throw new WorkError('teloa/invalid-input','请选择有效的资料来源。');return {sourceIds:ids}}
  return {
   modelStatus:(signal?:AbortSignal,providerId?:EmbeddingProviderId)=>model('retrieval-model/status',signal,providerId),
   /** source 缺省时载荷只带 expected（即官方来源）。 */
@@ -52,6 +53,8 @@ export function createLocalRetrievalApi(call:(endpoint:string,payload:unknown,si
   search:async(query:string,signal?:AbortSignal)=>readRetrievalSearchResult(await call('retrieval/search',{query,limit:8},signal)),
   enroll:(sourceId:string,signal?:AbortSignal)=>index('retrieval/enroll',{sourceIds:[sourceId]},signal),
   remove:(sourceId:string,signal?:AbortSignal)=>index('retrieval/remove',{sourceIds:[sourceId]},signal),
+  enrollSources:(sourceIds:readonly string[],signal?:AbortSignal)=>index('retrieval/enroll',sourceBatch(sourceIds),signal),
+  removeSources:(sourceIds:readonly string[],signal?:AbortSignal)=>index('retrieval/remove',sourceBatch(sourceIds),signal),
   reindex:(signal?:AbortSignal)=>index('retrieval/reindex',{},signal),
   cancel:(signal?:AbortSignal)=>index('retrieval/cancel',{},signal),
  }

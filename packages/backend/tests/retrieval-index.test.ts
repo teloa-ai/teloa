@@ -157,6 +157,25 @@ test('移出检索在事务内删除所有模型的索引与向量',async()=>{
  await retrieval.remove(human,{sourceIds:[doc.sourceId]})
 })
 
+test('批量加入原子校验、重复加入幂等，批量移出只清索引并保留原资料',async()=>{
+ const {retrieval,human,add}=world(),{embedder}=fakeEmbedder()
+ const a=await add('报销制度',policy),b=await add('产品手册',handbook),keep=await add('保留资料',handbook)
+ await assert.rejects(retrieval.enroll(human,{sourceIds:[a.sourceId,'src_missing',b.sourceId]}),{code:'teloa/not-found'})
+ assert.equal((await retrieval.status(human,profileA)).enrolled,0,'失败批次不得留下部分加入记录')
+ const ids=[a.sourceId,b.sourceId,keep.sourceId]
+ await retrieval.enroll(human,{sourceIds:ids});await retrieval.enroll(human,{sourceIds:ids})
+ assert.equal((await retrieval.status(human,profileA)).enrolled,3)
+ await retrieval.buildPending(human,embedder,signal())
+ await retrieval.remove(human,{sourceIds:[a.sourceId,b.sourceId]})
+ await retrieval.remove(human,{sourceIds:[a.sourceId,b.sourceId]})
+ const status=await retrieval.status(human,profileA)
+ assert.equal(status.enrolled,1);assert.deepEqual(status.items.map(item=>item.resourceId),[keep.id])
+ assert.equal(await count('select count(*)::int as count from teloa_retrieval_indexes where resource_id=any($1::uuid[])',[[a.id,b.id]]),0)
+ assert.equal(await count("select count(*)::int as count from teloa_resources where owner_id=$1 and status='active'",[human.ownerId]),3)
+ const result=await retrieval.search(human,['general'],{query:'报销审批'},embedder,signal())
+ assert.deepEqual(result.coverage.searched.map(item=>item.resourceId),[keep.id])
+})
+
 test('范围外资料不出现在 searched 与 pending，也不计数',async()=>{
  const {retrieval,human,agent,add}=world(),{embedder}=fakeEmbedder()
  const general=await add('差旅报销制度',policy),secret=await add('设计评审纪要',policy.replace('差旅','设计'),['design']),later=await add('产品手册',handbook)

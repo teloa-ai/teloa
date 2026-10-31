@@ -31,11 +31,11 @@
 
 /* 资料页「本地检索」：标题与一句用途在左，已加入份数与「更多」在右；每份资料一行，底部一句说明。 */
 .search { display: grid; gap: 10px; padding: 14px 16px; }
-.searchHeader { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+.searchHeader { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 16px; }
 .searchIntro { min-width: 0; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 .searchIntro strong { font-size: var(--teloa-font-body); font-weight: var(--teloa-weight-heading); }
 .searchIntro p { margin: 2px 0 0; color: var(--teloa-muted); font-size: var(--teloa-font-caption); line-height: var(--teloa-leading-label); }
-.searchTools { display: flex; align-items: center; gap: 8px; flex: none; }
+.searchTools { display: flex; flex-wrap: wrap; max-width: 100%; align-items: center; gap: 8px; flex: none; }
 .count { color: var(--teloa-muted); font-size: var(--teloa-font-caption); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .more { position: relative; }
 .more > summary { box-sizing: border-box; list-style: none; display: inline-flex; align-items: center; min-height: 32px; padding: 5px 10px; border: 1px solid var(--teloa-border); border-radius: 8px; background: var(--teloa-surface); color: var(--teloa-text); font-size: var(--teloa-font-control); cursor: pointer; }
@@ -89,6 +89,7 @@
 .settingsDrawer>div{padding:24px;display:grid;align-content:start;gap:20px;min-width:0}
 .settingsDrawer [data-retrieval-model]{border:0;border-radius:0;margin:0;padding:0}
 
+.excerpt:focus-visible{outline:2px solid var(--teloa-focus);outline-offset:2px}
 .excerpt {white-space:pre-wrap;overflow-wrap:anywhere;max-height:18rem;overflow:auto;font:inherit;line-height:1.6;padding:12px;background:var(--teloa-surface-muted,var(--teloa-surface));border:1px solid var(--teloa-border);border-radius:8px;}
 
 .trialForm{display:flex;align-items:end;flex-wrap:wrap;gap:12px;}
@@ -96,3 +97,23 @@
 .trialForm input{min-height:36px;box-sizing:border-box;width:100%;font:inherit;color:var(--teloa-text);background:var(--teloa-surface);border:1px solid var(--teloa-border);border-radius:8px;padding:7px 10px;}
 .trialForm input:focus-visible{outline:2px solid var(--teloa-focus);outline-offset:2px;}
 @media(max-width:740px){.trialForm input,.trialForm button{min-height:44px;}}
+
+/* 自带箭头的原生选择器不叠加全局装饰；系统高对比度交还给原生箭头。 */
+.modelPicker{max-width:100%}.modelPicker select{min-width:0;width:100%;text-overflow:ellipsis}
+@media(forced-colors:active){.modelPicker select{appearance:auto;background-image:none}.modelPicker>svg{display:none}}
+
+/* 批量管理独立于目录；操作固定在抽屉滚动面底部。 */
+.bulkManager{box-sizing:border-box;display:flex;flex-direction:column;gap:16px;min-height:100%;min-width:0;padding:24px;color:var(--teloa-text);font-size:var(--teloa-font-control)}
+.bulkManager p{margin:0}.bulkHint{color:var(--teloa-muted);font-size:var(--teloa-font-caption)}
+.bulkSearch{display:grid;gap:6px;min-width:0}.bulkSearch input{box-sizing:border-box;width:100%;min-width:0;padding:9px 11px;border:1px solid var(--teloa-control-border);border-radius:8px;background:var(--teloa-surface);color:var(--teloa-text);font:inherit}
+.bulkSelection{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px}.bulkSelection label{display:flex;align-items:center;gap:10px;min-height:40px}
+.bulkManager button{font:inherit;cursor:pointer;max-width:100%;white-space:normal;overflow-wrap:anywhere}.bulkManager button:disabled{cursor:default;opacity:.5}
+.bulkSelection button{border:0;background:transparent;color:var(--teloa-muted);padding:6px;text-decoration:underline;text-underline-offset:3px}
+.bulkRows{flex:1;min-width:0;list-style:none;margin:0;padding:0;border-top:1px solid var(--teloa-border)}
+.bulkChoice{display:flex;align-items:flex-start;gap:12px;box-sizing:border-box;min-width:0;min-height:52px;padding:12px 4px;border-bottom:1px solid var(--teloa-border);cursor:pointer}
+.bulkChoice>input,.bulkSelection input{flex:none;width:clamp(18px,.8em,24px);height:clamp(18px,.8em,24px);margin:4px 0 0;accent-color:var(--teloa-focus)}
+.bulkChoice>span{display:grid;gap:4px;min-width:0;overflow-wrap:anywhere}.bulkChoice strong{font-weight:var(--teloa-weight-medium)}.bulkChoice small{color:var(--teloa-muted);font-size:var(--teloa-font-caption)}
+.bulkFooter{position:sticky;bottom:0;z-index:2;display:grid;gap:10px;margin:auto -24px -24px;padding:16px 24px;border-top:1px solid var(--teloa-border);background:var(--teloa-surface)}
+.bulkFooter>p{font-size:var(--teloa-font-caption);overflow-wrap:anywhere}.bulkFooter>div{display:flex;flex-wrap:wrap;gap:10px;justify-content:flex-end}
+.trialResults{display:grid;gap:14px;margin-top:16px;min-width:0}.trialResults article{min-width:0}.trialResults article>header{display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:10px}.trialResults h4{margin:0;min-width:0;overflow-wrap:anywhere}.trialResults pre{max-width:100%;box-sizing:border-box}
+@media(max-width:600px){.bulkManager{padding:20px}.bulkFooter{margin-inline:-20px;margin-bottom:-20px;padding:14px 20px}.bulkFooter button,.bulkSearch input{min-height:44px}}

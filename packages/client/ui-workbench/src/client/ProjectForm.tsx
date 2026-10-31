@@ -28,8 +28,9 @@ export function ProjectForm({initial,draft,changeDraft,pending,editing=false,ope
  const nameField={label:t('project.name'),value:fields.title,ref:input},goalField={label:t(editing?'project.goal':'project.create.description'),value:fields.goal,ref:description}
  const feedback=useRequiredFieldFeedback(editing?{title:nameField,goal:goalField}:{goal:goalField,title:nameField})
  const requiredName=<div className={feedbackCss.field}><label><span>{t('project.name')}<span aria-hidden="true"> *</span></span><input {...feedback.props('title')} aria-label={t('project.name')} ref={input} required maxLength={120} value={fields.title} disabled={busy} onChange={e=>{setFields({...fields,title:e.target.value},true);feedback.clear('title',e.target.value)}}/></label>{feedback.message('title')&&<p role="alert" className={feedbackCss.error} id={feedback.id('title')}>{feedback.message('title')}</p>}</div>
- return <dialog ref={dialog} className={css.dialog} aria-label={title} {...dismiss}><form className={css.form} noValidate aria-busy={busy} onSubmit={async event=>{event.preventDefault();if(busy||(warning&&!ack)||!feedback.validate(event.currentTarget))return;setBusy(true);setError('');try{await save(fields)}catch(e){setError(localizeWorkError(locale,e))}finally{setBusy(false)}}}>
+ return <dialog ref={dialog} className={`${css.dialog} ${css.projectDialog}`} aria-label={title} {...dismiss}><form className={`${css.form} ${css.projectForm}`} noValidate aria-busy={busy} onSubmit={async event=>{event.preventDefault();if(busy||(warning&&!ack)||!feedback.validate(event.currentTarget))return;setBusy(true);setError('');try{await save(fields)}catch(e){setError(localizeWorkError(locale,e))}finally{setBusy(false)}}}>
   <header><h2>{title}</h2><button type="button" disabled={busy} onClick={close} aria-label={t('project.dialog.close')}><X size={18}/></button></header>
+  <div className={css.formBody}>
   {error&&<p role="alert" className={css.error}>{error}</p>}
   <p className={feedbackCss.hint}>{t('form.requiredHint')}</p>
   {editing?<>
@@ -44,6 +45,7 @@ export function ProjectForm({initial,draft,changeDraft,pending,editing=false,ope
   </>}
   {editing&&<label>{t('project.status')}<select aria-label={t('project.status')} value={fields.state} disabled={busy} onChange={e=>setFields({...fields,state:e.target.value as ProjectDefinition['state']})}>{projectStates.filter(state=>state!=='archived').map(state=><option key={state} value={state}>{t(projectStateKeys[state])}</option>)}</select></label>}
   {warning&&<label className={css.check}><input type="checkbox" checked={ack} disabled={busy} onChange={e=>setAck(e.target.checked)}/>{t('project.completeWarning',{count:openTasks})}</label>}
+  </div>
   <footer><button type="button" disabled={busy} onClick={close}>{t('task.form.cancel')}</button><button type="submit" className={css.primary} disabled={busy||(warning&&!ack)}>{t(busy?'task.form.saving':editing?'project.save':'project.create')}</button></footer>
  </form><p className={feedbackCss.status} role="status">{busy?t('task.form.saving'):''}</p></dialog>
 }
