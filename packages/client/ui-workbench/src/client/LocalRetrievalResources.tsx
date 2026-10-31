@@ -44,7 +44,7 @@ export function LocalRetrievalResourcesPresentation({status,resource,busy,error,
   {status&&status.items.length>0&&<details className={css.info}><summary>{t('retrieval.resources.details')}</summary><ul>{status.items.map(row=><li key={row.resourceId??row.sourceId}>{row.title??t('retrieval.index.unavailable')} · {t('retrieval.index.'+row.state)}{row.chunkCount!==null&&` · ${t('retrieval.resources.chunks',{count:row.chunkCount})}`}</li>)}</ul><p>{t('retrieval.resources.totalChunks',{chunks:status.chunks})}</p></details>}
  </section>
 }
-export function LocalRetrievalResources({api,resource,resources=[],visible,onModelSettings}:{api:LocalRetrievalApi;resource?:WorkResource|undefined;resources?:readonly WorkResource[];visible:boolean;onModelSettings?:()=>void}){
+export function LocalRetrievalResources({api,resource,resources=[],resourceContext,visible,onModelSettings}:{api:LocalRetrievalApi;resource?:WorkResource|undefined;resources?:readonly WorkResource[];resourceContext?:ReadonlyMap<string,string>|undefined;visible:boolean;onModelSettings?:()=>void}){
  const {locale,t}=useI18n(),[managing,setManaging]=useState(false),snapshot=useRetrievalSnapshot(async signal=>{const [index,model]=await Promise.all([api.status(signal),api.modelStatus(signal)]);return {index,model}},api,visible)
  useEffect(()=>{setManaging(false)},[api,visible])
  const model=snapshot.value?.model,ready=!!model?.enabled&&!!model.provider&&['ready','standby'].includes(model.provider.preparation.phase)
@@ -69,7 +69,7 @@ export function LocalRetrievalResources({api,resource,resources=[],visible,onMod
  const contextKey=JSON.stringify([model?.provider?.id,model?.provider?.profileHash,indexIdentity]),error=snapshot.error?localizeWorkError(locale,snapshot.error):''
  return <><LocalRetrievalResourcesPresentation status={snapshot.value?.index} resource={resource} busy={snapshot.busy} readFailed={snapshot.readFailed} modelReady={ready} modelLabel={modelLabel} error={error} t={t as RetrievalTranslate} onManage={()=>setManaging(true)} {...(onModelSettings?{onModelSettings}:{})} onEnroll={enroll} onRemove={id=>run(signal=>api.remove(id,signal))} onReindex={()=>run(signal=>api.reindex(signal))} onCancel={()=>run(signal=>api.cancel(signal))}/>
   <RetrievalTrial api={api} ready={ready&&!snapshot.readFailed} visible={visible} contextKey={contextKey}/>
-  {managing&&snapshot.value&&<RetrievalMaterialManager resources={resources} status={snapshot.value.index} busy={snapshot.busy} readOnly={snapshot.readFailed} error={error} modelReady={ready} close={()=>setManaging(false)} apply={apply}/>}
+  {managing&&snapshot.value&&<RetrievalMaterialManager resources={resources} resourceContext={resourceContext} status={snapshot.value.index} busy={snapshot.busy} readOnly={snapshot.readFailed} error={error} modelReady={ready} close={()=>setManaging(false)} apply={apply}/>}
  </>
 }
 

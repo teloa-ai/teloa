@@ -9,6 +9,8 @@ export const LOCAL_RETRIEVAL_MESSAGE_ROWS = [
  ["retrieval.manage.choose", "选择 {title}", "選取 {title}", "Select {title}"],
  ["retrieval.manage.unavailable", "不可用资料 {index}", "無法使用的資料 {index}", "Unavailable material {index}"],
  ["retrieval.manage.sameSource", "同一来源，共 {count} 份资料", "同一來源，共 {count} 份資料", "Shared source, {count} materials"],
+ ["retrieval.manage.otherBusiness", "其他业务", "其他業務", "Other business"],
+ ["retrieval.manage.updated", "更新于 {time}", "更新於 {time}", "Updated {time}"],
  ["retrieval.manage.empty", "没有符合条件的资料。", "沒有符合條件的資料。", "No matching materials."],
  ["retrieval.manage.more", "显示更多（已显示 {shown} / {total}）", "顯示更多（已顯示 {shown} / {total}）", "Show more ({shown} of {total})"],
  ["retrieval.manage.selected", "已选 {count} 个来源", "已選 {count} 個來源", "{count} sources selected"],
