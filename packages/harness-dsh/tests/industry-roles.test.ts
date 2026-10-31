@@ -7,6 +7,27 @@ const responsibility={triggers:['收到调查任务'],autonomousActions:['整理
 const role={avatarKey:'researcher',id:roleId,ownerId:'owner',name:'分析员',kind:'employee',scopes:['space-'+loadId],duty:'研究',dataScope:'资料',executionScope:'代拟',skills:[],knowledge:[],responsibility,runtimeConfig:{agentPresetId:'security-analyst'},version:1,state:'paused',createdAt:stamp,updatedAt:stamp}
 const record={id,ownerId:'owner',loadId,itemInstanceId,itemLocalId:'analyst',scope:'space-'+loadId,definitionHash:'a'.repeat(64),revision:1,state:'paused',role,knowledge:[],omittedKnowledge:[],declarations:[],failure:null,createdAt:stamp,updatedAt:stamp}
 const input={requestId:id,loadId,itemInstanceId}
+test('首次准备标记贯穿三个端点，只接受暂停员工 v1 空方法或 v2 已绑定方法',async()=>{
+ for(const prepared of [{...record,preparationPending:true},{...record,preparationPending:true,role:{...role,version:2,skills:['native-review']}}]){
+  const handler=createIndustryRolesHandler('owner',async()=>({instantiate:async()=>prepared,get:async()=>prepared,list:async()=>({items:[prepared]})}))
+  assert.deepEqual(await handler('industry-roles/instantiate',input),prepared)
+  assert.deepEqual(await handler('industry-roles/get',{instanceId:id}),prepared)
+  assert.deepEqual(await handler('industry-roles/list',{}),{items:[prepared]})
+ }
+ for(const bad of [
+  {...record,preparationPending:false},{...record,preparationPending:'true'},
+  {...record,preparationPending:true,role:{...role,version:1,skills:['edited']}},
+  {...record,preparationPending:true,role:{...role,version:2,skills:[]}},
+  {...record,preparationPending:true,role:{...role,version:3}},
+  {...record,preparationPending:true,state:'active',role:{...role,state:'active'}},
+  {...record,preparationPending:true,role:{...role,kind:'twin'}},
+  {...record,preparationPending:true,state:'pending',role:null},
+  {...record,preparationPending:true,unexpected:true},
+ ]){
+  const handler=createIndustryRolesHandler('owner',async()=>({instantiate:async()=>bad,get:async()=>bad,list:async()=>({items:[bad]})}))
+  for(const [method,payload] of [['industry-roles/instantiate',input],['industry-roles/get',{instanceId:id}],['industry-roles/list',{}]] as const)await assert.rejects(handler(method,payload),{code:'teloa/invalid-host-response'})
+ }
+})
 test('岗位实例入口固定本人及加载项，拒绝客户端定义与权限',async()=>{
  const calls:unknown[][]=[],handler=createIndustryRolesHandler('owner',async()=>({instantiate:async(...args)=>{calls.push(args);return record},get:async()=>record,list:async()=>({items:[record]})}))
  assert.deepEqual(await handler('industry-roles/instantiate',input),record)

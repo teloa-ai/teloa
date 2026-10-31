@@ -7,6 +7,27 @@ const request={requestId:'11111111-1111-4111-8111-111111111111',loadId:'22222222
 const role={id:'44444444-4444-4444-8444-444444444444',ownerId:'owner',version:3,state:'paused' as const,createdAt:'2026-09-12T00:00:00.000Z',updatedAt:'2026-09-12T00:01:00.000Z',name:'已编辑岗位',kind:'employee' as const,scopes:['general'],duty:'职责',dataScope:'范围',executionScope:'执行',skills:[],knowledge:['55555555-5555-4555-8555-555555555555']}
 const paused={id:'66666666-6666-4666-8666-666666666666',ownerId:'owner',loadId:request.loadId,itemInstanceId:request.itemInstanceId,itemLocalId:'analyst-role',scope:'space-77777777-7777-4777-8777-777777777777',definitionHash:'a'.repeat(64),revision:4,state:'paused' as const,role,knowledge:[{itemInstanceId:'88888888-8888-4888-8888-888888888888',instanceId:'99999999-9999-4999-8999-999999999999',resourceId:role.knowledge[0]!,resourceVersion:2}],omittedKnowledge:[{itemInstanceId:'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee',reason:'not-instantiated' as const}],declarations:[{kind:'skill' as const,itemInstanceId:'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',status:'pending-adapter' as const},{kind:'mcp' as const,itemInstanceId:'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',status:'skipped' as const}],failure:null,createdAt:'2026-09-12T00:00:00.000Z',updatedAt:'2026-09-12T00:01:00.000Z'}
 
+test('首次准备标记保留在有效实例中，错误类型、岗位状态及版本方法组合均拒绝',async()=>{
+ for(const prepared of [{...paused,preparationPending:true,role:{...role,version:1,skills:[]}},{...paused,preparationPending:true,role:{...role,version:2,skills:['native-review']}}]){
+  const api=createIndustryRoleApi(async method=>method==='industry-roles/list'?{items:[prepared]}:prepared)
+  assert.deepEqual(await api.instantiate(request),prepared)
+  assert.deepEqual(await api.get(prepared.id),prepared)
+  assert.deepEqual(await api.list(),[prepared])
+ }
+ for(const bad of [
+  {...paused,preparationPending:false},{...paused,preparationPending:'true'},
+  {...paused,preparationPending:true,role:{...role,version:1,skills:['edited']}},
+  {...paused,preparationPending:true,role:{...role,version:2,skills:[]}},
+  {...paused,preparationPending:true,role:{...role,version:3}},
+  {...paused,preparationPending:true,state:'active',role:{...role,state:'active'}},
+  {...paused,preparationPending:true,role:{...role,kind:'twin'}},
+  {...paused,preparationPending:true,state:'pending',role:null},
+  {...paused,preparationPending:true,unexpected:true},
+ ]){
+  const api=createIndustryRoleApi(async method=>method==='industry-roles/list'?{items:[bad]}:bad)
+  for(const action of [()=>api.instantiate(request),()=>api.get(paused.id),()=>api.list()])await assert.rejects(action(),{code:'teloa/invalid-host-response'})
+ }
+})
 test('未知结果保留请求并原样恢复，真实终态才清理',async()=>{let raw:string|null=null,calls:unknown[]=[];const api=createIndustryRoleApi(async(method,payload)=>{calls.push([method,payload]);if(calls.length===1)throw Error('断线');return paused},{read:()=>raw,write:value=>{raw=value},clear:()=>{raw=null}});await assert.rejects(api.instantiate(request),/断线/);assert.deepEqual(api.pending(),request);assert.deepEqual(await api.recover(),paused);assert.equal(raw,null);assert.deepEqual(calls,[['industry-roles/instantiate',request],['industry-roles/instantiate',request]])})
 test('pending和failed保留journal，无journal目录记录可继续核对',async()=>{for(const value of [{...paused,state:'pending' as const,role:null},{...paused,state:'failed' as const,role:null,failure:{code:'teloa/dependency-unavailable',message:'知识尚未启用'}}]){let raw:string|null=null;const api=createIndustryRoleApi(async()=>value,{read:()=>raw,write:v=>{raw=v},clear:()=>{raw=null}});await api.instantiate(request);assert.deepEqual(api.pending(),request);assert.ok(raw);assert.equal(industryRoleAction(value,undefined),'continue')}})
 test('严格校验岗位、知识引用、遗漏原因、声明与状态组合，同时允许当前岗位合法编辑',async()=>{assert.deepEqual(await createIndustryRoleApi(async()=>paused).get(paused.id),paused);const edited={...paused,role:{...role,knowledge:[],skills:['native-skill'],scopes:['another-scope']}};assert.deepEqual(await createIndustryRoleApi(async()=>edited).get(paused.id),edited);for(const value of [{...paused,revision:0},{...paused,role:{...role,state:'active'}},{...paused,knowledge:[paused.knowledge[0],paused.knowledge[0]]},{...paused,omittedKnowledge:[{...paused.omittedKnowledge[0],reason:'unknown'}]},{...paused,declarations:[{...paused.declarations[0],kind:'tool'}]},{...paused,state:'failed',role:null,failure:null},{...paused,extra:true}])await assert.rejects(createIndustryRoleApi(async()=>value).get(paused.id),/格式/)})

@@ -23,7 +23,7 @@ function instance(value:unknown):IndustryRoleInstance{try{const row=exact(value,
   const dependencyIds=[...knowledge,...omittedKnowledge,...declarations].map(item=>String(item.itemInstanceId).toLowerCase());if(new Set(dependencyIds).size!==dependencyIds.length||new Set(knowledge.map(item=>String(item.instanceId).toLowerCase())).size!==knowledge.length||new Set(knowledge.map(item=>String(item.resourceId).toLowerCase())).size!==knowledge.length)throw Error()
   const role=row.role===null?null:readRole(row.role),failure=row.failure===null?null:exact(row.failure,['code','message']);if(failure&&(!(typeof failure.code==='string'&&/^teloa\/[a-z0-9-]+$/.test(failure.code))||!text(failure.message,2000)))throw Error()
   if(row.state==='paused'||row.state==='active'||row.state==='retired'){if(!role||role.ownerId!==row.ownerId||role.state!==row.state||failure!==null)throw Error()}else{if(role!==null)throw Error();if(row.state==='failed'?!failure:failure!==null)throw Error()}
-  if(row.preparationPending!==undefined&&(row.preparationPending!==true||role?.state!=='paused'||role.version>2))throw Error()
+  if(row.preparationPending!==undefined&&(row.preparationPending!==true||role?.kind!=='employee'||role.state!=='paused'||!(role.version===1&&!role.skills.length||role.version===2&&role.skills.length>0)))throw Error()
   return {...row,role,knowledge,omittedKnowledge,declarations,failure} as unknown as IndustryRoleInstance
  }catch{throw requestError('teloa/invalid-host-response','行业员工实例化记录格式不正确。')}}
 export type IndustryRoleApi=ReturnType<typeof createIndustryRoleApi>

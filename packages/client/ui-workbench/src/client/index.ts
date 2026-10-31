@@ -1076,6 +1076,7 @@ export async function apply(ctx: Context): Promise<void> {
           const saved = pending ? await skillInstallApi.recover() : await (async () => { const preview = await skillInstallApi.preview(input); return skillInstallApi.install({ requestId, source: input, expectedBundleHash: preview.bundleHash, ...(preview.trustHash ? { expectedTrustHash: preview.trustHash } : {}) }) })()
           return saved.state === 'installed' ? { state: 'installed' as const, installationId: saved.id, nativeName: saved.native.name } : { state: 'pending' as const }
         },
+        readiness: loadId => industryLoadApi.readiness(loadId),
         prepare: async loadId => { const readiness = await industryLoadApi.readiness(loadId); if (!readiness.counts.auto) return readiness; const receipt = await industryLoadApi.prepare(loadId, readiness.digest, { activate: false }); return receipt.readiness ?? industryLoadApi.readiness(loadId) },
         roles: async loadId => (await industryRoleApi.list()).map(row => ({ loadId: row.loadId, itemInstanceId: row.itemInstanceId, state: row.state, ...(row.role ? { roleId: row.role.id } : {}) })),
         team: async seed => { const saved = await findIndustryTeam(groupApi, seed); return saved ? { groupId: saved.group.id } : undefined },

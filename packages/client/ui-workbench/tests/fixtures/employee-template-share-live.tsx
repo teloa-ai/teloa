@@ -61,6 +61,7 @@ const acceptance=createShareAcceptance(localStorage,{
   importContent:(item,requestId)=>market.importIndustry(item,requestId),
   load:input=>loads.create(input),getLoad:loadId=>loads.get(loadId),
   installSkill:async()=>{throw Error('本夹具不提供技能安装。')},
+  readiness:loadId=>loads.readiness(loadId),
   prepare:async loadId=>{const readiness=await loads.readiness(loadId);if(!readiness.counts.auto)return readiness;const receipt=await loads.prepare(loadId,readiness.digest,{activate:false});return receipt.readiness??loads.readiness(loadId)},
   roles:async loadId=>(await employees.list()).filter(row=>row.loadId===loadId).map(row=>({itemInstanceId:row.itemInstanceId,state:row.state,...(row.role?{roleId:row.role.id}:{})})),
  },

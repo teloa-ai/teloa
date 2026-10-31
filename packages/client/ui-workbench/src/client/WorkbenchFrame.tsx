@@ -1024,6 +1024,7 @@ export function WorkbenchFrame({assistantActivity,assistantChat,groupWorkLinks,e
         return saved.state==='installed'?{state:'installed',installationId:saved.id,nativeName:saved.native.name}:{state:'pending'}
       },
       // 分享副本建好后保持暂停、由本人检查后再启用：明确请求 activate:false，不代为上岗。
+      readiness:loadId=>industryLoadApi.readiness(loadId),
       prepare:async loadId=>{const readiness=await industryLoadApi.readiness(loadId);if(!readiness.counts.auto)return readiness;const receipt=await industryLoadApi.prepare(loadId,readiness.digest,{activate:false});void loadRoles().catch(()=>{});return receipt.readiness??industryLoadApi.readiness(loadId)},
       roles:async loadId=>{const rows=await industryRoleApi.list();mergeIndustryRoles(rows);return rows.map(row=>({loadId:row.loadId,itemInstanceId:row.itemInstanceId,state:row.state,...(row.role?{roleId:row.role.id}:{})}))},
       team:async seed=>{const saved=await findIndustryTeam(groupApi,seed);return saved?{groupId:saved.group.id}:undefined},

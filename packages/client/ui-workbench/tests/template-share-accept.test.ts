@@ -29,6 +29,7 @@ function industry(over:Partial<NonNullable<ShareAcceptPorts['industry']>>={},plu
  const calls={imports:[] as string[],loads:[] as string[],installs:[] as {itemInstanceId:string;requestId:string}[],prepare:0,manifests:[] as any[]}
  let load:IndustryLoadRecord|undefined
  const roles:{itemInstanceId:string;state:string;roleId?:string}[]=[]
+ const readiness=async()=>({rows:[...load!.items.filter(i=>i.kind==='mcp').map(i=>({itemInstanceId:i.instanceId,kind:'mcp',state:'needs-user',step:null,entry:'connector-settings'})),...(pluginRow?load!.items.filter(i=>i.kind==='plugin').map(i=>({itemInstanceId:i.instanceId,kind:'plugin',step:null,...pluginRow})):[])]} as never)
  const ports:NonNullable<ShareAcceptPorts['industry']>={
   publicSkill:async({publicId,version})=>({id:'atomic-'+'c'.repeat(64),kind:'skill',contentStorage:{contentId:'00000000-0000-4000-8000-0000000000aa',createdAt:'2026-10-14T00:00:00.000Z',loaded:true},atomicSkill:{id:publicId,version,title:'Internal comms',hash:'c'.repeat(64),entryPath:'internal-comms/SKILL.md',files:[{path:'internal-comms/SKILL.md',hash:'d'.repeat(64),bytes:new TextEncoder().encode(skillText('internal-comms'))}],text:skillText('internal-comms'),categories:[]}} as never),
   target:async()=>({kind:'existing',spaceId:'00000000-0000-4000-8000-000000000001',expectedVersion:1}),
@@ -41,12 +42,31 @@ function industry(over:Partial<NonNullable<ShareAcceptPorts['industry']>>={},plu
   },
   getLoad:async()=>load!,
   installSkill:async(source,requestId)=>{calls.installs.push({itemInstanceId:source.itemInstanceId,requestId});const item=load!.items.find(i=>i.instanceId===source.itemInstanceId)!;return {state:'installed',installationId:'inst-'+item.localId,nativeName:'native-'+item.localId}},
-  prepare:async()=>{calls.prepare++;for(const item of load!.items.filter(i=>i.kind==='role'))if(!roles.some(r=>r.itemInstanceId===item.instanceId))roles.push({itemInstanceId:item.instanceId,state:'paused',roleId:'role-'+item.localId});return {rows:[...load!.items.filter(i=>i.kind==='mcp').map(i=>({itemInstanceId:i.instanceId,kind:'mcp',state:'needs-user',step:null,entry:'connector-settings'})),...(pluginRow?load!.items.filter(i=>i.kind==='plugin').map(i=>({itemInstanceId:i.instanceId,kind:'plugin',step:null,...pluginRow})):[])]} as never},
+  prepare:async()=>{calls.prepare++;for(const item of load!.items.filter(i=>i.kind==='role'))if(!roles.some(r=>r.itemInstanceId===item.instanceId))roles.push({itemInstanceId:item.instanceId,state:'paused',roleId:'role-'+item.localId});return readiness()},
+  readiness,
   roles:async()=>roles.map(r=>({...r})),
   ...over,
  }
  return {ports,calls,roles,get load(){return load}}
 }
+
+test('完成回执丢失后重开只读核对，原员工退役时不报成功也不重新准备',async()=>{
+ const pkg=buildSharePlan({...base,subject:'employee',title:'Employee',roles:[role('a','Analyst')],skills:[],connections:[],bindings:[]}),{storage}=memory(),fake=industry()
+ const prepare=fake.ports.prepare,readiness=fake.ports.readiness,list=fake.ports.roles
+ let readonlyChecks=0,roleReads=0
+ fake.ports.prepare=async id=>{await prepare(id);throw Error('最终准备回执丢失')}
+ fake.ports.readiness=async id=>{readonlyChecks++;return readiness(id)}
+ fake.ports.roles=async id=>{roleReads++;return list(id)}
+ const accept=()=>createShareAcceptance(storage,{createRole:async()=>{throw Error('不得直接建员工')},industry:fake.ports}).accept(pkg,{scope:'general',skills:[]})
+ const original=await accept();assert.equal(original.complete,true);assert.equal(fake.calls.prepare,1)
+ const reopened=await accept();assert.deepEqual(reopened,original);assert.equal(fake.calls.prepare,1);assert.equal(readonlyChecks,1);assert.equal(roleReads,2)
+ fake.roles[0]!.state='retired'
+ assert.equal((await accept()).complete,false);assert.equal(fake.calls.prepare,1);assert.equal(readonlyChecks,2);assert.equal(roleReads,3)
+ assert.equal(fake.calls.loads.length,1);assert.equal(fake.calls.imports.length,1)
+ const key='teloa.share-accept/v3/'+await sharePackageDigest(pkg),saved=JSON.parse(storage.getItem(key)!)
+ storage.setItem(key,JSON.stringify({...saved,completed:'true'}))
+ await assert.rejects(accept(),/recovery record is invalid/);assert.equal(roleReads,3);assert.equal(fake.calls.prepare,1)
+})
 
 test('public skills resolve by original name and pinned version to exactly one catalog entry',()=>{
  const entry=(id:string,name:string,version:string)=>({entry:{id,kind:'skill',version,skill:{name}}}) as never
