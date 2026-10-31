@@ -5,7 +5,7 @@ import type {Agent} from '@deepseek-ai/dsh-agent'
 import {LlmAdapter,ToolCallId,createUserMessage,type GenerateOptions,type StreamChunk} from '@deepseek-ai/dsh-llm'
 import type {ToolExecutionResult} from '@deepseek-ai/dsh-tools'
 import {readSessionEvents} from '../../src/session-events.ts'
-import {publishNativeFixtureInput} from './native-host-services.ts'
+import {publishNativeFixtureInput,nativeFixtureTitleResponse} from './native-host-services.ts'
 
 type Call={kind:'tool';name:string;arguments:Record<string,unknown>;callId:ToolCallId;resolve:(result:ToolExecutionResult)=>void}
 type Answer={kind:'answer';text:string}
@@ -17,6 +17,8 @@ export function nativeToolInvocation(ctx:Context,route?:{providers:string[];adap
  class ToolModel extends LlmAdapter{
   override async resolveModel(provider:string,model:string){return route?route.adapter.resolveModel(provider,model):{provider,id:model,name:model,defaultMaxTokens:1024}}
   async *stream(options:GenerateOptions):AsyncIterable<StreamChunk>{
+   const title=nativeFixtureTitleResponse(options)
+   if(title){yield* title;return}
    const state=states.get(String(options.sessionId))
    if(!state){assert.ok(route,'脚本只能服务显式选择的本人 Agent');yield* route.adapter.stream(options);return}
    while(!state.queue.length){

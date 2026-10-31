@@ -7,8 +7,9 @@ import {TeamService} from '@deepseek-ai/dsh-experimental-agent-team'
 import {SandboxPolicyService} from '@deepseek-ai/dsh-sandbox-policy'
 import {PermissionPresetService} from '@deepseek-ai/dsh-permission-presets'
 import {official} from '../../../../tests/native-auto-review-fixture.mjs'
-import {LlmRuntime,LlmAdapter,type StreamChunk,type UserMessage} from '@deepseek-ai/dsh-llm'
+import {LlmRuntime,LlmAdapter,type GenerateOptions,type StreamChunk,type UserMessage} from '@deepseek-ai/dsh-llm'
 import {SessionProjectionRegistry} from '@deepseek-ai/dsh-session-projection'
+import {SessionTitleService} from '@deepseek-ai/dsh-session-title'
 import {SystemPrompt} from '@deepseek-ai/dsh-system-prompt'
 import type {Agent} from '@deepseek-ai/dsh-agent'
 import TeloaAttachmentStore from '../../src/attachment-guard.ts'
@@ -58,6 +59,8 @@ export async function installNativeSessions(ctx:Context):Promise<void>{
 
 /** 生产装配必需的原生服务。外部模型仍由各集成用例控制，不替换 jobs/Team/权限实现。 */
 export async function installNativeHostServices(ctx:Context,directory:string):Promise<void>{
+ // 宿主新增标题依赖后，业务夹具也装配真实注册、投影与释放，冷恢复仍可核验空白状态。
+ if(!ctx.get('sessionTitle'))await ctx.plugin(SessionTitleService,{fallbackMaxWords:8,fallbackMaxBytes:120,maxTitleBytes:240})
  // 与宿主 inject 契约一致，使用官方本机路由服务承接对外接口，不替代业务处理或鉴权。
  if(!Reflect.get(ctx,'webServer'))await ctx.plugin((await official('dsh-host-webserver')).WebServer,{host:'127.0.0.1',port:0})
  if(!Reflect.get(ctx,'attachments'))await ctx.plugin(TeloaAttachmentStore,{dshHome:directory})
@@ -85,10 +88,27 @@ export async function installNativeJobTools(ctx:Context,config:import('@deepseek
  await ctx.plugin(createManagedToolJobs(sdk.namespace),config)
 }
 
-/** 只给人工控制轮次的业务夹具提供原生模型元数据；误启动推理立即失败。 */
+/** 辅助标题独立于业务脚本队列，仍经真实模型准入与用量回包完成。 */
+export function nativeFixtureTitleResponse(options?:GenerateOptions):AsyncIterable<StreamChunk>|undefined{
+ if(!options||Reflect.get(options,'purpose')!=='session-title')return
+ return (async function*(){
+  const text='集成测试会话'
+  yield {type:'block-start' as const,index:0,blockType:'text' as const}
+  yield {type:'text-delta' as const,index:0,text}
+  yield {type:'block-end' as const,index:0,block:{type:'text' as const,text}}
+  yield {type:'usage' as const,usage:{inputTokens:Math.ceil(Buffer.byteLength(JSON.stringify(options.messages),'utf8')/4),outputTokens:Math.ceil(Buffer.byteLength(text,'utf8')/4)}}
+  yield {type:'finish' as const,reason:{kind:'stop' as const}}
+ })()
+}
+
+/** 只给人工控制轮次的业务夹具提供原生模型元数据；误启动业务推理立即失败。 */
 export class ControlledPromptModel extends LlmAdapter{
  override async resolveModel(provider:string,model:string){return {provider,id:model,name:model,defaultMaxTokens:1024}}
- async *stream():AsyncIterable<StreamChunk>{throw Error('人工控制轮次的夹具不得启动模型推理')}
+ async *stream(options:GenerateOptions):AsyncIterable<StreamChunk>{
+  const title=nativeFixtureTitleResponse(options)
+  if(title){yield* title;return}
+  throw Error('人工控制轮次的夹具不得启动模型推理')
+ }
 }
 /** 浏览器 prompt 的模型替身仍经真实最终输入受理，不直接调用未授权的 Agent.followup。 */
 export async function publishNativeFixtureInput(ctx:Context,agent:Agent,message:UserMessage):Promise<void>{

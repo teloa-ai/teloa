@@ -426,12 +426,12 @@ async function applyHost(ctx:Context,projectRoot:string):Promise<void> {
   const signalActivity=createSignalActivity(runtimeRoot,()=>({CI:process.env.CI,NODE_ENV:process.env.NODE_ENV,...trusted}),()=>trusted)
   const reportResourceInstall=createResourceInstallReporter(runtimeRoot,()=>({CI:process.env.CI,NODE_ENV:process.env.NODE_ENV,...trusted}),()=>trusted)
   const workspaceRoot=resolveTeloaWorkspaceRoot(projectRoot,trusted)
-  registerTeloaSessionTitle(ctx,owner)
   const conversationDirectory=new ConversationDirectoryChanges()
   ctx.effect(()=>()=>conversationDirectory.dispose(),'Teloa 会话目录失效通知')
   const repository=conversationDirectory.trackWrites(new FileConversationRepository(resolve(runtimeRoot,'conversations.json')))
   // 启动时主动校验；损坏存储不得表现为一个正常的空工作台。
   await repository.read()
+  registerTeloaSessionTitle(ctx,owner,async sessionId=>(await repository.read()).some(row=>row.ownerId===owner&&row.sessionId===sessionId&&row.status==='ready'&&row.purpose===undefined))
   await installNativeSessionReferenceDirectory(ctx,{owner,bindings:()=>repository.read()})
   // 工作区不再是仓库根，装配期自己建出来；0o700 与运行目录里其余状态一致。
   await mkdir(workspaceRoot,{recursive:true,mode:0o700})

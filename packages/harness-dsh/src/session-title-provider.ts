@@ -85,10 +85,14 @@ export async function generateTeloaSessionTitle(ctx:Context,ownerId:string,reque
 }
 
 /** Native SessionTitleService schedules the provider asynchronously and publishes its title projection. */
-export function registerTeloaSessionTitle(ctx:Context,ownerId:string):void{
+export function registerTeloaSessionTitle(ctx:Context,ownerId:string,isOrdinaryConversation:(sessionId:string)=>Promise<boolean>):void{
  ctx.effect(()=>ctx.sessionTitle.register({
   id:providerId,
   automatic:'first-prompt',
-  generate:request=>generateTeloaSessionTitle(ctx,ownerId,request),
+  generate:async request=>{
+   // 执行会话的首条 user 输入是授权后的任务正文；辅助标题不能改变它的失败重试证据。
+   if(!await isOrdinaryConversation(String(request.session.id)))throw new Error('session title source is not an ordinary conversation')
+   return generateTeloaSessionTitle(ctx,ownerId,request)
+  },
  }),'Teloa 首问会话标题')
 }

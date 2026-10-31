@@ -16,13 +16,6 @@ import {readSecurityActionPanel} from '@teloa/contract'
 const ownerId='local:teloa-owner'
 const principal={ownerId,approverId:ownerId,scopeIds:['SOC']}
 
-function conversationHost(options:Parameters<typeof host>[0]={}){
-  const runtime=host(options)
-  // 本例不发送模型首问；只承接已核对的标题 provider 注册口，生成行为由标题专门用例验证。
-  runtime.ctx.provide('sessionTitle',{register:()=>()=>{}} as never)
-  return runtime
-}
-
 function page(){
   const item={
     scope:'SOC',type:'alert',id:'evt-production-wiring',version:1,title:'prod-03 异常脚本',source:'EDR',
@@ -103,7 +96,7 @@ test('production apply 以真实 Context、临时 PG 与实际 /teloa handler �
   process.env.DOCKER_HOST='unix://'+join(homedir(),'.orbstack/run/docker.sock')
   process.env.TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE='/var/run/docker.sock'
   const container=await new PostgreSqlContainer('postgres:17-alpine').withDatabase('teloa').start()
-  const connectionString=container.getConnectionUri(),alerts=await source(),runtime=conversationHost()
+  const connectionString=container.getConnectionUri(),alerts=await source(),runtime=host()
   await mkdir(join(root,'.runtime/teloa'),{recursive:true,mode:0o700})
   const config=join(root,'.runtime/teloa/database.json')
   await writeFile(config,JSON.stringify({connectionString}),{mode:0o600})
@@ -223,7 +216,7 @@ test('production apply 以真实 Context、临时 PG 与实际 /teloa handler �
   assert.deepEqual(await call(rpc,'security-actions/attention',{}),[])
 
   await runtime.ctx.fiber.dispose()
-  const restarted=conversationHost()
+  const restarted=host()
   try{
     await restarted.ready(join(root,'.runtime/dsh'))
     await apply(restarted.ctx,{projectRoot:root})
@@ -237,7 +230,7 @@ test('production apply 以真实 Context、临时 PG 与实际 /teloa handler �
   // 业务身份闸明确拒绝 general，直接把 scopeIds:[task.scope] 交给业务服务会让整次执行准备
   // 以 teloa/forbidden 中断——隔离宿主上表现为计划到点建了任务却永远产生不出 Run。
   // 这一段必须走真实装配：只测抽出来的判据函数，接线改回旧写法时不会变红。
-  const runtimeHost=conversationHost({agents:true})
+  const runtimeHost=host({agents:true})
   try{
     await runtimeHost.ready(join(root,'.runtime/dsh'))
     await apply(runtimeHost.ctx,{projectRoot:root})

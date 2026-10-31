@@ -3,8 +3,8 @@ import assert from 'node:assert/strict'
 import type {Context} from '@deepseek-ai/cordis'
 import {createUserMessage,type GenerateOptions} from '@deepseek-ai/dsh-llm'
 import {SessionSeq,type Session,type SessionEvent} from '@deepseek-ai/dsh-session'
-import type {SessionTitleProviderRequest} from '@deepseek-ai/dsh-session-title'
-import {generateTeloaSessionTitle,titleFromOutput,titleInput} from '../src/session-title-provider.ts'
+import type {SessionTitleProvider,SessionTitleProviderRequest} from '@deepseek-ai/dsh-session-title'
+import {generateTeloaSessionTitle,registerTeloaSessionTitle,titleFromOutput,titleInput} from '../src/session-title-provider.ts'
 import {nativeHotCausalityFixture,textAnswer} from './fixtures/native-hot-causality.ts'
 import {readSessionEvents} from '../src/session-events.ts'
 
@@ -29,6 +29,27 @@ function fixture(question='如何让会话标题自动更新？'){
  } as unknown as Context
  return {ctx,request,calls,message,events}
 }
+
+test('已注册标题 provider 只为已核验的普通会话调用模型，未知用途或存储失败不发出请求',async()=>{
+ const {ctx,request,calls}=fixture()
+ let provider:SessionTitleProvider|undefined,allowed=false,unavailable=false
+ Reflect.set(ctx,'effect',(effect:()=>unknown)=>effect())
+ Reflect.set(ctx,'sessionTitle',{register:(value:SessionTitleProvider)=>{provider=value;return()=>{provider=undefined}}})
+ registerTeloaSessionTitle(ctx,'local:teloa-owner',async sessionId=>{
+  assert.equal(sessionId,request.session.id)
+  if(unavailable)throw Error('会话存储读取失败')
+  return allowed
+ })
+ assert.ok(provider)
+ await assert.rejects(Promise.resolve().then(()=>provider!.generate(request)),/not an ordinary conversation/)
+ assert.equal(calls.length,0)
+ allowed=true
+ assert.equal((await provider.generate(request)).title,'会话标题自动更新方案')
+ assert.equal(calls.length,1)
+ unavailable=true
+ await assert.rejects(Promise.resolve().then(()=>provider!.generate(request)),/会话存储读取失败/)
+ assert.equal(calls.length,1)
+})
 
 test('首条本人问题经受控辅助模型调用生成短标题，且请求不携带工具',async()=>{
  const {ctx,request,calls,message}=fixture()
