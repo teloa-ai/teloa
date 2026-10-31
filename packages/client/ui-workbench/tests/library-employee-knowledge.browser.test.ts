@@ -73,7 +73,9 @@ test('资料库员工知识分组：在岗员工资料可见，退役员工与�
   assert.ok(await activeGroup.getByText('资料',{exact:true}).isVisible(),'员工分组应有「资料」段')
   assert.ok(await activeGroup.getByText('工作成果',{exact:true}).isVisible(),'员工分组应有「工作成果」段')
   // 1c. 按员工集中加入检索：一次把该员工的两条资料按来源去重加入。
-  const batch=activeGroup.getByRole('button',{name:'全部加入检索（2）',exact:true})
+  assert.equal(await directory.getByRole('button',{name:/全部加入检索/}).count(),0,'文件树不承载批量业务操作')
+  await page.getByRole('button',{name:'员工资料操作',exact:true}).click()
+  const batch=page.getByRole('button',{name:'全部加入检索（2）',exact:true})
   await batch.waitFor();await batch.click()
   await page.waitForFunction(()=>(window as any).__retrievalEnrolled.length===2)
   assert.deepEqual(await page.evaluate(()=>(window as any).__retrievalEnrolled).then((rows:string[])=>[...rows].sort()),['knowledge_emp-know-1','knowledge_emp-know-2'],'按员工批量加入两个资料来源')

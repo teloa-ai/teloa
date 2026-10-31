@@ -1,4 +1,6 @@
 const rows=[
+ ['employeeActions','员工资料操作','員工資料操作','Employee materials'],
+ ['employeeActionScope','员工','員工','Employee'],
  ['retrieval','资料检索','資料檢索','Material retrieval'],
  ['views','浏览资料','瀏覽資料','Browse materials'],
  ['noRecent','还没有访问记录','尚未有瀏覽記錄','No recent materials'],

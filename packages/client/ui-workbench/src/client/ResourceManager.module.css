@@ -22,7 +22,6 @@
 .treeBranch>summary strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:var(--teloa-font-control);font-weight:var(--teloa-weight-regular)}
 .treeBranch>summary small{color:var(--teloa-muted);font-size:var(--teloa-font-caption)}
 .treeGroup{display:grid;margin-left:14px;padding-left:7px;border-left:1px solid var(--teloa-border)}
-.treeBatch{margin:3px 0 3px 7px;padding:3px 7px;border:0;border-radius:6px;background:transparent;color:var(--teloa-secondary);font:inherit;font-size:var(--teloa-font-caption);text-align:left;cursor:pointer}.treeBatch:hover{background:var(--teloa-hover);color:var(--teloa-text)}.treeBatch:disabled{cursor:default;opacity:.6}
 .treeDocument{display:grid;grid-template-columns:14px minmax(0,1fr);align-items:center;gap:7px;width:100%;min-height:34px;padding:4px 7px;border:0;border-radius:7px;background:transparent;color:var(--teloa-text);font:inherit;text-align:left;cursor:pointer}
 .treeDocument:hover,.treeDocument[aria-current=page]{background:var(--teloa-subtle)}
 .treeDocument[aria-current=page]{background:var(--teloa-active);color:var(--teloa-text)}
@@ -107,6 +106,7 @@
 .views button[aria-current=page]{font-weight:var(--teloa-weight-medium)}
 .views svg{display:none}
 .listTitle{margin:0;font-size:var(--teloa-font-page);line-height:var(--teloa-leading-heading);font-weight:var(--teloa-weight-heading)}
+.listHeader{display:flex;flex-wrap:wrap;align-items:flex-start;justify-content:space-between;gap:12px;min-width:0}.listHeader>h2{min-width:0;overflow-wrap:anywhere}.batchPanel{display:grid;gap:12px;box-sizing:border-box;min-width:0;max-width:100%;padding:4px}.batchPanel.batchPanel label{display:grid;gap:6px;min-width:0;padding:0;cursor:default;background:transparent}.batchPanel select{box-sizing:border-box;width:100%;min-width:0}.batchPanel p{margin:0;color:var(--teloa-muted);font-size:var(--teloa-font-caption)}.batchPanel>button{white-space:normal;text-align:left;justify-content:flex-start;overflow-wrap:anywhere}
 .listCount{margin:6px 0 20px;font-size:var(--teloa-font-body);color:var(--teloa-muted)}
 .tableScroll{overflow:auto;max-width:100%}
 .fileTable{width:100%;border-collapse:collapse;font-size:var(--teloa-font-caption);text-align:left}

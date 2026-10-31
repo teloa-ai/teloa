@@ -99,6 +99,15 @@ for(const theme of ['light','dark'])for(const font of [14,28]){
  test('市场应用：搜索与操作同排、容器回流、分类和菜单可达 '+theme+' '+font,{timeout:120000},async t=>{
   for(const size of sizes){
    const label=JSON.stringify({theme,font,...size}),page=await mount(t,'market',size,font,theme)
+   await page.getByRole('button',{name:'AI 员工',exact:true}).click()
+   const card=page.locator('button[class*="gridCard"]').first();await card.waitFor()
+   const before=await card.boundingBox();await card.hover()
+   const tile=await card.evaluate((node:Element)=>{const parent=node.parentElement!,box=node.getBoundingClientRect(),p=parent.getBoundingClientRect();return {bottom:box.bottom,parentBottom:p.bottom,empty:Array.from(parent.querySelectorAll(':scope>[class*="rowAfter"]:empty')).map(el=>el.getBoundingClientRect().height),radius:getComputedStyle(node).borderBottomLeftRadius}})
+   assert.ok(tile.empty.every((height:number)=>height===0),'空的卡片补充区不能占用页脚高度')
+   assert.ok(Math.abs(tile.bottom-tile.parentBottom)<2,'没有补充操作的卡片悬浮背景应延伸到底部')
+   assert.notEqual(tile.radius,'0px');const after=await card.boundingBox();assert.deepEqual({width:after.width,height:after.height},{width:before.width,height:before.height},'悬浮不能改变卡片尺寸')
+   const actions=await page.getByRole('button',{name:'我的应用与技能',exact:true}).evaluate((node:Element)=>Array.from(node.parentElement!.children).map(el=>el.getBoundingClientRect().toJSON()))
+   if(Math.abs(actions[1].y-actions[2].y)<10)assert.ok(actions[2].x-actions[1].right<=24,label+' 市场页头操作应成组靠右，不能被弹性空白拉散')
    await page.getByRole('button',{name:'应用',exact:true}).click()
    const apps=page.getByRole('region',{name:'应用',exact:true}),search=apps.getByRole('searchbox'),mine=apps.getByRole('button',{name:/^我的应用 \d+$/})
    await search.waitFor();await fits(page,label)
@@ -137,6 +146,23 @@ test('自动化空目录与单条目录在窄屏和宽屏保持创建入口可�
   await create.click();await page.getByRole('textbox',{name:'持续工作目标',exact:true}).waitFor()
   assert.deepEqual(await page.evaluate(()=>{const f=(window as any).planFixture;return [f.creates,f.updates,f.conversations]}),[[],[],[]],'打开创建抽屉不创建或执行自动化')
   await page.keyboard.press('Escape');await page.getByRole('textbox',{name:'持续工作目标',exact:true}).waitFor({state:'hidden'})
+  await page.close()
+ }
+})
+
+test('原生下拉框保留键盘选择，箭头预留空间并支持系统高对比度',{timeout:60000},async t=>{
+ for(const theme of ['light','dark'])for(const font of [14,28]){
+  const page=await mount(t,'automation',sizes[3]!,font,theme,0)
+  await page.getByRole('button',{name:'新建自动化',exact:true}).click()
+  await page.getByRole('textbox',{name:'持续工作目标',exact:true}).fill('核对每周客户反馈')
+  await page.locator('dialog[open] button[type=submit]').click()
+  const select=page.locator('dialog[open] select').first();await select.waitFor()
+  const style=await select.evaluate((node:Element)=>{const s=getComputedStyle(node);return {appearance:s.appearance,padding:Number.parseFloat(s.paddingInlineEnd),image:s.backgroundImage}})
+  assert.equal(style.appearance,'none');assert.ok(style.padding>=40,'箭头与文字之间应留出空间');assert.match(style.image,/svg/)
+  await select.focus();await select.press('s');assert.equal(await select.inputValue(),'sales','键盘输入仍可定位原生选项')
+  await page.emulateMedia({forcedColors:'active'})
+  assert.equal(await select.evaluate((node:Element)=>getComputedStyle(node).appearance),'auto','高对比度使用系统箭头')
+  assert.deepEqual(await page.evaluate(()=>{const f=(window as any).planFixture;return [f.creates,f.updates]}),[[],[]])
   await page.close()
  }
 })

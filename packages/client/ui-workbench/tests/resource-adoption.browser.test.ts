@@ -25,7 +25,14 @@ test('员工16项资料经显式业务选择准备草稿，未知结果重用请
  const errors:string[]=[];page.on('pageerror',(e:Error)=>errors.push(e.message));await page.goto('http://127.0.0.1:'+(server.address() as {port:number}).port);await page.addStyleTag({content:bundle.output.flatMap(row=>row.type==='asset'&&row.fileName.endsWith('.css')?[String(row.source)]:[]).join('\n')});await page.addScriptTag({content:bundle.output.find(row=>row.type==='chunk')!.code})
  await page.evaluate(()=>{document.body.dataset.teloaUiFont='14'})
  for(const width of [390,768,1440])for(const size of [14,28]){
-  await page.setViewportSize({width,height:768});await page.evaluate((size:number)=>(window as any).adoptionAcceptance.appearance(size,'dark'),size)
+  await page.setViewportSize({width,height:768});await page.evaluate((size:number)=>(window as any).adoptionAcceptance.appearance(size,'dark'),size);await page.waitForFunction((size:number)=>document.querySelector('main')?.style.getPropertyValue('--teloa-design-text-base')===size/16+'rem',size)
+  const toolbar=page.getByRole('button',{name:'员工资料操作',exact:true})
+  const anchorHeight=await toolbar.evaluate((el:HTMLElement)=>el.parentElement!.getBoundingClientRect().height);await toolbar.click()
+  const menu=page.getByRole('dialog',{name:'员工资料操作',exact:true});await menu.waitFor();await page.waitForFunction(()=>{const node=document.querySelector('[role=dialog][aria-label="员工资料操作"]');return !!node&&getComputedStyle(node).position==='fixed'})
+  const position=await menu.evaluate((el:HTMLElement)=>{const b=el.getBoundingClientRect();return {left:b.left,right:b.right,top:b.top,bottom:b.bottom,background:getComputedStyle(el).backgroundColor,overflow:el.scrollWidth>el.clientWidth+1}})
+  assert.ok(position.left>=0&&position.right<=width&&position.top>=0&&position.bottom<=768,JSON.stringify({width,size,position}));assert.equal(position.overflow,false);assert.notEqual(position.background,'rgba(0, 0, 0, 0)')
+  assert.equal(await toolbar.evaluate((el:HTMLElement)=>el.parentElement!.getBoundingClientRect().height),anchorHeight,'批量菜单不应撑高资料工具栏')
+  if(process.env.TELOA_UI_SCREENSHOT_DIR&&size===14&&width===1440){await mkdir(process.env.TELOA_UI_SCREENSHOT_DIR,{recursive:true});await page.screenshot({path:join(process.env.TELOA_UI_SCREENSHOT_DIR,'employee-material-actions.png')})}
   const trigger=page.getByRole('button',{name:'将 16 项资料用于其他业务',exact:true});await trigger.scrollIntoViewIfNeeded();const before=await page.locator('[data-teloa-pane=detail]').boundingBox();await trigger.click()
   const drawer=page.getByRole('dialog',{name:'用于其他业务',exact:true});await drawer.waitFor();assert.equal((await page.locator('[data-teloa-pane=detail]').boundingBox())!.y,before!.y,'跨业务操作不占用资料页上方空间')
   assert.equal(await drawer.getByRole('heading',{name:'用于其他业务',exact:true}).count(),1)
@@ -33,10 +40,11 @@ test('员工16项资料经显式业务选择准备草稿，未知结果重用请
   const inset=await select.evaluate((el:HTMLElement)=>el.getBoundingClientRect().left-el.closest('dialog')!.getBoundingClientRect().left);assert.ok(Math.abs(inset-(width<600?20:24))<=2,'抽屉内容与标准表单边线对齐，不重复叠加页内面板间距')
   await drawer.locator('details summary').first().click();const sourceList=drawer.locator('ul[tabindex=\"0\"]').first();await sourceList.focus();await page.keyboard.press('End');await page.waitForFunction(()=>document.activeElement?.tagName==='UL'&&(document.activeElement as HTMLElement).scrollTop>0)
   if(process.env.TELOA_UI_SCREENSHOT_DIR&&size===14&&width!==768){await mkdir(process.env.TELOA_UI_SCREENSHOT_DIR,{recursive:true});await page.screenshot({path:join(process.env.TELOA_UI_SCREENSHOT_DIR,'resource-'+width+'.png')})}
-  await drawer.getByRole('button',{name:'取消',exact:true}).scrollIntoViewIfNeeded();await page.keyboard.press('Escape');await drawer.waitFor({state:'hidden'});assert.equal(await trigger.evaluate((el:HTMLElement)=>el===document.activeElement),true)
+  await drawer.getByRole('button',{name:'取消',exact:true}).scrollIntoViewIfNeeded();await page.keyboard.press('Escape');await drawer.waitFor({state:'hidden'});assert.equal(await toolbar.evaluate((el:HTMLElement)=>el===document.activeElement),true)
  }
  assert.deepEqual(await page.evaluate(()=>(window as any).adoptionAcceptance.calls),[],'只打开和关闭不准备或采用资料')
  await page.setViewportSize({width:1440,height:960});await page.evaluate(()=>(window as any).adoptionAcceptance.appearance(14,'light'))
+ await page.getByRole('button',{name:'员工资料操作',exact:true}).click()
  await page.getByRole('button',{name:'将 16 项资料用于其他业务',exact:true}).click()
  const panel=page.getByRole('region',{name:'用于其他业务',exact:true}),prepare=panel.getByRole('button',{name:'准备资料草稿',exact:true})
  assert.equal(await prepare.isDisabled(),true);await panel.getByLabel('目标业务',{exact:true}).selectOption('business-new');assert.equal(await panel.locator('option[value="soc"]').count(),0)
@@ -48,5 +56,12 @@ test('员工16项资料经显式业务选择准备草稿，未知结果重用请
  const final=await page.evaluate(()=>(window as any).adoptionAcceptance);assert.equal(final.resources.length,16);assert.equal(final.old.length,16);assert.ok(final.old.every((row:any)=>row.scopeIds[0]==='soc'));assert.ok(final.resources.every((row:any)=>row.scopeIds[0]==='business-new'));assert.equal(final.calls.filter((row:any)=>row.action==='apply').length,17);
  await page.getByRole('button',{name:'返回列表',exact:true}).click();const namesakes=page.locator('tbody tr').filter({has:page.getByRole('button',{name:'SOC依据01',exact:true})});assert.equal(await namesakes.count(),2)
  const oldRow=namesakes.filter({has:page.getByText('安全运营',{exact:true})}),newRow=namesakes.filter({has:page.getByText('安全运营实告警验收',{exact:true})});assert.equal(await oldRow.count(),1);assert.equal(await newRow.count(),1);assert.doesNotMatch((await namesakes.allInnerTexts()).join('\n'),/market:|resource:/)
- assert.equal(await oldRow.getByRole('button',{name:'SOC依据01',exact:true}).getAttribute('data-teloa-entry'),final.old[0].id);assert.equal(await newRow.getByRole('button',{name:'SOC依据01',exact:true}).getAttribute('data-teloa-entry'),final.resources.find((row:any)=>row.title==='SOC依据01').id);assert.deepEqual(errors,[])
+ assert.equal(await oldRow.getByRole('button',{name:'SOC依据01',exact:true}).getAttribute('data-teloa-entry'),final.old[0].id);assert.equal(await newRow.getByRole('button',{name:'SOC依据01',exact:true}).getAttribute('data-teloa-entry'),final.resources.find((row:any)=>row.title==='SOC依据01').id)
+ await newRow.getByRole('button',{name:'SOC依据01',exact:true}).click()
+ const document=page.locator('[data-teloa-pane=detail]');await document.getByRole('heading',{name:'SOC依据01',exact:true}).waitFor()
+ assert.doesNotMatch(await document.innerText(),/resource:original@1|market:soc/,'内部标识不应出现在默认文档视图')
+ const provenance=document.locator('details').filter({hasText:'resource:original@1 ← market:soc'});await provenance.locator('summary').click()
+ await provenance.getByText('resource:original@1 ← market:soc',{exact:true}).waitFor()
+ assert.equal(await page.evaluate(()=>(window as any).adoptionAcceptance.resources.length),16,'展开来源详情不修改原资料')
+ assert.deepEqual(errors,[])
 })

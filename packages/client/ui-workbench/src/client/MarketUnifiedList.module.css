@@ -161,4 +161,7 @@
 .grid .gridCard:hover{border-color:var(--teloa-control-border);box-shadow:var(--teloa-composer-shadow)}
 @media(max-width:600px){.grid.cards,.grid{gap:14px}.cards .gridCard{min-height:220px;padding:18px}.filterPanel{box-sizing:border-box;max-width:100%}}
 
-.cards>li:has(.rowAfter){display:flex;flex-direction:column;min-width:0}.cards>li:has(.rowAfter)>.gridCard{flex:1;border-bottom:0;border-bottom-left-radius:0;border-bottom-right-radius:0}.cards .rowAfter{margin:0;padding:16px 20px;border:1px solid var(--teloa-border);border-top:0;border-radius:0 0 12px 12px;background:var(--teloa-surface)}
+.cards>li:has(.rowAfter:not(:empty)){display:flex;flex-direction:column;min-width:0}.cards>li:has(.rowAfter:not(:empty))>.gridCard{flex:1;border-bottom:0;border-bottom-left-radius:0;border-bottom-right-radius:0}.cards .rowAfter{margin:0;padding:16px 20px;border:1px solid var(--teloa-border);border-top:0;border-radius:0 0 12px 12px;background:var(--teloa-surface)}
+.rowAfter:empty{display:none}
+.cards>li:has(.rowAfter:not(:empty)):hover>.rowAfter{background:var(--teloa-subtle)}
+.cards>li:has(.rowAfter:not(:empty)):hover>.gridCard{background:var(--teloa-subtle)}

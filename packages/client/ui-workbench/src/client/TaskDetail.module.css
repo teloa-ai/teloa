@@ -1,5 +1,5 @@
 /* 任务详情以阅读和交付为主；次要属性在同一个滚动面内按需展开。 */
-.heading{position:sticky;top:0;z-index:3;background:var(--teloa-task-detail-background,var(--teloa-background));padding-top:4px}
+.heading{position:sticky;top:calc(-1 * var(--teloa-task-detail-inset,24px));z-index:3;isolation:isolate;margin:calc(-1 * var(--teloa-task-detail-inset,24px)) calc(-1 * var(--teloa-task-detail-inline-inset,var(--teloa-task-detail-inset,24px))) 16px;padding:16px var(--teloa-task-detail-inline-inset,var(--teloa-task-detail-inset,24px)) 12px;background:var(--teloa-task-detail-background,var(--teloa-background));border-bottom:1px solid var(--teloa-border)}
 .heading>header{padding-bottom:12px;gap:8px}
 .heading h2{flex:1 1 240px;font-size:var(--teloa-font-section);font-weight:var(--teloa-weight-heading);line-height:var(--teloa-leading-heading)}
 .heading h2 [title],.heading h2[title]{-webkit-line-clamp:2}

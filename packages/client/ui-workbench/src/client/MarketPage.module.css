@@ -178,4 +178,4 @@
 .loadedControl>span{flex:1 1 calc(var(--teloa-font-control) * 8 + 12px)}.loadedControl button{margin-inline-start:auto}
 
 /* 分类导航与操作按市场面板本身回流，创建菜单始终锚定内容区右边界。 */
-.headerActions.headerActions{flex:1 1 calc(var(--teloa-font-control) * 18);min-width:0;max-width:100%}.headerActions>.toolMenu{margin-inline-start:auto}.headerActions>button{max-width:100%;white-space:normal;overflow-wrap:anywhere}
+.headerActions.headerActions{flex:0 1 auto;min-width:0;max-width:100%;margin-inline-start:auto;justify-content:flex-end}.headerActions>.toolMenu{flex:none;width:auto;max-width:100%;margin-inline-start:0}.headerActions>button{max-width:100%;white-space:normal;overflow-wrap:anywhere}
