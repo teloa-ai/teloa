@@ -241,7 +241,7 @@ export function ArtifactPanel({ messageAuthor, taskSources, taskRuns, recovery, 
         setBusy(false);
     } }}>{t("artifact.panel.text.015")}{item.title}</button>)}
       {loadError && (target.source.kind === 'session' || target.source.kind === 'task') && <p role="alert">{loadError}{t("artifact.panel.text.022")}</p>}{busy && <p role="status">{t("artifact.panel.text.023")}</p>}{error && <p role="alert" className={base.error}>{error}</p>}{notice && <p role="status">{notice}</p>}
-      {sourceError && <p role="status">{sourceError}{t("artifact.panel.text.024")}</p>}
+      {sourceError && !(artifact?.storage==='persistent'&&version&&view==='preview') && <p role="status">{sourceError}{t("artifact.panel.text.024")}</p>}
       {showList&&rows.length>0?<section className={css.resultList} aria-label={t('artifact.panel.allResults')}>
         <header><h3>{source?.title||t('artifact.panel.text.006')}</h3><p>{t('artifact.panel.listHelp')}</p></header>
         {rows.map(item=>{const linked=item.links.find(link=>sourceKey(link.object)===sourceKey(target.source))?.artifactVersion,current=item.versions.find(row=>row.number===(item.id===selectedId?versionNumber:linked))??item.versions.at(-1)!;return <button type="button" className={css.resultRow} key={item.id} onClick={()=>choose(item.id)}>

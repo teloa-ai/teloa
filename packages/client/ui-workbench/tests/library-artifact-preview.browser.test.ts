@@ -59,6 +59,7 @@ test('资料目录直接打开已保存成果不依赖任务缓存，固定版�
  await directory.getByRole('button',{name:'Auto Dream · 每日小结',exact:true}).click()
  await panel.getByText('第二版固定正文',{exact:true}).waitFor()
  assert.equal(await panel.getByText('请求的内容不存在或已不可用。',{exact:true}).count(),0)
+ assert.doesNotMatch(await panel.innerText(),/操作未完成/,'成功读取的已保存正文不因任务缓存缺席误报失败')
  assert.equal(await page.evaluate(()=>(window as any).libraryArtifact.taskCount()),0,'读取成果不需要先访问任务页')
  if(process.env.TELOA_UI_SCREENSHOT_DIR){await mkdir(process.env.TELOA_UI_SCREENSHOT_DIR,{recursive:true});await page.screenshot({path:join(process.env.TELOA_UI_SCREENSHOT_DIR,'library-artifact-preview.png')})}
  await panel.getByRole('button',{name:'关闭产物面板',exact:true}).click()
