@@ -7,6 +7,7 @@ import {loadPlaywright,launchOptions} from './fixtures/load-playwright.mjs'
 
 const root=fileURLToPath(new URL('../../../../',import.meta.url)),client=fileURLToPath(new URL('../src/client/',import.meta.url)),virtual=root+'__menu_drawer_origin_fixture.tsx'
 let browser:any,script:string,styles:string
+const businessMenu=(page:any)=>page.locator('main > details').filter({has:page.locator(':scope > summary').filter({hasText:/^更多$/})})
 before(async()=>{
  const entry=`import React,{useState} from 'react';import {createRoot} from 'react-dom/client';import {BusinessMoreMenu} from '${client}BusinessMoreMenu.tsx';import {WorkNavigation} from '${client}WorkNavigation.tsx';import {ContextDrawer} from '${client}ContextDrawer.tsx';import {LocalRetrievalResources} from '${client}LocalRetrievalResources.tsx';import {I18nProvider} from '${client}i18n/provider.tsx';import {translateMessage} from '${client}i18n/messages.ts';
  const noop=()=>{},directory={rows:[],status:'ready'},managed={ready:true,baseline:true,archived:[],workspaces:[],pending:{}},native={byId:{},ids:[]},work={subscribe:()=>noop,getDirectorySnapshot:()=>directory,getSnapshot:()=>({})},management={subscribe:()=>noop,getSnapshot:()=>managed},actions=new Proxy({},{get:()=>noop}),snapshot={locale:'zh-CN',dshLocale:'zh',revision:1},runtime={getSnapshot:()=>snapshot,subscribe:()=>noop,t:(key,params)=>translateMessage('zh-CN',key,params)};
@@ -35,7 +36,7 @@ for(const origin of ['业务资源','新建协作群'])test(`${origin}菜单打�
  const page=await browser.newPage({viewport:{width:1280,height:900}}),errors:string[]=[];page.setDefaultTimeout(4000);page.on('pageerror',(error:Error)=>errors.push(error.message));t.after(async()=>{await page.close();assert.deepEqual(errors,[])})
  await page.route('**/*',(route:any)=>route.request().url()==='http://127.0.0.1/menu-origin'?route.fulfill({contentType:'text/html',body:'<!doctype html><html><body><div id="root"></div></body></html>'}):route.abort())
  await page.goto('http://127.0.0.1/menu-origin');await page.addStyleTag({content:styles});await page.addScriptTag({content:script})
- const trigger=origin==='业务资源'?page.locator('main > details > summary'):page.getByRole('button',{name:'新建',exact:true})
+ const trigger=origin==='业务资源'?businessMenu(page).locator(':scope > summary'):page.getByRole('button',{name:'新建',exact:true})
  const choose=()=>origin==='业务资源'?page.getByRole('button',{name:origin,exact:true}).click():page.getByRole('menuitem',{name:origin,exact:true}).click()
  for(const dismissal of ['Escape','关闭','外点']){
   await trigger.click();await choose();const drawer=page.getByRole('dialog',{name:origin,exact:true});await drawer.waitFor();const draft=drawer.getByRole('textbox',{name:'当前窗口草稿',exact:true})
@@ -49,10 +50,11 @@ for(const origin of ['业务资源','新建协作群'])test(`${origin}菜单打�
 test('通用工作菜单三项与正式业务九项顺序一致，Escape不选择动作',async t=>{
  const page=await browser.newPage({viewport:{width:1280,height:900}});page.setDefaultTimeout(4000);t.after(()=>page.close())
  await page.route('**/*',(route:any)=>route.abort());await page.setContent('<html><body><div id="root"></div></body></html>');await page.addStyleTag({content:styles});await page.addScriptTag({content:script})
- const menu=page.locator('main > details'),trigger=menu.locator(':scope > summary')
+ const menu=businessMenu(page),trigger=menu.locator(':scope > summary')
+ await trigger.waitFor();assert.equal(await menu.count(),1,'业务菜单不能与语义试搜折叠块混淆')
  await page.evaluate(()=>(window as any).menuFixture.scope('general'));await trigger.click()
  assert.deepEqual(await menu.getByRole('button').allTextContents(),['当前业务任务','已完成任务','自动化'])
- await page.keyboard.press('Escape');await page.waitForFunction(()=>!document.querySelector('main > details')?.hasAttribute('open'))
+ await page.keyboard.press('Escape');await page.waitForFunction((node:HTMLElement)=>!node.hasAttribute('open'),await menu.elementHandle())
  assert.equal(await page.getByRole('dialog').count(),0)
  await page.evaluate(()=>(window as any).menuFixture.scope('SOC'));await trigger.click()
  assert.deepEqual(await menu.getByRole('button').allTextContents(),['调整业务定义','数据连接','业务资源','手动定义','分享业务配置','已完成任务','当前业务任务','变更集复核','业务团队'])
