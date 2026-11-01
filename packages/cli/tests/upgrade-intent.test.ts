@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import {mkdtemp,realpath,mkdir,writeFile,readFile,rm,rename,lstat} from 'node:fs/promises'
+import {mkdtemp,realpath,mkdir,writeFile,readFile,rm,rename,lstat,chmod} from 'node:fs/promises'
 import {tmpdir} from 'node:os'
 import {join} from 'node:path'
 import {createHash,randomUUID} from 'node:crypto'
@@ -111,4 +111,31 @@ test('提交维护备份即使放在intent固定目录也拒绝；并发安装�
  await mkdir(value.intent.backup,{recursive:true});await writePrivateJson(join(value.intent.backup,'backup-manifest.json'),{schema:'teloa.maintenance-backup/v1'})
  await assert.rejects(f.run(),/专用|同安装维护备份/);assert.equal(f.counts().backups,0)
  await withInstallLock(f.state.layout.home,async()=>{await assert.rejects(f.run(),/另一项安装/);assert.equal(f.counts().backups,0)})
+})
+
+
+test('普通v1 intent在备份中Docker端口重绑定后可完成并正常resume，旧intent冻结SHA不改',async t=>{
+ const f=await fixture(t),password='a'.repeat(64),name='teloa-'+f.state.id
+ const config=(port:number)=>({connectionString:'postgresql://teloa:'+password+'@127.0.0.1:'+port+'/teloa'})
+ await writePrivateJson(join(f.state.layout.runtimeRoot,'database.json'),config(34065))
+ await writeFile(join(f.state.layout.runtimeRoot,'postgres.env'),'POSTGRES_DB=teloa\nPOSTGRES_USER=teloa\nPOSTGRES_PASSWORD='+password+'\n',{mode:0o600})
+ const bin=join(f.root,'bin');await mkdir(bin)
+ const docker=join(bin,'docker'),proof={Name:'/'+name,Config:{Labels:{'ai.teloa.install':f.state.id},Env:['POSTGRES_DB=teloa','POSTGRES_USER=teloa','POSTGRES_PASSWORD='+password]},State:{Running:false},Mounts:[{Type:'volume',Name:name+'-data',Destination:'/var/lib/postgresql/data'}],HostConfig:{PortBindings:{'5432/tcp':[{HostIp:'127.0.0.1',HostPort:''}]}},NetworkSettings:{Ports:{}}},volume={Name:name+'-data',Labels:{'ai.teloa.install':f.state.id}}
+ await writeFile(docker,'#!'+process.execPath+'\nconst a=process.argv.slice(2);if(a[0]==="context")console.log(JSON.stringify([{Endpoints:{docker:{Host:"unix:///synthetic-docker"}}}]));else if(a[0]==="info")console.log("linux");else if(a[0]==="container")console.log(JSON.stringify(['+JSON.stringify(proof)+']));else if(a[0]==="volume")console.log(JSON.stringify(['+JSON.stringify(volume)+']));else process.exit(1);\n',{mode:0o700});await chmod(docker,0o700)
+ const beforePath=process.env.PATH;process.env.PATH=bin+':'+(beforePath??'');t.after(()=>{if(beforePath===undefined)delete process.env.PATH;else process.env.PATH=beforePath})
+ await f.begin()
+ const before=await readPrivateJson(f.intentPath) as {intent:{databaseConfigSha256:string}}
+ // 与真实createBackup一致：authorize先过，数据库准备随后重写易变port，onVerified必须仍能保存检查点。
+ const original=f.p.backup
+ f.p.backup=async(state,output,options)=>{
+  assert.ok(options);await authorizeOrdinaryUpgradeBackup(state,output,options.ordinaryUpgradeId)
+  await writePrivateJson(join(state.layout.runtimeRoot,'database.json'),config(34066))
+  return original(state,output,options)
+ }
+ const next=(await f.run())!;assert.equal(next.version,f.to)
+ const after=await readPrivateJson(f.intentPath) as typeof before
+ assert.deepEqual(after.intent,before.intent)
+ assert.deepEqual(await readPrivateJson(join(f.state.layout.runtimeRoot,'database.json')),config(34066))
+ const ready=await withInstallLock(next.layout.home,()=>resumeUpgradeInstall(next,f.to,f.target,f.resume));assert.equal(ready.phase,'ready')
+ assert.equal(f.counts().backups,1)
 })

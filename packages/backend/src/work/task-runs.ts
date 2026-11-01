@@ -1,3 +1,4 @@
+import {withTaskRunReadSnapshot} from './task-run-read-snapshot.ts'
 import {deriveOwnerTaskAnalysisScope,assertOwnerTaskAnalysisInput} from './owner-task-analysis-scope.ts'
 import {deriveRunAnalysisScope,verifyRunAnalysisScope,assertRunAnalysisContext,assertRunAnalysisControls,freezeAnalysisContinuation,verifyAnalysisContinuation} from './run-analysis-scope.ts'
 import {readRunAnalysisScope,runAnalysisSelfAuthorizedTools,type RunAnalysisScope} from '@teloa/contract'
@@ -581,14 +582,33 @@ private async readVerified(db:PoolClient,owner:string,row:Record<string,unknown>
   const db=await this.pool.connect()
   try{
    await db.query('begin')
-   const stored=(await db.query('select * from teloa_task_runs where owner_id=$1 and request_id=$2 for share',[owner,row.requestId])).rows[0]
-   if(!stored){await db.query('commit');return null}
-   const run=await this.readVerified(db,owner,stored)
-   const selectedMemoryIds=frozenSessionId===undefined?requestedMemoryIds:readTaskRunMemorySelection(stored.request_spec.selectedMemoryIds)
-   if(run.executor?.kind==='owner'&&selectedMemoryIds!==undefined)throw new WorkError('teloa/invalid-input','本人执行没有岗位经验选择。')
-   if(run.taskId!==row.taskId||run.taskVersion!==row.expectedTaskVersion||frozenSessionId!==undefined&&run.sessionId!==frozenSessionId||!isDeepStrictEqual(readTaskRunMemorySelection(stored.request_spec.selectedMemoryIds),selectedMemoryIds))throw new WorkError('teloa/conflict','同一执行请求不能改为其他任务、版本或经验选择。')
+   const run=await this.readRequestInTransaction(db,owner,row,requestedMemoryIds,frozenSessionId)
    await db.query('commit');return run
   }catch(error){await db.query('rollback');throw error}finally{db.release()}
+ }
+ private async readRequestInTransaction(db:PoolClient,owner:string,row:Record<string,unknown>,requestedMemoryIds:ReturnType<typeof readTaskRunMemorySelection>,frozenSessionId?:string):Promise<TaskRun|null>{
+  const stored=(await db.query('select * from teloa_task_runs where owner_id=$1 and request_id=$2 for share',[owner,row.requestId])).rows[0]
+  if(!stored)return null
+  const run=await this.readVerified(db,owner,stored)
+  const selectedMemoryIds=frozenSessionId===undefined?requestedMemoryIds:readTaskRunMemorySelection(stored.request_spec.selectedMemoryIds)
+  if(run.executor?.kind==='owner'&&selectedMemoryIds!==undefined)throw new WorkError('teloa/invalid-input','本人执行没有岗位经验选择。')
+  if(run.taskId!==row.taskId||run.taskVersion!==row.expectedTaskVersion||frozenSessionId!==undefined&&run.sessionId!==frozenSessionId||!isDeepStrictEqual(readTaskRunMemorySelection(stored.request_spec.selectedMemoryIds),selectedMemoryIds))throw new WorkError('teloa/conflict','同一执行请求不能改为其他任务、版本或经验选择。')
+  return run
+ }
+ /** 仅目录使用同一读快照；历史同源链、技能、来源与谱系仍经原完整读取器验证。 */
+ async directorySessionSnapshot(owner:string,input:unknown):Promise<{current:TaskRun;anchor:TaskRun}|null>{
+  actor(owner);const row=taskInput(input,['requestId','taskId','expectedTaskVersion','sessionId'])
+  if(!uuid(row.requestId)||!uuid(row.taskId)||!positive(row.expectedTaskVersion)||!session(row.sessionId))throw new WorkError('teloa/invalid-input','执行请求或会话身份不正确。')
+  return withTaskRunReadSnapshot(this.pool,async(db,fresh)=>{
+   const selected=await this.sessionRunInTransaction(db,owner,row.sessionId as string)
+   const anchor=await this.readRequestInTransaction(db,owner,row,undefined,row.sessionId as string)
+   if(!selected||!anchor)return null
+   // 不用 memo 回答最终 current 身份：真实重读，仍以本次 REPEATABLE READ 快照为准。
+   const latest=(await fresh.query('select id,state,task_version from teloa_task_runs where session_id=$1 order by created_at desc,id desc for share',[row.sessionId])).rows
+   const retained=latest.filter(item=>!['withdrawn','configuration_failed'].includes(item.state)).sort((a,b)=>b.task_version-a.task_version)
+   if((retained[0]??latest[0])?.id!==selected.run.id)throw new WorkError('teloa/conflict','运行会话与原任务预约不一致，请重新核对。')
+   return {current:selected.run,anchor}
+  })
  }
  /** 原生运行配置在会话或关联产生前失败时，也保存一条只读、不可提交的 Run。 */
  async failPreparation(owner:string,input:unknown,error:unknown,fixedAgentPresetId?:string):Promise<TaskRun>{

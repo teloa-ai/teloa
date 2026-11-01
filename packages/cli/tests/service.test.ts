@@ -33,6 +33,22 @@ test('失联进程身份不能被当成已停止，也不能对 PID 发送停止
  assert.equal((await service.serviceStatus(state)).app,'unknown')
  await assert.rejects(service.stopService(state),/身份|失联/)
 })
+test('工作读口unknown时仍由已认证控制通道核对停止，控制端拒绝必须原样保留',async()=>{
+ const home=join(await mkdtemp(join(tmpdir(),'teloa-control-stop-')),'home'),state:InstallState={schema:'teloa.install/v1',id:randomUUID(),version:'0.2.0-alpha.3',layout:await resolveLayout({home,version:'0.2.0-alpha.3'}),database:{kind:'existing',configFile:join(home,'database.json')},phase:'prepared',port:65528}
+ const nonce=randomUUID();let stopRequests=0
+ const server=createServer((req,res)=>{
+  res.setHeader('content-type','application/json')
+  if(req.url==='/status')res.end(JSON.stringify({ok:true,nonce,installId:state.id,value:{app:'unknown',activeWork:-1,database:'ready',version:state.version,port:state.port}}))
+  else{stopRequests++;res.statusCode=409;res.end(JSON.stringify({ok:false,nonce,installId:state.id,error:'仍有运行中工作，请先收尾'}))}
+ })
+ await new Promise<void>(done=>server.listen(0,'127.0.0.1',done))
+ try{
+  await writePrivateJson(join(state.layout.instanceRoot,'control.json'),{pid:process.pid,startedAt:new Date().toISOString(),nonce,installId:state.id,port:(server.address() as any).port,secret:'b'.repeat(64)})
+  await assert.rejects(service.stopService(state),/仍有运行中工作/)
+  assert.equal(stopRequests,1);assert.equal(service.alive(process.pid),true)
+  await assert.rejects(access(join(state.layout.instanceRoot,'state.json')),'控制拒绝时不能落已停止状态')
+ }finally{server.close()}
+})
 test('重复启动必须等正在启动的原服务真正就绪',async()=>{
  const home=join(await mkdtemp(join(tmpdir(),'teloa-starting-')),'home')
  const state:InstallState={schema:'teloa.install/v1',id:randomUUID(),version:'0.2.0-alpha.3',layout:await resolveLayout({home,version:'0.2.0-alpha.3'}),database:{kind:'docker'},phase:'prepared',port:65533}

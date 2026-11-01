@@ -8,7 +8,7 @@ import {RoleWorkEligibilityService} from './role-work-eligibility.ts'
 import {readRoleWorkAuthorization} from './run-role-snapshot.ts'
 type Kind='task'|'role'
 export type ObjectConversation={kind:Kind;objectId:string;objectVersion:number;conversationId:string;sessionId:string;version:number;active:boolean;updatedAt:string;scopeId:string|null;sourceOnly?:true;readOnly?:true;displayTitle?:string}
-type RunDirectory=(owner:string,filter:{roleId?:string;sessionId?:string})=>Promise<readonly {link:ObjectConversation}[]>
+type RunDirectory=(owner:string,filter:{roleId?:string;sessionId?:string},signal?:AbortSignal)=>Promise<readonly {link:ObjectConversation}[]>
 type Inspect=(owner:string,sessionId:string)=>Promise<{id:string;sessionId:string;ownerId:string;status:string;purpose?:Conversation['purpose']}>
 const uuid=(v:unknown):v is string=>typeof v==='string'&&/^[a-f0-9]{8}-[a-f0-9]{4}-[1-5][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i.test(v)
 const session=(v:unknown):v is string=>typeof v==='string'&&/^[a-zA-Z0-9_-]{1,128}$/.test(v)
@@ -75,17 +75,21 @@ export class ObjectConversationService{
    admission?.assertCurrent();await db.query('commit');admission?.assertCurrent();return {task,role,link}
   }catch(e){await db.query('rollback');throw e}finally{db.release()}
  }
- async list(owner:string,input:unknown):Promise<ObjectConversation[]>{
+ async list(owner:string,input:unknown,signal?:AbortSignal):Promise<ObjectConversation[]>{
+  signal?.throwIfAborted()
   const row=taskInput(input,['kind','objectId']);target(owner,row);await object(this.pool,owner,row.kind,row.objectId)
   const rows=await this.pool.query('select * from teloa_object_conversations where owner_id=$1 and kind=$2 and object_id=$3 order by updated_at,session_id',[owner,row.kind,row.objectId]),manual=rows.rows.map(read)
-  const derived=row.kind==='role'?await this.runDirectory?.(owner,{roleId:row.objectId as string})??[]:[]
+  const derived=row.kind==='role'?await this.runDirectory?.(owner,{roleId:row.objectId as string},signal)??[]:[]
+  signal?.throwIfAborted()
   return [...new Map([...manual,...derived.map(entry=>entry.link)].map(link=>[link.sessionId,link])).values()]
  }
- async bySession(owner:string,input:unknown):Promise<ObjectConversation[]>{
+ async bySession(owner:string,input:unknown,signal?:AbortSignal):Promise<ObjectConversation[]>{
+  signal?.throwIfAborted()
   const row=taskInput(input,['sessionId'])
   if(typeof owner!=='string'||!owner.trim()||owner.length>128||!session(row.sessionId))throw new WorkError('teloa/invalid-input','需要有效的本人及会话身份。')
   const rows=await this.pool.query("select * from teloa_object_conversations where owner_id=$1 and session_id=$2 and active=true and source_only=false order by case when kind='role' then 0 else 1 end,updated_at desc,object_id",[owner,row.sessionId])
-  const manual=rows.rows.map(read),derived=await this.runDirectory?.(owner,{sessionId:row.sessionId as string})??[]
+  const manual=rows.rows.map(read),derived=await this.runDirectory?.(owner,{sessionId:row.sessionId as string},signal)??[]
+  signal?.throwIfAborted()
   // 运行身份来自规范Run，不允许手工关联把该会话改挂到另一个员工；普通手工会话不变。
   return derived.length?[...manual.filter(link=>link.kind!=='role'),...derived.map(entry=>entry.link)]:manual
  }

@@ -15,7 +15,9 @@ function fixture(){
  const run=(index:number)=>{const value=runs[index];assert.ok(value,'夹具必须包含指定历史Run');return value}
  const conversation={id:requestId,ownerId:owner,sessionId,requestedSessionId:sessionId,status:'ready',purpose:'task-run',requestId,title:'原工单核验',run:{taskId,taskVersion:1,roleId,roleVersion:4,agentPresetId:'standard'}}
  const calls:string[]=[],service={sessionRun:async(who:string,input:{sessionId:string})=>{assert.equal(who,owner);assert.deepEqual(input,{sessionId});calls.push('verified-history');return run(2)},requestForSession:async(who:string,input:{requestId:string;taskId:string;expectedTaskVersion:number;sessionId:string})=>{assert.equal(who,owner);calls.push('original-reservation');if(input.requestId!==requestId||input.taskId!==taskId||input.expectedTaskVersion!==1||input.sessionId!==sessionId)throw new WorkError('teloa/conflict','预约锚点不符');return run(0)},get:async(who:string,input:{runId:string})=>{assert.equal(who,owner);calls.push('selected-run');const value=runs.find(run=>run.id===input.runId);assert.ok(value,'夹具只允许既有Run');return value}}
- const handler=()=>createTaskRunHandler(owner,async()=>service as unknown as TaskRunService,{check:async()=>{throw Error('只读不能装配')},send:async()=>{throw Error('只读不能发送')},stop:async()=>{throw Error('只读不能停止')},events:async()=>[]},undefined,{conversations:{snapshotBySession:async(who,id)=>{assert.equal(who,owner);assert.equal(id,sessionId);calls.push('reservation');return conversation as never},createRun:async()=>{throw Error('不能创建')},runReservation:async()=>{throw Error('不能预约')},failRunReservation:async()=>{throw Error('不能写入')}},links:{change:async()=>{throw Error('不能关联')}}})
+ const directorySnapshots=async(who:string,input:{requestId:string;taskId:string;expectedTaskVersion:number;sessionId:string})=>{const current=await service.sessionRun(who,{sessionId:input.sessionId}),anchor=await service.requestForSession(who,input);if((await service.sessionRun(who,{sessionId:input.sessionId})).id!==current.id)throw new WorkError('teloa/conflict','当前运行已变化');return {current,anchor}}
+ Object.assign(service,{directorySessionSnapshot:directorySnapshots})
+ const handler=(models?:Parameters<typeof createTaskRunHandler>[8])=>createTaskRunHandler(owner,async()=>service as unknown as TaskRunService,{check:async()=>{throw Error('只读不能装配')},send:async()=>{throw Error('只读不能发送')},stop:async()=>{throw Error('只读不能停止')},events:async()=>[]},undefined,{conversations:{snapshotBySession:async(who,id)=>{assert.equal(who,owner);assert.equal(id,sessionId);calls.push('reservation');return conversation as never},createRun:async()=>{throw Error('不能创建')},runReservation:async()=>{throw Error('不能预约')},failRunReservation:async()=>{throw Error('不能写入')}},links:{change:async()=>{throw Error('不能关联')}}},undefined,undefined,undefined,models)
  return {runs,run,conversation,calls,service,handler}
 }
 test('本人只读当前与明确历史Run复用完整后端历史验证，原reservation不改绑',async()=>{
@@ -28,6 +30,38 @@ test('本人只读当前与明确历史Run复用完整后端历史验证，原re
 test('只有单Run时仍沿原预约读取，不需要新会话或来源迁移',async()=>{
  const f=fixture();f.service.sessionRun=async()=>f.run(0)
  const result=await f.handler()('task-runs/session',{sessionId},AbortSignal.timeout(5000));assert.equal(result.run.id,ids[0]);assert.equal(result.anchor.id,ids[0])
+})
+test('历史目录不等待模型详情，详情读口仍读取模型状态且共用完整身份验证',async()=>{
+ const f=fixture(),before=structuredClone(f.conversation)
+ let detailCalls=0,started!:()=>void,release!:()=>void
+ const detailStarted=new Promise<void>(resolve=>{started=resolve}),detailGate=new Promise<void>(resolve=>{release=resolve})
+ const read=f.handler({read:async()=>{detailCalls++;started();await detailGate;return {state:'unavailable'}}})
+ const full=read('task-runs/session',{sessionId},AbortSignal.timeout(5000))
+ try{
+  await detailStarted
+  const rows=await Promise.all(Array.from({length:65},()=>read.readDirectorySession({sessionId},AbortSignal.timeout(5000))))
+  assert.equal(rows.length,65);assert.ok(rows.every(row=>row.run.id===ids[2]&&row.anchor.id===ids[0]&&row.currentRunId===ids[2]))
+  assert.equal(detailCalls,1,'目录不能触发被阻塞的原生日志详情读取')
+  assert.equal(f.calls.filter(call=>call==='verified-history').length,132,'每次目录读仍重核完整历史和当前Run')
+  assert.equal(f.calls.filter(call=>call==='original-reservation').length,66)
+  assert.deepEqual(f.conversation,before)
+ }finally{release()}
+ assert.equal(Reflect.get((await full).run,'modelStatus')?.state,'unavailable')
+})
+test('内部目录拒绝错归属、历史损坏和current切换，不接受公开详情开关',async()=>{
+ for(const fault of ['owner','role','history','current'] as const){
+  const f=fixture(),read=f.handler();let currentReads=0
+  if(fault==='owner')f.conversation.ownerId='other'
+  if(fault==='role')f.run(2).roleId=requestId
+  if(fault==='history')f.service.sessionRun=async()=>{throw new WorkError('teloa/storage-corrupt','历史边不符')}
+  if(fault==='current')f.service.sessionRun=async()=>f.run(currentReads++===0?2:1)
+  await assert.rejects(read.readDirectorySession({sessionId},AbortSignal.timeout(5000)),{code:fault==='history'?'teloa/storage-corrupt':'teloa/conflict'})
+ }
+ const f=fixture(),read=f.handler()
+ await assert.rejects(read('task-runs/session',{sessionId,includeDetails:false},AbortSignal.timeout(5000)),{code:'teloa/invalid-input'})
+ const controller=new AbortController();controller.abort()
+ await assert.rejects(read.readDirectorySession({sessionId},controller.signal),{name:'AbortError'})
+ assert.equal(f.calls.length,0,'已取消的目录请求不再开始读存储')
 })
 test('本人单Run授权anchor按身份字段核对，键顺序不同仍兼容',async()=>{
  const f=fixture(),executor={kind:'owner',grantId:requestId,grantVersion:1}

@@ -92,7 +92,8 @@ export type ComposerSuggestionPorts={
  * 这一层只做锦上添花，绝不打断会话，也不把错误抛给界面。
  */
 export async function readComposerSuggestion(ctx:Context,ports:ComposerSuggestionPorts,payload:unknown,signal?:AbortSignal):Promise<ComposerSuggestion>{
- const input=taskInput(payload,['sessionId'])
+ const input=taskInput(payload,['sessionId','cacheOnly'])
+ if(input.cacheOnly!==undefined&&typeof input.cacheOnly!=='boolean')throw new WorkError('teloa/invalid-input','建议读取选项不正确。')
  const sessionId=String(input.sessionId)
  const diagnosticId=createHash('sha256').update(sessionId).digest('hex').slice(0,12)
  // 运维只记录固定阶段/状态和内部错误码，不记录事实、建议、provider 原始异常或凭据。
@@ -113,9 +114,11 @@ export async function readComposerSuggestion(ctx:Context,ports:ComposerSuggestio
  if(!facts)return skip('no-facts')
  stage='model-prepare'
  let config:object|undefined
- try{config=await ports.model(sessionId)}catch(error){return failure(error)}
- const route=config as {provider?:unknown;model?:unknown}|undefined
- if(!route||typeof route.provider!=='string'||typeof route.model!=='string')return skip('no-model')
+ if(input.cacheOnly!==true){
+  try{config=await ports.model(sessionId)}catch(error){return failure(error)}
+  const route=config as {provider?:unknown;model?:unknown}|undefined
+  if(!route||typeof route.provider!=='string'||typeof route.model!=='string')return skip('no-model')
+ }
  // 辅助模型调用必须挂在**真实受理过的用户消息**上，否则会被最终因果闸拒绝（实测）。
  const live=ctx.agents.get(brandString<SessionId>(sessionId))
  if(!live||live!==agent)return skip('stale-agent')
@@ -169,6 +172,8 @@ export async function readComposerSuggestion(ctx:Context,ports:ComposerSuggestio
  const key=`${ports.owner}\0${sessionId}\0${source.id}\0${facts.answerSeq}\0${factsHash}\0${prepared.manifestId}\0${prepared.binding.generation}`
  const cache=cacheFor(ctx)
  if(cache.results.has(key)){report('cached');return {text:cache.results.get(key)??null}}
+ // 已显示候选的有效性检查绝不排队、创建辅助准入或调用模型。
+ if(input.cacheOnly===true)return skip('cache-missing')
  let pending=cache.pending.get(key)
  if(!pending){
   // 同一回复的并发读取共享计算；发起者取消时本次计算作废，后来者可重新请求。

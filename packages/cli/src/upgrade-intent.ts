@@ -10,6 +10,7 @@ import {createBackup,verifyBackup} from './maintenance.ts'
 import {serviceStatus} from './service.ts'
 import {stopDatabase,databaseConfig} from './database.ts'
 import {canUpgradeData} from './data-version.ts'
+import {matchesOrdinaryDatabaseConfig} from './upgrade-database-binding.ts'
 
 type Intent={schema:'teloa.ordinary-upgrade-intent/v1';id:string;source:InstallState;device:number;inode:number;to:string;sourceManifestSha256:string;targetManifestSha256:string;databaseConfigSha256:string|null;backup:string;purpose:'ordinary-upgrade'}
 type Attempt={id:string;staging:string;status:'issued'|'interrupted'|'failed'}
@@ -34,6 +35,7 @@ function readCheckpoint(value:unknown,i:Intent):Checkpoint{
  return c
 }
 async function databaseFingerprint(state:InstallState){const value=await optional(databaseConfig(state));return value===undefined?null:digest(JSON.stringify(value))}
+async function databaseMatches(state:InstallState,frozen:string|null){const value=await optional(databaseConfig(state));return value===undefined?frozen===null:matchesOrdinaryDatabaseConfig(state,value,frozen)}
 const hasVerifiedBackup=(c:Checkpoint)=>c.phase==='backup-ready'
 async function operation(state:InstallState){
  const raw=await optional(paths(state).intent) as {intent?:unknown;checkpoint?:unknown}|undefined
@@ -47,7 +49,7 @@ async function lease(state:InstallState,i?:Intent){
  if(h.isSymbolicLink()||!h.isDirectory()||await realpath(state.layout.home)!==state.layout.home||lock.pid!==process.pid||!uuid(lock.identity))throw denied()
  const actual=await readPrivateJson(join(state.layout.instanceRoot,'state.json')) as InstallState
  if(!isDeepStrictEqual(actual,state)||state.layout.instanceRoot!==join(state.layout.home,'instances/default')||state.layout.releaseRoot!==join(state.layout.home,'releases',state.version))throw denied()
- if(i&&(await databaseFingerprint(state)!==i.databaseConfigSha256||i.device!==h.dev||i.inode!==h.ino||state.id!==i.source.id||state.port!==i.source.port||!isDeepStrictEqual(state.database,i.source.database)||state.layout.workspaceRoot!==i.source.layout.workspaceRoot||state.layout.home!==i.source.layout.home||![i.source.version,i.to].includes(state.version)||!isDeepStrictEqual(state.layout,await resolveLayout({home:state.layout.home,workspace:state.layout.workspaceRoot,version:state.version}))))throw denied()
+ if(i&&(!await databaseMatches(state,i.databaseConfigSha256)||i.device!==h.dev||i.inode!==h.ino||state.id!==i.source.id||state.port!==i.source.port||!isDeepStrictEqual(state.database,i.source.database)||state.layout.workspaceRoot!==i.source.layout.workspaceRoot||state.layout.home!==i.source.layout.home||![i.source.version,i.to].includes(state.version)||!isDeepStrictEqual(state.layout,await resolveLayout({home:state.layout.home,workspace:state.layout.workspaceRoot,version:state.version}))))throw denied()
  return {home:h,lock}
 }
 async function checked(state:InstallState,version:string,sourceRoot?:string){

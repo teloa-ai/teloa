@@ -20,13 +20,13 @@ import {testRoleResponsibility} from './role-test-fixture.ts'
 let container:StartedPostgreSqlContainer,pool:Pool
 before(async()=>{process.env.DOCKER_HOST='unix://'+join(homedir(),'.orbstack/run/docker.sock');process.env.TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE='/var/run/docker.sock';container=await new PostgreSqlContainer('postgres:17-alpine').start();pool=new Pool({connectionString:container.getConnectionUri()});await initializeTeloaDatabase(pool)})
 after(async()=>{await pool?.end();await container?.stop()})
-async function fixture(){
+async function fixture(keys=['A','B','C']){
  const owner=randomUUID(),identity={id:randomUUID,now:()=>new Date().toISOString()},roles=new RoleService(pool,identity),role=await roles.create(owner,{requestId:randomUUID(),fields:{name:'原自动研判员',kind:'employee',scopes:['SOC'],duty:'只读研判',dataScope:'只读',executionScope:'代拟',skills:[],knowledge:[],responsibility:testRoleResponsibility,runtimeConfig:{agentPresetId:'standard'}}});
  const contexts=new Map<string,RunBusinessContext>();let stored:StoredConversation[]=[],hostCreates=0;const repository={read:async()=>structuredClone(stored),write:async(rows:StoredConversation[])=>{stored=structuredClone(rows)}};
  const conversations=new ConversationService(repository,{create:async id=>{hostCreates++;return id},inspect:async()=>{}},identity),runs=new TaskRunService(pool,identity,(actor,id)=>conversations.snapshotBySession(actor,id),{allowedTools:[],businessContext:async(_db,_owner,task)=>contexts.get(task.id)});
  const manualLinks=new ObjectConversationService(pool,(actor,id)=>conversations.snapshotBySession(actor,id),identity.now),tasks=new TaskService(pool,identity);
  const originals:{task:Awaited<ReturnType<TaskService['create']>>;run:Awaited<ReturnType<TaskRunService['prepare']>>;sessionId:string}[]=[],historical:typeof originals=[];
- for(const key of ['A','B','C']){
+ for(const key of keys){
   let task=await tasks.create(owner,{requestId:randomUUID(),fields:{title:'同名持续研判',goal:'核验'+key,scope:'SOC'},assignee:{roleId:role.id,expectedVersion:role.version}});const sessionId='task-run-'+randomUUID(),requestId=randomUUID();
   const snapshot={scope:'SOC',type:'alert',id:'alert-'+key,version:1,title:'合成告警-'+key,source:'隔离测试来源',observedAt:identity.now(),receivedAt:identity.now(),quality:'complete' as const,summary:'独立告警'+key,fields:[]};contexts.set(task.id,{taskId:task.id,sourceId:'test-alerts',object:{...snapshot,snapshotHash:businessObjectSnapshotHash(snapshot)}});
   if(key==='A'){
@@ -38,7 +38,7 @@ async function fixture(){
   const run=await runs.prepare(owner,{requestId,taskId:task.id,expectedTaskVersion:task.version,roleId:role.id,expectedRoleVersion:role.version,sessionId,expectedLinkVersion:1});await runs.claim(owner,{runId:run.id});await runs.record(owner,{runId:run.id,sessionId,nativeRequestId:run.nativeRequestId,evidence:{state:'ended',turn:0,messageSeq:1,endSeq:2,reason:'completed'}});originals.push({task,run,sessionId});
  }
  const handler=createTaskRunHandler(owner,async()=>runs,{check:async()=>{throw Error('目录不能装配')},send:async()=>{throw Error('目录不能发送')},stop:async()=>{throw Error('目录不能停止')},events:async()=>[]},undefined,{conversations,links:manualLinks});
- const readSession=async(actor:string,id:string)=>{assert.equal(actor,owner);return handler('task-runs/session',{sessionId:id},AbortSignal.timeout(10000))};
+ const readSession=async(actor:string,id:string)=>{assert.equal(actor,owner);return handler.readDirectorySession({sessionId:id},AbortSignal.timeout(10000))};
  const directory=new RoleRunConversationDirectory(pool,readSession),project=(actor:string,filter:{roleId?:string;sessionId?:string})=>directory.list(actor,filter),links=new ObjectConversationService(pool,(actor,id)=>conversations.snapshotBySession(actor,id),identity.now,project);
  const global=new ConversationService(repository,{create:async()=>{throw Error('不能新建')},inspect:async()=>{throw Error('不能激活')}},identity,undefined,async actor=>(await directory.list(actor)).map(row=>row.conversation));
  const snapshot=async()=>({stored:await repository.read(),runs:(await pool.query('select * from teloa_task_runs where owner_id=$1 order by id',[owner])).rows,links:(await pool.query('select * from teloa_object_conversations where owner_id=$1 order by kind,object_id,session_id',[owner])).rows,receipts:(await pool.query('select * from teloa_object_conversation_requests where owner_id=$1 order by request_id',[owner])).rows});
@@ -64,3 +64,31 @@ test('目录只接受规范owner/Task/Run绑定，历史核验损坏不得回退
  const f=await fixture();const mismatch=new RoleRunConversationDirectory(pool,async(actor,id)=>{const view=await f.readSession(actor,id);return {...view,conversation:{...view.conversation,ownerId:'other'}}});assert.deepEqual(await mismatch.list(f.owner),[]);
  const broken=new RoleRunConversationDirectory(pool,async()=>{throw new WorkError('teloa/storage-corrupt','历史链损坏')});await assert.rejects(broken.list(f.owner),{code:'teloa/storage-corrupt'});
 });
+test('目录限定四路只读核验，慢会话不会阻塞同批其它项且结果保持原顺序',async()=>{
+ const f=await fixture(['A','B','C','D','E','F']),expected=await f.directory.list(f.owner)
+ let active=0,peak=0,started=0,firstBatch!:()=>void
+ const batchStarted=new Promise<void>(resolve=>{firstBatch=resolve}),releases=new Map<string,()=>void>()
+ const directory=new RoleRunConversationDirectory(pool,async(actor,id)=>{
+  active++;peak=Math.max(peak,active);started++
+  try{
+   await new Promise<void>(resolve=>{releases.set(id,resolve);if(started===4)firstBatch()})
+   return await f.readSession(actor,id)
+  }finally{active--}
+ })
+ const pending=directory.list(f.owner)
+ let deadline:ReturnType<typeof setTimeout>|undefined
+ try{
+  await Promise.race([batchStarted,new Promise<never>((_,reject)=>{deadline=setTimeout(()=>reject(Error('首批应并发开始四项核验')),2000)})])
+  assert.equal(started,4);assert.equal(peak,4)
+  for(const release of [...releases.values()].reverse())release()
+  // 下一批只有前批完成后才开始；立即放行后续项，不改变返回顺序。
+  while(started<6)await new Promise(resolve=>setTimeout(resolve,1))
+  for(const release of releases.values())release()
+  const rows=await pending
+  assert.deepEqual(rows,expected);assert.equal(peak,4);assert.equal(active,0)
+ }finally{
+  clearTimeout(deadline)
+  for(const release of releases.values())release()
+  await pending.catch(()=>{})
+ }
+})

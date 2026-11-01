@@ -26,7 +26,8 @@ import type {BusinessObjectReference} from '@teloa/contract'
 import {BusinessBuilderController,readBuilderSwitchSnapshot,watchBusinessBuilderRevisions} from './business-builder-controller.js'
 import {retainNativeInputs} from './native-input-retention.js'
 import {createDraftAttachmentStore} from './draft-attachment-store.js'
-import {persistNativeDraftAttachments} from './native-draft-attachments.js'
+import {DraftAttachmentReview} from './DraftAttachmentReview.js'
+import {persistNativeDraftAttachments,createDraftAttachmentReviews} from './native-draft-attachments.js'
 import {createFailedTurnContinuation} from './failed-turn-continuation.js'
 import {draftContinuityCopy} from './draft-continuity-copy.js'
 import {createBusinessBuilderApi} from './business-builder-api.js'
@@ -969,6 +970,7 @@ export async function apply(ctx: Context): Promise<void> {
       selected()
       return()=>{for(const dispose of off)dispose();sessionCapabilities.select(undefined);capabilityBlocks.clear();if(previous&&workContext)syncComposerBlock(previous)}
     },'teloa: 同源会话能力与输入只读投影')
+    const draftAttachmentReviews=createDraftAttachmentReviews()
     child.effect(()=>{const store=createDraftAttachmentStore();return retainNativeInputs({
       sessions:child.sessions,current:mainSession,
       owner:{getSnapshot:()=>businessBuilder.getSnapshot().namespace,subscribe:businessBuilder.subscribe},
@@ -979,7 +981,9 @@ export async function apply(ctx: Context): Promise<void> {
         // 公开 ConversationController 的附件 API；每次通过服务对象调用，保留 Cordis receiver。
         const native=child.conversation as typeof child.conversation&Pick<ConversationController,'createDrafts'|'resolveDraftAttachments'|'releaseDraftAttachments'>
         if(!['createDrafts','resolveDraftAttachments','releaseDraftAttachments'].every(key=>typeof Reflect.get(native,key)==='function')){input.notify('error',draftContinuityCopy(requireI18n().getSnapshot().locale,'unavailable'));return()=>{}}
-        return persistNativeDraftAttachments({namespace,sessionId:binding.sessionId,store,identity:{getSnapshot:businessBuilder.getSnapshot,subscribe:businessBuilder.subscribe},history:binding.eventSource,current:()=>businessBuilder.getSnapshot().namespace===namespace&&child.sessions.binding(binding.sessionId)===binding,input:input.state,session:binding.session,unknown:homeSubmissionMonitor(binding.sessionId),resolve:ids=>native.resolveDraftAttachments(ids.map(id=>brandString<DraftAttachmentId>(id))),create:files=>native.createDrafts(binding.sessionId,files),add:ids=>input.addAttachments(ids.map(id=>brandString<DraftAttachmentId>(id))),release:rows=>native.releaseDraftAttachments(rows),notice:reason=>input.notify('error',draftContinuityCopy(requireI18n().getSnapshot().locale,reason))}).dispose
+        const retained=persistNativeDraftAttachments({namespace,sessionId:binding.sessionId,store,reviewCurrent:()=>mainSession.getSnapshot()===binding.sessionId,identity:{getSnapshot:businessBuilder.getSnapshot,subscribe:businessBuilder.subscribe},history:binding.eventSource,current:()=>businessBuilder.getSnapshot().namespace===namespace&&child.sessions.binding(binding.sessionId)===binding,input:input.state,session:binding.session,unknown:homeSubmissionMonitor(binding.sessionId),resolve:ids=>native.resolveDraftAttachments(ids.map(id=>brandString<DraftAttachmentId>(id))),create:files=>native.createDrafts(binding.sessionId,files),add:ids=>input.addAttachments(ids.map(id=>brandString<DraftAttachmentId>(id))),release:rows=>native.releaseDraftAttachments(rows),notice:reason=>input.notify('error',draftContinuityCopy(requireI18n().getSnapshot().locale,reason))})
+        const remove=draftAttachmentReviews.register(namespace,binding.sessionId,retained.review)
+        return()=>{remove();retained.dispose()}
       },
     })},'teloa: 保留原生待发送输入作用域与本人附件草稿')
     // 身份读取可能先于原生上下文装配；已有检查阻止在真实 blocks 服务出现后立即重放。
@@ -1030,6 +1034,7 @@ export async function apply(ctx: Context): Promise<void> {
         }}
       },
     },HomeNativeConversation))
+    child.slots.inject('conversation.input.left',()=>child.slots.register({name:'conversation.input.left',id:'teloa-draft-file-review',order:85,inject:()=>({reviews:draftAttachmentReviews,owner:{getSnapshot:()=>businessBuilder.getSnapshot().namespace,subscribe:businessBuilder.subscribe}})},DraftAttachmentReview))
     child.slots.inject('conversation.input.left',()=>child.slots.register({
       name:'conversation.input.left',id:'teloa-work-context',order:80,
       inject:()=>({api:homeContextApi,work,taskRunChat,isNativeChild:(id:string)=>isNativeChildSession(child.sessions,brandString<SessionId>(id)),isAssistantContext:isHomeAssistantContext,block:homeContextBlock,roles:async()=>homeWorkAssigneeOptions((await roleWorkDirectory.list()).map(role=>({...role,storage:'persistent' as const})))}),
@@ -1074,13 +1079,14 @@ export async function apply(ctx: Context): Promise<void> {
           running:child.sessions.list.getSnapshot().byId[sessionId]?.running??false,
           events:child.sessions.binding(sessionId)?.eventSource,
           // 模型候选：宿主走本人 BYOK；关闭或切换会话时取消，失败不显示。
-          suggest:async(signal?:AbortSignal)=>{
+          suggest:async(signal?:AbortSignal,options?:{cacheOnly:true})=>{
             try{
-              const response=await call('composer-suggestion/read',{sessionId},signal) as {text?:string|null}|null
+              const response=await call('composer-suggestion/read',{sessionId,...(options?.cacheOnly===true?{cacheOnly:true}:{})},signal) as {text?:string|null}|null
               return typeof response?.text==='string'?response.text:null
             }catch{return null}
           },
           insertText:(text:string)=>{
+            if(mainSession.getSnapshot()!==sessionId)throw Error('目标会话已切换。')
             const live=child.sessions.scope(sessionId)
             if(!live)throw Error('目标会话作用域不可用。')
             const current=child.conversation.input.for(live).state.getSnapshot()

@@ -27,13 +27,15 @@ export function ComposerSuggestionGhost({text,onAccept,onDismiss,onDraft,visible
  useEffect(()=>{
   if(!visible||!text)return
   const onKeyDown=(event:KeyboardEvent)=>{
+   // 多输入面同时挂载时，仅真实焦点所在的输入框处理按键。
+   if(document.querySelectorAll('div[data-composer-input][contenteditable="true"]').length>1&&(!target||!target.contains(document.activeElement)))return
    const outcome=routeSuggestionKey({key:event.key,visible:true,composing:event.isComposing,modifier:event.shiftKey||event.altKey||event.metaKey||event.ctrlKey})
    if(outcome==='accept'){event.preventDefault();onAccept(text)}
    else if(outcome==='dismiss'){event.preventDefault();onDismiss()}
   }
   document.addEventListener('keydown',onKeyDown,true)
   return ()=>document.removeEventListener('keydown',onKeyDown,true)
- },[text,visible,onAccept,onDismiss])
+ },[text,visible,onAccept,onDismiss,target])
  // 显示建议时把官方占位提示让位；恢复时还原原值。
  useEffect(()=>{
   const parent=target?.parentElement

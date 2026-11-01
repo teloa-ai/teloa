@@ -8,7 +8,7 @@ import {readRunBusinessContext} from './task-run-business-context.ts'
 
 type Run=Pick<TaskRun,'id'|'taskId'|'sessionId'|'roleId'|'roleVersion'|'createdAt'|'linkVersion'|'state'|'inputText'>
 type Filter={roleId?:string;sessionId?:string}
-type SessionReader=(owner:string,sessionId:string)=>Promise<{conversation:Conversation;currentRunId:string;run:Run}>
+type SessionReader=(owner:string,sessionId:string,signal?:AbortSignal)=>Promise<{conversation:Conversation;currentRunId:string;run:Run}>
 export type RoleRunConversation={conversation:Conversation;link:ObjectConversation}
 const uuid=(value:unknown):value is string=>typeof value==='string'&&/^[a-f0-9]{8}-[a-f0-9]{4}-[1-5][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i.test(value)
 const session=(value:unknown):value is string=>typeof value==='string'&&/^[-a-zA-Z0-9_]{1,128}$/.test(value)
@@ -31,19 +31,28 @@ export class RoleRunConversationDirectory{
    await db.query('commit');return {task,role,scope:fixed.scope}
   }catch(error){await db.query('rollback');throw error}finally{db.release()}
  }
- async list(owner:string,filter:Filter={}):Promise<RoleRunConversation[]>{
+ async list(owner:string,filter:Filter={},signal?:AbortSignal):Promise<RoleRunConversation[]>{
+  signal?.throwIfAborted()
   if(!owner?.trim()||owner.length>128||filter.roleId!==undefined&&!uuid(filter.roleId)||filter.sessionId!==undefined&&!session(filter.sessionId))throw new WorkError('teloa/invalid-input','员工会话目录身份不正确。')
   // 每个参与员工的Task只列最新有效会话；明确按旧session读取仍保留该段历史。
   const candidates=await this.pool.query("select distinct on (task_id,role_id) session_id from teloa_task_runs where owner_id=$1 and role_id is not null and state not in ('withdrawn','configuration_failed') and ($2::uuid is null or role_id=$2) and ($3::text is null or session_id=$3) order by task_id,role_id,task_version desc,created_at desc,id desc",[owner,filter.roleId??null,filter.sessionId??null])
   const entries:RoleRunConversation[]=[]
-  for(const {session_id:sessionId} of candidates.rows){
+  // 目录只做只读核验；限制并发，避免历史数量线性放大延迟或占满连接池。
+  for(let offset=0;offset<candidates.rows.length;offset+=4){
+   signal?.throwIfAborted()
+   const batch=await Promise.all(candidates.rows.slice(offset,offset+4).map(async({session_id:sessionId})=>{
    try{
-    const {conversation,run,currentRunId}=await this.readSession(owner,sessionId)
-    if(['withdrawn','configuration_failed'].includes(run.state))continue
+    signal?.throwIfAborted()
+    const {conversation,run,currentRunId}=await this.readSession(owner,sessionId,signal)
+    signal?.throwIfAborted()
+    if(['withdrawn','configuration_failed'].includes(run.state))return undefined
     if(conversation.ownerId!==owner||conversation.sessionId!==sessionId||conversation.status!=='ready'||conversation.purpose!=='task-run'||run.sessionId!==sessionId||run.id!==currentRunId||!run.roleId||filter.roleId!==undefined&&run.roleId!==filter.roleId||conversation.run?.taskId!==run.taskId||conversation.run.roleId!==run.roleId||conversation.run.roleVersion!==run.roleVersion)throw new WorkError('teloa/forbidden','原运行目录与规范预约不一致。')
     const {role,scope}=await this.current(owner,run),input=JSON.parse(run.inputText),displayTitle=readRunBusinessContext(input.businessContext===undefined?undefined:Object.fromEntries(Object.entries(input.businessContext).filter(([key])=>key!=='notice')))?.object.title??input.task.title
-    entries.push({conversation,link:{kind:'role',objectId:role.id,objectVersion:run.roleVersion!,conversationId:conversation.id,sessionId,version:run.linkVersion,active:true,updatedAt:run.createdAt,scopeId:scope,readOnly:true,displayTitle}})
-   }catch(error){if(error instanceof WorkError&&['teloa/forbidden','teloa/conflict','teloa/version-conflict'].includes(error.code))continue;throw error}
+    signal?.throwIfAborted()
+    return {conversation,link:{kind:'role' as const,objectId:role.id,objectVersion:run.roleVersion!,conversationId:conversation.id,sessionId,version:run.linkVersion,active:true,updatedAt:run.createdAt,scopeId:scope,readOnly:true,displayTitle}} satisfies RoleRunConversation
+   }catch(error){if(error instanceof WorkError&&['teloa/forbidden','teloa/conflict','teloa/version-conflict'].includes(error.code))return undefined;throw error}
+   }))
+   entries.push(...batch.filter((entry):entry is NonNullable<typeof entry>=>entry!==undefined))
   }
   return entries
  }

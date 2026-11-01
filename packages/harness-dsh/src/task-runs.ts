@@ -46,6 +46,27 @@ export function createTaskRunHandler(owner:string,get:()=>Promise<TaskRunService
   }))
   return (Array.isArray(value)?attached:attached[0]!) as T
  }
+ async function readSession(payload:unknown,signal:AbortSignal,includeDetails:boolean,parentIdentity?:ConversationTaskIdentity):Promise<TaskRunSessionRead>{
+  const input=taskInput(payload,['sessionId','runId']),id=(value:unknown)=>typeof value==='string'&&/^[a-f0-9]{8}-[a-f0-9]{4}-[1-5][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i.test(value)
+  if(parentIdentity||typeof input.sessionId!=='string'||!/^[-a-zA-Z0-9_]{1,128}$/.test(input.sessionId)||input.runId!==undefined&&!id(input.runId))throw new WorkError('teloa/invalid-input','运行会话读取身份不正确。')
+  signal.throwIfAborted()
+  if(!managed?.conversations.snapshotBySession)throw new WorkError('teloa/unavailable','运行会话预约读口尚未就绪。')
+  const sessionId=input.sessionId,conversation=await managed.conversations.snapshotBySession(owner,sessionId),fixed=conversation.run,service=await get()
+  const denied=()=>new WorkError('teloa/conflict','运行会话与原任务预约不一致，请重新核对。')
+  if(conversation.ownerId!==owner||conversation.sessionId!==sessionId||conversation.status!=='ready'||conversation.purpose!=='task-run'||!fixed||!conversation.requestId)throw denied()
+  // 目录与详情共用原预约和完整历史校验；目录不为每一行打开原生日志加载展示详情。
+  const snapshot=includeDetails?undefined:await service.directorySessionSnapshot(owner,{requestId:conversation.requestId,taskId:fixed.taskId,expectedTaskVersion:fixed.taskVersion,sessionId})
+  const current=includeDetails?await service.sessionRun(owner,{sessionId}):snapshot?.current,anchor=includeDetails?await service.requestForSession(owner,{requestId:conversation.requestId,taskId:fixed.taskId,expectedTaskVersion:fixed.taskVersion,sessionId}):snapshot?.anchor
+  if(!current||!anchor)throw denied()
+  const same=(run:TaskRun)=>run.taskId===fixed.taskId&&run.sessionId===sessionId&&run.roleId===fixed.roleId&&run.roleVersion===fixed.roleVersion&&run.agentPresetId===fixed.agentPresetId&&isDeepStrictEqual(run.executor,fixed.executor)&&JSON.parse(run.inputText).task?.title===conversation.title
+  if(!same(anchor)||anchor.taskVersion!==fixed.taskVersion||!same(current)||current.taskVersion<anchor.taskVersion)throw denied()
+  const run=input.runId===undefined?current:await service.get(owner,{runId:input.runId})
+  if(!same(run)||run.taskVersion<anchor.taskVersion||includeDetails&&(await service.sessionRun(owner,{sessionId}))?.id!==current.id)throw denied()
+  signal.throwIfAborted()
+  const result=includeDetails?await withSubagents(run):run
+  signal.throwIfAborted()
+  return {schema:'teloa.task-run-session/v1',conversation,anchor,currentRunId:current.id,run:result}
+ }
  function handle(endpoint:'task-runs/origin',payload:unknown,signal:AbortSignal,parentIdentity?:ConversationTaskIdentity):Promise<TaskRunOrigin>
  function handle(endpoint:'task-runs/list',payload:unknown,signal:AbortSignal,parentIdentity?:ConversationTaskIdentity):Promise<TaskRun[]>
  function handle(endpoint:'task-runs/session',payload:unknown,signal:AbortSignal,parentIdentity?:ConversationTaskIdentity):Promise<TaskRunSessionRead>
@@ -53,23 +74,7 @@ export function createTaskRunHandler(owner:string,get:()=>Promise<TaskRunService
  function handle(endpoint:string,payload:unknown,signal:AbortSignal,parentIdentity?:ConversationTaskIdentity):Promise<TaskRun|TaskRun[]|TaskRunOrigin|TaskRunSourceFollowupCandidate|TaskRunSessionRead>
  async function handle(endpoint:string,payload:unknown,signal:AbortSignal,parentIdentity?:ConversationTaskIdentity):Promise<TaskRun|TaskRun[]|TaskRunOrigin|TaskRunSourceFollowupCandidate|TaskRunSessionRead>{
   if(!taskRunOwnerEndpoints.some(known=>known===endpoint)&&!taskRunEndpoints.some(known=>known===endpoint))throw new WorkError('teloa/not-found','未提供此执行接口。')
-  if(endpoint==='task-runs/session'){
-   const input=taskInput(payload,['sessionId','runId']),id=(value:unknown)=>typeof value==='string'&&/^[a-f0-9]{8}-[a-f0-9]{4}-[1-5][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i.test(value)
-   if(parentIdentity||typeof input.sessionId!=='string'||!/^[-a-zA-Z0-9_]{1,128}$/.test(input.sessionId)||input.runId!==undefined&&!id(input.runId))throw new WorkError('teloa/invalid-input','运行会话读取身份不正确。')
-   if(!managed?.conversations.snapshotBySession)throw new WorkError('teloa/unavailable','运行会话预约读口尚未就绪。')
-   const sessionId=input.sessionId,conversation=await managed.conversations.snapshotBySession(owner,sessionId),fixed=conversation.run,service=await get()
-   const denied=()=>new WorkError('teloa/conflict','运行会话与原任务预约不一致，请重新核对。')
-   if(conversation.ownerId!==owner||conversation.sessionId!==sessionId||conversation.status!=='ready'||conversation.purpose!=='task-run'||!fixed||!conversation.requestId)throw denied()
-   // 规范运行先由后端核验整条同源历史；原预约只锚定首轮，不能回写成后来的任务版本。
-   const current=await service.sessionRun(owner,{sessionId}),anchor=await service.requestForSession(owner,{requestId:conversation.requestId,taskId:fixed.taskId,expectedTaskVersion:fixed.taskVersion,sessionId})
-   if(!current||!anchor)throw denied()
-   const same=(run:TaskRun)=>run.taskId===fixed.taskId&&run.sessionId===sessionId&&run.roleId===fixed.roleId&&run.roleVersion===fixed.roleVersion&&run.agentPresetId===fixed.agentPresetId&&isDeepStrictEqual(run.executor,fixed.executor)&&JSON.parse(run.inputText).task?.title===conversation.title
-   if(!same(anchor)||anchor.taskVersion!==fixed.taskVersion||!same(current)||current.taskVersion<anchor.taskVersion)throw denied()
-   const run=input.runId===undefined?current:await service.get(owner,{runId:input.runId})
-   if(!same(run)||run.taskVersion<anchor.taskVersion||(await service.sessionRun(owner,{sessionId}))?.id!==current.id)throw denied()
-   signal.throwIfAborted()
-   return {schema:'teloa.task-run-session/v1',conversation,anchor,currentRunId:current.id,run:await withSubagents(run)}
-  }
+  if(endpoint==='task-runs/session')return readSession(payload,signal,true,parentIdentity)
   if(endpoint==='task-runs/origin'){
    const target=taskRunOriginInput(payload);if(parentIdentity)throw new WorkError('teloa/invalid-input','来源读口不接受执行身份。')
    const source=await(await get()).origin(owner,target);signal.throwIfAborted();return source
@@ -219,5 +224,6 @@ export function createTaskRunHandler(owner:string,get:()=>Promise<TaskRunService
   if(endpoint==='task-runs/stop')return withSubagents(await driver.stop(owner,payload,signal))
   return withSubagents(await (endpoint==='task-runs/start'?driver.start(owner,payload,signal):driver.reconcile(owner,payload)))
  }
- return handle
+ // 仅宿主内部目录使用；客户端不能借请求参数关闭详情或改变身份校验。
+ return Object.assign(handle,{readDirectorySession:(payload:{sessionId:string},signal:AbortSignal)=>readSession(payload,signal,false)})
 }

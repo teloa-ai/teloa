@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import {mkdtemp,mkdir,writeFile,symlink,readFile,rm} from 'node:fs/promises'
+import {mkdtemp,mkdir,writeFile,symlink,readFile,rm,readdir,chmod,lstat} from 'node:fs/promises'
 import {tmpdir} from 'node:os'
 import {join} from 'node:path'
 import {createHash,randomUUID} from 'node:crypto'
@@ -70,18 +70,43 @@ test('缺失的生成依赖仅在调用方明确批准后省略，其他数据�
  assert.deepEqual(calls,[{source,path,target}])
  assert.equal(await readFile(join(root,'approved','session.jsonl'),'utf8'),'original history')
 })
-test('缺失链接批准不能绕过现存外链、本地扩展或普通数据链接',async t=>{
+test('缺失链接批准不能绕过现存外链或普通数据链接',async t=>{
  const root=await mkdtemp(join(tmpdir(),'teloa-missing-generated-boundary-'));t.after(()=>rm(root,{recursive:true,force:true}))
- for(const variant of ['live-external','ordinary-link','local-file']){
+ for(const variant of ['live-external','ordinary-link']){
   const source=join(root,variant),release=join(root,'absent-release'),generated=join(source,'profiles','teloa','node_modules')
   await mkdir(generated,{recursive:true})
   if(variant==='live-external')await symlink(root,join(generated,'custom'))
   else if(variant==='ordinary-link')await symlink(join(root,'missing'),join(source,'custom'))
-  else await writeFile(join(generated,'custom'),'user data')
   let calls=0
   await assert.rejects(api.copyBackupData(source,source+'-out',release,true,{allowMissingGeneratedLink:()=>{calls++;return true}}))
   assert.equal(calls,0,variant)
  }
+})
+test('备份及恢复保留已安装本地扩展、锁和本人执行位，只省略固定发行生成链接',async t=>{
+ const root=await mkdtemp(join(tmpdir(),'teloa-local-extension-backup-'));t.after(()=>rm(root,{recursive:true,force:true}))
+ const source=join(root,'dsh'),release=join(root,'release'),backup=join(root,'backup'),restored=join(root,'restored')
+ await mkdir(release);await writeFile(join(release,'package.json'),'{}')
+ const variants=['profiles/node_modules','profiles/teloa/node_modules','profiles/teloa/.dsh-module-fallback/node_modules']
+ const files=new Map<string,string>()
+ for(const base of variants){
+  const module=join(base,'@fixture','installed')
+  await mkdir(join(source,module,'bin'),{recursive:true});await symlink(release,join(source,base,'generated'))
+  for(const [name,body] of [['package.json','{"name":"@fixture/installed","version":"1.0.0"}'],['bin/run.js','#!/usr/bin/env node\nconsole.log("synthetic")\n']] as const){
+   const path=join(module,name);files.set(path,body);await writeFile(join(source,path),body,{mode:name.startsWith('bin/')?0o755:0o644})
+  }
+  await chmod(join(source,module,'bin/run.js'),0o755)
+  const lock=join(base,'.pnpm','lock.yaml');await mkdir(join(source,base,'.pnpm'));await writeFile(join(source,lock),'lockfileVersion: 9.0\n');files.set(lock,'lockfileVersion: 9.0\n')
+ }
+ await api.copyBackupData(source,backup,release,true)
+ await api.copyBackupData(backup,restored,release)
+ for(const [path,body] of files){
+  assert.equal(await readFile(join(backup,path),'utf8'),body);assert.equal(await readFile(join(restored,path),'utf8'),body)
+  assert.equal((await lstat(join(restored,path))).mode&0o777,path.endsWith('/run.js')?0o700:0o600)
+ }
+ for(const base of variants)assert.deepEqual((await readdir(join(backup,base))).sort(),['.pnpm','@fixture'])
+ // 扩展内的越界外链仍拒绝，不能因其位于生成目录或已保留普通文件而放行。
+ await symlink(root,join(source,variants[1]!,'@fixture','installed','outside'))
+ await assert.rejects(api.copyBackupData(source,join(root,'unsafe'),release,true),/外链/)
 })
 test('缺失链接批准后被替换时停止备份',async t=>{
  const root=await mkdtemp(join(tmpdir(),'teloa-missing-generated-race-'));t.after(()=>rm(root,{recursive:true,force:true}))

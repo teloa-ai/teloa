@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import {ComposerSuggestionController} from '../src/client/composer-suggestion-controller.ts'
+import {ComposerSuggestionController,createSuggestionValidity} from '../src/client/composer-suggestion-controller.ts'
 
 const answered=(c:ComposerSuggestionController,seq=7)=>{c.completeAnswer(seq);c.setCandidate(seq,'要，请继续。');return c}
 
@@ -96,3 +96,34 @@ test('输入只临时隐藏，删回空后同一条回复的候选重新出现',
  assert.notEqual(c.decision,'show')
 })
 
+
+
+test('缓存撤回/异常即清候选，重复轮询共享读取且 dispose 后迟答无效',async()=>{
+ let resolve!:(text:string|null)=>void,calls=0,invalidated=0,signal:AbortSignal|undefined
+ const c=answered(new ComposerSuggestionController(true))
+ const v=createSuggestionValidity(s=>{calls++;signal=s;return new Promise(done=>{resolve=done})},c.snapshot.text!,()=>{invalidated++;c.dismiss()})
+ const first=v.check(),duplicate=v.check();assert.equal(first,duplicate)
+ await Promise.resolve();assert.equal(calls,1)
+ resolve(null);assert.equal(await first,false);assert.notEqual(c.decision,'show');assert.equal(invalidated,1)
+ const late=createSuggestionValidity(s=>{signal=s;return new Promise(done=>{resolve=done})},'旧候选',()=>{invalidated++})
+ const pending=late.check();await Promise.resolve();late.dispose();assert.equal(signal?.aborted,true)
+ resolve(null);assert.equal(await pending,false);assert.equal(invalidated,1)
+ const failed=createSuggestionValidity(async()=>{throw Error('unavailable')},'候选',()=>{invalidated++})
+ assert.equal(await failed.check(),false);assert.equal(invalidated,2)
+})
+
+test('Tab 独立 fresh 检查使旧轮询乱序回执无效；等待期间编辑使原快照失效',async()=>{
+ const reads:Array<{signal:AbortSignal;resolve:(text:string|null)=>void}>=[]
+ let invalidated=0
+ const c=answered(new ComposerSuggestionController(true)),candidate=c.snapshot
+ const v=createSuggestionValidity(signal=>new Promise(resolve=>reads.push({signal,resolve})),candidate.text!,()=>{invalidated++;c.dismiss()})
+ const background=v.check();await Promise.resolve()
+ const tab=v.check(true);await Promise.resolve();assert.equal(reads.length,2);assert.equal(reads[0]!.signal.aborted,true)
+ reads[0]!.resolve(null);assert.equal(await background,false);assert.equal(invalidated,0)
+ c.setDraft('本人等待期间继续输入')
+ reads[1]!.resolve(candidate.text);assert.equal(await tab,true)
+ assert.notEqual(c.snapshot,candidate,'Dock 必须在 await 后比对原快照，不能覆盖本人新稿')
+ assert.equal(c.accept(),null)
+ assert.equal(c.snapshot.draft,'本人等待期间继续输入')
+ v.dispose()
+})

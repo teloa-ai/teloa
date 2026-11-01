@@ -7,7 +7,7 @@ import { mkdir, mkdtemp, readdir, readFile, realpath, rm, stat, symlink, writeFi
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { findStartupUrl, authorizeSession, assertTeloaReady, guardTeloaReadiness } from '../scripts/核对宿主就绪.mjs'
+import { findStartupUrl, authorizeSession, assertTeloaReady, guardTeloaReadiness, probeTeloaChannel } from '../scripts/核对宿主就绪.mjs'
 import {retryStartupPort} from './fixtures/startup-port-retry.mjs'
 
 const root = fileURLToPath(new URL('../', import.meta.url))
@@ -99,7 +99,7 @@ function startStub(mounted) {
       response.writeHead(302, { 'set-cookie': 'dsh-session=stub; Path=/; HttpOnly', location: '/' }).end()
       return
     }
-    if (request.method === 'POST' && url.pathname === '/teloa/conversations/list') {
+    if (request.method === 'POST' && url.pathname === '/teloa/runtime/readiness') {
       if (request.headers.cookie !== 'dsh-session=stub') { response.writeHead(401).end(); return }
       // 插件挂载失败时真实宿主由静态前端接管，非 GET/HEAD 回的是 405 而不是 404。
       probes += 1
@@ -110,7 +110,7 @@ function startStub(mounted) {
       request.on('end', () => {
         const envelope = JSON.parse(body)
         response.writeHead(200, { 'content-type': 'application/json' })
-        response.end(JSON.stringify({ type: 'server-response', rpcId: envelope.rpcId, result: { ok: true, value: [] } }))
+        response.end(JSON.stringify({ type: 'server-response', rpcId: envelope.rpcId, result: { ok: true, value: { schema: 'teloa.runtime-readiness/v1', ready: true } } }))
       })
       return
     }
@@ -201,7 +201,7 @@ test('一次探针都没成功回过话时给出固定中文超时文案，不�
   assert.equal(error.message, 'Teloa 工作通道在就绪窗口内没有回包，拒绝按就绪对外服务。')
 })
 
-// 真实 HTTP/fetch 接缝：只发送固定的 conversations/list，不启动宿主或数据库。
+// 真实 HTTP/fetch 接缝：只发送固定的 runtime/readiness，不启动宿主或数据库。
 async function startReadProbeFixture(t, reply) {
   const calls = { authorize: 0, probes: 0 }
   const server = createServer((request, response) => {
@@ -210,14 +210,14 @@ async function startReadProbeFixture(t, reply) {
       response.writeHead(303, { 'set-cookie': 'dsh-session=stub; Path=/' }).end()
       return
     }
-    assert.equal(request.url, '/teloa/conversations/list')
+    assert.equal(request.url, '/teloa/runtime/readiness')
     assert.equal(request.headers.cookie, 'dsh-session=stub')
     let body = ''
     request.setEncoding('utf8')
     request.on('data', chunk => { body += chunk })
     request.on('end', () => {
       const envelope = JSON.parse(body)
-      assert.equal(envelope.method, 'conversations/list')
+      assert.equal(envelope.method, 'runtime/readiness')
       assert.deepEqual(envelope.payload, {})
       calls.probes += 1
       reply(response, envelope, calls.probes)
@@ -227,7 +227,18 @@ async function startReadProbeFixture(t, reply) {
   t.after(async () => { server.closeAllConnections(); await new Promise(done => server.close(done)) })
   return { calls, url: 'http://127.0.0.1:' + server.address().port + '/?token=stub' }
 }
-const readyReply = (response, envelope) => response.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ type: 'server-response', rpcId: envelope.rpcId, result: { ok: true, value: [] } }))
+const readyReply = (response, envelope) => response.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ type: 'server-response', rpcId: envelope.rpcId, result: { ok: true, value: { schema: 'teloa.runtime-readiness/v1', ready: true } } }))
+
+test('就绪探针只接受具名健康回执，历史目录数组或宽松ok不能代替健康',async()=>{
+ for(const value of [[],{},true,{schema:'wrong',ready:true},{schema:'teloa.runtime-readiness/v1',ready:false},{schema:'teloa.runtime-readiness/v1',ready:true,extra:'unexpected'}]){
+  const send=async(url,init)=>{
+   assert.equal(new URL(url).pathname,'/teloa/runtime/readiness')
+   const request=JSON.parse(init.body);assert.equal(request.method,'runtime/readiness');assert.deepEqual(request.payload,{})
+   return Response.json({type:'server-response',rpcId:request.rpcId,result:{ok:true,value}})
+  }
+  await assert.rejects(probeTeloaChannel('http://127.0.0.1:1','session=stub',{fetch:send}),/就绪回执无效/)
+ }
+})
 
 test('启动只读探针短超时后在总窗口内重试，授权令牌只消费一次', async t => {
   const stub = await startReadProbeFixture(t, (response, envelope, attempt) => { if (attempt > 1) readyReply(response, envelope) })

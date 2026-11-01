@@ -187,10 +187,10 @@ export async function copyBackupData(source:string,target:string,releaseRoot:str
      const entries=await readdir(src,{withFileTypes:true}),expected=['.teloa-install.json','node_modules','package-lock.json','package.json']
      if(entries.length===expected.length&&entries.every(item=>expected.includes(item.name)&&(item.name==='node_modules'?item.isDirectory():item.isFile()))&&await check())continue
     }
-    if(!skip)await mkdir(dst,{mode:0o700})
+    // 生成链接可由当前发行重建；已安装到该目录的实体扩展必须进入备份。
+    await mkdir(dst,{mode:0o700})
     await visit(src,dst,skip)
    }else if(entry.isFile()){
-    if(skip)throw Error('生成的依赖目录含本地扩展文件，不能省略备份。')
     // 操作系统锁及派生缓存重建，避免复制过期 PID 或源机器锁身份。
     if(!isBackupCopyPath(rel,true))continue
     const info=await lstat(src)
@@ -204,6 +204,8 @@ export async function copyBackupData(source:string,target:string,releaseRoot:str
      const proof=JSON.parse(copied.stdout)
      if(proof.schema!=='teloa.backup-clone/v1'||proof.method!=='fclonefileat'||proof.bytes!==info.size)throw Error('大文件备份克隆回执无效，备份已停止。')
     }else{await copyFile(src,dst);await chmod(dst,0o600)}
+    // 备份及恢复都保留本地扩展的本人执行位，不开放组/其他用户读取，也不带回特殊权限位。
+    if(/^profiles\/(?:[^/]+\/(?:\.dsh-module-fallback\/)?)?node_modules\//.test(rel))await chmod(dst,0o600|(info.mode&0o100))
    }else throw Error('数据含不支持的文件类型，备份已停止。')
   }
  }

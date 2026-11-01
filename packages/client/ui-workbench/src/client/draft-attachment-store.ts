@@ -1,6 +1,6 @@
 /** 只持久保存浏览器已选择的 File；不保存凭据、路径或服务器上传回执。 */
 export type SavedDraftFile={id:string;file:File;inflight:boolean;needsReview?:boolean}
-export type SavedDraftAttachments={namespace:string;sessionId:string;afterSeq:number;files:SavedDraftFile[]}
+export type SavedDraftAttachments={namespace:string;sessionId:string;afterSeq:number;draftFingerprint?:string;files:SavedDraftFile[]}
 export type DraftAttachmentStore={read:(namespace:string,sessionId:string)=>Promise<SavedDraftAttachments|null>;write:(value:SavedDraftAttachments)=>Promise<void>;remove:(namespace:string,sessionId:string)=>Promise<void>}
 export function validDraftFile(file:unknown):file is File{
  return typeof File!=='undefined'&&file instanceof File&&!!file.name&&!/[\\/\0]/.test(file.name)&&Number.isSafeInteger(file.size)&&file.size>=0&&Number.isFinite(file.lastModified)&&(!file.type||/^[\w!#$&^.+-]+\/[\w!#$&^.+-]+$/.test(file.type))
@@ -30,7 +30,7 @@ export function createDraftAttachmentStore(factory:IDBFactory=globalThis.indexed
    const value:unknown=await transaction('readonly',store=>store.get(key(namespace,sessionId)))
    if(value===undefined)return null
    const row=value as SavedDraftAttachments
-   if(!row||row.namespace!==namespace||row.sessionId!==sessionId||!Number.isSafeInteger(row.afterSeq)||row.afterSeq< -1||!Array.isArray(row.files)||new Set(row.files.map(f=>f?.id)).size!==row.files.length||row.files.some(f=>!f||typeof f.id!=='string'||typeof f.inflight!=='boolean'||f.needsReview!==undefined&&typeof f.needsReview!=='boolean'||!validDraftFile(f.file)))throw Error('附件草稿内容无效，未自动恢复。')
+   if(!row||row.namespace!==namespace||row.sessionId!==sessionId||!Number.isSafeInteger(row.afterSeq)||row.afterSeq< -1||row.draftFingerprint!==undefined&&(typeof row.draftFingerprint!=='string'||!/^[a-f0-9]{64}$/.test(row.draftFingerprint))||!Array.isArray(row.files)||new Set(row.files.map(f=>f?.id)).size!==row.files.length||row.files.some(f=>!f||typeof f.id!=='string'||typeof f.inflight!=='boolean'||f.needsReview!==undefined&&typeof f.needsReview!=='boolean'||!validDraftFile(f.file)))throw Error('附件草稿内容无效，未自动恢复。')
    return row
   },
   async write(value){if(value.files.some(f=>!validDraftFile(f.file)))throw Error('附件草稿文件无效。');await transaction('readwrite',store=>store.put(value,key(value.namespace,value.sessionId)))},

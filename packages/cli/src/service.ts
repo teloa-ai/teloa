@@ -102,8 +102,9 @@ async function waitForReady(state:InstallState,exited=()=>false,timeoutMs=75_000
 }
 export async function stopService(state:InstallState):Promise<void>{
  const current=await serviceStatus(state)
- if(current.app==='unknown')throw Error('服务失联，无法证明进程身份；不会向记录的 PID 发送信号。')
- if(current.app!=='stopped')await controlRequest(state,'stop')
+ // 工作读口超时不等于控制身份失联；只请求正常认证停止，不直接向记录的 PID 发信号。
+ if(current.app==='unknown')await controlRequest(state,'stop')
+ else if(current.app!=='stopped')await controlRequest(state,'stop')
  await stopDatabase(state)
  await writeInstall({...state,phase:state.phase==='maintenance'?'maintenance':'stopped'})
 }

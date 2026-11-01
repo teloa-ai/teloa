@@ -40,7 +40,7 @@ export async function authorizeSession(startupUrl, { fetch: send = fetch } = {})
 }
 
 /**
- * 对 /teloa 通道打一个已有的只读端点；非 200、回包身份不符或业务失败都算未就绪。
+ * 对 /teloa 通道核对数据库和目录元数据的真实只读就绪端点；非 200、回包身份不符或业务失败都算未就绪。
  * timeout 由调用方按剩余挂载窗口夹一次：单发探针不得比整个窗口还能等。
  */
 export async function probeTeloaChannel(origin, cookie, { fetch: send = fetch, timeout = probeTimeout } = {}) {
@@ -48,10 +48,10 @@ export async function probeTeloaChannel(origin, cookie, { fetch: send = fetch, t
   const signal = AbortSignal.timeout(timeout)
   let response
   try {
-    response = await send(new URL('/teloa/conversations/list', origin), {
+    response = await send(new URL('/teloa/runtime/readiness', origin), {
       method: 'POST',
       headers: { 'content-type': 'application/json', cookie },
-      body: JSON.stringify({ type: 'client-request', rpcId, method: 'conversations/list', payload: {} }),
+      body: JSON.stringify({ type: 'client-request', rpcId, method: 'runtime/readiness', payload: {} }),
       signal,
     })
   } catch (error) { throw isProbeTimeout(error, signal) ? probeTimeoutError() : error }
@@ -65,6 +65,8 @@ export async function probeTeloaChannel(origin, cookie, { fetch: send = fetch, t
   catch (error) { throw isProbeTimeout(error, signal) ? probeTimeoutError() : Error('Teloa 工作通道回包不是合法 JSON，拒绝按就绪对外服务。') }
   if (envelope?.type !== 'server-response' || envelope.rpcId !== rpcId) throw Error('Teloa 工作通道回包身份不符，拒绝按就绪对外服务。')
   if (envelope.result?.ok !== true) throw Error('Teloa 工作通道返回失败：' + (envelope.result?.error?.code ?? '未知原因') + '。')
+  const value = envelope.result.value
+  if (value?.schema !== 'teloa.runtime-readiness/v1' || value.ready !== true || Object.keys(value).some(key => !['schema', 'ready'].includes(key))) throw Error('Teloa 工作通道就绪回执无效，拒绝按就绪对外服务。')
 }
 
 /**

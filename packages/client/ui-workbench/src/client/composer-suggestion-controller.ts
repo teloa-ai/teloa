@@ -75,3 +75,27 @@ export class ComposerSuggestionController{
    dismissedForAnswer:this.state.answerSeq!==null&&this.state.dismissed.includes(this.state.answerSeq),text:this.state.text})
  }
 }
+
+/** 只核对已有候选。dispose/旧回执不能影响另一个会话、回复或本人后续输入。 */
+export function createSuggestionValidity(read:(signal:AbortSignal)=>Promise<string|null>,text:string,invalidate:()=>void){
+ let current:AbortController|undefined,pending:Promise<boolean>|undefined,closed=false,generation=0
+ const check=(fresh=false):Promise<boolean>=>{
+  if(closed)return Promise.resolve(false)
+  if(pending&&!fresh)return pending
+  current?.abort()
+  const abort=new AbortController(),ticket=++generation
+  current=abort
+  const live=()=>!closed&&!abort.signal.aborted&&ticket===generation
+  const task:Promise<boolean>=Promise.resolve().then(()=>{abort.signal.throwIfAborted();return read(abort.signal)}).then(value=>{
+   if(!live())return false
+   if(value===text)return true
+   closed=true;abort.abort();invalidate();return false
+  },()=>{
+   if(live()){closed=true;abort.abort();invalidate()}
+   return false
+  }).finally(()=>{if(pending===task)pending=undefined})
+  pending=task
+  return task
+ }
+ return {check,dispose(){closed=true;++generation;current?.abort()}}
+}

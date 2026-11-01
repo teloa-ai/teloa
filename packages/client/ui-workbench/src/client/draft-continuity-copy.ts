@@ -1,5 +1,12 @@
 import type {ProductLocale} from './i18n/locale.js'
 const copy={
+ saved:['有 {count} 份保存的附件待确认','有 {count} 份已儲存附件待確認','{count} saved attachments to review'],
+ add:['添加到当前草稿','加入目前草稿','Add to current draft'],
+ remove:['移除','移除','Remove'],
+ download:['保存原文件','儲存原檔案','Save original file'],
+ reviewHelp:['确认添加只加入当前草稿，不会发送。','確認加入只會加入目前草稿，不會傳送。','Adding only places the file in this draft. It does not send it.'],
+ fileType:['文件','檔案','File'],
+
  continue:['继续回答','繼續回答','Continue answer'],
  help:['在本会话追加续办指令，保留原失败记录；不会重放原请求。','在本對話加入續辦指令，保留原失敗記錄；不會重播原請求。','Add a follow-up in this conversation, keeping the failure. This does not replay the original request.'],
  instruction:['请继续本会话上次因错误中断、尚未完成的回答。以现有记录为准，不要重复已完成或已受理的工具、审批及外部操作；如需重新执行有实际后果的动作，请先说明并等待确认。','請繼續本對話上次因錯誤中斷、尚未完成的回答。以現有記錄為準，不要重複已完成或已受理的工具、審批及外部操作；如需重新執行有實際後果的動作，請先說明並等待確認。','Continue the unfinished answer interrupted by the last error in this conversation. Use the existing record; do not repeat completed or accepted tools, approvals, or external actions. Explain and wait for confirmation before repeating any consequential action.'],

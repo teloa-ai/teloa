@@ -73,9 +73,9 @@ export class ConversationService {
   readonly identity:{id:()=>string;now:()=>string}
   /** 新增可选端口，与既有可选端口同级。未接线却传了 roleId ⇒ teloa/dependency-unavailable（判不出来就拒）。 */
   readonly readRole:((owner:string,roleId:string)=>Promise<DigitalRole|undefined>)|undefined
-  readonly readRunDirectory:((owner:string)=>Promise<Conversation[]>)|undefined
+  readonly readRunDirectory:((owner:string,signal?:AbortSignal)=>Promise<Conversation[]>)|undefined
   private pending:Promise<unknown>=Promise.resolve()
-  constructor(repository:ConversationRepository,host:SessionHost,identity:{id:()=>string;now:()=>string},readRole?:(owner:string,roleId:string)=>Promise<DigitalRole|undefined>,readRunDirectory?:(owner:string)=>Promise<Conversation[]>) {this.repository=repository;this.host=host;this.identity=identity;this.readRole=readRole;this.readRunDirectory=readRunDirectory}
+  constructor(repository:ConversationRepository,host:SessionHost,identity:{id:()=>string;now:()=>string},readRole?:(owner:string,roleId:string)=>Promise<DigitalRole|undefined>,readRunDirectory?:(owner:string,signal?:AbortSignal)=>Promise<Conversation[]>) {this.repository=repository;this.host=host;this.identity=identity;this.readRole=readRole;this.readRunDirectory=readRunDirectory}
   private async resolveRoleAgentPresetId(owner:string,roleId:string):Promise<string|undefined> {
     if(!this.readRole)throw new WorkError('teloa/dependency-unavailable','当前环境未接线员工读取，暂不能按员工创建会话。')
     const role=await this.readRole(owner,roleId)
@@ -95,10 +95,13 @@ export class ConversationService {
     if(!owner||row.ownerId!==owner)throw new WorkError('teloa/forbidden','当前主体不能访问该工作会话。')
     return row
   }
-  async list(owner:string,input:unknown,includeRuns=false):Promise<Conversation[]> {
-    const ordinary=await this.serial(async()=>{inputObject(input,[]);return (await this.repository.read()).filter(row=>row.ownerId===owner&&row.requestId!==undefined&&row.purpose!=='task-run'&&!isReservedExecutionSessionId(row.sessionId)).map(row=>this.toPublic(row))})
+  async list(owner:string,input:unknown,includeRuns=false,signal?:AbortSignal):Promise<Conversation[]> {
+    signal?.throwIfAborted()
+    const ordinary=await this.serial(async()=>{signal?.throwIfAborted();inputObject(input,[]);return (await this.repository.read()).filter(row=>row.ownerId===owner&&row.requestId!==undefined&&row.purpose!=='task-run'&&!isReservedExecutionSessionId(row.sessionId)).map(row=>this.toPublic(row))})
+    signal?.throwIfAborted()
     // 规范读口需要读取原预约，不能在本服务serial锁内回调；原task-run身份与只读边界原样保留。
-    const managed=includeRuns?await this.readRunDirectory?.(owner)??[]:[]
+    const managed=includeRuns?await this.readRunDirectory?.(owner,signal)??[]:[]
+    signal?.throwIfAborted()
     if(managed.some(row=>row.ownerId!==owner||row.status!=='ready'||row.purpose!=='task-run'))throw new WorkError('teloa/forbidden','自动工作目录归属不正确。')
     return [...new Map([...ordinary,...managed].map(row=>[row.sessionId,row])).values()]
   }
