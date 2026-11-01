@@ -1,7 +1,7 @@
 import test,{before,after} from 'node:test'
 import assert from 'node:assert/strict'
 import {randomUUID} from 'node:crypto'
-import {setupRoleWork,identity,loadRoleWorkModule} from './role-work-test-fixture.ts'
+import {setupRoleWork,identity,loadRoleWorkModule,insertRoleRun} from './role-work-test-fixture.ts'
 import {RoleService} from '../src/work/roles.ts'
 import {CollaborationService} from '../src/work/collaboration.ts'
 import {GroupAgentGrantService} from '../src/work/group-agent-grants.ts'
@@ -12,6 +12,7 @@ import {ObjectConversationService} from '../src/work/object-conversations.ts'
 import {TaskRunService} from '../src/work/task-runs.ts'
 import {readRunGroupContext} from '../src/work/task-run-group-context.ts'
 import {GroupRunMessageService} from '../src/work/group-run-messages.ts'
+import {GroupRunResultManifestService} from '../src/work/group-run-result-manifest.ts'
 import {WorkLineageService} from '../src/work/work-lineage.ts'
 import {groupTaskSourceDigest} from '../src/work/group-task-source-digest.ts'
 import {PlanService} from '../src/work/plans.ts'
@@ -25,11 +26,14 @@ import {TaskAttentionService} from '../src/work/task-attention.ts'
 import {GroupWorkLinkService,initializeGroupWorkLinks} from '../src/work/group-work-links.ts'
 import {ProjectService,initializeProjects} from '../src/work/projects.ts'
 import {WorkControlService,initializeWorkControl} from '../src/work/work-control.ts'
+import {HandoffService,initializeHandoffs} from '../src/work/handoffs.ts'
+import {initializeRoleLifecycle} from '../src/work/role-lifecycle.ts'
+import {readGroupOwnerRequest,readGroupRunOwnerRequest} from '../src/work/group-owner-request.ts'
 let f:Awaited<ReturnType<typeof setupRoleWork>>,module:Record<string,any>
 before(async()=>{f=await setupRoleWork();await initializeGroupTasks(f.pool);await initializeGroupRoutingDecisions(f.pool);await initializePlanOccurrences(f.pool);module=await loadRoleWorkModule('group-routing-outbox');if(module.initializeGroupRoutingOutbox)await module.initializeGroupRoutingOutbox(f.pool);await initializeGroupWorkInputs(f.pool);await initializeGroupRoutingAttempts(f.pool)})
 after(async()=>{await f?.close()})
-async function fixture(names=['甲同事','乙同事']){
- const owner=randomUUID(),roles=new RoleService(f.pool,identity),groups=new CollaborationService(f.pool,identity),grants=new GroupAgentGrantService(f.pool,identity.now),recipients=[]
+async function fixture(names=['甲同事','乙同事'],owner=randomUUID()){
+ const roles=new RoleService(f.pool,identity),groups=new CollaborationService(f.pool,identity),grants=new GroupAgentGrantService(f.pool,identity.now),recipients=[]
  for(const name of names){const role=await roles.create(owner,{requestId:randomUUID(),fields:{name,kind:'employee',scopes:['general'],duty:'研判',dataScope:'授权资料',executionScope:'只读',skills:[],knowledge:[],responsibility:testRoleResponsibility,runtimeConfig:{agentPresetId:'standard'}}});await f.pool.query("update teloa_roles set state='active',version=2 where id=$1",[role.id]);recipients.push({...role,state:'active' as const,version:2})}
  const group=await groups.create(owner,{requestId:randomUUID(),expectedVersion:0,fields:{name:'可靠协作',scope:'general',announcement:'',rules:{historyVisibleToNewMembers:true,draftsVisibleInGroup:true,mentionAllAllowed:true},memberRoleIds:recipients.map(r=>r.id)}})
  for(const role of recipients)await grants.change(owner,{requestId:randomUUID(),groupId:group.id,roleId:role.id,expectedGroupVersion:group.version,expectedRoleVersion:2,action:'save',resources:[],canPost:true,canAutoRun:true})
@@ -67,6 +71,92 @@ async function completedReply(names=['交流员工']){
  const service=new TaskAttentionService(f.pool),attention=async()=>(await service.list(x.owner,{})).items.find(value=>value.task.id===p.task.id)!.attention
  return {x,p,service,attention,post:()=>new GroupRunMessageService(f.pool,identity,undefined,undefined,x.outbox).post(x.owner,{requestId:randomUUID(),runId:p.run.id,text:'已回应原消息。'})}
 }
+
+async function prepareOwnerBoundReply(x:Awaited<ReturnType<typeof fixture>>,task:Awaited<ReturnType<TaskService['create']>>,role:{id:string;version:number}){
+ const sessionId=randomUUID(),inspect=async(_owner:string,id:string)=>({id,ownerId:x.owner,sessionId:id,status:'ready' as const})
+ await new ObjectConversationService(f.pool,inspect,identity.now).change(x.owner,{requestId:randomUUID(),kind:'task',objectId:task.id,expectedObjectVersion:task.version,sessionId,expectedLinkVersion:0,action:'link'})
+ const runs=new TaskRunService(f.pool,identity,inspect,{allowedTools:[],groupContext:(db,owner,current,currentRole,refs,selection)=>readRunGroupContext(db,owner,current,currentRole,undefined,f.pool,refs,selection)})
+ const run=await runs.prepare(x.owner,{requestId:randomUUID(),taskId:task.id,expectedTaskVersion:task.version,roleId:role.id,expectedRoleVersion:role.version,sessionId,expectedLinkVersion:1})
+ return {run,runs}
+}
+
+test('QLT004：reply 的在途与冷读策略都由固定来源给出 textOnly，不靠本人链缺席判断',async()=>{
+ const x=await fixture(),[item]=await x.record(),{run,runs}=await prepared(x,item)
+ assert.equal(await runs.isGroupReplyRun(x.owner,{runId:run.id}),true)
+ const before=await runs.toolPolicy(x.owner,{sessionId:run.sessionId})
+ assert.equal(before?.textOnly,true,'prepared reply 的冷恢复也必须保持空工具边界')
+ await runs.claim(x.owner,{runId:run.id})
+ const active=await runs.toolPolicy(x.owner,{sessionId:run.sessionId})
+ assert.equal(active?.textOnly,true)
+ assert.deepEqual(active?.allowedTools,[])
+ assert.equal(active?.nativeRequestId,run.nativeRequestId)
+ assert.equal(await runs.toolPolicy('other-owner',{sessionId:run.sessionId}),null,'其他本人不能获得该 Run 的策略')
+ await f.pool.query("update teloa_group_task_sources set snapshot_digest=repeat('0',64) where task_id=$1",[run.taskId])
+ await assert.rejects(runs.toolPolicy(x.owner,{sessionId:run.sessionId}),{code:'teloa/storage-corrupt'},'损坏来源不能降级成普通work继续暴露工具')
+})
+
+test('QLT004：reply 原Task经正式岗位交接仍冻结中间本人限制，未来消息不穿透原Run版本',async()=>{
+ const {x,p}=await completedReply(['原交流岗','接手交流岗']),tasks=new TaskService(f.pool,identity),inputs=new GroupWorkInputService(f.pool,identity)
+ await initializeRoleLifecycle(f.pool);await initializeHandoffs(f.pool)
+ const originalSource=(await f.pool.query('select source_snapshot,snapshot_digest from teloa_group_task_sources where task_id=$1',[p.task.id])).rows[0]
+ assert.equal(originalSource.source_snapshot.executionMode,'reply')
+ const oldRun=(await f.pool.query('select input_text,group_context_hash from teloa_task_runs where id=$1',[p.run.id])).rows[0]
+ const current=async()=>(await tasks.list(x.owner,{})).find(task=>task.id===p.task.id)!
+ const continueWith=async(text:string)=>{
+  const task=await current(),message=await x.groups.send(x.owner,{requestId:randomUUID(),groupId:x.group.id,expectedVersion:x.group.version,rootId:x.message.id,text})
+  const reserved=await inputs.reserveInTransaction(f.pool,x.owner,{requestId:randomUUID(),groupId:x.group.id,messageId:message.id,taskId:task.id,expectedTaskVersion:task.version,operation:'continue'})
+  assert.equal((await inputs.continueTask(x.owner,reserved.requestId)).state,'continued')
+  return message
+ }
+ const restriction=await continueWith('本轮及后续仅用已给资料分析，不使用任何代码或工具，也不外发。')
+ const originalRole=x.recipients.find(role=>role.id===p.run.roleId)!
+ const second=await prepareOwnerBoundReply(x,await current(),originalRole)
+ assert.equal(second.run.groupContext?.ownerRequest?.messageId,restriction.id,'reply 不能把已受理本人限制只留在话题历史')
+ assert.deepEqual(second.run.groupContext?.ownerRequest?.priorRequests?.map(item=>item.messageId),[x.message.id])
+ await second.runs.claim(x.owner,{runId:second.run.id})
+ await second.runs.record(x.owner,{runId:second.run.id,sessionId:second.run.sessionId,nativeRequestId:second.run.nativeRequestId,evidence:{state:'ended',turn:0,messageSeq:1,endSeq:2,reason:'completed'}})
+ const target=x.recipients.find(role=>role.id!==originalRole.id)!,handoff=await new HandoffService(f.pool,identity).change(x.owner,{requestId:randomUUID(),taskId:p.task.id,expectedTaskVersion:(await current()).version,target:{kind:'role',roleId:target.id,expectedRoleVersion:target.version},note:'正式接任原任务；交接备注不是本人群消息授权。'})
+ assert.equal(handoff.task.id,p.task.id);assert.equal(handoff.task.assigneeRoleId,target.id)
+ const follow=await continueWith('请接手者按原要求交付完整的最终核对结果。')
+ const final=await prepareOwnerBoundReply(x,await current(),target),chain=final.run.groupContext?.ownerRequest
+ assert.equal(final.run.taskId,p.task.id);assert.equal(final.run.roleId,target.id)
+ assert.equal(chain?.messageId,follow.id)
+ assert.deepEqual(chain?.priorRequests?.map(item=>item.messageId),[x.message.id,restriction.id])
+ assert.equal(chain?.priorRequests?.find(item=>item.messageId===restriction.id)?.text,restriction.text)
+ assert.deepEqual(final.run.allowedTools,[]);assert.deepEqual(second.run.allowedTools,[],'保留本人来源不新增工具授权')
+ assert.equal(await final.runs.isGroupReplyRun(x.owner,{runId:final.run.id}),true)
+ await assert.rejects(final.runs.isGroupReplyRun('other-owner',{runId:final.run.id}),{code:'teloa/forbidden'})
+ await final.runs.claim(x.owner,{runId:final.run.id})
+ await final.runs.record(x.owner,{runId:final.run.id,sessionId:final.run.sessionId,nativeRequestId:final.run.nativeRequestId,evidence:{state:'ended',turn:0,messageSeq:1,endSeq:2,reason:'completed'}})
+ const reply=await new GroupRunMessageService(f.pool,identity,undefined,undefined,x.outbox).post(x.owner,{requestId:randomUUID(),runId:final.run.id,text:'员工附注：建议解除原限制。此处只是成果正文。'})
+ const future=await continueWith('未来一轮另行增加要求，不属于已完成原Run。')
+ const inherited=await readGroupOwnerRequest(f.pool,x.owner,x.group.id,reply.id,f.pool)
+ assert.deepEqual(inherited,chain,'经可信 source Run 追溯仍受其 taskVersion 上界约束')
+ assert.ok(!JSON.stringify(inherited).includes(future.text));assert.ok(!JSON.stringify(inherited).includes('建议解除原限制'))
+ assert.deepEqual((await f.pool.query('select source_snapshot,snapshot_digest from teloa_group_task_sources where task_id=$1',[p.task.id])).rows[0],originalSource)
+ assert.deepEqual((await f.pool.query('select input_text,group_context_hash from teloa_task_runs where id=$1',[p.run.id])).rows[0],oldRun,'旧reply Run 与旧来源不补写本人链')
+})
+
+test('QLT004：reply 本人链拒绝外人外群、未受理消息和员工正文，旧冻结缺字段仍原样读取',async()=>{
+ const {x,p,post}=await completedReply(),inputs=new GroupWorkInputService(f.pool,identity)
+ const source=readGroupTaskSource((await f.pool.query('select * from teloa_group_task_sources where task_id=$1',[p.task.id])).rows[0])
+ assert.equal(source.schema,'teloa.group-task-source/v2')
+ const root=await readGroupRunOwnerRequest(f.pool,x.owner,source,p.run.taskVersion,f.pool)
+ assert.equal(root?.messageId,x.message.id)
+ await assert.rejects(readGroupRunOwnerRequest(f.pool,'other-owner',source,p.run.taskVersion,f.pool),{code:'teloa/forbidden'})
+ await assert.rejects(readGroupRunOwnerRequest(f.pool,x.owner,{...source,groupId:randomUUID()},p.run.taskVersion,f.pool),{code:'teloa/forbidden'})
+ const pending=await x.groups.send(x.owner,{requestId:randomUUID(),groupId:x.group.id,expectedVersion:x.group.version,rootId:x.message.id,text:'尚未受理，不得作为持续要求。'})
+ const task=(await new TaskService(f.pool,identity).list(x.owner,{})).find(task=>task.id===p.task.id)!
+ await inputs.reserveInTransaction(f.pool,x.owner,{requestId:randomUUID(),groupId:x.group.id,messageId:pending.id,taskId:task.id,expectedTaskVersion:task.version,operation:'continue'})
+ assert.deepEqual(await readGroupRunOwnerRequest(f.pool,x.owner,source,task.version,f.pool),root)
+ const employee=await post(),{createHash}=await import('node:crypto')
+ for(const message of [pending,employee]){
+  const forged={messageId:message.id,text:message.text,sha256:createHash('sha256').update(message.text).digest('hex')}
+  await assert.rejects(readGroupRunOwnerRequest(f.pool,x.owner,source,task.version,f.pool,{ownerRequest:forged}),{code:'teloa/forbidden'})
+ }
+ assert.equal(await readGroupRunOwnerRequest(f.pool,x.owner,source,task.version,f.pool,{ownerRequest:undefined}),undefined)
+ assert.equal((await p.runs.get(x.owner,{runId:p.run.id})).inputText,p.run.inputText,'历史reply input不因新完整来源读取而改写')
+})
 
 test('员工工作交接保留真实本人来源，不把员工生成的接手正文升格为本人授权',async()=>{
  const {x,p}=await completedReply(['初筛岗','调查岗']),target=x.recipients[1]!
@@ -154,6 +244,75 @@ test('交接冻结输入同时带旧本人要求与当前续办时，采用当�
  const result=await readGroupOwnerRequest(f.pool,x.owner,x.group.id,handoff.id,f.pool)
  assert.equal(result.messageId,next.id);assert.equal(result.text,next.text)
  assert.deepEqual(result.priorRequests,[inherited])
+})
+
+test('同Task中间本人续办的工具限制在后续返工交接仍保留，原来源和旧Run不改写',async()=>{
+ const {x,p}=await completedReply(['初筛岗','独立复核岗']),inputs=new GroupWorkInputService(f.pool,identity),tasks=new TaskService(f.pool,identity)
+ const original=(await f.pool.query('select source_snapshot,snapshot_digest from teloa_group_task_sources where task_id=$1',[p.task.id])).rows[0]
+ const oldRun=(await f.pool.query('select input_text,group_context_hash from teloa_task_runs where id=$1',[p.run.id])).rows[0]
+ const additions:Array<Awaited<ReturnType<typeof x.groups.send>>>=[],receipts:string[]=[]
+ for(const text of ['只根据原资料核对，不使用代码工具，不外发。','继续原任务，保留原限制。','在原报告末补本人确认清单。']){
+  const task=(await tasks.list(x.owner,{})).find(task=>task.id===p.task.id)!
+  const message=await x.groups.send(x.owner,{requestId:randomUUID(),groupId:x.group.id,expectedVersion:x.group.version,rootId:x.message.id,text})
+  const reserved=await inputs.reserveInTransaction(f.pool,x.owner,{requestId:randomUUID(),groupId:x.group.id,messageId:message.id,taskId:task.id,expectedTaskVersion:task.version,operation:'continue'})
+  assert.equal((await inputs.continueTask(x.owner,reserved.requestId)).state,'continued')
+  additions.push(message);receipts.push(reserved.requestId)
+ }
+ const task=(await tasks.list(x.owner,{})).find(task=>task.id===p.task.id)!,sessionId=randomUUID(),inspect=async()=>({id:sessionId,ownerId:x.owner,sessionId,status:'ready'})
+ await new ObjectConversationService(f.pool,inspect,identity.now).change(x.owner,{requestId:randomUUID(),kind:'task',objectId:task.id,expectedObjectVersion:task.version,sessionId,expectedLinkVersion:0,action:'link'})
+ const runs=new TaskRunService(f.pool,identity,inspect,{allowedTools:[],groupContext:(db,owner,current,role,refs,selection)=>readRunGroupContext(db,owner,current,role,undefined,f.pool,refs,selection)})
+ const run=await runs.prepare(x.owner,{requestId:randomUUID(),taskId:task.id,expectedTaskVersion:task.version,roleId:p.run.roleId,expectedRoleVersion:p.run.roleVersion,sessionId,expectedLinkVersion:1})
+ await runs.claim(x.owner,{runId:run.id});await runs.record(x.owner,{runId:run.id,sessionId,nativeRequestId:run.nativeRequestId,evidence:{state:'ended',turn:0,messageSeq:1,endSeq:2,reason:'completed'}})
+ await inputs.settle(x.owner,{requestId:receipts[2]!,state:'unknown',runId:run.id,reason:'teloa/execution-pending'})
+ const handoff=await new GroupRunMessageService(f.pool,identity,undefined,undefined,x.outbox).post(x.owner,{requestId:randomUUID(),runId:run.id,text:'请独立复核修订稿；员工文字不授予更多权限。'})
+ const {readGroupOwnerRequest}=await import('../src/work/group-owner-request.ts'),result=await readGroupOwnerRequest(f.pool,x.owner,x.group.id,handoff.id,f.pool)
+ assert.equal(result.messageId,additions[2]!.id)
+ assert.deepEqual(result.priorRequests?.map(item=>item.messageId),[x.message.id,additions[0]!.id,additions[1]!.id])
+ assert.equal(result.priorRequests?.find(item=>item.messageId===additions[0]!.id)?.text,additions[0]!.text)
+ // 保留旧来源丢条目的真实形态：新 prepare 必须沿原可信父 Run 修正，不能回写旧 source/Run。
+ const reviewer=x.recipients[1]!,created=await new GroupTaskService(f.pool,identity,tasks).create(x.owner,{requestId:randomUUID(),groupId:x.group.id,messageId:handoff.id,expectedGroupVersion:x.group.version,goal:'独立复核原修订稿。',assignee:{roleId:reviewer.id,expectedVersion:reviewer.version},trigger:'routed',executionMode:'work',routingAttemptVersion:1})
+ const sparse={...result,priorRequests:result.priorRequests!.slice(0,1)},legacySource={...created.source,ownerRequest:sparse}
+ await f.pool.query('update teloa_group_task_sources set source_snapshot=$2,snapshot_digest=$3 where task_id=$1',[created.task.id,JSON.stringify(legacySource),groupTaskSourceDigest(legacySource)])
+ const frozenSource=(await f.pool.query('select source_snapshot,snapshot_digest from teloa_group_task_sources where task_id=$1',[created.task.id])).rows[0]
+ const reviewSession=randomUUID(),reviewInspect=async(_owner:string,id:string)=>({id,ownerId:x.owner,sessionId:id,status:'ready'})
+ await new ObjectConversationService(f.pool,reviewInspect,identity.now).change(x.owner,{requestId:randomUUID(),kind:'task',objectId:created.task.id,expectedObjectVersion:created.task.version,sessionId:reviewSession,expectedLinkVersion:0,action:'link'})
+ const legacyRuns=new TaskRunService(f.pool,identity,reviewInspect,{allowedTools:[],groupContext:(db,owner,current,role,refs)=>readRunGroupContext(db,owner,current,role,undefined,f.pool,refs)})
+ const old=await legacyRuns.prepare(x.owner,{requestId:randomUUID(),taskId:created.task.id,expectedTaskVersion:created.task.version,roleId:reviewer.id,expectedRoleVersion:reviewer.version,sessionId:reviewSession,expectedLinkVersion:1})
+ const reviewRuns=new TaskRunService(f.pool,identity,reviewInspect,{allowedTools:[],groupContext:(db,owner,current,role,refs,selection)=>readRunGroupContext(db,owner,current,role,undefined,f.pool,refs,selection)})
+ await reviewRuns.claim(x.owner,{runId:old.id})
+ await reviewRuns.record(x.owner,{runId:old.id,sessionId:reviewSession,nativeRequestId:old.nativeRequestId,evidence:{state:'ended',turn:0,messageSeq:1,endSeq:2,reason:'completed'}})
+ const oldBytes=(await f.pool.query('select input_text,group_context_hash from teloa_task_runs where id=$1',[old.id])).rows[0]
+ const oldReply=await new GroupRunMessageService(f.pool,identity,undefined,undefined,x.outbox).post(x.owner,{requestId:randomUUID(),runId:old.id,text:'旧复核结果。'})
+ // 父 Task 在 source Run 之后的本人续办不得穿透固定版本上限进入复核。
+ const futureParent=(await tasks.list(x.owner,{})).find(item=>item.id===task.id)!,future=await x.groups.send(x.owner,{requestId:randomUUID(),groupId:x.group.id,expectedVersion:x.group.version,rootId:x.message.id,text:'未来父任务要求，不属于原复核来源。'})
+ const futureReceipt=await inputs.reserveInTransaction(f.pool,x.owner,{requestId:randomUUID(),groupId:x.group.id,messageId:future.id,taskId:task.id,expectedTaskVersion:futureParent.version,operation:'continue'})
+ await inputs.continueTask(x.owner,futureReceipt.requestId)
+ const waiting=(await tasks.list(x.owner,{})).find(item=>item.id===created.task.id)!,follow=await x.groups.send(x.owner,{requestId:randomUUID(),groupId:x.group.id,expectedVersion:x.group.version,replyToMessageId:oldReply.id,text:'继续原独立复核，交付完整报告。'})
+ const continuation=await inputs.reserveInTransaction(f.pool,x.owner,{requestId:randomUUID(),groupId:x.group.id,messageId:follow.id,taskId:created.task.id,expectedTaskVersion:waiting.version,operation:'continue'})
+ await inputs.continueTask(x.owner,continuation.requestId)
+ const current=(await tasks.list(x.owner,{})).find(item=>item.id===created.task.id)!,nextSession=randomUUID()
+ await new ObjectConversationService(f.pool,reviewInspect,identity.now).change(x.owner,{requestId:randomUUID(),kind:'task',objectId:current.id,expectedObjectVersion:current.version,sessionId:nextSession,expectedLinkVersion:0,action:'link'})
+ const next=await reviewRuns.prepare(x.owner,{requestId:randomUUID(),taskId:current.id,expectedTaskVersion:current.version,roleId:reviewer.id,expectedRoleVersion:reviewer.version,sessionId:nextSession,expectedLinkVersion:1})
+ assert.deepEqual(next.groupContext?.ownerRequest?.priorRequests?.map(item=>item.messageId),[x.message.id,...additions.map(item=>item.id)])
+ assert.equal(next.groupContext?.ownerRequest?.messageId,follow.id)
+ assert.ok(!next.inputText.includes(future.id),'固定父 Run 后的续办不能追溯扩大本次来源')
+ const claimed=await reviewRuns.claim(x.owner,{runId:next.id});assert.equal(claimed.dispatch,true)
+ await reviewRuns.record(x.owner,{runId:next.id,sessionId:nextSession,nativeRequestId:next.nativeRequestId,evidence:{state:'active',turn:0,messageSeq:1}})
+ assert.equal((await new GroupRunResultManifestService(f.pool).mentionSelf(x.owner,{sessionId:nextSession,nativeRequestId:next.nativeRequestId})).mentionSelf,true,'正式交付声明按新 Run 冻结链回验')
+ assert.equal((await reviewRuns.skillScope(x.owner,{sessionId:nextSession}))?.id,next.id)
+ assert.deepEqual(await reviewRuns.toolPolicy(x.owner,{sessionId:nextSession}),{allowedTools:[],nativeRequestId:next.nativeRequestId})
+ assert.equal((await reviewRuns.executionScope(x.owner,{runId:next.id})).taskVersion,current.version)
+ await reviewRuns.record(x.owner,{runId:next.id,sessionId:nextSession,nativeRequestId:next.nativeRequestId,evidence:{state:'ended',turn:0,messageSeq:1,endSeq:2,reason:'completed'}})
+ const reply=await new GroupRunMessageService(f.pool,identity,undefined,undefined,x.outbox).post(x.owner,{requestId:randomUUID(),runId:next.id,text:'完整独立复核报告。'})
+ assert.equal((await readGroupOwnerRequest(f.pool,x.owner,x.group.id,reply.id,f.pool)).priorRequests?.find(item=>item.messageId===additions[0]!.id)?.text,additions[0]!.text,'下一次可信交接仍含祖先中间限制')
+ assert.deepEqual((await f.pool.query('select source_snapshot,snapshot_digest from teloa_group_task_sources where task_id=$1',[current.id])).rows[0],frozenSource)
+ assert.deepEqual((await f.pool.query('select input_text,group_context_hash from teloa_task_runs where id=$1',[old.id])).rows[0],oldBytes)
+ assert.equal((await reviewRuns.get(x.owner,{runId:old.id})).inputText,old.inputText)
+ await x.grants.change(x.owner,{requestId:randomUUID(),groupId:x.group.id,roleId:reviewer.id,expectedGroupVersion:x.group.version,expectedRoleVersion:reviewer.version,action:'revoke',resources:[],canPost:false,canAutoRun:false})
+ await assert.rejects(new GroupRunMessageService(f.pool,identity,undefined,undefined,x.outbox).post(x.owner,{requestId:randomUUID(),runId:next.id,text:'撤权后不能发布。'}),error=>!!error&&typeof error==='object'&&['teloa/forbidden','teloa/version-conflict'].includes(Reflect.get(error,'code')))
+
+ assert.deepEqual((await f.pool.query('select source_snapshot,snapshot_digest from teloa_group_task_sources where task_id=$1',[p.task.id])).rows[0],original)
+ assert.deepEqual((await f.pool.query('select input_text,group_context_hash from teloa_task_runs where id=$1',[p.run.id])).rows[0],oldRun)
 })
 test('根消息手动发起的原生工作覆盖无人自动回应，运行和正式成果按原任务投影',async()=>{
  const x=await fixture(['手动研判员']),role=x.recipients[0]!
@@ -396,6 +555,59 @@ test('工作回帖后等待结果核对不冒充仍在等待原生审批',async(
  const view=(await new GroupRoutingStatusService(f.pool,async()=>new Set()).status(x.owner,{groupId:x.group.id,messageIds:[x.message.id]})).items[0]!
  assert.equal(view.recipients.find(row=>row.runId===p.run.id)?.phase,'awaiting-review')
  assert.equal(view.recipients.some(row=>row.phase==='awaiting-approval'),false,'原生决定已收敛，不再冒充待批准')
+})
+
+test('同Task两Run原生审批独立：旧消息单查与批查一致，新Run审批不污染已停止的旧Run',async()=>{
+ const x=await fixture(['原接手者']),[item]=await x.record(),claimed=await x.outbox.claim(x.owner,{itemId:item.id,expectedLeaseGeneration:0}),p=await prepared(x,item)
+ await x.outbox.reserveSubmission(x.owner,{itemId:item.id,leaseGeneration:claimed.leaseGeneration,taskId:p.task.id,runId:p.run.id})
+ await p.runs.claim(x.owner,{runId:p.run.id})
+ await p.runs.record(x.owner,{runId:p.run.id,sessionId:p.run.sessionId,nativeRequestId:p.run.nativeRequestId,evidence:{state:'ended',turn:1,messageSeq:8,endSeq:38,reason:'aborted'}})
+ await x.outbox.settle(x.owner,{itemId:item.id,leaseGeneration:claimed.leaseGeneration,taskId:p.task.id,runId:p.run.id,state:'settled',reason:null})
+ const task=(await new TaskService(f.pool,identity).list(x.owner,{})).find(row=>row.id===p.task.id)!
+ const message=await x.groups.send(x.owner,{requestId:randomUUID(),groupId:x.group.id,expectedVersion:x.group.version,rootId:x.message.id,text:'继续原任务。'})
+ const inputs=new GroupWorkInputService(f.pool,identity),requestId=randomUUID()
+ await x.decisions.withTopicLock(x.owner,x.group.id,x.message.id,async db=>{
+  await x.decisions.record(db,x.owner,{groupId:x.group.id,messageId:message.id,decision:{...x.decision,intent:'continue',respond:[],assignments:[],workTarget:{taskId:task.id,runId:p.run.id}}})
+  await inputs.reserveInTransaction(db,x.owner,{requestId,groupId:x.group.id,messageId:message.id,taskId:task.id,expectedTaskVersion:task.version,operation:'continue'})
+ })
+ const continued=await inputs.continueTask(x.owner,requestId)
+ assert.equal(continued.state,'continued')
+ const sessionId=randomUUID(),conversationId=randomUUID(),inspect=async()=>({id:conversationId,ownerId:x.owner,sessionId,status:'ready'})
+ const link=await new ObjectConversationService(f.pool,inspect,identity.now).change(x.owner,{requestId:randomUUID(),kind:'task',objectId:task.id,expectedObjectVersion:continued.taskVersion,sessionId,expectedLinkVersion:0,action:'link'})
+ const runs=new TaskRunService(f.pool,identity,inspect,{allowedTools:[],groupContext:(db,owner,task,role)=>readRunGroupContext(db,owner,task,role,undefined,f.pool)})
+ const run=await runs.prepare(x.owner,{requestId:randomUUID(),taskId:task.id,expectedTaskVersion:continued.taskVersion,roleId:item.roleId,expectedRoleVersion:item.roleVersion,sessionId,expectedLinkVersion:link.version})
+ await runs.claim(x.owner,{runId:run.id});await runs.record(x.owner,{runId:run.id,sessionId,nativeRequestId:run.nativeRequestId,evidence:{state:'active',turn:1,messageSeq:8}})
+ await inputs.settle(x.owner,{requestId,state:'accepted',runId:run.id,nativeRequestId:run.nativeRequestId,reason:null})
+ const status=new GroupRoutingStatusService(f.pool,async sessions=>new Set(sessions.filter(id=>id===sessionId)))
+ const read=async(messageIds:string[])=>(await status.status(x.owner,{groupId:x.group.id,messageIds})).items
+ const before=(await f.pool.query('select id,state,session_id,evidence from teloa_task_runs where owner_id=$1 order by id',[x.owner])).rows
+ const old=(await read([x.message.id]))[0]!,current=(await read([message.id]))[0]!,both=await read([x.message.id,message.id])
+ assert.equal(old.recipients[0]?.runId,p.run.id);assert.equal(old.phase,'blocked')
+ assert.equal(current.recipients[0]?.runId,run.id);assert.equal(current.phase,'awaiting-approval')
+ assert.deepEqual(both.find(value=>value.messageId===x.message.id),old,'同一旧消息不能因批量查询包含新Run而变成待审批')
+ assert.deepEqual(both.find(value=>value.messageId===message.id),current)
+ assert.deepEqual((await f.pool.query('select id,state,session_id,evidence from teloa_task_runs where owner_id=$1 order by id',[x.owner])).rows,before,'状态投影不改写Run身份、状态或原生证据')
+})
+
+test('Task安全动作审批保留：没有原生审批也呈现待本人决定，撤回后恢复真实Run状态',async()=>{
+ const {initializeBusinessData}=await import('../src/work/business-data.ts'),{initializeBusinessTasks}=await import('../src/work/business-tasks.ts')
+ const {initializeSecurityRequests}=await import('../src/security/request-journal.ts'),{initializeSecurityActions}=await import('../src/security/actions.ts')
+ const {fixture:securityFixture,command}=await import('./security-action-fixture.ts')
+ await initializeBusinessData(f.pool);await initializeBusinessTasks(f.pool);await initializeSecurityRequests(f.pool);await initializeSecurityActions(f.pool)
+ const security=await securityFixture(f.pool),x=await fixture(['安全同事'],security.principal.ownerId),role=x.recipients[0]!,inputs=new GroupWorkInputService(f.pool,identity),requestId=randomUUID()
+ // 固定业务任务关联本群；这里只构造投影事实，不启动模型或授予执行权限。
+ await f.pool.query("update teloa_tasks set assignee_role_id=$2,assignee_role_version=$3,definition=jsonb_set(definition,'{groupId}',to_jsonb($4::text)) where id=$1",[security.task.id,role.id,role.version,x.group.id])
+ const runId=await insertRoleRun(f.pool,x.owner,role.id,security.task.id,'active')
+ await x.decisions.withTopicLock(x.owner,x.group.id,x.message.id,async db=>{
+  await x.decisions.record(db,x.owner,{groupId:x.group.id,messageId:x.message.id,decision:{...x.decision,intent:'continue',respond:[],assignments:[],workTarget:{taskId:security.task.id,runId}}})
+  await inputs.reserveInTransaction(db,x.owner,{requestId,groupId:x.group.id,messageId:x.message.id,taskId:security.task.id,expectedTaskVersion:security.task.version,operation:'continue'})
+ })
+ await inputs.settle(x.owner,{requestId,state:'accepted',runId,reason:null})
+ const pending=await security.actions.submit(security.principal,command(await security.actions.propose(security.principal,security.proposal)))
+ const status=new GroupRoutingStatusService(f.pool,async()=>new Set()),read=async()=>(await status.status(x.owner,{groupId:x.group.id,messageIds:[x.message.id]})).items[0]!
+ assert.equal((await read()).phase,'awaiting-approval');assert.deepEqual(await security.actions.get(security.principal,{actionId:pending.id}),pending)
+ await security.actions.withdrawSubmission(security.principal,command(pending))
+ assert.equal((await read()).phase,'running');assert.equal((await read()).recipients[0]?.runId,runId)
 })
 
 test('原工作续办展示实际员工和运行，不将引用的接手者误报为暂无员工',async()=>{

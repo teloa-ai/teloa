@@ -12,7 +12,8 @@ export {applyMarkdownCommand,parseMarkdown,type MarkdownBlock,type MarkdownComma
 const safeHref=(href:string)=>/[\x00-\x1f]/.test(href)?'#':/^(?:https?:|mailto:|#|\.\.?\/)/i.test(href)||/^\/(?![/\\])/.test(href)?href:'#'
 
 function inline(text:string,key:string,images=true):ReactNode[]{
- const pattern=/(!?\[[^\]]*\]\([^\s)]+\)|`[^`]+`|\*\*[^*]+\*\*|__[^_]+__|(?<!\*)\*[^*\n]+\*(?!\*)|(?<!_)_[^_\n]+_(?!_))/g
+ // 下划线不在词内开启强调，保留案例编号与中英文标识；星号仍可用于词内强调。
+ const pattern=/(!?\[[^\]]*\]\([^\s)]+\)|`[^`]+`|\*\*[^*]+\*\*|(?<![\p{L}\p{N}_])__[^_]+__(?![\p{L}\p{N}_])|(?<!\*)\*[^*\n]+\*(?!\*)|(?<![\p{L}\p{N}_])_[^_\n]+_(?![\p{L}\p{N}_]))/gu
  const nodes:ReactNode[]=[];let cursor=0,match:RegExpExecArray|null
  while((match=pattern.exec(text))){
   if(match.index>cursor)nodes.push(text.slice(cursor,match.index))

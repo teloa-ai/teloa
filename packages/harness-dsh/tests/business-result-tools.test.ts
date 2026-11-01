@@ -198,3 +198,16 @@ test('错误码只用允许扩散的正式码：不再出现 teloa/not-bound、t
  assert.doesNotMatch(source,/teloa\/not-bound|teloa\/host-unavailable/)
  assert.match(source,/new WorkError\('teloa\/dependency-unavailable','暂时无法核对会话身份。'\)/)
 })
+
+test('NF02普通会话SQL省业务沿真实选择，跨业务拒绝，写入口仍拒绝',async t=>{
+ const {authorizeConversationBusinessScope}=await import('../src/business-scope-context.ts')
+ let selected=scope,version=1
+ const authorization={owner,conversation:async(id:string)=>({ownerId:owner,sessionId:id,status:'ready' as const}),readTaskPolicy:async()=>null,isRoleConversation:async()=>false,isTaskConversation:async()=>false,binding:async()=>undefined,context:async()=>({sessionId,scopeId:selected,roleId:null,version,locked:true}),scopes:async()=>[scope,'SOC'].map(scope=>({scope,title:scope}))}
+ const e=await setup({readTaskPolicy:async()=>null,ordinaryScopeAuthorization:(exec,scope)=>authorizeConversationBusinessScope(authorization,exec,scope)});t.after(()=>e.ctx.fiber.dispose())
+ const result=await e.call(trial,{sql:'select title from ticket'})
+ assert.equal(result.isError,false,text(result));assert.equal(JSON.parse(result.value as string).source.scope,scope)
+ assert.equal((await e.call(trial,{scope:'SOC',sql:'select title from ticket'})).isError,true)
+ assert.equal((await e.call(record,{scope,mappingId:'agent-results',items:[{title:'x'}]})).isError,true)
+ selected='SOC';version++;assert.equal((await e.call(trial,{scope,sql:'select title from ticket'})).isError,true)
+ assert.equal(e.ingested.length,0)
+})

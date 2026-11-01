@@ -19,6 +19,7 @@ function fixture(){
  const api=createBusinessBuilderApi(async(endpoint,payload)=>{
   calls.push(endpoint);const p=payload as Record<string,any>
   if(endpoint==='business-setup-plan/read')return null
+  if(endpoint==='business-configuration/generation-mode')return {sessionId:p.sessionId,draftId:p.draftId,revision:drafts.get(p.draftId)!.revision,mode:p.mode??'preview'}
   if(endpoint==='business-conversations/recent-daily')return [...bindings.values()].find(b=>b.kind==='daily'&&b.scope===p.scope)??null
   if(endpoint==='business-conversations/reserve'){
    if(p.kind==='daily'){const b={...p,createdAt:stamp,updatedAt:stamp} as BusinessConversationBinding;bindings.set(b.requestId,b);return b}
@@ -489,4 +490,14 @@ test('R2 当前builder重开仍核unknown/pending/真实binding，核对和adopt
   if(mode==='unknown')assert.equal(checks,1)
   f.controller.dispose()
  }
+})
+
+test('host无工具预览在原生turn/end完成或失败后回读，历史基线/补页/重复seq不重放',async()=>{
+ const {MutableSessionEventSource}=await import(new URL('./types/client/contract/events.js',import.meta.resolve('@deepseek-ai/dsh-api-session-controller/client')).href)
+ const {watchBusinessBuilderRevisions}=await import('../src/client/business-builder-controller.ts')
+ const end=(seq:number,kind:string)=>({type:'event',event:{type:'turn/end',seq,time:0,data:{turn:1,reason:{kind}},surfaceOp:'none'}} as any)
+ const source=new MutableSessionEventSource();source.replace([end(2,'completed')],false);let reads=0;const off=watchBusinessBuilderRevisions(source,()=>reads++)
+ source.prepend([end(1,'completed')],false);assert.equal(reads,0)
+ source.append(end(3,'completed'));assert.equal(reads,1);source.replace(source.getSnapshot().entries,false);assert.equal(reads,1)
+ source.append(end(4,'error'));assert.equal(reads,2);source.append(end(4,'error'));assert.equal(reads,2);off()
 })

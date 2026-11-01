@@ -1,0 +1,31 @@
+import test from 'node:test'
+import assert from 'node:assert/strict'
+import {createServer} from 'node:http'
+import {fileURLToPath} from 'node:url'
+import {join} from 'node:path'
+import {build} from 'vite'
+// @ts-expect-error 复用既有无头本机浏览器加载器。
+import {loadPlaywright,launchOptions} from './fixtures/load-playwright.mjs'
+
+test('历史版本与失效绑定在真实资料区块中诚实区分，简繁英不提示重复确认',async t=>{
+ const root=fileURLToPath(new URL('../../../../',import.meta.url)),client=fileURLToPath(new URL('../src/client/',import.meta.url)),virtual=root+'__retrieval_version_state.tsx'
+ const entry=`import React,{useState} from 'react';import {createRoot} from 'react-dom/client';import {LocalRetrievalResourcesPresentation} from '${client}LocalRetrievalResources.tsx';import {readRetrievalStatus} from '${client}local-retrieval-api.ts';import {I18nProvider,useI18n} from '${client}i18n/provider.tsx';import {prototypeThemes} from '${client}../brand/prototype-theme.ts';import tokens from '${client}theme-tokens.module.css';import {translateMessage} from '${client}i18n/messages.ts';
+ const calls=window.versionState={writes:[]},listeners=new Set();let snapshot={locale:'zh-CN',dshLocale:'zh',revision:1};const runtime={getSnapshot:()=>snapshot,subscribe:listener=>{listeners.add(listener);return()=>listeners.delete(listener)},t:(key,p)=>translateMessage(snapshot.locale,key,p)};calls.locale=locale=>{snapshot={locale,dshLocale:locale,revision:snapshot.revision+1};for(const listener of listeners)listener()};function App(){const{t,locale}=useI18n(),[historical,setHistorical]=useState(true);calls.historical=setHistorical;const old={sourceId:'source_a',resourceId:'11111111-1111-4111-8111-111111111111',title:'Old material',version:1,state:'stale',chunkCount:null,sourceChanged:true,sourceState:historical?'historical':'changed'},current={sourceId:'source_a',resourceId:'22222222-2222-4222-8222-222222222222',title:'Current material',version:1,state:'ready',chunkCount:1},status=readRetrievalStatus({items:historical?[old,current]:[old],enrolled:1,chunks:historical?2:1,building:false});return <div className={tokens.tokens} style={{...prototypeThemes.light,padding:24,minHeight:'100vh'}}><LocalRetrievalResourcesPresentation locale={locale} status={status} busy={false} error="" t={t} onEnroll={()=>calls.writes.push('enroll')} onRemove={()=>calls.writes.push('remove')} onReindex={()=>calls.writes.push('reindex')} onCancel={()=>calls.writes.push('cancel')}/></div>};createRoot(document.getElementById('root')).render(<I18nProvider runtime={runtime}><App/></I18nProvider>);`
+ const built=await build({configFile:false,root,logLevel:'silent',define:{'process.env.NODE_ENV':'"development"'},plugins:[{name:'retrieval-version-state',resolveId(id){if(id===virtual)return virtual},load(id){if(id===virtual)return entry}}],build:{write:false,lib:{entry:virtual,name:'RetrievalVersionState',formats:['iife']},rollupOptions:{external:(id:string)=>id.startsWith('node:'),treeshake:{moduleSideEffects:false}},minify:false}})as unknown as{output:{type:string;fileName:string;code?:string;source?:string|Uint8Array}[]}|{output:{type:string;fileName:string;code?:string;source?:string|Uint8Array}[]}[]
+ const bundle=Array.isArray(built)?built[0]!:built
+ const server=createServer((_request,response)=>response.end('<!doctype html><meta charset="utf-8"><style>body{margin:24px;font-family:system-ui;color:#263445;background:#fff}button{font:inherit}</style><div id="root"></div>'));await new Promise<void>(resolve=>server.listen(0,'127.0.0.1',resolve));t.after(()=>new Promise<void>(resolve=>server.close(()=>resolve())))
+ const {chromium}=await loadPlaywright(),browser=await chromium.launch(launchOptions);t.after(()=>browser.close());const page=await browser.newPage({viewport:{width:1120,height:760}}),url='http://127.0.0.1:'+(server.address()as{port:number}).port,errors:string[]=[],external:string[]=[]
+ page.setDefaultTimeout(5000);page.on('pageerror',(error:Error)=>{errors.push(error.message);t.diagnostic(error.message)});await page.route('**/*',(route:{request:()=>{url:()=>string};continue:()=>Promise<unknown>;abort:()=>Promise<unknown>})=>{if(route.request().url().startsWith(url+'/'))return route.continue();external.push(route.request().url());return route.abort()})
+ await page.goto(url);await page.addStyleTag({content:bundle.output.filter(row=>row.type==='asset'&&row.fileName.endsWith('.css')).map(row=>String(row.source)).join('\n')});await page.addScriptTag({content:bundle.output.find(row=>row.type==='chunk')!.code!})
+ const labels=[['zh-CN','历史版本，保留追溯；当前版本已确认','固定版本已失效，请核对当前版本与可用范围'],['zh-TW','歷史版本，保留追溯；目前版本已確認','固定版本已失效，請核對目前版本與可用範圍'],['en','Historical version retained for reference; current version confirmed','Fixed version unavailable; review the current version and allowed materials']]as const
+ const panel=page.locator('[data-retrieval-resources]');await panel.locator('summary').filter({hasText:'管理资料'}).click()
+ for(const[locale,historical,changed]of labels){
+  await page.evaluate((locale:string)=>(window as unknown as{versionState:{locale:(value:string)=>void;historical:(value:boolean)=>void}}).versionState.locale(locale),locale);await panel.getByText(historical,{exact:false}).first().waitFor().catch(async(error:unknown)=>{t.diagnostic(JSON.stringify({errors,text:await page.locator('body').innerText()}));throw error})
+  assert.ok((await panel.innerText()).includes(historical!));assert.ok(!(await panel.innerText()).includes(changed!))
+  if(process.env.TELOA_RETRIEVAL_VERSION_TEST_OUTPUT_DIR)await page.screenshot({path:join(process.env.TELOA_RETRIEVAL_VERSION_TEST_OUTPUT_DIR,locale+'-historical.png')})
+ }
+ await page.evaluate(()=>(window as unknown as{versionState:{locale:(value:string)=>void;historical:(value:boolean)=>void}}).versionState.historical(false));await panel.getByText(labels[2]![2]!,{exact:false}).first().waitFor()
+ assert.doesNotMatch(await panel.innerText(),/confirm the new version|current version confirmed/)
+ if(process.env.TELOA_RETRIEVAL_VERSION_TEST_OUTPUT_DIR)await page.screenshot({path:join(process.env.TELOA_RETRIEVAL_VERSION_TEST_OUTPUT_DIR,'en-changed.png')})
+ assert.deepEqual(await page.evaluate(()=>(window as unknown as{versionState:{writes:string[]}}).versionState.writes),[]);assert.deepEqual(errors,[]);assert.deepEqual(external,[])
+})

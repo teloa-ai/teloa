@@ -78,11 +78,11 @@ export function createTaskRunGoal(ctx:Context,service:Service,owner:string,optio
   assertCurrent:currentCandidate,
   assertContinuationCurrent(candidate,binding){exact(candidate.agent);const goal=liveGoal(candidate.agent);if(binding.ownerId!==owner||binding.sessionId!==candidate.agent.id||binding.hostGeneration!==options.hostGeneration()||!goal||goal.id!==binding.goalId||goal.revision<binding.revision||goal.phase!=='complete'&&(goal.phase!=='active'||goal.activation!=='armed'))throw new WorkError('teloa/forbidden','Goal 已受理续作的宿主、控制或归属已失效。')},
  })
- const observation=async(run:BindingRun,events?:readonly SessionEvent[]):Promise<GoalObservationContext|undefined>=>{
+ const observation=async(run:BindingRun,events?:readonly SessionEvent[],readOnly=false):Promise<GoalObservationContext|undefined>=>{
   await pending.get(run.sessionId)
   let stored=await service.read(owner,{runId:run.id});if(!stored.binding)return undefined
   const attached=ctx.agents.get(SessionId(run.sessionId))
-  if(attached&&stored.continuations.some(receipt=>receipt.state==='unknown')){await reconcileReceipts(attached,stored.continuations);stored=await service.read(owner,{runId:run.id});if(!stored.binding)return undefined}
+  if(!readOnly&&attached&&stored.continuations.some(receipt=>receipt.state==='unknown')){await reconcileReceipts(attached,stored.continuations);stored=await service.read(owner,{runId:run.id});if(!stored.binding)return undefined}
   const agent=ctx.agents.get(SessionId(run.sessionId)),folded=!agent&&events?options.foldGoal?.(events):undefined,goal=agent?liveGoal(agent):folded?.goal
   if(!goal||goal.id!==stored.binding.goalId||goal.revision!==stored.binding.revision)throw new WorkError('teloa/unavailable','Goal 当前状态不可核验，保持执行未收口。')
   const own=new Set(stored.continuations.map(r=>r.messageId)),queued=[...(agent?.inbox.nextTurn??[]),...(agent?.inbox.nextStep??[])].some(message=>own.has(message.id))
@@ -128,5 +128,5 @@ export function createTaskRunGoal(ctx:Context,service:Service,owner:string,optio
   if(failed.has(run.sessionId))throw new WorkError('teloa/unavailable','Goal 变更的执行绑定尚未落定。')
   return result
  })
- return Object.freeze({admit,observation,stop,resume,async observationForSession(sessionId:string,events:readonly SessionEvent[]){const run=await service.findRun(owner,sessionId);return run?observation(run,events):undefined},close(){closed=true;changed();tools()}})
+ return Object.freeze({admit,observation,readOnlyObservation:(run:BindingRun,events?:readonly SessionEvent[])=>observation(run,events,true),stop,resume,async observationForSession(sessionId:string,events:readonly SessionEvent[]){const run=await service.findRun(owner,sessionId);return run?observation(run,events):undefined},close(){closed=true;changed();tools()}})
 }

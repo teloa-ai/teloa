@@ -1,0 +1,2 @@
+const rows={section:['AI 员工','AI 員工','AI employees'],paused:['已暂停 · 可以沟通，暂不接新工作','已暫停 · 可以溝通，暫不接新工作','Paused · chat available, new work paused'],retired:['已离职 · 历史保留','已離職 · 歷史保留','Retired · history retained'],active:['沟通或交办 · 发送后生效','溝通或交辦 · 傳送後生效','Chat or delegate · applies when sent'],missing:['员工引用无法核对，请重新选择。','員工引用無法核對，請重新選擇。','Cannot verify this employee. Select them again.']} as const
+export const employeeMentionCopy=(locale:string,key:keyof typeof rows)=>rows[key][locale==='zh-TW'||locale==='zh-HK'?1:locale.startsWith('zh')?0:2]

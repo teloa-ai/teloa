@@ -365,7 +365,9 @@ test('复审 M-a/M-b：候选模板带模型指定时 use-template 保留本人�
  const f=await applyFixture()
  const candidate=await applyContent(f.owner,f.market,'1.1.0',value=>value,{agentPresetId:'security-analyst',model:{provider:'deepseek-official',model:'deepseek-flash'},fallbackModel:{provider:'other-cloud',model:'x'}})
  const own={model:{provider:'ollama',model:'qwen3:4b'},fallbackModel:{provider:'deepseek-official',model:'deepseek-v4-pro'}}
- await f.roleService.edit(f.owner,{roleId:f.role.id,expectedVersion:f.role.version,fields:roleFields(f.role,{runtimeConfig:own})})
+ // 本人明确选择模型仍须经过当前目录；模板升级只保留这份已选配置。
+ const selectable=new RoleService(pool,f.roleService.identity,undefined,async()=>({default:null,groups:[{id:'ollama',name:'Ollama',remote:false,models:[{id:'qwen3:4b',name:'Qwen'}]},{id:'deepseek-official',name:'DeepSeek',remote:true,models:[{id:'deepseek-v4-pro',name:'Pro'}]}],failures:[]}))
+ await selectable.edit(f.owner,{roleId:f.role.id,expectedVersion:f.role.version,fields:roleFields(f.role,{runtimeConfig:own})})
  const before=(await f.industryRoles.list(f.owner,{})).items[0]!
  assert.equal(before.declarations.some(row=>row.kind==='model'),false)
  await f.loads.upgrade(f.owner,applyCommand(f,{candidateContentId:candidate.id,choices:applyChoices({roles:{[instanceOf(f.load,'analyst')]:'use-template'}})}))

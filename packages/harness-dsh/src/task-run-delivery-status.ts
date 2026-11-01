@@ -8,6 +8,7 @@ import {readTaskRunGroupResult} from './task-run-group-result.ts'
 export type TaskRunDeliveryCheck=Readonly<{state:'saved'|'review-required'|'unknown'}>
 export type TaskRunDeliveryReader={read:(owner:string,run:TaskRun)=>Promise<TaskRunDeliveryCheck|undefined>}
 type DeliveryReadPorts={
+ digest?:(owner:string,run:TaskRun)=>Promise<TaskRunDeliveryCheck|undefined>
  receipt:(owner:string,run:TaskRun)=>Promise<boolean>
  events:(run:TaskRun)=>Promise<readonly SessionEvent[]>
  continuations?:(run:TaskRun,events:readonly SessionEvent[])=>Promise<ReadonlySet<string>>
@@ -18,8 +19,11 @@ const unavailableCodes:ReadonlySet<string>=new Set(['teloa/dependency-unavailabl
 /** 只读原运行的正式交付证明；saved 不代表本人认可，也不启动发布、复核或重试。 */
 export function createTaskRunDeliveryReader(ports:DeliveryReadPorts):TaskRunDeliveryReader{
  return {async read(owner,run){
-  if(run.executor?.kind!=='owner'||run.state!=='ended'||run.evidence?.state!=='ended'||run.evidence.reason!=='completed'||run.stopRequestedAt!==null)return undefined
+  if(run.state!=='ended'||run.evidence?.state!=='ended'||run.evidence.reason!=='completed'||run.stopRequestedAt!==null)return undefined
   try{
+   const digest=await ports.digest?.(owner,run)
+   if(digest)return digest
+   if(run.executor?.kind!=='owner')return undefined
    if(await ports.receipt(owner,run))return {state:'saved'}
    const events=(await ports.events(run)).slice(0,run.evidence.endSeq+1)
    const continuations=await ports.continuations?.(run,events),goal=await ports.goalObservation?.(run,events)

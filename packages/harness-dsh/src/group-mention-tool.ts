@@ -22,7 +22,7 @@ export function registerGroupMentionTool(ctx:Context,ports:Ports){
   return {sessionId,nativeRequestId:context.nativeRequestId}
  }
  ctx.tools.register(defineTool({name:groupMentionToolName,
-  description:'在本次群工作的最终回复里提及本人，提醒其阅读原消息。需要本人关注或补充意见时使用；只登记本次运行的提醒意图，运行成功回群时才出现。先调用本工具，再在最后一条回复交付完整成果和具体交接；工具调用前的中间稿不会代替最终正文，不能最后只写“报告已交付”。不是审批、任务创建或授权，不发额外消息；正文里写 @姓名 不会形成提及。',
+  description:'可选的群内提醒：仅在本次工作允许单独提醒且确需本人关注或补充意见时，在最终回复里提及本人。普通成果由宿主自动回群，不需要先调用本工具，未提醒也能完整交付。本人要求仅分析、禁止代码或不做群内动作时，不调用本工具。获准使用时，只登记本次运行的提醒意图，运行成功回群时才出现；登记后仍须在最后一条回复交付完整成果和具体交接，工具调用前的中间稿不会代替最终正文，不能最后只写“报告已交付”。不是审批、任务创建或授权，不发额外消息；正文里写 @姓名 不会形成提及。',
   parameters:{target:{type:'string',enum:['self'],required:true}},
   output:{schema:{type:'string'},render:(_args,value)=>[{type:'text',text:value}]},
   execute:async(args,exec)=>{

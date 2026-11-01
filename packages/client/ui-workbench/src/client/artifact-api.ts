@@ -1,16 +1,17 @@
-import {artifactInput,artifactContent,savedArtifactMessage,savedArtifactSource,savedArtifactFeedback,isArtifactFile,roleArtifactSummary,type RoleArtifactSummary,type SavedArtifactVersion,type ArtifactFile} from '@teloa/contract'
+import {WorkError,artifactInput,artifactContent,savedArtifactMessage,savedArtifactSource,savedArtifactFeedback,isArtifactFile,roleArtifactSummary,readArtifactAvailability,readArtifactWithdrawalInput,readArtifactWithdrawal,type RoleArtifactSummary,type SavedArtifactVersion,type ArtifactFile} from '@teloa/contract'
 import type {Artifact,ArtifactRevision} from './artifact-preview.js'
 import {recoveryStorageError} from './recovery-error.ts'
 type Call=(method:string,payload:unknown)=>Promise<unknown>
-export type ArtifactSaveJournal={read:()=>string|null;write:(value:string)=>void;clear?:()=>void}
+export type ArtifactSaveJournal={read:()=>string|null;write:(value:string)=>void;clear?:()=>void;exclusive?:<T>(update:()=>T)=>Promise<T>}
 type Pending={intent:string;requestId:string;payload?:unknown}
 const rejected=(error:unknown)=>!!error&&typeof error==='object'&&'rejected' in error&&(error as {rejected?:unknown}).rejected===true&&'code' in error&&['teloa/invalid-input','teloa/forbidden','teloa/conflict','teloa/version-conflict','teloa/source-unavailable'].includes(String((error as {code?:unknown}).code))
 function prepared(key:string,value:unknown){
- if(key.startsWith('feedback:')){const row=artifactInput(value,['requestId','artifactId','version','sectionId','text','source']),source=savedArtifactSource(row.source);if(!['session','task'].includes(source.kind)||typeof row.requestId!=='string'||!/^[a-f0-9-]{36}$/i.test(row.requestId)||typeof row.artifactId!=='string'||!/^[a-f0-9-]{36}$/i.test(row.artifactId)||!Number.isSafeInteger(row.version)||(row.version as number)<1||typeof row.sectionId!=='string'||!row.sectionId||typeof row.text!=='string'||!row.text.trim()||row.text.length>4000||key!=='feedback:'+row.artifactId+':'+row.version+':'+row.sectionId)throw Error('待核对反馈身份不正确。');return {creating:false,feedback:true,row,source,content:{title:'反馈 · '+source.title}}}
+ if(key.startsWith('withdraw:')){const row=readArtifactWithdrawalInput(value);if(key!=='withdraw:'+row.artifactId||!['session','task'].includes(row.source.kind))throw Error('待核对撤回身份不正确。');return {creating:false,feedback:false,withdrawing:true,row,source:row.source,content:{title:'撤回成果 · '+row.source.title}} as const}
+ if(key.startsWith('feedback:')){const row=artifactInput(value,['requestId','artifactId','version','sectionId','text','source']),source=savedArtifactSource(row.source);if(!['session','task'].includes(source.kind)||typeof row.requestId!=='string'||!/^[a-f0-9-]{36}$/i.test(row.requestId)||typeof row.artifactId!=='string'||!/^[a-f0-9-]{36}$/i.test(row.artifactId)||!Number.isSafeInteger(row.version)||(row.version as number)<1||typeof row.sectionId!=='string'||!row.sectionId||typeof row.text!=='string'||!row.text.trim()||row.text.length>4000||key!=='feedback:'+row.artifactId+':'+row.version+':'+row.sectionId)throw Error('待核对反馈身份不正确。');return {creating:false,feedback:true,withdrawing:false,row,source,content:{title:'反馈 · '+source.title}} as const}
  const creating=key.startsWith('create:'),row=artifactInput(value,creating?['requestId','source','content']:['artifactId','expectedVersion','source','content']),source=savedArtifactSource(row.source),content=artifactContent(row.content)
  const uuid=(value:unknown)=>typeof value==='string'&&/^[a-f0-9]{8}-[a-f0-9]{4}-[1-5][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i.test(value)
  if(!['session','task'].includes(source.kind)||(creating?(!uuid(row.requestId)||key!=='create:'+(source.kind==='task'?'task:':'')+source.id):(!uuid(row.artifactId)||!Number.isSafeInteger(row.expectedVersion)||(row.expectedVersion as number)<1||key!=='revise:'+row.artifactId+':'+row.expectedVersion)))throw Error('待保存身份不正确。')
- return {creating,feedback:false,row,source,content}
+ return {creating,feedback:false,withdrawing:false,row,source,content} as const
 }
 /** 导出供 group-attachment-api.ts 复用：group 消息里 artifact 引用按 artifactId+version 读版本清单走同一条解析。 */
 export function read(value:unknown):SavedArtifactVersion&{producer?:{taskId:string;taskVersion:number;runId:string}}{
@@ -26,14 +27,34 @@ export function createArtifactApi(call:Call,journal?:ArtifactSaveJournal){
  const snapshotIdsByFile=new Map<string,string>(),snapshotIdsByMessage=new Map<string,string>()
  const pending=new Map<string,Pending>(),files=new Map<string,ArtifactFile>()
  let recoveryError:ReturnType<typeof recoveryStorageError>|undefined,busy=false
- const persist=(rows=pending)=>journal?.write(JSON.stringify({schema:'teloa.artifact-save/v1',requests:[...rows].filter(([,request])=>request.payload).map(([key,request])=>({key,...request}))}))
- try{
-  const raw=journal?.read()
-  if(raw){if(raw.length>2000000)throw Error();const envelope=artifactInput(JSON.parse(raw),['schema','requests']);if(envelope.schema!=='teloa.artifact-save/v1'||!Array.isArray(envelope.requests)||envelope.requests.length>100)throw Error()
-   for(const value of envelope.requests){const row=artifactInput(value,['key','intent','requestId','payload']);if(typeof row.key!=='string'||typeof row.intent!=='string'||row.intent.length>150000||typeof row.requestId!=='string'||pending.has(row.key))throw Error();const request=prepared(row.key,row.payload);if((request.creating||request.feedback)&&request.row.requestId!==row.requestId)throw Error();pending.set(row.key,{intent:row.intent,requestId:row.requestId,payload:row.payload})}
-  }
- }catch{pending.clear();recoveryError=recoveryStorageError()}
- const finish=(key:string)=>{const next=new Map(pending);next.delete(key);if(next.size)persist(next);else journal?.clear?.();pending.delete(key)}
+ const envelope=(rows:Map<string,Pending>)=>JSON.stringify({schema:'teloa.artifact-save/v1',requests:[...rows].filter(([,request])=>request.payload).map(([key,request])=>({key,...request}))})
+ const stored=()=>{
+  const loaded=new Map<string,Pending>()
+  try{
+   const raw=journal?.read()
+   if(raw){if(raw.length>2000000)throw Error();const value=artifactInput(JSON.parse(raw),['schema','requests']);if(value.schema!=='teloa.artifact-save/v1'||!Array.isArray(value.requests)||value.requests.length>100)throw Error()
+    for(const entry of value.requests){const row=artifactInput(entry,['key','intent','requestId','payload']);if(typeof row.key!=='string'||typeof row.intent!=='string'||row.intent.length>150000||typeof row.requestId!=='string'||loaded.has(row.key))throw Error();const request=prepared(row.key,row.payload);if((request.creating||request.feedback||request.withdrawing)&&request.row.requestId!==row.requestId)throw Error();loaded.set(row.key,{intent:row.intent,requestId:row.requestId,payload:row.payload})}
+   }
+   return loaded
+  }catch{recoveryError=recoveryStorageError();throw recoveryError}
+ }
+ const exclusive=<T>(update:()=>T):Promise<T>=>journal?.exclusive?journal.exclusive(update):Promise.resolve(update())
+ const same=(left:Pending,right:Pending)=>left.requestId===right.requestId&&left.intent===right.intent&&JSON.stringify(left.payload)===JSON.stringify(right.payload)
+ // 每次只合并本次具名请求。共享标签页的迟到回执不能重写或清掉别人的原nonce。
+ const persist=(key:string)=>exclusive(()=>{
+  if(!journal)return
+  const request=pending.get(key);if(!request?.payload)throw recoveryStorageError()
+  const latest=stored(),existing=latest.get(key)
+  if(existing&&!same(existing,request)){pending.set(key,existing);throw new WorkError('teloa/conflict','已有待核对的成果请求，请先核对原请求。')}
+  latest.set(key,request);if(latest.size>100)throw recoveryStorageError()
+  journal.write(envelope(latest))
+ })
+ const finish=(key:string)=>exclusive(()=>{
+  const request=pending.get(key)
+  if(journal&&request){const latest=stored(),existing=latest.get(key);if(existing&&same(existing,request)){latest.delete(key);if(latest.size||!journal.clear)journal.write(envelope(latest));else journal.clear()}}
+  pending.delete(key)
+ })
+ try{for(const [key,request]of stored())pending.set(key,request)}catch{pending.clear()}
  async function taskSessions(taskId:string):Promise<string[]>{const rows=await call('artifacts/task/sessions',{taskId});if(!Array.isArray(rows)||rows.some(id=>typeof id!=='string'||!/^[a-zA-Z0-9_-]{1,128}$/.test(id))||new Set(rows).size!==rows.length)throw Error('任务关联会话目录不正确。');return rows}
  async function snapshot(id:string){const value=await call('artifacts/snapshot',{snapshotId:id});if(!isArtifactFile(value))throw Error('成果文件快照格式不正确。');return value}
  async function hydrate(rows:SavedArtifactVersion[]):Promise<Artifact>{
@@ -74,8 +95,43 @@ export function createArtifactApi(call:Call,journal?:ArtifactSaveJournal){
   for(const selected of version.messages??[]){const message=savedArtifactMessage(selected),key=JSON.stringify(message),existing=snapshotIdsByMessage.get(key);if(existing){messageSnapshotIds.push(existing);continue}const captured=artifactInput(await call('artifacts/message/capture',{message}),['snapshotId','message']);if(typeof captured.snapshotId!=='string'||!/^[a-f0-9]{64}$/.test(captured.snapshotId)||JSON.stringify(savedArtifactMessage(captured.message))!==key)throw Error('捕获内容与选定原消息不一致。');snapshotIdsByMessage.set(key,captured.snapshotId);messageSnapshotIds.push(captured.snapshotId)}
   return {source,content:artifactContent({...(messageSnapshotIds.length?{messageSnapshotIds}:{}),title:version.title,sections:version.sections,snapshotIds,note:version.note,...(version.feedbackId?{feedbackId:version.feedbackId}:{})})}
  }
+ async function sendWithdrawal(key:string,request:Pending){
+  const input=readArtifactWithdrawalInput(request.payload),receipt=readArtifactWithdrawal(await call('artifacts/withdraw',input))
+  if(receipt.requestId!==input.requestId||receipt.artifactId!==input.artifactId||receipt.expectedVersion!==input.expectedVersion||JSON.stringify(receipt.source)!==JSON.stringify(input.source))throw Error('撤回回执与原请求不一致。')
+  await finish(key)
+  return receipt
+ }
  return {
   get:load,
+  async availability(artifactId:string){const value=readArtifactAvailability(await call('artifacts/availability',{artifactId}));if(value.artifactId!==artifactId)throw Error('成果可用状态与请求对象不一致。');return value},
+  withdrawalPending:(artifactId:string)=>pending.has('withdraw:'+artifactId),
+  async withdraw(artifactId:string){
+   if(recoveryError)throw recoveryError
+   if(busy)throw Error('成果请求正在核对，请等待完成。')
+   const key='withdraw:'+artifactId
+   if(pending.has(key))throw Error('请先核对原撤回请求，再开始新的操作。')
+   busy=true
+   try{
+    const value=await call('artifacts/versions',{artifactId})
+    if(!Array.isArray(value)||!value.length)throw Error('成果历史格式不正确。')
+    const versions=value.map(read),first=versions[0]!,head=versions.at(-1)!
+    if(versions.some((row,index)=>row.artifactId!==artifactId||row.ownerId!==first.ownerId||row.number!==index+1||row.source.kind!==first.source.kind||row.source.id!==first.source.id||row.source.scope!==first.source.scope))throw Error('成果历史与撤回对象不一致。')
+    // 整对象撤回以已保存的当前头为准，不向已结束的来源工作重新索取版本。
+    const input=readArtifactWithdrawalInput({requestId:crypto.randomUUID(),artifactId,expectedVersion:head.number,source:head.source})
+    prepared(key,input)
+    const request={requestId:input.requestId,intent:JSON.stringify(input),payload:input}
+    pending.set(key,request);await persist(key)
+    return await sendWithdrawal(key,request)
+   }catch(error){if(rejected(error))await finish(key);throw error}finally{busy=false}
+  },
+  async recoverWithdrawal(artifactId:string){
+   if(recoveryError)throw recoveryError
+   if(busy)throw Error('成果请求正在核对，请等待完成。')
+   const key='withdraw:'+artifactId,request=pending.get(key)
+   if(!request?.payload||!prepared(key,request.payload).withdrawing)throw Error('没有待核对的撤回请求。')
+   busy=true
+   try{await persist(key);return await sendWithdrawal(key,request)}catch(error){if(rejected(error))await finish(key);throw error}finally{busy=false}
+  },
   async requestRevision(artifactId:string,baseVersion:number,feedbackId:string,sessionId:string){
    const value=artifactInput(await call('artifacts/revision/request',{requestId:feedbackId,artifactId,baseVersion,feedbackId,sessionId}),['id','artifactId','baseVersion','feedbackId','sectionId','sessionId','state','taskId','producedVersion'])
    if(value.id!==feedbackId||value.artifactId!==artifactId||value.baseVersion!==baseVersion||value.feedbackId!==feedbackId||value.sessionId!==sessionId||!['requested','bound','completed','conflict'].includes(String(value.state)))throw Error('成果续改回执与原反馈不一致。')
@@ -116,7 +172,7 @@ export function createArtifactApi(call:Call,journal?:ArtifactSaveJournal){
    if(busy)throw Error('成果请求正在核对，请等待完成。')
    const request=pending.get(key);if(!request?.payload)throw Error('没有待核对的保存请求。')
    const value=prepared(key,request.payload);busy=true
-   try{persist();if(value.feedback){const result=savedArtifactFeedback(await call('artifacts/feedback/add',request.payload));if(result.artifactId!==value.row.artifactId||result.version!==value.row.version||result.sectionId!==value.row.sectionId||result.text!==value.row.text)throw Error('反馈恢复响应不一致。');const saved=await load(result.artifactId);finish(key);return saved}const result=read(await call(value.creating?'artifacts/create':'artifacts/revise',request.payload));if(result.source.id!==value.source.id||result.number!==(value.creating?1:(value.row.expectedVersion as number)+1)||(!value.creating&&result.artifactId!==value.row.artifactId))throw Error('成果恢复响应不一致。');const saved=await load(result.artifactId);finish(key);return saved}catch(error){if(rejected(error))finish(key);throw error}finally{busy=false}
+   try{await persist(key);if(value.withdrawing){const receipt=await sendWithdrawal(key,request);return await load(receipt.artifactId)}if(value.feedback){const result=savedArtifactFeedback(await call('artifacts/feedback/add',request.payload));if(result.artifactId!==value.row.artifactId||result.version!==value.row.version||result.sectionId!==value.row.sectionId||result.text!==value.row.text)throw Error('反馈恢复响应不一致。');const saved=await load(result.artifactId);await finish(key);return saved}const result=read(await call(value.creating?'artifacts/create':'artifacts/revise',request.payload));if(result.source.id!==value.source.id||result.number!==(value.creating?1:(value.row.expectedVersion as number)+1)||(!value.creating&&result.artifactId!==value.row.artifactId))throw Error('成果恢复响应不一致。');const saved=await load(result.artifactId);await finish(key);return saved}catch(error){if(rejected(error))await finish(key);throw error}finally{busy=false}
   },
   /** 员工工作成果目录：只读元数据，不读版本正文与文件快照；打开某条时再按成果读取。 */
   async listByRole(roleId:string):Promise<RoleArtifactSummary[]>{const value=await call('artifacts/role/list',{roleId});if(!Array.isArray(value))throw Error('员工成果目录格式不正确。');const rows=value.map(roleArtifactSummary);if(new Set(rows.map(row=>row.artifactId)).size!==rows.length)throw Error('员工成果目录重复。');return rows},
@@ -127,7 +183,7 @@ export function createArtifactApi(call:Call,journal?:ArtifactSaveJournal){
    const source={kind:target.source.ref.kind,id:target.source.ref.id,scope:target.source.scope,version:target.source.version,title:target.source.title},key='feedback:'+artifact.id+':'+version+':'+sectionId,intent=JSON.stringify({artifactId:artifact.id,version,sectionId,text:text.trim(),source})
    let request=pending.get(key);if(request&&(request.intent!==intent||requestIdentity!==undefined&&request.requestId!==requestIdentity))throw Error('先核对原反馈请求后再提交其他反馈。')
    if(!request){const requestId=requestIdentity??crypto.randomUUID();request={requestId,intent,payload:{requestId,...JSON.parse(intent)}};prepared(key,request.payload);pending.set(key,request)}
-   busy=true;try{persist();const result=savedArtifactFeedback(await call('artifacts/feedback/add',request.payload));if(result.artifactId!==artifact.id||result.version!==version||result.sectionId!==sectionId||result.text!==text.trim())throw Error('反馈保存响应不一致。');const saved=await load(artifact.id);finish(key);return saved}catch(error){if(rejected(error))finish(key);throw error}finally{busy=false}
+   busy=true;try{await persist(key);const result=savedArtifactFeedback(await call('artifacts/feedback/add',request.payload));if(result.artifactId!==artifact.id||result.version!==version||result.sectionId!==sectionId||result.text!==text.trim())throw Error('反馈保存响应不一致。');const saved=await load(artifact.id);await finish(key);return saved}catch(error){if(rejected(error))await finish(key);throw error}finally{busy=false}
   },
   async save(artifact:Artifact,creating:boolean){
    if(recoveryError)throw recoveryError
@@ -140,11 +196,11 @@ export function createArtifactApi(call:Call,journal?:ArtifactSaveJournal){
    if(request&&request.intent!==intent)throw Error('上次成果保存结果尚待核对，请先用原内容重试。')
    if(!request){request={intent,requestId:crypto.randomUUID()};pending.set(key,request)}
    if(!request.payload){try{const prepared=await prepare(artifact);request.payload=creating?{requestId:request.requestId,...prepared}:{artifactId:artifact.id,expectedVersion:version.number-1,...prepared}}catch(error){pending.delete(key);throw error}}
-   persist()
+   await persist(key)
    const result=read(await call(creating?'artifacts/create':'artifacts/revise',request.payload))
    if(result.source.id!==artifact.source.id||(!creating&&result.artifactId!==artifact.id)||result.number!==version.number)throw Error('成果保存响应身份或版本不一致。')
-   const saved=await load(result.artifactId);finish(key);return saved
-   }catch(error){if(rejected(error)){const version=artifact.versions.at(-1)!,key=creating?'create:'+(artifact.source.kind==='task'?'task:':'')+artifact.source.id:'revise:'+artifact.id+':'+(version.number-1);finish(key)}throw error}finally{busy=false}
+   const saved=await load(result.artifactId);await finish(key);return saved
+   }catch(error){if(rejected(error)){const version=artifact.versions.at(-1)!,key=creating?'create:'+(artifact.source.kind==='task'?'task:':'')+artifact.source.id:'revise:'+artifact.id+':'+(version.number-1);await finish(key)}throw error}finally{busy=false}
   },
  }
 }

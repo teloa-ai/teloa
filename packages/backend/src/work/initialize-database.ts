@@ -1,10 +1,14 @@
+import {initializeTaskRunSourceFollowups} from './task-run-source-followups.ts'
+import {initializePreparedMaintenance} from './prepared-maintenance.ts'
 import {initializeTaskRunGoals} from './task-run-goals.ts'
+import {initializeTaskRunSubmissions} from './task-run-submission.ts'
 import {initializeEmployeeIntegrations} from './employee-integrations.ts'
 import {initializeEmployeeApiWork} from './employee-api-work.ts'
 import {initializeWorkControl} from './work-control.ts'
 import {initializeWorkRecovery} from './work-recovery.ts'
 import {initializeWorkBudgets} from './work-budget.ts'
 import {initializeGroupRoutingOutbox} from './group-routing-outbox.ts'
+import {initializeGroupDeliveryRecovery} from './group-delivery-recovery.ts'
 import {initializeGroupRoutingAttempts} from './group-routing-attempts.ts'
 import {initializeGroupWorkInputs} from './group-work-inputs.ts'
 import {initializeWorkEvents} from './work-events.ts'
@@ -195,10 +199,12 @@ export async function initializeTeloaDatabase(pool:Pool,options:{businessSqlSecr
  await initializeWorkBudgets(pool)
  await initializeGroupRoutingOutbox(pool)
  await initializeGroupRoutingAttempts(pool)
+ await initializeGroupDeliveryRecovery(pool)
  await initializeGroupWorkInputs(pool)
  await initializeWorkEvents(pool)
  // 更新账本引用任务、业务快照与可信事件，须在这些父表之后创建。
  await initializeBusinessTaskSourceUpdates(pool)
+ await initializeTaskRunSourceFollowups(pool)
  await initializeWorkProgress(pool)
  await initializeWorkRetries(pool)
  await initializeConversationWork(pool)
@@ -208,5 +214,7 @@ export async function initializeTeloaDatabase(pool:Pool,options:{businessSqlSecr
  await initializeTwinDrafts(pool)
  await initializeRoleDailyLogs(pool)
  await initializeNotificationDeliveries(pool)
+ await initializeTaskRunSubmissions(pool)
+ await initializePreparedMaintenance(pool)
  return {businessSqlRole}
 }

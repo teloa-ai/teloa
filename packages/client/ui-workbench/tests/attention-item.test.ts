@@ -16,6 +16,22 @@ const roleId='87654321-1234-4234-8234-123456789012'
 const savedTask:WorkTask={id:taskId,ownerId:'owner',title:'核对真实任务',goal:'处理执行失败',scope:'general',groupId:null,skills:[],version:2,state:'blocked',assigneeRoleId:roleId,assigneeRoleVersion:1,createdAt:'2026-09-13T07:00:00.000Z',updatedAt:'2026-09-13T07:30:00.000Z'}
 const binding:BindingFailure={id:'binding-failure',bindingId:'binding-1',version:3,title:'资料连接',scope:'general',target:'通用工作',message:'连接不可用',at:'2026-09-13T07:40:00.000Z',active:true}
 
+test('当前原生审批进入需要你并打开固定 Run 会话，权威任务待办空页也不遗漏',()=>{
+ const nativeApproval={runId:'11111111-1111-4111-8111-111111111111',sessionId:'22222222-2222-4222-8222-222222222222'},task={...savedTask,state:'running' as const}
+ const items=aggregateAttentionItems({...snapshot(),tasks:[],handoffs:[],bindings:[],workAttention:[],taskAttention:[{task,attention:null,nativeApproval}]})
+ const pending=items.filter(item=>item.kind==='approval'&&item.persistence==='saved')
+ assert.equal(pending.length,1,'进行中的 Task 仍必须能发现当前原生审批')
+ assert.deepEqual(pending[0]!.target,{kind:'native-approval',taskId, ...nativeApproval})
+ const opened:unknown[]=[]
+ openAttentionItem(pending[0]!,{openNativeApproval:(target:unknown)=>opened.push(target),openTask:()=>assert.fail('应打开当前 Run 的原生会话'),openArtifact:()=>{},openGroup:()=>{},openMarket:()=>{},openIndustrySkill:()=>{},openBusiness:()=>{},openPlans:()=>{},openBinding:()=>{},openInstallation:()=>{}})
+ assert.deepEqual(opened,[{kind:'native-approval',taskId,...nativeApproval}])
+ assert.equal(aggregateAttentionItems({...snapshot(),workAttention:[],handoffs:[],taskAttention:[{task,attention:null}]}).some(item=>item.kind==='approval'&&item.persistence==='saved'),false)
+ const input={...snapshot(),workAttention:[],handoffs:[],taskAttention:[{task,attention:null,nativeApproval},{task,attention:null,nativeApproval}]}
+ assert.equal(aggregateAttentionItems(input).filter(item=>item.target.kind==='native-approval').length,1,'同 Run 的重复来源只显示一项')
+ const current={...task,id:taskId,version:task.version+1,state:'cancelled' as const,storage:'persistent' as const} as never
+ assert.equal(aggregateAttentionItems({...input,tasks:[current]}).some(item=>item.target.kind==='native-approval'),false,'较新任务版本不能保留旧审批')
+})
+
 test('正式工作待办替代旧任务出项，保留新真源身份且不把界面示例计入数量',()=>{
  const base=snapshot(),digest='d'.repeat(64),bodyHash='b'.repeat(64)
  const workAttention=[

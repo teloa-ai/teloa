@@ -1,3 +1,4 @@
+import {hasTaskRunApprovalContextReceipt} from './task-run-approval-context.ts'
 import {createHash} from 'node:crypto'
 import {isDeepStrictEqual} from 'node:util'
 import type {Agent} from '@deepseek-ai/dsh-agent'
@@ -997,6 +998,10 @@ export function leaseTaskDeliveryReview(agent:Pick<Agent,'ctx'|'session'>,lease:
   for(const seq of shadowed){
    if(allowed.has(seq))continue
    const index=events.findIndex(event=>event.seq===seq),event=events[index]
+   if(event?.type==='user/message'&&prior.steps.some(step=>{
+    const prompt=events.find(row=>row.type==='user/message'&&row.data.id===step.prompt.id)
+    return prompt?.type==='user/message'&&hasTaskRunApprovalContextReceipt(agent,{id:lease.runId,sessionId:String(agent.session.id),nativeRequestId:lease.requestId},event,step,prompt.seq)
+   })){allowed.add(seq);continue}
    // 只接纳官方为本次 review-only 声明紧随 request/header 生成的精确 registry 过渡。
    // 不按 developer 角色或工具名批删；额外文案、伪造引用、非本步与未知过渡都收错。
    if(event?.type!=='developer/message'||event.data.message.source.kind!=='tool-registry'||!prior.steps.some(step=>step.turn===event.data.turn&&step.step===event.data.step))return refuse()

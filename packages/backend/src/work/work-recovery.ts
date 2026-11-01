@@ -1,4 +1,6 @@
 import {isDeepStrictEqual} from 'node:util'
+import {resumePreparedMaintenance} from './prepared-maintenance.ts'
+import {GroupRoutingOutboxService} from './group-routing-outbox.ts'
 import type {Pool,PoolClient} from 'pg'
 import {WorkError,taskInput,readRecoveryCandidate,readGoalRunBinding,readWorkControl,type RecoveryCandidate,type RecoveryInspection,type WorkControl} from '@teloa/contract'
 import {WorkControlService} from './work-control.ts'
@@ -26,6 +28,7 @@ export async function initializeWorkRecovery(pool:Pool):Promise<void>{await pool
   owner_id text not null,request_id uuid not null,control_id uuid not null,spec jsonb not null,result jsonb not null,created_at timestamptz not null,
   primary key(owner_id,request_id),foreign key(owner_id,control_id) references teloa_work_controls(owner_id,id)
  );
+ alter table teloa_work_recovery_requests add column if not exists plan_basis jsonb;
  create table if not exists teloa_work_recovery_tickets(
   owner_id text not null,request_id uuid not null,run_id uuid not null,candidate jsonb not null,checkpoint_sha256 text not null check(checkpoint_sha256 ~ '^[a-f0-9]{64}$'),host_generation integer not null check(host_generation>0),
   state text not null check(state in ('reserved','applying','applied','unknown')),created_at timestamptz not null,updated_at timestamptz not null,
@@ -106,6 +109,10 @@ export class WorkRecoveryService{
     if(!replayable(candidate,checkpoint))throw new WorkError('teloa/conflict','已受理执行没有可核验的待办或 Goal，不能重放原请求。')
     leases.push((await this.authorization(db,owner,run)).lease,await this.ports.authorizeResume(db,owner,{candidate,hostGeneration:host}))
    }
+   // 先锁计划、后锁控制，与计划配置的锁序一致。恢复只授权此刻的具体版本，不用墙钟先后推断授权。
+   const hasPlans=control.scope==='definition'&&(await db.query("select to_regclass('teloa_plans') as relation")).rows[0]?.relation
+   const plan=hasPlans?(await db.query('select p.id,p.version,p.config_version,p.state from teloa_work_plan_bindings b join teloa_plans p on p.owner_id=b.owner_id and p.id=b.plan_id and p.config_version=b.config_version where b.owner_id=$1 and b.definition_control_id=$2 for share of p',[owner,control.id])).rows[0]:undefined
+   const planBasis=plan?{planId:plan.id,planVersion:plan.version,configVersion:plan.config_version,state:plan.state}:null
    const approval=combineWorkAccessLeases(leases);approval.assertCurrent();if(host!==this.ports.hostGeneration())throw conflict()
    const roundIds=control.scope==='definition'?results.map(r=>r.run.task_id):[],rounds=roundIds.length?(await db.query('select distinct round_control_id from teloa_task_work_lineage where owner_id=$1 and task_id=any($2::uuid[])',[owner,roundIds])).rows.map(row=>row.round_control_id as string):[]
    // 与准入同序锁全部控制；整项恢复只包含本次本人明确列出的、已结清暂停的 round。
@@ -118,7 +125,8 @@ export class WorkRecoveryService{
     else if(child.state!=='active')throw new WorkError('teloa/conflict','所属本轮尚未结清或已停止，不能整项恢复。')
    }
    const active=await this.controls.resumeInTransaction(db,owner,{controlId:control.id,expectedVersion:control.version},approval)
-   await db.query('insert into teloa_work_recovery_requests(owner_id,request_id,control_id,spec,result,created_at) values($1,$2,$3,$4,$5,$6)',[owner,request.requestId,control.id,JSON.stringify(request),JSON.stringify(active),this.identity.now()])
+   for(const {run,checkpoint} of results)await resumePreparedMaintenance(db,owner,{runId:run.id,requestId:request.requestId,hostGeneration:host,checkpointSha256:checkpoint.checkpointSha256,automatic:plannedRestart!==undefined},approval)
+   await db.query('insert into teloa_work_recovery_requests(owner_id,request_id,control_id,spec,result,created_at,plan_basis) values($1,$2,$3,$4,$5,$6,$7)',[owner,request.requestId,control.id,JSON.stringify(request),JSON.stringify(active),this.identity.now(),JSON.stringify(planBasis)])
    for(const {candidate,checkpoint} of results)await db.query("insert into teloa_work_recovery_tickets(owner_id,request_id,run_id,candidate,checkpoint_sha256,host_generation,state,created_at,updated_at) values($1,$2,$3,$4,$5,$6,'reserved',$7,$7)",[owner,request.requestId,candidate.runId,JSON.stringify({...candidate,expectedGeneration:active.generation}),checkpoint.checkpointSha256,host,this.identity.now()])
    return {control:active,changed:true}
   })
@@ -150,5 +158,5 @@ export class WorkRecoveryService{
   const result=await this.pool.query("update teloa_work_recovery_tickets set state='applying',updated_at=$4 where owner_id=$1 and request_id=$2 and run_id=$3 and state='reserved'",[owner,request.requestId,request.runId,this.identity.now()]);return {...permit,dispatch:result.rowCount===1}
  }
  /** 仅由持有当前票据的宿主装配调用，不注册浏览器/模型方法。 */
- async record(owner:string,input:{requestId:string;runId:string;checkpointSha256:string;state:'applied'|'unknown'}):Promise<void>{roleWorkOwner(owner);const a=taskInput(input,['requestId','runId','checkpointSha256','state']);if(!uuid(a.requestId)||!uuid(a.runId)||!sha(a.checkpointSha256)||!['applied','unknown'].includes(a.state as string))throw invalid();const result=await this.pool.query("update teloa_work_recovery_tickets set state=$5,updated_at=$6 where owner_id=$1 and request_id=$2 and run_id=$3 and checkpoint_sha256=$4 and state='applying'",[owner,a.requestId,a.runId,a.checkpointSha256,a.state,this.identity.now()]);if(result.rowCount!==1)throw conflict()}
+ async record(owner:string,input:{requestId:string;runId:string;checkpointSha256:string;state:'applied'|'unknown'}):Promise<void>{roleWorkOwner(owner);const a=taskInput(input,['requestId','runId','checkpointSha256','state']);if(!uuid(a.requestId)||!uuid(a.runId)||!sha(a.checkpointSha256)||!['applied','unknown'].includes(a.state as string))throw invalid();await roleWorkTransaction(this.pool,async db=>{const result=await db.query("update teloa_work_recovery_tickets set state=$5,updated_at=$6 where owner_id=$1 and request_id=$2 and run_id=$3 and checkpoint_sha256=$4 and state='applying'",[owner,a.requestId,a.runId,a.checkpointSha256,a.state,this.identity.now()]);if(result.rowCount!==1)throw conflict();if(a.state==='applied')await new GroupRoutingOutboxService(this.pool,this.identity).settleMaintainedRunInTransaction(db,owner,a.runId as string)})}
 }

@@ -223,6 +223,31 @@ test('立即运行固定计划双版本与请求身份，回包丢失后只找�
  await assert.rejects(createPlanApi(async()=>({...receipt,planId:'88888888-8888-4888-8888-888888888888'}),undefined,()=>requestId).trigger(row,at),/回执/)
 })
 
+test('正常空日回执释放立即运行请求，下一次明确操作可独立提交，旧待核对请求也可收尾',async()=>{
+ let raw:string|null=null,empty=true;const ids:Array<ReturnType<typeof crypto.randomUUID>>=[requestId,'88888888-8888-4888-8888-888888888888'],calls:unknown[][]=[]
+ const journal={read:()=>raw,write:(value:string)=>{raw=value},clear:()=>{raw=null}}
+ const receipt={planId,claimId:'55555555-5555-4555-8555-555555555555',taskId:'66666666-6666-4666-8666-666666666666',runId:'77777777-7777-4777-8777-777777777777'}
+ const call=async(endpoint:string,payload:unknown)=>{calls.push([endpoint,payload]);if(empty)throw Object.assign(Error('当天没有可核对的工作'),{rejected:true,code:'teloa/no-work-evidence'});return receipt}
+ const api=createPlanApi(call,journal,()=>ids.shift()!)
+ await assert.rejects(api.trigger(row,at),/当天没有可核对的工作/)
+ assert.equal(api.pending(),undefined);assert.equal(raw,null)
+ empty=false
+ assert.deepEqual(await api.trigger(row,later),receipt)
+ assert.deepEqual(calls,[['plans/trigger',{planId,requestId,expectedVersion:1,expectedConfigVersion:1,now:at}],['plans/trigger',{planId,requestId:'88888888-8888-4888-8888-888888888888',expectedVersion:1,expectedConfigVersion:1,now:later}]])
+ empty=true
+ raw=JSON.stringify({schema:'teloa.plan-command/v1',request:{kind:'trigger',planId,requestId,expectedVersion:1,expectedConfigVersion:1,now:at}})
+ const recovered=createPlanApi(call,journal)
+ await assert.rejects(recovered.recoverTrigger(),/当天没有可核对的工作/)
+ assert.equal(recovered.pending(),undefined);assert.equal(raw,null)
+})
+
+test('空日错误缺少确定拒绝标记时仍保留原请求，不因错误码清空未知结果',async()=>{
+ let raw:string|null=null;const journal={read:()=>raw,write:(value:string)=>{raw=value},clear:()=>{raw=null}}
+ const api=createPlanApi(async()=>{throw Object.assign(Error('未核对的空日错误'),{code:'teloa/no-work-evidence'})},journal,()=>requestId)
+ await assert.rejects(api.trigger(row,at),/未核对的空日错误/)
+ assert.equal(api.pending()?.kind,'trigger');assert.ok(raw)
+})
+
 test('明确无副作用拒绝释放命令，未知失败和无效响应继续保留恢复',async()=>{
  let raw:string|null=null,calls=0;const journal={read:()=>raw,write:(value:string)=>{raw=value},clear:()=>{raw=null}}
  const denied=createPlanApi(async()=>{throw Object.assign(Error('版本变化'),{rejected:true,code:'teloa/version-conflict'})},journal,()=>requestId)
@@ -278,4 +303,13 @@ test('系统计划来源缺字段或多余键一律拒绝，不静默放行',asy
  await assert.rejects(createPlanApi(async()=>({...row,source:{kind:'system-digest'}})).get(planId),/格式/)
  await assert.rejects(createPlanApi(async()=>({...row,source:{kind:'system-digest',roleId:'not-a-uuid'}})).get(planId),/格式/)
  await assert.rejects(createPlanApi(async()=>({...row,source:{kind:'system-digest',roleId,extra:1}})).get(planId),/格式/)
+})
+
+test('AD02-DST：纽约固定计划和skip分页真实API不误拒合法身份',async()=>{
+ const ny={...row,trigger:{...trigger,timezone:'America/New_York' as const}}
+ assert.deepEqual(await createPlanApi(async()=>[ny]).list(),[ny])
+ const cursor={skippedAt:'2026-11-01T05:30:01.000Z',configVersion:1,occurrenceId:'2026-11-01T01:30[America/New_York]'},calls:unknown[][]=[]
+ const api=createPlanApi(async(endpoint,payload)=>{calls.push([endpoint,payload]);return {items:[]}})
+ assert.deepEqual(await api.skips(planId,20,cursor),{items:[]})
+ assert.deepEqual(calls,[['plans/skips',{planId,limit:20,cursor}]])
 })

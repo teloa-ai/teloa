@@ -18,6 +18,7 @@ import {initializeBusinessSpaces,BusinessSpaceService} from '../src/work/busines
 import {BusinessSyncService,initializeBusinessSync,mapSourceItem,type BusinessSyncActor} from '../src/work/business-sync.ts'
 import {businessDataPortSyncSource,type BusinessSyncFetchInput,type BusinessSyncFetchPage,type BusinessSyncSourcePort} from '../src/work/business-sync-sources.ts'
 import {BusinessViewV2Computer} from '../src/work/business-view-compute-v2.ts'
+import {fixedBusinessTaskResultMapping,objectResultTool} from '../../harness-dsh/src/business-task-result-context.ts'
 
 /** 同步器真库验收：映射、游标、tombstone、退避、并发锁、配额、原样路径版本规则、到期判定、权限。 */
 
@@ -151,6 +152,17 @@ test('固定业务对象成果：同对象重研判不重复、回放幂等、�
  const changed={...original,version:2,summary:'来源事实已变化'},hash=businessObjectSnapshotHash(changed)
  await pool.query('insert into teloa_business_object_snapshots values($1,$2,$3,$4,$5,$6,$7,$8,$9)',[h.owner,'SOC','raw-alert','ALT-1',2,hash,JSON.stringify(changed),'raw-source',CAPTURED])
  await assert.rejects(h.service.ingestTaskResult(h.actor,input,async()=>({...newer,runId:randomUUID(),createdAt:'2026-09-25T11:10:00.000Z'})),{code:'teloa/version-conflict'})
+ const frozen={taskId:run.taskId,sourceId:'raw-source',object:{...original,snapshotHash:reference.snapshotHash},updates:[{...changed,snapshotHash:hash}],resultMappings:[{mapping:mapped,objectType:alertType,definitionHash:'a'.repeat(64),objectTypeDefinitionHash:'a'.repeat(64)}]}
+ const fixed=fixedBusinessTaskResultMapping({inputText:JSON.stringify({businessContext:frozen}),allowedTools:[objectResultTool]},mapped.id,input.result)
+ assert.equal(fixed.context.object.version,1,'任务原固定来源仍是v1')
+ assert.equal(fixed.reference.version,2,'实际成果引用本轮冻结的v2续报')
+ const continuation={...newer,runId:randomUUID(),createdAt:'2026-09-25T11:11:00.000Z',reference:fixed.reference,resultMappings:fixed.context.resultMappings}
+ const updated=await h.service.ingestTaskResult(h.actor,input,async()=>continuation)
+ assert.equal(updated.upserted,1)
+ assert.deepEqual(await h.service.ingestTaskResult(h.actor,input,async()=>continuation),updated,'同轮回包重放不新增成果')
+ assert.deepEqual((await readCount()).rows[0]!.values,[1],'续报成果仍属于原对象，不重复计数')
+ assert.equal((await pool.query('select source_version from teloa_business_task_result_heads where owner_id=$1 and run_id=$2',[h.owner,continuation.runId])).rows[0].source_version,2)
+ assert.deepEqual((await pool.query('select snapshot from teloa_business_object_snapshots where owner_id=$1 and object_type=$2 and object_version=1',[h.owner,'raw-alert'])).rows[0].snapshot,original,'旧原件版本不改写')
 })
 
 test('固定对象成果目录携带真实映射与字段约束；角色/范围及旧定义拒绝',async()=>{
@@ -503,6 +515,8 @@ test('权限、映射上限、ingest、坏记录',async()=>{
  assert.deepEqual(ingested,{upserted:2,tombstoned:0})
  assert.equal((await r.versions('r1'))[0]!.snapshot.source,'role-result')
  assert.equal((await r.service.runs(r.actor,{scope:'SOC',limit:5}))[0]!.trigger,'tool')
+ assert.deepEqual((await r.service.status(r.actor,'SOC')).map(row=>row.mappingId),['soc-sync'],'立即同步的状态只包含外部源；员工成果保留在原写入历史中')
+ assert.deepEqual(await harness([role],{}).service.status(r.actor,'SOC'),[],'仅成果映射不显示可立即同步的来源')
  await assert.rejects(r.service.ingest(r.actor,{scope:'SOC',mappingId:'soc-sync',items:[item('r3','x')],sourceId:'role-result:abcd1234'}),{code:'teloa/invalid-input'})
  await assert.rejects(r.run('role-notes'),{code:'teloa/invalid-input'})
 

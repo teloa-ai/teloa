@@ -15,8 +15,22 @@ import {roleGrantToolNames,validateReferenceToolRules} from '../src/role-tool-gr
 import {readTemplateShare,roleWriteDefinition,readPageCreateAtomicSkillDraft,readPageCreatePlanDraft,readPageCreateBody,pageCreateCanonicalBody,encodePageCreateDraftReference,readPageCreateDraftReferences} from '@teloa/contract'
 import type {BuiltinSkillCreator} from '../src/builtin-skill-creator.ts'
 import {configurePlanDraftExample} from '../src/plan-draft-guide.ts'
+import {readDshModelOptions} from '../src/model-options.ts'
 
 const owner='local:teloa-owner'
+test('员工创建目录经正式模型投影提供canonical路由与档位，目录失败不能猜测默认',async t=>{
+ const catalog={default:{provider:'minimax',model:'MiniMax-M3'},routableProviders:['minimax'],groups:[{id:'minimax',name:'MiniMax',models:[{id:'MiniMax-M3',name:'MiniMax M3',description:'private model description',reasoning:{efforts:[{id:'high',name:'High',description:'private effort'}]}}]}],failures:[]}
+ const modelHost={teloaModelCatalog:{read:async()=>({catalog,missingCredentialProviders:[]})},llm:{listConfigurableProviders:()=>[{provider:'minimax',settingsNs:'llm-pi-ai',settingsPath:['providers','minimax'],declared:true}]},settings:{describe:()=>[{ns:'llm-pi-ai',value:{providers:{minimax:{baseURL:'https://example.test',apiKey:'private credential'}}}}]}} as unknown as Context
+ const e=await setup({models:signal=>readDshModelOptions(modelHost,{},signal)});t.after(()=>e.ctx.fiber.dispose())
+ const result=await e.call('teloa_create_directory',{entity:'role'})
+ assert.equal(result.isError,false)
+ const value=JSON.parse(result.value as string)
+ assert.deepEqual(value.models.groups[0],{id:'minimax',name:'MiniMax',remote:true,models:[{id:'MiniMax-M3',name:'MiniMax M3',reasoning:{efforts:[{id:'high',name:'High'}]}}]})
+ assert.doesNotMatch(JSON.stringify(value),/private|credential|baseURL|apiKey/)
+ modelHost.teloaModelCatalog.read=async()=>{throw Error('private directory failure')}
+ assert.equal((await e.call('teloa_create_directory',{entity:'role'})).isError,true)
+ assert.equal(e.calls.some(row=>row.kind==='draft'),false,'只读模型目录不能写草案')
+})
 const creator={definition:{name:'teloa-skill-creator',description:'d',content:'c',source:'custom',provider:'teloa-builtin',invocation:{modelInvocable:true,userInvocable:true}},rendered:'<skill_content name="teloa-skill-creator">固定创建器</skill_content>'} as unknown as BuiltinSkillCreator
 test('跨本人普通会话按名称发现已存草案，返回固定身份与状态但不返回正文或创建新草案',async t=>{
  const draft={id:'11111111-1111-4111-8111-111111111111',ownerId:owner,requestId:'22222222-2222-4222-8222-222222222222',entity:'skill',title:'开发验收·结构化事实核对',body:'私人正文不属于目录',bodyHash:'a'.repeat(64),status:'draft',createdAt:'2026-10-12T00:00:00Z',updatedAt:'2026-10-12T00:00:00Z'} as const

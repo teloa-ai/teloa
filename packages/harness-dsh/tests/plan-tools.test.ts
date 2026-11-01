@@ -145,3 +145,14 @@ test('真实 ApprovalService 对never、无answerer和allowed-once分别拒绝�
  const audit=allowed.agent.session.snapshotEvents().filter(event=>(event.type as string).startsWith('approval/')).map(event=>({type:event.type,data:event.data}))
  assert.deepEqual(audit.map(event=>event.type),['approval/asked','approval/decided']);assert.equal((audit[1]!.data as {outcome:string}).outcome,'allowed-once')
 })
+
+test('AD02-DST：纽约宿主目录及创建修改的真实工具schema保留合法时区',async t=>{
+ const e=await setup({timezone:()=> 'America/New_York'});t.after(()=>e.ctx.fiber.dispose())
+ e.ctx.provide('approval',{request:async()=> 'allowed-once'})
+ const directory=await e.call('teloa_plans_directory');assert.equal(directory.isError,false,JSON.stringify(directory));assert.equal(value(directory).defaultTimezone,'America/New_York')
+ const fields={title:'纽约核对',goal:'核对资料。',dataScope:'本例资料。',delivery:'摘要。',notificationPolicy:'silent',cadence:'daily',weekday:1,time:'01:30',timezone:'America/New_York'}
+ assert.equal((await e.call('teloa_plans_create',{...fields,scope:'SOC',roleId,expectedRoleVersion:3})).isError,false)
+ assert.equal((await e.call('teloa_plans_update',{...fields,planId,expectedVersion:1,expectedConfigVersion:1})).isError,false)
+ const writes=e.calls.filter(row=>row[0]==='plans/create'||row[0]==='plans/change') as [string,{fields:{trigger:{timezone:string}}}][]
+ assert.equal(writes.length,2);for(const [,payload]of writes)assert.equal(payload.fields.trigger.timezone,'America/New_York')
+})

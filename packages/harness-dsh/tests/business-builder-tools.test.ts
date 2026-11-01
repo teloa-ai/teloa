@@ -15,7 +15,7 @@ import {BusinessConfigurationDraftService,initializeBusinessDefinitions,initiali
 import type {BusinessBuilderToolsPorts} from '../src/business-builder-tools.ts'
 import * as module from '../src/business-builder-tools.ts'
 let pool:ConstructorParameters<typeof BusinessConfigurationDraftService>[0],container:StartedPostgreSqlContainer
-before(async()=>{process.env.TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE='/var/run/docker.sock';container=await new PostgreSqlContainer('postgres:17-alpine').start();pool=new Pool({connectionString:container.getConnectionUri()});await initializeBusinessSpaces(pool);await initializeBusinessScopes(pool);await initializeBusinessDefinitions(pool);await initializeBusinessConfigurations(pool)},{timeout:120000})
+before(async()=>{let connectionString=process.env.TELOA_BUSINESS_NUMERIC_TEST_PG_URL;if(connectionString)assert.match(new URL(connectionString).pathname,/^\/quality_numeric_[a-z0-9_]+$/);else{process.env.TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE='/var/run/docker.sock';container=await new PostgreSqlContainer('postgres:17-alpine').start();connectionString=container.getConnectionUri()}pool=new Pool({connectionString});await initializeBusinessSpaces(pool);await initializeBusinessScopes(pool);await initializeBusinessDefinitions(pool);await initializeBusinessConfigurations(pool)},{timeout:120000})
 after(async()=>{await pool?.end();await container?.stop()})
 const identity={id:randomUUID,now:()=>new Date().toISOString()}
 async function fixture(overrides:Partial<BusinessBuilderToolsPorts>={},origin?:'subagent',pendingFirst=false){
@@ -33,6 +33,46 @@ async function fixture(overrides:Partial<BusinessBuilderToolsPorts>={},origin?:'
  return {ctx,agent,actor,service,draft,binding,ports,requests,approvals,turn,call,approve:(fn:typeof approval)=>{approval=fn}}
 }
 const read='teloa_business_builder_read',revise='teloa_business_builder_revise'
+test('数字约束能力示例可在原v1/v2草案保存非负整数，不采用正式业务',async t=>{
+ for(const rich of [false,true]){
+  const f=await fixture();t.after(()=>f.ctx.fiber.dispose())
+  if(rich)await f.service.upgradeFormat(f.actor,{draftId:f.draft.id,expectedRevision:1,requestId:randomUUID()})
+  const current=JSON.parse((await f.call(read)).content.map(x=>x.type==='text'?x.text:'').join('')),rule=current.capabilities.numberFieldConstraints?.example
+  assert.ok(rule,'需要提供可实际保存的数值约束例')
+  const definition={format:rich?'teloa.business-object-type/v2':'teloa.business-object-type/v1',id:'inventory',version:'1.0.0',domain:current.scope,title:'测试库存',unit:'条',lead:'独立数值测试',sourceId:current.sources[0].sourceId,fields:[{name:'sku',label:'SKU',from:'SKU',type:'text',required:true},{name:'quantity',label:'数量',from:'数量',required:true,...rule},{name:'warehouse',label:'仓库',from:'仓库',type:'text',required:true}]}
+  const result=await f.call(revise,{draftId:f.draft.id,expectedRevision:current.revision,patchJson:JSON.stringify({upsertDefinitions:[{kind:'object-type',definition}],upsertPages:[{kind:'records',id:'inventory',title:'库存',objectType:'inventory',fields:['sku','quantity','warehouse'],allowCreate:true,allowEdit:true,allowArchive:true}],homePageId:'inventory'})})
+  assert.equal(result.isError,false,JSON.stringify(result))
+  const saved=await f.service.get(f.actor,{draftId:f.draft.id}),quantity=saved.candidate.definitions[0]!.definition as {fields:Array<{integer?:boolean;minimum?:number}>}
+  assert.equal(quantity.fields[1]!.integer,true);assert.equal(quantity.fields[1]!.minimum,0);assert.equal(saved.status,'draft');assert.equal(saved.baseVersion,0)
+ }
+})
+test('空草案按需读取同步协议即可保存 MCP 增量和固定对象成果，不靠试错猜字段或改变原来源',async t=>{
+ for(const rich of [false,true])for(const kind of ['mcp-incremental','object-result']){
+  const f=await fixture();t.after(()=>f.ctx.fiber.dispose())
+  if(rich)await f.service.upgradeFormat(f.actor,{draftId:f.draft.id,expectedRevision:1,requestId:randomUUID()})
+  const before=await f.service.get(f.actor,{draftId:f.draft.id})
+  const result=await f.call(read,{protocol:'source-mapping'});assert.equal(result.isError,false,JSON.stringify(result))
+  const current=JSON.parse(result.content.map(item=>item.type==='text'?item.text:'').join(''))
+  assert.equal(current.draftId,before.id);assert.equal(current.revision,before.revision)
+  const example=current.protocol.examples.find((item:{kind:string})=>item.kind===kind);assert.ok(example)
+  const patch=JSON.parse(example.patchJson),object=patch.upsertDefinitions.find((item:{kind:string})=>item.kind==='object-type').definition,mapping=patch.upsertDefinitions.find((item:{kind:string})=>item.kind==='source-mapping').definition
+  assert.equal(object.domain,before.scope);assert.equal(object.sourceId,before.candidate.sources[0]!.sourceId)
+  assert.equal(mapping.domain,before.scope);assert.equal(mapping.objectType,object.id)
+  assert.equal(mapping.source.kind,kind==='mcp-incremental'?'mcp-tool':'role-result')
+  if(kind==='mcp-incremental'){assert.deepEqual(mapping.incrementalCursor,{path:'$.sequence',kind:'sequence'});assert.equal(mapping.source.itemsPath,'$.items');assert.equal(mapping.deletionSemantics,'tombstone');assert.equal(mapping.deletedAtPath,'$.deleted_at')}
+  else{assert.equal(mapping.mapping.find((item:{field:string})=>item.field===mapping.primaryKey[0]).path,'$.object.id');assert.ok(mapping.mapping.some((item:{path:string})=>item.path.startsWith('$.result.')))}
+  assert.equal(f.approvals.length,0);assert.equal(f.requests.length,0);assert.deepEqual(await f.service.get(f.actor,{draftId:f.draft.id}),before,'协议读取不得修改草案或创建来源')
+  const revised=await f.call(revise,{draftId:before.id,expectedRevision:before.revision,patchJson:example.patchJson});assert.equal(revised.isError,false,JSON.stringify(revised))
+  const saved=await f.service.get(f.actor,{draftId:f.draft.id});assert.equal(saved.status,'draft');assert.equal(saved.baseVersion,0);assert.equal(saved.revision,before.revision+1);assert.deepEqual(saved.candidate.sources,before.candidate.sources);assert.equal(f.approvals.length,1)
+  const next=JSON.parse((await f.call(read,{protocol:'source-mapping'})).content.map(item=>item.type==='text'?item.text:'').join('')).protocol.examples.find((item:{kind:string})=>item.kind===kind)
+  const nextPatch=JSON.parse(next.patchJson);assert.equal(nextPatch.homePageId,saved.candidate.homePageId);assert.deepEqual(nextPatch.pageOrder.slice(0,-1),saved.candidate.pages.map(page=>page.id));assert.ok(nextPatch.upsertDefinitions.every((item:{definition:{id:string}})=>!saved.candidate.definitions.some(old=>old.definition.id===item.definition.id)),'再次读取不能覆盖原示例已保存的定义')
+ }
+})
+test('协议查询与目录、定义、页面查询互斥，未知协议拒绝且不写入',async t=>{
+ const f=await fixture();t.after(()=>f.ctx.fiber.dispose())
+ for(const args of [{protocol:'other'},{protocol:'source-mapping',cursor:0},{protocol:'source-mapping',pageId:'home'},{protocol:'source-mapping',definition:{kind:'source-mapping',localId:'sync'}}])assert.equal((await f.call(read,args)).isError,true)
+ assert.equal(f.requests.length,0);assert.equal(f.approvals.length,0);assert.equal((await f.service.get(f.actor,{draftId:f.draft.id})).revision,1)
+})
 test('固定原生 schema 提供有界 patchJson；read 给出当前身份下可保存的完整合法例，v1/v2不猜字段',async t=>{
  for(const rich of [false,true]){
   const f=await fixture();t.after(()=>f.ctx.fiber.dispose())
@@ -70,6 +110,10 @@ test('合法23/24页草案目录始终可读，容量受限时只提供合法现
   assert.equal(directory.draftId,f.draft.id);assert.equal(directory.revision,2);assert.equal(directory.pages.length,count)
   assert.equal(directory.capabilities.patchProtocol.exampleMode,'modify-existing')
   assert.equal(directory.capabilities.patchProtocol.capacity.pagesRemaining,24-count)
+  const mappingRead=await f.call(read,{protocol:'source-mapping'});assert.equal(mappingRead.isError,false,JSON.stringify(mappingRead))
+  const mappingProtocol=JSON.parse(mappingRead.content.map(item=>item.type==='text'?item.text:'').join('')).protocol
+  assert.equal(mappingProtocol.canAdd,count===23,'页面容量满时仍可读协议，但不能宣称还能新增')
+  if(count===24)assert.ok(mappingProtocol.examples.every((example:Record<string,unknown>)=>!Object.hasOwn(example,'patchJson')),'容量不足不能返回可直接提交的超限 patch')
   const patch=JSON.parse(directory.capabilities.patchProtocol.exampleJson)
   assert.deepEqual(patch.upsertPages,[before.candidate.pages[0]]);assert.equal(Object.hasOwn(patch,'pageOrder'),false)
   assert.equal(f.approvals.length,0);assert.deepEqual((await f.service.get(f.actor,{draftId:f.draft.id})).candidate,before.candidate,'读取示例不能修改草案')
@@ -86,6 +130,9 @@ test('定义容量边界的目录准确可读：剩余4个时完整例可保存�
   const seeded=await f.service.revise(f.actor,{draftId:f.draft.id,expectedRevision:1,requestId:randomUUID(),patch:{upsertDefinitions:definitions}})
   const result=await f.call(read);assert.equal(result.isError,false,JSON.stringify(result))
   const directory=JSON.parse(result.content.map(item=>item.type==='text'?item.text:'').join('')),protocol=directory.capabilities.patchProtocol
+  const mappingRead=await f.call(read,{protocol:'source-mapping'});assert.equal(mappingRead.isError,false,JSON.stringify(mappingRead))
+  const mappingProtocol=JSON.parse(mappingRead.content.map(item=>item.type==='text'?item.text:'').join('')).protocol
+  assert.equal(mappingProtocol.canAdd,count<=254);if(count===256)assert.ok(mappingProtocol.examples.every((example:Record<string,unknown>)=>!Object.hasOwn(example,'patchJson')),'定义容量满时只读协议，不提供会超限的新增请求')
   assert.equal(protocol.capacity.definitionsRemaining,256-count);assert.equal(directory.definitions.length,32)
   assert.equal(protocol.exampleMode,count===252?'add-complete':'modify-existing')
   const patch=JSON.parse(protocol.exampleJson)

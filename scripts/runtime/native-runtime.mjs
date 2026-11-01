@@ -21,14 +21,20 @@ const specs=[
 // 新版 JSONL 通过函数插件提供服务，公共声明不再导出实现类。
 specs.find(spec=>spec.name==='@deepseek-ai/dsh-session-persistence-jsonl').targets=['lib/index.js']
 specs.push({name:'@deepseek-ai/dsh-experimental-agent-team',basename:'dsh-experimental-agent-team-'+version+'-input-admission',targets:['lib/index.js']})
+// Team 身份只提供真实路由事实；无需协作的任务不因挂载 Team 而被要求先枚举队友。
+specs.push({name:'@deepseek-ai/dsh-experimental-tool-agent-team',basename:'dsh-experimental-tool-agent-team-'+version+'-routing-context',targets:['lib/index.js']})
 specs.push({name:'@deepseek-ai/dsh-client-ui-conversation',basename:'dsh-client-ui-conversation-'+version+'-empty-header-utilities',targets:['lib/client.js'],unidiffZero:true})
 // Teloa 业务标准预设归入 Agent 预设页的内置分组；只改官方客户端展示判定，不动 preset 声明和会话保存值。
 specs.push({name:'@deepseek-ai/dsh-client-ui-agent-preset',basename:'dsh-client-ui-agent-preset-'+version+'-teloa-standard-builtin',targets:['lib/client.js'],unidiffZero:true})
+// 自动连接只能复用普通草稿，不能借新会话默认覆盖已固定的员工/群运行。
+specs.push({name:'@deepseek-ai/dsh-client-ui-workspace',basename:'dsh-client-ui-workspace-'+version+'-reserved-session-reuse',targets:['lib/client.js'],unidiffZero:true})
 // 提供方未单独配置上限时，固定 SDK 模型已有有限输出上界；将它绑定到原生 prepared call，供受控工作预留额度。
 specs.push({name:'@deepseek-ai/dsh-llm-pi-ai',basename:'dsh-llm-pi-ai-'+version+'-output-cap',targets:['lib/index.js','lib/types/adapter.d.ts']})
 specs.push({name:'@deepseek-ai/dsh-experimental-auto-review',basename:'dsh-experimental-auto-review-'+version+'-request-owner',targets:['lib/index.js']})
 // 远端只读提示仅供原生有界并发调度，不替代本人确认、员工授权和参数边界。
 specs.push({name:'@deepseek-ai/dsh-mcp-client',basename:'dsh-mcp-client-'+version+'-tool-concurrency',targets:['lib/index.js','lib/types/tools.d.ts']})
+// 服务器已配置不代表当前员工可调用资源工具；提示与原生/PTC 工具目录使用同一作用域的可见面。
+specs.push({name:'@deepseek-ai/dsh-mcp-resources',basename:'dsh-mcp-resources-'+version+'-tool-visibility',targets:['lib/index.js']})
 export const nativeRuntimeCompatibilityFiles=Object.freeze(specs.flatMap(spec=>[spec.basename+'.json',spec.basename+'.patch']))
 const hash=value=>createHash('sha256').update(value).digest('hex'),sha=value=>typeof value==='string'&&/^[a-f0-9]{64}$/.test(value)
 const exec=promisify(execFile),trusted=new WeakMap();let installed

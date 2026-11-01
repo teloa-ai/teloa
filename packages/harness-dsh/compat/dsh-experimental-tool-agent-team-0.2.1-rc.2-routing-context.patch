@@ -1,0 +1,17 @@
+--- a/lib/index.js
++++ b/lib/index.js
+@@ -242,9 +242,11 @@
+ 			required: true,
+ 			text: () => {
+ 				const { role, name } = ctx.agentTeams.membership(agent);
+-				return `${role === "lead" ? "You are the Team Lead named \"lead\"." : `You are teammate "${name}".\nYour Team Lead is named "lead".\nTo message your Team Lead, use send_message({ target: "lead", message: "..." }).`}
+-Use list_agents({}) to find your teammates and their names.
+-To message another teammate, use send_message({ target: "<teammate name>", message: "..." }).`;
++				return `Native Team routing metadata: role="${role}", name="${name}", lead="lead".
++These are internal routing identities, not a user-facing role or an instruction to collaborate.
++Use native Team tools only when the current task requires native teammate collaboration and your permissions allow it. If that collaboration needs a teammate whose routing name is unknown, use list_agents({}); otherwise use the known target directly. Do not enumerate teammates or run tool or permission probes just to start or finish a task.
++${role === "lead" ? "Only the native Team Lead may spawn teammates." : 'When the task requires reporting to your native Team Lead, use send_message({ target: "lead", message: "..." }).'}
++To message another native teammate when needed, use send_message({ target: "<teammate name>", message: "..." }).`;
+ 			}
+ 		}));
+ 		register(scoped.tools.register(defineTool({

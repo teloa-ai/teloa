@@ -1,4 +1,5 @@
 import {canonicalTemplateShare,templateShareResourceCapability,readTemplateShare,readTemplateSharePackageV2,readTemplateShareSubmission,templateShareDigest,readMcpConnectionSetup,type McpConnectionSetup,type RoleAvatarKey,type RoleResponsibility,type AnyTemplateSharePackage,type TemplateSharePackageV2,type TemplateShareSubject,type TemplateShareCapability,type TemplateShareProvenanceSource} from '@teloa/contract'
+import {industryResourceModelDependencies,type IndustryModelDependency} from '@teloa/contract'
 import type {PreviewRole} from './role-preview.ts'
 import type {IndustryResource as Resource} from './industry-manifest.ts'
 
@@ -37,7 +38,7 @@ export type ShareSummary={
  skills:{resourceId:string;title:string;version:string;required:boolean;source:'local'|'public';text?:string;publicId?:string}[]
  connections:{resourceId:string;title:string;version:string;required:boolean;serverName?:string;tools?:string[];setup?:McpConnectionSetup}[]
  plugins:{resourceId:string;title:string;version:string;required:boolean;packageName?:string}[]
- plans:{resourceId:string;title:string}[];workTemplates:{resourceId:string;title:string}[];knowledge:{resourceId:string;title:string}[]
+ plans:{resourceId:string;title:string}[];workTemplates:{resourceId:string;title:string}[];knowledge:{resourceId:string;title:string}[];businessConfigurations?:{resourceId:string;title:string}[]
  counts:Record<string,number>;license?:string;publisher?:string;provenance:ShareProvenanceSource[]
 }
 /** 技能可取消选择；其余组成固定保留，空包不能成为接收申请。 */
@@ -59,18 +60,21 @@ export function sharePackageSummary(pkg:SharePackage):ShareSummary{
   skills:resources.filter(r=>r.kind==='skill').map(r=>({resourceId:r.id,title:r.title,version:r.version,required:r.required as boolean,source:r.source.kind,...(r.source.kind==='public'?{publicId:r.source.id}:{}),...(body(r)===undefined?{}:{text:body(r)!})})),
   connections:resources.filter(r=>['mcp','data-source','execution-tool'].includes(r.kind)).map(r=>{const d=parse<{serverName?:string;tools?:string[];setup?:McpConnectionSetup}>(r);return {resourceId:r.id,title:r.title,version:r.version,required:r.required,...(d?.serverName?{serverName:d.serverName}:{}),...(d?.tools?{tools:d.tools}:{}),...(d?.setup?{setup:readMcpConnectionSetup(d.setup)}:{})}}),
   plugins:resources.filter(r=>r.kind==='plugin').map(r=>{const d=parse<{packageName?:string}>(r);return {resourceId:r.id,title:r.title,version:r.version,required:r.required,...(d?.packageName?{packageName:d.packageName}:{})}}),
-  plans:resources.filter(r=>r.kind==='plan').map(r=>({resourceId:r.id,title:r.title})),workTemplates:resources.filter(r=>r.kind==='work-template').map(r=>({resourceId:r.id,title:r.title})),knowledge:resources.filter(r=>r.kind==='knowledge').map(r=>({resourceId:r.id,title:r.title})),
+  plans:resources.filter(r=>r.kind==='plan').map(r=>({resourceId:r.id,title:r.title})),workTemplates:resources.filter(r=>r.kind==='work-template').map(r=>({resourceId:r.id,title:r.title})),knowledge:resources.filter(r=>r.kind==='knowledge').map(r=>({resourceId:r.id,title:r.title})),businessConfigurations:resources.filter(r=>r.kind==='business-configuration').map(r=>({resourceId:r.id,title:r.title})),
   counts,...(v2?{license:v2.license,publisher:v2.trust.publisher,provenance:v2.provenance.sources}:{provenance:[]}),
  }
 }
 
 // ---- 计划：从真实来源白名单重建静态包 ----
-export type ShareRoleSource=Pick<PreviewRole,'id'|'name'|'kind'|'avatarKey'|'duty'|'dataScope'|'executionScope'|'skills'|'knowledge'>&{responsibility?:PreviewRole['responsibility']|undefined}
+export type ShareRoleSource=Pick<PreviewRole,'id'|'name'|'kind'|'avatarKey'|'duty'|'dataScope'|'executionScope'|'skills'|'knowledge'>&{version?:number;responsibility?:PreviewRole['responsibility']|undefined}
 /** 技能来源：`name` 是员工绑定的原生技能名；`publicId` 表示官方目录固定引用，`text` 表示许可允许随包的静态正文。 */
-export type ShareSkillSource={name:string;title?:string;resourceId?:string;version?:string;text?:string;/** 同一技能入口下已核摘要的静态原文；路径相对于 SKILL.md。 */files?:readonly {path:string;text:string}[];license?:string;publisher?:string;sourceUrl?:string;publicId?:string}
-export type ShareConnectionSource={serverName:string;title?:string;tools:string[];version?:string;setup?:McpConnectionSetup}
+export type ShareSkillSource={name:string;title?:string;resourceId?:string;version?:string;text?:string;/** 同一技能入口下已核摘要的静态原文；路径相对于 SKILL.md。 */files?:readonly {path:string;text:string}[];license?:string;publisher?:string;sourceUrl?:string;publicId?:string;modelDependencies?:IndustryModelDependency[]}
+export type ShareConnectionSource={serverName:string;title?:string;tools:string[];version?:string;setup?:McpConnectionSetup;/** 同一服务器的不同成员工具子集，不能按显示名合并。 */bindingKey?:string}
 export type SharePluginSource={packageName:string;version:string;title?:string}
-export type SharePlanInput={subject:ShareSubject;title?:string;description?:string;publisher:string;license?:string;modifications?:string;roles:readonly ShareRoleSource[];skills:readonly ShareSkillSource[];connections?:readonly ShareConnectionSource[];plugins?:readonly SharePluginSource[];coordinatorRoleId?:string;/** 员工与连接、依赖应用（按包名）的显式关系；缺省时员工主题绑定全部连接与应用，团队主题不猜。 */bindings?:readonly {roleId:string;skills?:readonly string[];connections?:readonly string[];plugins?:readonly string[]}[]}
+export type ShareKnowledgeSource={referenceId:string;id:string;title:string;version:string;text:string;roleIds:readonly string[];sourceVersion:string;license?:string}
+/** 来自已固定资源图的静态声明；不是从任务、授权或运行状态推导的新资源。 */
+export type ShareStaticSource={resources:readonly Resource[];files:readonly {path:string;text:string}[];relations:readonly {kind:string;from:string;to:string}[];roleRelations:readonly {roleId:string;kind:'role-work'|'role-connection';to:string}[];sources?:readonly ShareProvenanceSource[];sourceFiles?:readonly string[];requirements?:readonly string[];scope?:string;manifestFormat?:'teloa.business-package/v2'|'teloa.business-package/v3'|'teloa.business-package/v4'}
+export type SharePlanInput={subject:ShareSubject;title?:string;description?:string;publisher:string;license?:string;modifications?:string;roles:readonly ShareRoleSource[];skills:readonly ShareSkillSource[];connections?:readonly ShareConnectionSource[];plugins?:readonly SharePluginSource[];knowledge?:readonly ShareKnowledgeSource[];static?:ShareStaticSource;coordinatorRoleId?:string;/** 员工与连接、依赖应用的显式关系；连接可用 bindingKey 区分同服务器的成员工具子集。 */bindings?:readonly {roleId:string;skills?:readonly string[];connections?:readonly string[];plugins?:readonly string[]}[]}
 const slug=(value:string,fallback:string)=>{const s=value.normalize('NFKD').replace(/[^a-zA-Z0-9-]+/g,'-').replace(/^-+|-+$/g,'').toLowerCase().slice(0,60);return LOCAL_ID.test(s)?s:fallback}
 const uniqueId=(used:Set<string>,base:string)=>{let id=base,n=2;while(used.has(id))id=base+'-'+n++;used.add(id);return id}
 const README='# Getting started\n\nChoose your own work materials and model account. Review each employee’s instructions and configure the listed methods. A copy does not inherit the author’s accounts, private memory, permissions, conversations or running tasks. Connections are declared only; connect accounts through your own settings. Apps an employee depends on install with your one-click setup only when they just add configuration; any app that changes existing configuration waits for your review.\n'
@@ -81,13 +85,13 @@ export function buildSharePlan(input:SharePlanInput):SharePackageV2{
  const id=crypto.randomUUID(),ver='1.0.0',used=new Set<string>(),files:{path:string;text:string}[]=[],resources:Resource[]=[],relations:{kind:string;from:string;to:string}[]=[],requirements:string[]=[],sources:ShareProvenanceSource[]=[]
  const skillById=new Map<string,string>()
  for(const skill of input.skills){
-  const rid=uniqueId(used,slug(skill.resourceId??skill.name,'skill')),title=skill.title??skill.name,v=skill.version??'1.0.0'
-  if(skill.publicId){resources.push({id:rid,kind:'skill',title,version:v,required:true,source:{kind:'public',id:skill.publicId,version:v}})}
+  const rid=uniqueId(used,slug(skill.resourceId??skill.name,'skill')),title=skill.title??skill.name,v=skill.version??'1.0.0',models=industryResourceModelDependencies('skill',skill.modelDependencies)
+  if(skill.publicId){resources.push({id:rid,kind:'skill',title,version:v,required:true,source:{kind:'public',id:skill.publicId,version:v},...models})}
   else if(skill.text!==undefined&&skill.license){
    // 原生技能目录形态：接收方经固定加载按 industry 来源安装，入口必须是 SKILL.md。
    const entries=skill.files??[{path:'SKILL.md',text:skill.text}]
    if(entries.filter(file=>file.path==='SKILL.md').length!==1||entries.find(file=>file.path==='SKILL.md')!.text!==skill.text)fail('The shared skill entry must match its original static files.')
-   const p=rid+'/SKILL.md';files.push(...entries.map(file=>({path:rid+'/'+file.path,text:file.text})));resources.push({id:rid,kind:'skill',title,version:v,required:true,source:{kind:'local',path:p}})
+   const p=rid+'/SKILL.md';files.push(...entries.map(file=>({path:rid+'/'+file.path,text:file.text})));resources.push({id:rid,kind:'skill',title,version:v,required:true,source:{kind:'local',path:p},...models})
    sources.push({title:skill.publisher?`${title} · ${skill.publisher}`:title,...(skill.sourceUrl?{url:skill.sourceUrl}:{}),version:v,license:skill.license,resourceIds:[rid]})
   }else{requirements.push(`Configure a method for: ${skill.name}`);continue}
   skillById.set(skill.name,rid)
@@ -96,7 +100,7 @@ export function buildSharePlan(input:SharePlanInput):SharePackageV2{
  for(const c of input.connections??[]){
   const rid=uniqueId(used,slug('mcp-'+c.serverName,'mcp')),p=rid+'.json'
   files.push({path:p,text:JSON.stringify({format:'teloa.mcp-connection/v1',serverName:c.serverName,tools:[...new Set(c.tools)],...c.setup?{setup:readMcpConnectionSetup(c.setup)}:{}},null,2)})
-  resources.push({id:rid,kind:'mcp',title:c.title??c.serverName,version:c.version??'1.0.0',required:false,source:{kind:'local',path:p}});connectionById.set(c.serverName,rid)
+  resources.push({id:rid,kind:'mcp',title:c.title??c.serverName,version:c.version??'1.0.0',required:false,source:{kind:'local',path:p}});connectionById.set(c.bindingKey??c.serverName,rid)
   requirements.push(`Connect your own account for: ${c.title??c.serverName}`)
  }
  const pluginById=new Map<string,string>()
@@ -105,6 +109,31 @@ export function buildSharePlan(input:SharePlanInput):SharePackageV2{
   files.push({path:p,text:JSON.stringify({format:'teloa.plugin/v1',registry:'npm',packageName:plugin.packageName,version:plugin.version},null,2)})
   resources.push({id:rid,kind:'plugin',title:plugin.title??plugin.packageName,version:plugin.version,required:false,source:{kind:'local',path:p}})
  }
+ const knowledgeByRole=new Map<string,string[]>(),sharedReferences=new Map<string,Set<string>>()
+ for(const k of input.knowledge??[]){
+  if(used.has(k.id)||!LOCAL_ID.test(k.id)||!k.roleIds.length||new Set(k.roleIds).size!==k.roleIds.length||k.roleIds.some(id=>!input.roles.some(role=>role.id===id&&role.knowledge.includes(k.referenceId))))fail('Shared knowledge is not bound to the selected employees.')
+  used.add(k.id);files.push({path:k.id+'.md',text:k.text});resources.push({id:k.id,kind:'knowledge',title:k.title,version:k.version,required:true,source:{kind:'local',path:k.id+'.md'}})
+  sources.push({title:k.title,version:k.sourceVersion,license:k.license??input.license??'All rights reserved',resourceIds:[k.id]})
+  for(const roleId of k.roleIds){knowledgeByRole.set(roleId,[...(knowledgeByRole.get(roleId)??[]),k.id]);const refs=sharedReferences.get(roleId)??new Set<string>();refs.add(k.referenceId);sharedReferences.set(roleId,refs)}
+ }
+ for(const original of input.static?.resources??[]){
+  const {localized:_localized,...r}=original
+  if(r.kind==='role'||r.kind==='knowledge')fail('Static resource identities conflict with the selected composition.')
+  const existing=resources.find(old=>old.id===r.id)
+  if(existing){
+   if(r.kind!=='skill'||existing.kind!=='skill'||r.version!==existing.version)fail('Static resource identities conflict with the selected composition.')
+   const modelKey=(dependencies:IndustryModelDependency[]|undefined)=>JSON.stringify([...(dependencies??[])].sort((a,b)=>(a.catalogId+'\0'+a.usage).localeCompare(b.catalogId+'\0'+b.usage)))
+   if(modelKey(r.modelDependencies)!==modelKey(existing.modelDependencies))fail('The fixed method model requirements differ from the selected installation.')
+   if(r.source.kind==='public'&&existing.source.kind==='public'&&r.source.id===existing.source.id)continue
+   if(r.source.kind==='local'&&existing.source.kind==='local'){
+    const tree=(path:string,rows:readonly {path:string;text:string}[])=>{const folder=path.includes('/')?path.slice(0,path.lastIndexOf('/')+1):'';return JSON.stringify(rows.filter(f=>folder?f.path.startsWith(folder):f.path===path).map(f=>[f.path.slice(folder.length),f.text]).sort(([a],[b])=>String(a).localeCompare(String(b))))}
+    if(tree(r.source.path,input.static?.files??[])===tree(existing.source.path,files))continue
+   }
+   fail('The fixed method differs from the selected installation.')
+  }
+  if(used.has(r.id))fail('Static resource identities conflict with the selected composition.');used.add(r.id);resources.push(r)
+ }
+ files.push(...(input.static?.files??[]));relations.push(...(input.static?.relations??[]));sources.push(...(input.static?.sources??[]));requirements.push(...(input.static?.requirements??[]))
  const roleIds=new Map<string,string>()
  let privateKnowledge=0
  for(const role of input.roles){
@@ -112,7 +141,8 @@ export function buildSharePlan(input:SharePlanInput):SharePackageV2{
   const rid=uniqueId(used,slug('employee-'+role.name,'employee')),p=rid+'.json',responsibility=role.responsibility&&Object.values(role.responsibility).some(items=>items.length)?role.responsibility:undefined
   files.push({path:p,text:JSON.stringify({format:'teloa.role/v1',kind:'employee',name:role.name,...(role.avatarKey===undefined?{}:{avatarKey:role.avatarKey}),duty:role.duty,dataScope:role.dataScope,executionScope:role.executionScope,...(responsibility?{responsibility}:{})},null,2)})
   resources.push({id:rid,kind:'role',title:role.name,version:ver,required:true,source:{kind:'local',path:p}});roleIds.set(role.id,rid)
-  privateKnowledge+=role.knowledge.length
+  privateKnowledge+=role.knowledge.filter(id=>!sharedReferences.get(role.id)?.has(id)).length
+  for(const to of knowledgeByRole.get(role.id)??[])relations.push({kind:'role-knowledge',from:rid,to})
   const binding=input.bindings?.find(b=>b.roleId===role.id)
   for(const name of binding?.skills??role.skills){const to=skillById.get(name);if(to)relations.push({kind:'role-skill',from:rid,to:to});else if(!input.skills.some(s=>s.name===name)&&!requirements.includes(`Configure a method for: ${name}`))requirements.push(`Configure a method for: ${name}`)}
   const bound=binding?.connections??(input.subject==='employee'?[...connectionById.keys()]:[])
@@ -120,6 +150,7 @@ export function buildSharePlan(input:SharePlanInput):SharePackageV2{
   // 员工依赖的应用与连接同属 role-connection：接收方一键准备先装好已核验的应用，员工才上岗
   for(const packageName of binding?.plugins??(input.subject==='employee'?[...pluginById.keys()]:[])){const to=pluginById.get(packageName);if(to)relations.push({kind:'role-connection',from:rid,to})}
  }
+ for(const link of input.static?.roleRelations??[]){const from=roleIds.get(link.roleId);if(!from)fail('Static resource relation belongs to an unselected employee.');relations.push({kind:link.kind,from:from!,to:link.to})}
  if(privateKnowledge)requirements.push(`Connect your own knowledge sources (${privateKnowledge}).`)
  if(input.roles.length)requirements.push('Choose your own model account and review permissions before enabling.')
  let team:SharePackageV2['team']
@@ -127,9 +158,11 @@ export function buildSharePlan(input:SharePlanInput):SharePackageV2{
  const capabilities=[...new Set(resources.map(r=>templateShareResourceCapability(r.kind)).filter((c):c is ShareCapability=>!!c))]
  const first=input.roles[0],title=input.title??(input.subject==='employee'&&first?first.name:input.subject==='skill'&&input.skills[0]?input.skills[0].title??input.skills[0].name:input.subject==='mcp'&&input.connections?.[0]?input.connections[0].title??input.connections[0].serverName:'Shared template')
  const description=(input.description??(first?.duty??resources.map(r=>r.title).join(', '))).slice(0,2000)
- const manifest={format:'teloa.business-package/v2',id,version:ver,title,description,domain:'general',scope:'general',resources,relations,entrypoints:[]}
+ const declaredFormat=input.static?.manifestFormat??'teloa.business-package/v2',manifestFormat=declaredFormat==='teloa.business-package/v2'&&resources.some(resource=>resource.modelDependencies!==undefined)?'teloa.business-package/v3':declaredFormat,scope=input.static?.scope??'general'
+ const manifest={format:manifestFormat,id,version:ver,title,description,domain:scope,scope,resources,relations,entrypoints:[]}
  files.unshift({path:'teloa.json',text:JSON.stringify(manifest,null,2)});files.push({path:'README.md',text:README})
- return readSharePackageV2({format:'teloa.template-share/v2',subject:input.subject,id,version:ver,title,description,requirements:[...new Set(requirements)],license:input.license??'All rights reserved',trust:{publisher:input.publisher},provenance:{sources,...(input.modifications?{modifications:input.modifications}:{})},sourceFiles:[],...(team?{team}:{}),compatibility:{manifestFormat:'teloa.business-package/v2',capabilities},files})
+ if(files.length>500||files.some(file=>encoder.encode(file.text).length>2*1024*1024)||encoder.encode(JSON.stringify(files)).length>8*1024*1024)throw Object.assign(Error('The selected template exceeds the static sharing limit.'),{code:'share-source-limit'})
+ return readSharePackageV2({format:'teloa.template-share/v2',subject:input.subject,id,version:ver,title,description,requirements:[...new Set(requirements)],license:input.license??'All rights reserved',trust:{publisher:input.publisher},provenance:{sources,...(input.modifications?{modifications:input.modifications}:{})},sourceFiles:[...(input.static?.sourceFiles??[])],...(team?{team}:{}),compatibility:{manifestFormat,capabilities},files})
 }
 /** 只改标题与说明；正文与资源保持原样并重新核验。 */
 export function editSharePackage(pkg:SharePackage,title:string,description:string):SharePackage{
@@ -167,4 +200,21 @@ export function sharePackageV2ToFiles(pkg:SharePackageV2,choice:{scope:string;sk
  if(pkg.team){const lead=pkg.team.coordinatorResourceId;for(const r of resources)if(r.kind==='role'&&r.id!==lead)relations.push({kind:'role-coordination',from:lead,to:r.id})}
  const files=pkg.files.filter(f=>!removeFile(f.path)).map(f=>f.path==='teloa.json'?{path:f.path,text:JSON.stringify({...manifest,scope:choice.scope,resources,relations},null,2)}:moved.has(f.path)?{path:moved.get(f.path)!,text:f.text}:f)
  return {files,title:pkg.title,publisher:pkg.trust.publisher,license:pkg.license}
+}
+
+export type ShareWorkMapping={resourceId:string;from:string;to:string}
+/** 本人选择的目标只作用于新的工作副本；业务配置仍从完整原来源走正式采用。 */
+export function shareWorkCopy(pkg:SharePackageV2,scope:string,id:string):{copy:SharePackageV2;mappings:ShareWorkMapping[]}{
+ const original=readSharePackageV2(pkg),manifest=JSON.parse(original.files.find(file=>file.path==='teloa.json')!.text) as {scope?:string;domain:string;resources:Resource[];relations:{kind:string;from:string;to:string}[];entrypoints:string[]},sourceScope=manifest.scope??manifest.domain
+ const omitted=new Set(manifest.resources.filter(resource=>resource.kind==='business-configuration').map(resource=>resource.id)),removedPaths=new Set(manifest.resources.filter(resource=>omitted.has(resource.id)&&resource.source.kind==='local').map(resource=>resource.source.kind==='local'?resource.source.path:''))
+ const resources=manifest.resources.filter(resource=>!omitted.has(resource.id)),mappings:ShareWorkMapping[]=[],byPath=new Map(original.files.map(file=>[file.path,file.text]))
+ for(const resource of resources.filter(resource=>resource.kind==='work-template')){
+  if(resource.source.kind!=='local')throw Object.assign(Error('A work template must have a fixed local definition.'),{code:'teloa/invalid-input'})
+  const value=JSON.parse(byPath.get(resource.source.path)!) as {format:string;domain:string}
+  if(value.format!=='teloa.work-template/v1'||value.domain!=='general'&&value.domain!==sourceScope)throw Object.assign(Error('The original work template does not match its source scope.'),{code:'teloa/invalid-input'})
+  if(value.domain!=='general'&&value.domain!==scope){mappings.push({resourceId:resource.id,from:value.domain,to:scope});byPath.set(resource.source.path,JSON.stringify({...value,domain:scope},null,2))}
+ }
+ const files=original.files.filter(file=>!removedPaths.has(file.path)).map(file=>({path:file.path,text:file.path==='teloa.json'?JSON.stringify({...manifest,id,scope,resources,relations:manifest.relations.filter(link=>!omitted.has(link.from)&&!omitted.has(link.to)),entrypoints:manifest.entrypoints.filter(entry=>!omitted.has(entry))},null,2):byPath.get(file.path)!}))
+ const sources=original.provenance.sources.flatMap(source=>{const resourceIds=source.resourceIds.filter(resourceId=>!omitted.has(resourceId));return resourceIds.length?[{...source,resourceIds}]:[]})
+ return {copy:readSharePackageV2({...original,id,provenance:{...original.provenance,sources},compatibility:{...original.compatibility,capabilities:[...new Set(resources.flatMap(resource=>{const capability=templateShareResourceCapability(resource.kind);return capability?[capability]:[]}))]},files}),mappings}
 }

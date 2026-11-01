@@ -75,6 +75,15 @@ test('检索结果守卫：严格键集、区间、分值、摘录上限与覆�
  ])rejects(()=>readRetrievalSearchResult(bad),/检索结果/)
 })
 
+test('历史来源分类只修饰stale，旧回执缺省兼容且不接受未经核验的当前声明',()=>{
+ for(const sourceState of ['historical','changed']){
+  const value={...result(),coverage:{...result().coverage,pending:[{resourceId:rid(3),title:'旧版本',reason:'stale',sourceState}]}}
+  assert.deepEqual(readRetrievalSearchResult(value),value)
+ }
+ assert.deepEqual(readRetrievalSearchResult(result()),result())
+ for(const item of [{resourceId:rid(3),title:'旧版本',reason:'stale',sourceState:'current'},{resourceId:rid(3),title:'旧版本',reason:'building',sourceState:'historical'},{resourceId:rid(3),title:'旧版本',reason:'failed',sourceState:'changed'}])rejects(()=>readRetrievalSearchResult({...result(),coverage:{...result().coverage,pending:[item]}}))
+})
+
 test('摘录上限按 UTF-8 字节计，8 条满额恰好等于 16 KiB 总上限',()=>{
  const okExcerpt='中'.repeat(682)
  assert.equal(new TextEncoder().encode(okExcerpt).byteLength,2046)

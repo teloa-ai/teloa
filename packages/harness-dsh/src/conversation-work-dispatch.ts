@@ -1,3 +1,4 @@
+import {taskRunTerminalStates} from '@teloa/contract'
 import {WorkError,parseResourceReferences,type WorkTask,type ResourceReference,type BusinessReassignmentReceipt,type BusinessObjectReference} from '@teloa/contract'
 import type {ReassignmentRunTargets} from '@teloa/backend'
 import type {TaskRunDeliveryReader} from './task-run-delivery-status.ts'
@@ -35,7 +36,7 @@ function executionSlot(request:ConversationWorkRequest,target:WorkRequestTarget,
  if(retries.length>1)throw new WorkError('teloa/storage-corrupt','原交办存在重复重试执行，请核对运行记录。')
  return {original,run:retries[0]??original,retried:retries.length>0}
 }
-const terminal=(run:TaskRun)=>['ended','withdrawn','configuration_failed'].includes(run.state)
+const terminal=(run:TaskRun)=>taskRunTerminalStates.includes(run.state)
 const projection=(task:WorkTask)=>({id:task.id,title:task.title,scope:task.scope,version:task.version,state:task.state,assigneeRoleId:task.assigneeRoleId})
 /** 仅展示正式 Run 已冻结的修订来源；不读取模型回复，也不把目标版本当作已发布。 */
 function runProjection(run:TaskRun):NonNullable<ConversationWorkMember['run']>{
@@ -138,7 +139,7 @@ export class ConversationWorkDispatch{
    const result=run.state==='ended'?await ports.result(run):undefined
    const roleChanged=run.state==='prepared'&&isRoleChangeFailure(failure)
    const status:WorkMemberStatus=run.state==='configuration_failed'||roleChanged?'failed':run.state==='withdrawn'||run.state==='ended'&&run.evidence?.state==='ended'&&run.evidence.reason==='aborted'?'stopped':run.state==='ended'?run.evidence?.state==='ended'&&run.evidence.reason==='completed'&&!!result?'received':'failed':'waiting'
-   const reason=run.configurationError?.message??(roleChanged?roleChangeFailure.message:status==='failed'?(fixed.retried?'本次重试未完成，请核对这次运行记录；不会继续自动创建执行。':failure?.message??(result?'本次执行未正常完成，请核对阶段结果。':'本次执行没有可核验的最终回复。')):status==='waiting'?failure?.message:undefined)
+   const reason=run.state==='submission_unknown'?'本次提交已结束，但执行结果仍未知；请核对原运行和外部结果，不会自动重试。':run.configurationError?.message??(roleChanged?roleChangeFailure.message:status==='failed'?(fixed.retried?'本次重试未完成，请核对这次运行记录；不会继续自动创建执行。':failure?.message??(result?'本次执行未正常完成，请核对阶段结果。':'本次执行没有可核验的最终回复。')):status==='waiting'?failure?.message:undefined)
    members.push({...base,task:projection(task),run:r,status,...(reason?{reason}:{}),...(result?{result}:{})})
   }
   const counts:ConversationWorkStatus['counts']={received:0,waiting:0,unavailable:0,failed:0,stopped:0}
@@ -194,7 +195,7 @@ export class ConversationWorkDispatch{
   const completed=run?.state==='ended'&&run.evidence?.state==='ended'&&run.evidence.reason==='completed'&&run.stopRequestedAt===null
   const delivery=completed?await ports.delivery?.(ports.owner,run):undefined
   const status:WorkMemberStatus=run?.state==='configuration_failed'?'failed':run?.state==='withdrawn'||run?.evidence?.state==='ended'&&run.evidence.reason==='aborted'?'stopped':run?.state==='ended'?completed?delivery?.state==='saved'&&!!result?'received':delivery?.state==='review-required'?'failed':'waiting':'failed':!run&&request.stoppedAt?'stopped':!run&&failure?'failed':'waiting'
-  const deliveryReason=completed&&status!=='received'?(delivery?.state==='review-required'?'正文仍是待复核候选，尚未通过正式复核；可查看原运行并明确重试。':'正式成果的保存结果尚待核对，请沿原运行继续核对。'):undefined
+  const deliveryReason=run?.state==='submission_unknown'?'本次提交已结束，但执行结果仍未知；请核对原运行和外部结果，不会自动重试。':completed&&status!=='received'?(delivery?.state==='review-required'?'正文仍是待复核候选，尚未通过正式复核；可查看原运行并明确重试。':'正式成果的保存结果尚待核对，请沿原运行继续核对。'):undefined
   const executor={kind:'owner' as const,grantId:request.requestId,grantVersion:1}
   const member:ConversationWorkMember={roleId:null,executor,name:'通用 Agent',scope:'general',status,...(task?{task:projection(task)}:{}),...(run?{run:runProjection(run)}:{}),...(result?{result}:{}),...(status==='failed'||status==='waiting'&&(failure||deliveryReason)?{reason:failure?.message??deliveryReason??run?.configurationError?.message??'本次执行没有可核验的最终回复。'}:{})}
   const counts:ConversationWorkStatus['counts']={received:0,waiting:0,unavailable:0,failed:0,stopped:0};counts[status]++

@@ -98,3 +98,95 @@ test('真实官方工具运行器保留 scoped 文件授权与审批，确认期
  await assert.rejects(readFile(join(f.cwd,'outputs/denied.txt')))
  assert.equal((await call('bash',{command:'echo denied'})).isError,true)
 })
+
+async function readonlyRun(t){
+ const f=await fixture(t);await f.ctx.plugin(await official('dsh-tool-fs'),{})
+ f.ctx.provide('agentPresets',{serviceFor:()=>undefined})
+ const agent=(await f.ctx.agents.create({sessionId:'workspace-escalation',meta:{cwd:f.cwd},agentOptions:{provider:'native-auto-review-test',model:'scripted'}})).agent
+ const {setSandboxMode}=await official('dsh-sandbox-policy');setSandboxMode(agent.session,'read-only')
+ agent.session.append('turn/start',{turn:0});agent.session.append('user/message',createUserMessage({content:[],source:{kind:'user',rpcId:'escalation-request'}}),{surfaceOp:'append'})
+ let current=true,seq=0
+ const rules=['read','write','edit'].map(name=>({name,allowed:[],workspaceFiles:'default-workspace'}))
+ const policy=async()=>{if(!current)throw Error('员工版本或授权已变化');return {nativeRequestId:'escalation-request',allowedTools:['read','write','edit'],argumentRules:rules}}
+ registerTaskToolGuard(f.ctx,policy,[],undefined,undefined,undefined,undefined,undefined,undefined,createTaskRunWorkspaceFileAccess(f.ctx,f.cwd,policy,path=>path.endsWith('/credentials.txt')))
+ const call=(name,args)=>f.ctx.tools.execute({agent,name,arguments:args,callId:ToolCallId('escalation-'+ ++seq),signal:AbortSignal.timeout(5000)})
+ return {...f,agent,call,revoke:()=>{current=false}}
+}
+
+for(const name of ['write','edit'])for(const decision of ['allowed-once','rejected'])test(`只读任务的官方 ${name} 升级先审批，${decision} 不改变常驻权限`,async t=>{
+ const f=await readonlyRun(t),path=join(f.cwd,'result.txt');let asks=0
+ await writeFile(path,'original')
+ assert.equal((await f.call('read',{file_path:'result.txt'})).isError,false)
+ const args=name==='write'?{file_path:'result.txt',content:'updated'}:{file_path:'result.txt',old_string:'original',new_string:'updated'}
+ f.ctx.on('approval/request',async()=>{asks++;assert.equal(await readFile(path,'utf8'),'original');return decision})
+ assert.equal((await f.call(name,args)).isError,true);assert.equal(asks,0)
+ const result=await f.call(name,{...args,sandbox_permissions:'workspace-write',justification:'请批准本次合成文件变更。'})
+ assert.equal(asks,1,JSON.stringify(result));assert.equal(result.isError,decision==='rejected',JSON.stringify(result))
+ assert.equal(await readFile(path,'utf8'),decision==='allowed-once'?'updated':'original')
+ assert.equal(f.ctx.sandboxPolicy.resolve({session:f.agent.session}).mode,'read-only')
+ assert.equal((await f.call('write',{file_path:'another.txt',content:'not approved'})).isError,true)
+ await assert.rejects(readFile(join(f.cwd,'another.txt')))
+ assert.equal(asks,1)
+})
+
+test('文件升级仍拒绝目录外、链接越界、凭据路径、未授权工具与审批期间失效的角色版本',async t=>{
+ const f=await readonlyRun(t);let asks=0
+ await writeFile(join(f.outside,'original.txt'),'outside');await symlink(f.outside,join(f.cwd,'external'));await writeFile(join(f.cwd,'credentials.txt'),'private')
+ f.ctx.on('approval/request',async()=>{asks++;f.revoke();return 'allowed-once'})
+ const retry={content:'denied',sandbox_permissions:'danger-full-access',justification:'仅测试本次文件批准仍保留范围。'}
+ for(const file_path of [join(f.outside,'new.txt'),'../work-extra/new.txt','external/new.txt','credentials.txt'])assert.equal((await f.call('write',{...retry,file_path})).isError,true)
+ assert.equal((await f.call('bash',{command:'echo denied',sandbox_permissions:'danger-full-access',justification:'越权工具'})).isError,true)
+ assert.equal(asks,0)
+ const result=await f.call('write',{...retry,file_path:'inside.txt'})
+ assert.equal(asks,1,JSON.stringify(result));assert.equal(result.isError,true,JSON.stringify(result))
+ await assert.rejects(readFile(join(f.cwd,'inside.txt')));await assert.rejects(readFile(join(f.outside,'new.txt')))
+ assert.equal(await readFile(join(f.outside,'original.txt'),'utf8'),'outside')
+ assert.equal(await readFile(join(f.cwd,'credentials.txt'),'utf8'),'private')
+})
+
+test('审批期间将已核对的文件别名改指目录外，批准也不能写入外部原件',async t=>{
+ const f=await readonlyRun(t),inside=join(f.cwd,'inside.txt'),outside=join(f.outside,'original.txt'),alias=join(f.cwd,'alias.txt')
+ await writeFile(inside,'inside');await writeFile(outside,'outside');await symlink(inside,alias)
+ assert.equal((await f.call('read',{file_path:'alias.txt'})).isError,false)
+ let asks=0
+ f.ctx.on('approval/request',async()=>{asks++;await rm(alias);await symlink(outside,alias);return 'allowed-once'})
+ const result=await f.call('write',{file_path:'alias.txt',content:'denied',sandbox_permissions:'danger-full-access',justification:'仅批准本工作区文件。'})
+ assert.equal(asks,1);assert.equal(result.isError,true,JSON.stringify(result))
+ assert.equal(await readFile(outside,'utf8'),'outside');assert.equal(await readFile(inside,'utf8'),'inside')
+})
+
+test('本人普通会话不受任务文件授权管理，官方一次性升级审批保持可用',async t=>{
+ const f=await fixture(t);await f.ctx.plugin(await official('dsh-tool-fs'),{})
+ const agent=(await f.ctx.agents.create({sessionId:'ordinary-file-escalation',meta:{cwd:f.cwd},agentOptions:{provider:'native-auto-review-test',model:'scripted'}})).agent
+ const {setSandboxMode}=await official('dsh-sandbox-policy');setSandboxMode(agent.session,'read-only')
+ agent.session.append('turn/start',{turn:0})
+ const policy=async()=>null
+ registerTaskToolGuard(f.ctx,policy,[],undefined,undefined,undefined,undefined,undefined,undefined,createTaskRunWorkspaceFileAccess(f.ctx,f.cwd,policy,()=>false))
+ let asks=0
+ f.ctx.on('approval/request',async()=>{asks++;await assert.rejects(readFile(join(f.cwd,'ordinary.txt')));return 'allowed-once'})
+ const result=await f.ctx.tools.execute({agent,name:'write',arguments:{file_path:'ordinary.txt',content:'owner approved',sandbox_permissions:'workspace-write',justification:'本人批准本次文件写入。'},callId:ToolCallId('ordinary-escalation'),signal:AbortSignal.timeout(5000)})
+ assert.equal(asks,1);assert.equal(result.isError,false,JSON.stringify(result))
+ assert.equal(await readFile(join(f.cwd,'ordinary.txt'),'utf8'),'owner approved')
+})
+
+test('上层竞速答复器在下游不可用后撤权并批准，文件变更仍须复核最终授权',async t=>{
+ const f=await readonlyRun(t);let downstream
+ f.ctx.on('approval/request',async(_request,next)=>{downstream=await next();f.revoke();return 'allowed-once'},{prepend:true})
+ const result=await f.call('write',{file_path:'result.txt',content:'denied',sandbox_permissions:'workspace-write',justification:'合成审批竞速核对。'})
+ assert.equal(downstream,'unavailable');assert.equal(result.isError,true,JSON.stringify(result))
+ await assert.rejects(readFile(join(f.cwd,'result.txt')))
+})
+
+test('同一员工同 callId 的并发文件调用不能复用另一调用的目录核验',async t=>{
+ const f=await readonlyRun(t),inside=join(f.cwd,'inside.txt'),outside=join(f.outside,'original.txt'),alias=join(f.cwd,'alias.txt')
+ await writeFile(inside,'inside');await writeFile(outside,'outside');await symlink(inside,alias)
+ let asks=0,releaseFirst,signalFirst
+ const firstReady=new Promise(resolve=>{signalFirst=resolve}),firstDecision=new Promise(resolve=>{releaseFirst=resolve})
+ f.ctx.on('approval/request',async()=>{if(++asks===1){signalFirst();return firstDecision}await rm(alias);await symlink(outside,alias);return 'allowed-once'})
+ const call=(file_path,content)=>f.ctx.tools.execute({agent:f.agent,name:'write',arguments:{file_path,content,sandbox_permissions:'danger-full-access',justification:'合成并发范围核对。'},callId:ToolCallId('duplicate-call'),signal:AbortSignal.timeout(5000)})
+ const first=call('first.txt','first');await firstReady
+ let second
+ try{second=await call('alias.txt','denied')}finally{releaseFirst('rejected');await first}
+ assert.equal(asks,2);assert.equal(second.isError,true,JSON.stringify(second))
+ assert.equal(await readFile(outside,'utf8'),'outside');await assert.rejects(readFile(join(f.cwd,'first.txt')))
+})

@@ -118,3 +118,24 @@ test('真实提示组件显示失败边界和只读重查；ready不显示，十
  eligible=false;await reader.check();assert.equal(render(),'','失去当前绑定后不残留上一会话的警告')
  off()
 })
+
+test('挂起读取失败时丢弃已合并的旧活动，保留失败提示供下一次明确重查',async()=>{
+ let event=()=>{},reads=0,reject!:(error:Error)=>void
+ const reader=createSessionBrowserStopReader(()=>{
+  reads++
+  return reads===1?new Promise((_resolve,fail)=>{reject=fail}):Promise.resolve({state:'ready'})
+ },listener=>{event=listener;return()=>{event=()=>{}}})
+ const off=reader.attach()
+ event();event()
+ assert.equal(reads,1)
+ reject(new TypeError('Load failed'))
+ await tick()
+ assert.equal(reads,1,'失败不得直接重放挂起期间已经合并的旧活动')
+ assert.deepEqual(reader.getSnapshot(),{status:'failed',checking:false})
+ await reader.check()
+ assert.equal(reads,2)
+ assert.equal(reader.getSnapshot().status,'ready')
+ event();await tick()
+ assert.equal(reads,3,'新的活动仍可以触发正常读取')
+ off()
+})

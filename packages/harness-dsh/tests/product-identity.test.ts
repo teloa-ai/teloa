@@ -8,7 +8,7 @@ import {tmpdir} from 'node:os'
 import {Context} from '@deepseek-ai/cordis'
 import {AgentRegistry,type Agent} from '@deepseek-ai/dsh-agent'
 import {AgentLoop} from '@deepseek-ai/dsh-agent-loop'
-import {LlmAdapter,LlmRuntime,createUserMessage,type GenerateOptions,type StreamChunk} from '@deepseek-ai/dsh-llm'
+import {LlmAdapter,LlmRuntime,ToolCallId,createUserMessage,type GenerateOptions,type StreamChunk} from '@deepseek-ai/dsh-llm'
 import {SessionId,SessionStore} from '@deepseek-ai/dsh-session'
 import {SessionProjectionRegistry} from '@deepseek-ai/dsh-session-projection'
 import {SystemPrompt,renderPrompt,renderContextSnapshot} from '@deepseek-ai/dsh-system-prompt'
@@ -17,7 +17,7 @@ import * as JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-j
 import {LocalJobRegistry} from '@deepseek-ai/dsh-jobs-local'
 import {SubagentRuntime} from '@deepseek-ai/dsh-subagent'
 import {TeamService} from '@deepseek-ai/dsh-experimental-agent-team'
-import * as TeamTools from '@deepseek-ai/dsh-experimental-tool-agent-team'
+import * as Spawn from '@deepseek-ai/dsh-subagent-spawn-in-process'
 import type {DigitalRole} from '@teloa/contract'
 import {leaseEmployeeSystemPrompt} from '../src/employee-system-prompt.ts'
 import {registerRoleConversationContext} from '../src/role-conversation-context.ts'
@@ -26,6 +26,7 @@ import {groupRoutingInputNotice} from '../src/group-routing.ts'
 import {refineWorkBehavior} from '../src/work-behavior.ts'
 import {productIdentityText} from '../src/work-prompts/product-identity.ts'
 import {readSessionEvents} from '../src/session-events.ts'
+import {patchedNativePackage} from './fixtures/native-patched-package.ts'
 
 const require=createRequire(import.meta.url),officialRequire=createRequire(require.resolve('@deepseek-ai/dsh/package.json'))
 const {parse}=require('yaml'),yaml=(source:string)=>parse(source,{customTags:[{tag:'tag:yaml.org,2002:js',resolve:(value:string)=>value}]})
@@ -35,8 +36,9 @@ const identity=bundle.flatMap((row:any)=>row.insert??[]).find((row:any)=>row.id=
 const standard=yaml(await readFile(new URL('../../bundle/agent-presets/teloa-standard/agent.cordis.yml',import.meta.url),'utf8'))[0].insert[0].config
 class Capture extends LlmAdapter{
  requests:GenerateOptions[]=[]
+ beforeFinish?:(options:GenerateOptions)=>Promise<void>
  override async resolveModel(provider:string,model:string){return {provider,id:model,name:model,inputModalities:['text'] as const}}
- async *stream(options:GenerateOptions):AsyncGenerator<StreamChunk>{this.requests.push(options);yield {type:'finish',reason:{kind:'stop'}}}
+ async *stream(options:GenerateOptions):AsyncGenerator<StreamChunk>{this.requests.push(options);await this.beforeFinish?.(options);yield {type:'finish',reason:{kind:'stop'}}}
 }
 const trustedInput=(request:GenerateOptions)=>request.messages.filter(row=>row.role==='system'||row.source?.kind==='runtime-context').flatMap(row=>row.content.flatMap(block=>block.type==='text'?[block.text]:[])).join('\n\n')
 
@@ -150,7 +152,7 @@ test('真实官方Team身份仅作内部路由；主会话、可信分身与员�
  const directory=await mkdtemp(join(tmpdir(),'teloa-product-identity-')),ctx=new Context();t.after(async()=>{await ctx.fiber.dispose();await rm(directory,{recursive:true,force:true})})
  for(const plugin of [LlmRuntime,SessionStore,SessionProjectionRegistry])await ctx.plugin(plugin)
  await ctx.plugin(SystemPrompt,systemConfig);await ctx.plugin(ToolRuntime);await ctx.plugin(AgentRegistry);await ctx.plugin(AgentLoop,{agents:[]})
- await ctx.plugin(JsonlSessionPersistence,{root:directory,compression:'none'});await ctx.plugin(LocalJobRegistry,{});await installNativeWorkingDirectory(ctx,directory);await ctx.plugin(SubagentRuntime,{maxDepth:1,maxActiveSubagents:2});await ctx.plugin(TeamService,{maxMembers:2})
+ await ctx.plugin(JsonlSessionPersistence,{root:directory,compression:'none'});await ctx.plugin(LocalJobRegistry,{});await installNativeWorkingDirectory(ctx,directory);await ctx.plugin(SubagentRuntime,{maxDepth:1,maxActiveSubagents:2});await ctx.plugin(Spawn,{providerName:'spawn'});await ctx.plugin(TeamService,{maxMembers:2})
  const adapter=new Capture();ctx.llm.registerAdapter(['byok-fixture'],adapter)
  const owner='local:identity-test',at='2026-10-21T00:00:00.000Z',roles=new Map<string,DigitalRole>(),agents:{agent:Agent;kind:string;originalTeam:string;originalTools:string[]}[]=[]
  for(const kind of ['ordinary','twin','employee','internal-json'] as const){
@@ -159,33 +161,45 @@ test('真实官方Team身份仅作内部路由；主会话、可信分身与员�
   if(kind==='internal-json')agent.ctx.systemPrompt.section({name:'fixture:routing-json',order:9900,text:groupRoutingInputNotice,interpolate:false})
   agents.push({agent,kind,originalTeam:'',originalTools:[]})
  }
- await ctx.plugin(TeamTools,{freshProvider:'spawn',forkProvider:'fork'})
+ const teamPackage=await patchedNativePackage<typeof import('@deepseek-ai/dsh-experimental-tool-agent-team')>(t,{packageName:'@deepseek-ai/dsh-experimental-tool-agent-team',compatBasename:'dsh-experimental-tool-agent-team-0.2.1-rc.2-routing-context'})
+ await ctx.plugin(teamPackage.namespace,{freshProvider:'spawn',forkProvider:'fork'})
  for(const row of agents){
   const {agent}=row,base=await ctx.systemPrompt.assemble({agent,scope:agent}),team=base.contexts.find(row=>row.name==='team:identity')
-  assert.ok(team,'夹具必须实际挂载官方TeamTools');assert.ok(team.text.includes('You are the Team Lead named "lead".'),'不能用自写字符串代替原生路由上下文')
+  assert.ok(team,'夹具必须实际挂载经固定摘要核验的官方TeamTools');assert.match(team.text,/Native Team routing metadata: role="lead", name="lead", lead="lead"\./)
   row.originalTeam=team.text;row.originalTools=base.tools.map(row=>row.name)
  }
  registerRoleConversationContext(ctx,{owner,conversation:async sessionId=>({id:'binding-'+sessionId,ownerId:owner,sessionId,status:'ready'}),requestedRoleId:async id=>roles.get(id)?.id??null,links:async sessionId=>{const role=roles.get(sessionId);return role?[{kind:'role',objectId:role.id,conversationId:'binding-'+sessionId,sessionId,scopeId:'general',active:true}]:[]},role:async roleId=>[...roles.values()].find(role=>role.id===roleId)??null})
  await ctx.plugin(await import(identity.name),identity.config)
+ const legacyLead='You are the Team Lead named "lead".\nUse list_agents({}) to find your teammates and their names.\nTo message another teammate, use send_message({ target: "<teammate name>", message: "..." }).'
+ const employee=agents.find(row=>row.kind==='employee')!.agent
+ const sections=[{name:'team:identity',text:legacyLead},{name:'fixture:historical-permission',text:'旧会话范围：仅原合成订单，无联网权限。'}]
+ const legacy=employee.session.append('user/message',createUserMessage({source:{kind:'runtime-context',form:'snapshot',sections},content:[{type:'text',text:'Original Team wrapper\n'+sections.map(row=>row.text).join('\n\n')}]}),{surfaceOp:'append'})
  for(const {agent,kind,originalTeam,originalTools} of agents){
   const assembly=await ctx.systemPrompt.assemble({agent,scope:agent}),team=assembly.contexts.find(row=>row.name==='team:identity')!
   assert.equal(assembly.contexts.filter(row=>row.name==='team:identity').length,1,kind+'保留官方required路由上下文');assert.equal(team.text,originalTeam,kind+'原路由名与工具协议逐字保留')
   const metadata=assembly.contexts.find(row=>row.name==='teloa:team-routing-metadata')!
-  assert.match(metadata.text,/Internal collaboration routing metadata/);assert.match(metadata.text,/not your user-facing identity/)
+  assert.match(metadata.text,/Teloa group routing boundary/);assert.match(metadata.text,/separate from the native Team roster/);assert.match(metadata.text,/does not require listing or spawning/)
   assert.ok(assembly.contexts.indexOf(metadata)<assembly.contexts.indexOf(team),'在原生Team身份之前标明精确上下文用途')
   assert.deepEqual(assembly.tools.map(row=>row.name),originalTools,kind+'身份规则不能授予或撤下工具')
   const snapshot=renderContextSnapshot(assembly),role=roles.get(agent.id)
   if(role){assert.match(snapshot,new RegExp(role.name));assert.match(snapshot,/Role version: 3/);assert.match(snapshot,/只读，不审批、不外发/);assert.match(snapshot,kind==='twin'?/the user's personal twin in Teloa/:/a Teloa AI employee/);if(kind==='twin')assert.doesNotMatch(snapshot,/a Teloa AI employee/)}
   agent.followup(createUserMessage({source:{kind:'user'},content:[{type:'text',text:kind==='internal-json'?'只输出约定 JSON，不作身份介绍。':'你是谁？不执行任何动作。'}]}));await agent.whenIdle()
   const request=adapter.requests.at(-1)!,text=trustedInput(request)
-  assert.match(text,/Internal collaboration routing metadata/,'发送前官方refreshContext不能抹掉内部路由分类')
+  assert.doesNotMatch(text,/Use list_agents\(\{\}\) to find your teammates and their names\./,'最终模型输入不得无条件要求枚举原生队友')
+  const refreshed=await ctx.systemPrompt.refreshContext(assembly,{agent,scope:agent})
+  assert.doesNotMatch(renderContextSnapshot(refreshed),/Use list_agents\(\{\}\) to find your teammates and their names\./,'发送前 refreshContext 必须保留按实际协作需要发现队友的契约')
+  assert.match(text,/Teloa group routing boundary/,'发送前官方refreshContext不能抹掉群与原生Team边界')
+  assert.match(text,/only when the current task requires native teammate collaboration/)
+  assert.match(text,/whose routing name is unknown, use list_agents\(\{\}\); otherwise use the known target directly/)
   assert.equal(text.split(productIdentityText).length-1,1,kind+'仍只注入一份产品规则')
   assert.match(text,/ordinary conversation.*Teloa assistant/);assert.match(text,/personal twin.*employee/);assert.match(text,/Never impersonate the user/);assert.match(text,/actual.*model|model.*actual/)
   assert.match(text,/only when.*technical architecture/);assert.match(text,/Internal routing and JSON.*take precedence/)
   assert.doesNotMatch(text,/You are an AI agent powered by DeepSeek Harness\./)
   assert.match(text,/actual-BYOK-model/,'真实BYOK模型变量保留，不改成虚构模型')
   if(kind==='internal-json')assert.ok(text.includes(groupRoutingInputNotice),'原内部JSON协议逐字保留')
+  if(kind==='employee')assert.match(text,/Original Team wrapper\n旧会话范围：仅原合成订单，无联网权限。/,'退休旧Team引导必须保留原包装与权限')
  }
+ assert.ok(readSessionEvents(employee.session).some(row=>row.seq===legacy.seq&&row.type==='user/message'&&row.data.content.some(block=>block.type==='text'&&block.text.includes(legacyLead))),'原失败指令事件保留，历史投影退休不能删原始证据')
  assert.equal(adapter.requests.length,4)
  const agent=agents[0]!.agent
  agent.ctx.systemPrompt.section({name:'fixture:complete-persona',complete:true,order:0,text:'Complete native mode; preserve required runtime facts.',interpolate:false})
@@ -194,7 +208,37 @@ test('真实官方Team身份仅作内部路由；主会话、可信分身与员�
  assert.equal(complete.split(productIdentityText).length-1,1,'完整persona模式继续保留单份产品规则')
  assert.equal(complete.split('# Reply language').length-1,1,'完整persona替换所有section后仍须保留唯一语言契约')
  assert.equal(complete.split('# Conversational style').length-1,1,'完整persona也须保留同一简洁交流规则')
- assert.equal(complete.split('Internal collaboration routing metadata').length-1,1,'完整persona及连续会话仍保留单份required路由分类')
+ assert.equal(complete.split('Teloa group routing boundary').length-1,1,'完整persona及连续会话仍保留单份required群路由边界')
  assert.ok(complete.includes(agents[0]!.originalTeam),'完整persona模式不删除原Team身份路由协议')
  assert.equal(adapter.requests.length,5)
+ // 显式需要协作时，真实子代理仍按原生姓名/lead 路由，不能把员工名字映射成原生成员。
+ let releaseChild!:()=>void;const childGate=new Promise<void>(resolve=>{releaseChild=resolve});t.after(releaseChild)
+ adapter.beforeFinish=async options=>{if(String(options.sessionId)!==String(agent.id)){
+  options.signal?.addEventListener('abort',releaseChild,{once:true})
+  try{await childGate}finally{options.signal?.removeEventListener('abort',releaseChild)}
+ }}
+ const spawned=await ctx.agentTeams.spawnTeammate(agent,{name:'reviewer',description:'复核合成事实',prompt:[{type:'text',text:'只读合成材料，完成后向原生 lead 汇报。'}],context:'fresh',provider:'spawn',signal:AbortSignal.timeout(5000)})
+ const child=ctx.agents.get(spawned.member.id)!;assert.ok(child)
+ for(let attempt=0;attempt<100&&!adapter.requests.some(row=>String(row.sessionId)===String(child.id));attempt++)await new Promise(resolve=>setTimeout(resolve,5))
+ assert.equal(child.session.header.parentSession,agent.id)
+ const legacyMember=legacyLead.replace('You are the Team Lead named "lead".','You are teammate "reviewer".\nYour Team Lead is named "lead".\nTo message your Team Lead, use send_message({ target: "lead", message: "..." }).')
+ const legacyChild=child.session.append('user/message',createUserMessage({source:{kind:'runtime-context',form:'snapshot',sections:[{name:'team:identity',text:legacyMember},{name:'fixture:permission',text:'子成员历史权限：只读。'}]},content:[{type:'text',text:legacyMember+'\n\n子成员历史权限：只读。'}]}),{surfaceOp:'append'})
+ const childAssembly=await ctx.systemPrompt.assemble({agent:child,scope:child})
+ const childRefreshed=await ctx.systemPrompt.refreshContext(childAssembly,{agent:child,scope:child})
+ const childContext=renderContextSnapshot(childRefreshed)
+ assert.match(childContext,/role="teammate", name="reviewer", lead="lead"/)
+ assert.match(childContext,/When the task requires reporting.*send_message\(\{ target: "lead", message: "\.\.\." \}\)/)
+ assert.doesNotMatch(childContext,/Use list_agents\(\{\}\) to find your teammates/)
+ const childSurface=new Set(child.session.surface.nodes),visibleChild=readSessionEvents(child.session).filter(row=>childSurface.has(row.seq)&&row.type==='user/message').map(row=>JSON.stringify(row.data)).join('\n')
+ assert.doesNotMatch(visibleChild,/Use list_agents\(\{\}\) to find your teammates/);assert.match(visibleChild,/子成员历史权限：只读/)
+ assert.ok(readSessionEvents(child.session).some(row=>row.seq===legacyChild.seq&&JSON.stringify(row.data).includes('Use list_agents')),'旧成员原始事件也保留')
+ const childRequest=adapter.requests.find(row=>String(row.sessionId)===String(child.id))!
+ assert.ok(childRequest);assert.match(trustedInput(childRequest),/role="teammate", name="reviewer", lead="lead"/)
+ assert.ok(childRequest.messages.some(row=>row.content.some(block=>block.type==='text'&&block.text.includes('只读合成材料'))),'子代理实际任务与权限上下文保留')
+ const listed=await child.ctx.tools.execute({agent:child,name:'list_agents',arguments:{},callId:ToolCallId('team-list-needed'),signal:AbortSignal.timeout(5000)})
+ assert.equal(listed.isError,false);assert.match(JSON.stringify(listed),/reviewer/);assert.match(JSON.stringify(listed),/lead/)
+ const sent=await child.ctx.tools.execute({agent:child,name:'send_message',arguments:{target:'lead',message:'原生复核完成，仅已给定合成材料。'},callId:ToolCallId('team-report-needed'),signal:AbortSignal.timeout(5000)})
+ assert.equal(sent.isError,false);await agent.whenIdle()
+ assert.ok(adapter.requests.at(-1)!.messages.some(row=>row.content.some(block=>block.type==='text'&&block.text.includes('原生复核完成'))),'原生成员到lead的工具路由仍实际可用')
+ releaseChild();await child.whenIdle()
 })

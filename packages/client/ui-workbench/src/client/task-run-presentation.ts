@@ -3,14 +3,21 @@ import type {RunView} from './task-run-api.js'
 import type {StatusPillTone} from './StatusPill.js'
 export type TaskRunControl='open'|'start'|'withdraw'|'stop'|'reconcile'
 
-export const taskRunPhaseKeys={prepared:'taskExecution.phase.prepared',submitting:'taskExecution.phase.submitting',accepted:'taskExecution.phase.accepted',active:'taskExecution.phase.active',ended:'taskExecution.phase.ended',withdrawn:'taskExecution.phase.withdrawn',configuration_failed:'taskExecution.phase.configurationFailed'} as const
+export const taskRunPhaseKeys={prepared:'taskExecution.phase.prepared',submitting:'taskExecution.phase.submitting',accepted:'taskExecution.phase.accepted',active:'taskExecution.phase.active',ended:'taskExecution.phase.ended',withdrawn:'taskExecution.phase.withdrawn',configuration_failed:'taskExecution.phase.configurationFailed',submission_unknown:'taskExecution.phase.submissionUnknown'} as const
 export const taskRunReasonKeys:Record<string,string>={completed:'taskExecution.reason.completed',aborted:'taskExecution.reason.aborted',blocked:'taskExecution.reason.blocked',error:'taskExecution.reason.error','max-tokens':'taskExecution.reason.maxTokens',interrupted:'taskExecution.reason.interrupted'}
 
 /** 执行记录状态胶囊语气：进行中=info，完成=good，阻塞=warn，失败=danger，停止/撤回/结束=muted，尚未提交=neutral。 */
 const reasonTones:Record<string,StatusPillTone>={completed:'good',blocked:'warn',error:'danger','max-tokens':'danger',aborted:'muted',interrupted:'muted'}
-const phaseTones:Record<RunView['state'],StatusPillTone>={prepared:'neutral',submitting:'info',accepted:'info',active:'info',ended:'muted',withdrawn:'muted',configuration_failed:'danger'}
-export function taskRunTone(row:Pick<RunView,'state'|'reason'>,stopping:boolean):StatusPillTone{
+const phaseTones:Record<RunView['state'],StatusPillTone>={prepared:'neutral',submitting:'info',accepted:'info',active:'info',ended:'muted',withdrawn:'muted',configuration_failed:'danger',submission_unknown:'warn'}
+type RunStatus=Pick<RunView,'state'|'reason'|'deliveryCheck'>
+const awaitingDelivery=(row:RunStatus)=>row.state==='ended'&&row.reason==='completed'&&row.deliveryCheck!==undefined&&row.deliveryCheck.state!=='saved'
+export function taskRunStatusKey(row:RunStatus):string{
+ if(awaitingDelivery(row))return 'taskCompletion.verificationWaiting.title'
+ return row.reason?taskRunReasonKeys[row.reason]??'taskExecution.reason.ended':taskRunPhaseKeys[row.state]
+}
+export function taskRunTone(row:RunStatus,stopping:boolean):StatusPillTone{
  if(stopping)return 'info'
+ if(awaitingDelivery(row))return 'warn'
  return row.reason?reasonTones[row.reason]??'muted':phaseTones[row.state]
 }
 
@@ -28,7 +35,12 @@ export function taskRunStopWaitSeconds(row:Pick<RunView,'state'|'stopRequestedAt
 export function taskRunControls(state:RunView['state']):TaskRunControl[]{
  if(state==='configuration_failed')return []
  if(state==='prepared')return ['open','start','withdraw']
- if(state==='withdrawn')return ['open']
+ if(state==='withdrawn'||state==='submission_unknown')return ['open']
  if(state==='active')return ['open','stop','reconcile']
  return ['open','reconcile']
+}
+
+/** 目录不承诺返回顺序；展示当前工作时按真实创建时刻选取，不修改历史数组。 */
+export function latestTaskRun<T extends Pick<RunView,'id'|'createdAt'>>(rows:readonly T[]):T|undefined{
+ return rows.reduce<T|undefined>((latest,row)=>!latest||Date.parse(row.createdAt)>Date.parse(latest.createdAt)||Date.parse(row.createdAt)===Date.parse(latest.createdAt)&&row.id>latest.id?row:latest,undefined)
 }

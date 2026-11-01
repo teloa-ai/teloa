@@ -1,9 +1,9 @@
-import {WorkError,isRecord,industryUpdateCanonical,readBusinessConfigurationCandidateV2,assertBusinessViewV2References,type BusinessConfigurationCandidateV2} from '@teloa/contract'
+import {type BusinessFieldValue,WorkError,isRecord,industryUpdateCanonical,readBusinessConfigurationCandidateV2,assertBusinessViewV2References,type BusinessConfigurationCandidateV2} from '@teloa/contract'
 import type {BusinessConfigurationCandidate,BusinessObjectTypeDefinition,BusinessObjectTypeDefinitionV2,BusinessTemplateUpgradeImpact} from '@teloa/contract'
 import {assertBusinessRecordFieldValue} from './business-record-values.ts'
 
 type Configuration=BusinessConfigurationCandidate|BusinessConfigurationCandidateV2
-type ImpactRecord={type:string;id:string;fields:readonly {label:string;value:string|undefined}[]}
+type ImpactRecord={type:string;id:string;fields:readonly {label:string;value:BusinessFieldValue|undefined}[]}
 /** 与配置采用的历史兼容守卫共享判据；只描述影响，不迁移记录或改变授权。 */
 export function inspectBusinessTemplateUpgradeImpact(input:{current:Configuration|undefined;candidate:Configuration;records:readonly ImpactRecord[]}):BusinessTemplateUpgradeImpact{
  type ObjectType=BusinessObjectTypeDefinition|BusinessObjectTypeDefinitionV2

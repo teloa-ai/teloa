@@ -25,7 +25,7 @@ import {initializeTaskRunRuntimeLinks} from '../src/work/task-run-runtime-links.
 import {initializeTaskRunFlows} from '../src/work/task-run-flows.ts'
 import {GroupAttachmentService,initializeGroupAttachments,type GroupAttachmentBytePorts} from '../src/work/group-attachments.ts'
 import {ArtifactSnapshotStore,initializeArtifactSnapshots} from '../src/work/artifact-snapshots.ts'
-import {initializeArtifacts} from '../src/work/artifacts.ts'
+import {ArtifactService,initializeArtifacts} from '../src/work/artifacts.ts'
 import {groupTaskSourceDigest} from '../src/work/group-task-source-digest.ts'
 import {groupFileHandleLine,groupFileTextMaxBytes,groupModelNoVisionNotice,groupPartialAttachFailedNotice,readRunGroupArtifactImageBytes,readRunGroupContext,readStoredRunGroupContext,runGroupContextHash,type RunGroupContext,type RunGroupFile,type RunGroupFilePorts} from '../src/work/task-run-group-context.ts'
 import {testRoleResponsibility} from './role-test-fixture.ts'
@@ -460,4 +460,39 @@ test('群任务换代仅认真实当前任务与完整交办链，坏回执、�
  await assert.rejects(context(current),{code:'teloa/version-conflict'},'已撤销授权不复活')
  await pool.query('delete from teloa_group_members where owner_id=$1 and group_id=$2 and role_id=$3',[f.owner,f.group.id,role.id])
  await assert.rejects(context(current),{code:'teloa/forbidden'},'不再是当前群成员')
+})
+
+async function withdrawnArtifact(f:Fixture){
+ const source={kind:'session' as const,id:randomUUID(),scope:'SOC',version:'withdrawal-test-v1',title:'合成固定成果来源'},service=new ArtifactService(pool,identity,async()=>({source,sessionIds:[source.id]}))
+ const saved=await service.create(f.owner,{requestId:randomUUID(),source,content:{title:'合成撤回成果',sections:[{id:'body',title:'正文',text:'不可再引用'}],snapshotIds:[],note:'原件'}})
+ const reference:MessageReference={kind:'artifact',id:saved.artifactId,version:1}
+ await wire(f,[reference]);await service.withdraw(f.owner,{requestId:randomUUID(),artifactId:saved.artifactId,expectedVersion:1,source})
+ return {reference,service,saved}
+}
+test('撤回成果不再允许新群消息引用，原来源消息/授权不改写',async()=>{
+ const f=await fixture(),{reference,service,saved}=await withdrawnArtifact(f),before=(await pool.query('select source_snapshot,snapshot_digest from teloa_group_task_sources where task_id=$1',[f.task.id])).rows
+ const groups=new CollaborationService(pool,identity)
+ await assert.rejects(groups.send(f.owner,{requestId:randomUUID(),groupId:f.group.id,expectedVersion:f.group.version,text:'新的引用不能绕过',references:[reference]}),{code:'teloa/source-unavailable'})
+ assert.deepEqual((await pool.query('select source_snapshot,snapshot_digest from teloa_group_task_sources where task_id=$1',[f.task.id])).rows,before)
+ assert.deepEqual(await service.list(f.owner,{artifactId:saved.artifactId}),[saved])
+})
+test('撤回成果不能重新授予群输入，已准备来源再次读取也拒绝',async()=>{
+ const f=await fixture(),{reference}=await withdrawnArtifact(f),grants=new GroupAgentGrantService(pool,identity.now)
+ await assert.rejects(grants.change(f.owner,{requestId:randomUUID(),groupId:f.group.id,roleId:f.role.id,expectedGroupVersion:f.group.version,expectedRoleVersion:f.role.version,expectedGrantVersion:1,action:'save',resources:[reference],canPost:true,canAutoRun:false}),{code:'teloa/source-unavailable'})
+ await assert.rejects(context(f),{code:'teloa/source-unavailable'})
+})
+
+test('真实TaskRun已prepare后撤回固定成果，claim拒绝且prepared原记录不被改写为已发送',async()=>{
+ const f=await fixture(),source={kind:'session' as const,id:randomUUID(),scope:'SOC',version:'withdrawal-claim-v1',title:'本轮合成来源'},artifacts=new ArtifactService(pool,identity,async()=>({source,sessionIds:[source.id]}))
+ const saved=await artifacts.create(f.owner,{requestId:randomUUID(),source,content:{title:'固定正文',sections:[{id:'body',title:'正文',text:'合成内容'}],snapshotIds:[],note:'原件'}})
+ await wire(f,[{kind:'artifact',id:saved.artifactId,version:1}])
+ const sessionId=randomUUID(),inspect=async()=>({id:sessionId,sessionId,ownerId:f.owner,status:'ready'})
+ await new ObjectConversationService(pool,inspect,identity.now).change(f.owner,{requestId:randomUUID(),kind:'task',objectId:f.task.id,expectedObjectVersion:f.task.version,sessionId,expectedLinkVersion:0,action:'link'})
+ const runs=new TaskRunService(pool,identity,inspect,{allowedTools:[],groupContext:(db,owner,task,role)=>readRunGroupContext(db,owner,task,role)})
+ const run=await runs.prepare(f.owner,{requestId:randomUUID(),taskId:f.task.id,expectedTaskVersion:f.task.version,roleId:f.role.id,expectedRoleVersion:f.role.version,sessionId,expectedLinkVersion:1},undefined,undefined,undefined,async()=> 'default-agent')
+ assert.equal(run.state,'prepared')
+ await artifacts.withdraw(f.owner,{requestId:randomUUID(),artifactId:saved.artifactId,expectedVersion:1,source})
+ const before=(await pool.query('select * from teloa_task_runs where owner_id=$1 and id=$2',[f.owner,run.id])).rows[0]
+ await assert.rejects(runs.claim(f.owner,{runId:run.id}),{code:'teloa/source-unavailable'})
+ assert.deepEqual((await pool.query('select * from teloa_task_runs where owner_id=$1 and id=$2',[f.owner,run.id])).rows[0],before)
 })

@@ -43,23 +43,24 @@ export function ComposerSuggestionGhost({text,onAccept,onDismiss,onDraft,visible
   placeholder.style.visibility=visible&&text?'hidden':previous
   return ()=>{placeholder.style.visibility=previous}
  },[target,visible,text])
- // 官方输入框的快照不带草稿正文，所以"开始输入即丢弃"直接听输入框自己的 input 事件。
+ // 同时核对实际编辑器正文，覆盖粘贴、删空与快照更新之间的间隙。
  useEffect(()=>{
-  // 只要还有候选就一直监听：建议隐藏期间也要能收到"删回空"，否则永远不回来。
-  if(!text||!target)return
+  // 等待模型或建议隐藏期间也监听草稿，防止迟答短暂盖住本人输入。
+  if(!target)return
   // 官方编辑器删到空时不保证再抛 input 事件（实测），所以除了监听事件再定时核对一次内容。
-  let last=target.innerText??''
+  let last:string|undefined
   const report=()=>{
    const current=target.innerText??''
    if(current===last)return
    last=current
    onDraft?.(current)
   }
+  report()
   target.addEventListener('input',report)
   target.addEventListener('keyup',report)
   const timer=window.setInterval(report,400)
   return ()=>{target.removeEventListener('input',report);target.removeEventListener('keyup',report);window.clearInterval(timer)}
- },[target,text,onDraft])
+ },[target,onDraft])
  if(!text)return null
  const body=<div className={overlay?styles.ghostInline:styles.ghost} data-composer-suggestion="1" role="status" aria-label={label} title={label}>
   <span className={styles.text}>{text}</span>

@@ -1,4 +1,4 @@
-import {useEffect,useRef,useState} from 'react'
+import {useEffect,useRef,useState,type ReactNode} from 'react'
 import {ArrowLeft,BookmarkPlus,ChevronDown} from 'lucide-react'
 import type {ProjectContextChange,ProjectContextDetail,ProjectContextEntry,ProjectContextShare,WorkProject} from '@teloa/contract'
 import type {ProjectApi} from './project-api.js'
@@ -12,14 +12,14 @@ import {ProjectRuntimePanel} from './ProjectRuntimePanel.js'
 import {projectRuntimeCopy} from './project-runtime-copy.js'
 import {ToolbarIconButton} from './ToolbarIconButton.js'
 
-type Props={project:WorkProject;api:ProjectApi;open:boolean;close:()=>void;sessionId?:string|undefined}
+type Props={project:WorkProject;api:ProjectApi;open:boolean;close:()=>void;sessionId?:string|undefined;conversationSettings?:ReactNode}
 export function ProjectContextPanel(props:Props){
  const {api,project}=props,origin=useRef({api,context:api.context,runtime:api.runtime,id:project.id,scope:project.scope,key:0})
  const old=origin.current
  if(old.api!==api||old.context!==api.context||old.runtime!==api.runtime||old.id!==project.id||old.scope!==project.scope)origin.current={api,context:api.context,runtime:api.runtime,id:project.id,scope:project.scope,key:old.key+1}
  return <ProjectContextScope key={origin.current.key} {...props}/>
 }
-function ProjectContextScope({project,api,open,close,sessionId}:Props){
+function ProjectContextScope({project,api,open,close,sessionId,conversationSettings}:Props){
  const {locale,t}=useI18n(),copy=projectContextCopy(locale),context=api.context
  const personal=api.runtime?.personal,mounted=useRef(true),adopting=useRef<object>()
  const origin=useRef({api,personal,projectId:project.id,version:project.version,open,token:{}})
@@ -151,7 +151,7 @@ function ProjectContextScope({project,api,open,close,sessionId}:Props){
  </>
  return <ContextDrawer open={open} title={copy.title} close={close} canClose={!busy&&!adoptionBusy} className={css.drawer!}>
   <div className={css.panel}>
-   {api.runtime?<ProjectRuntimePanel project={project} api={api} open={open} sessionId={sessionId} contextVersion={data?.version} contextChanged={()=>refresh(n=>n+1)}>{contextBody}</ProjectRuntimePanel>:<><p className={css.hint}>{copy.hint}</p>{contextBody}</>}
+   {api.runtime?<ProjectRuntimePanel project={project} api={api} open={open} sessionId={sessionId} conversationSettings={conversationSettings} contextVersion={data?.version} contextChanged={()=>refresh(n=>n+1)}>{contextBody}</ProjectRuntimePanel>:<><p className={css.hint}>{copy.hint}</p>{contextBody}</>}
   </div>
  </ContextDrawer>
 }

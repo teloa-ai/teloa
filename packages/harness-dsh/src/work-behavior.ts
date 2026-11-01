@@ -31,11 +31,12 @@ export function refineWorkBehavior(assembly:PromptAssembly,coreOnly=false):Promp
  }
 }
 
-/** 只退休本模块的旧静态正文；权限、岗位、其他快照字段与原始事件均保留。 */
-function retireHistoricalProductContext(agent:Agent,assembly:PromptAssembly):void{
+/** 退休已知旧产品/Team 引导；当前 provider 重建事实，权限、岗位及原始事件均保留。 */
+function retireHistoricalRuntimeGuidance(agent:Agent,assembly:PromptAssembly):void{
  const visible=new Set(agent.session.surface.nodes)
  const snapshots=readSessionEvents(agent.session).filter(event=>visible.has(event.seq)&&event.type==='user/message'&&event.data.source.kind==='runtime-context'&&event.data.source.form==='snapshot')
- const owned=(section:{name:string;text:string})=>section.name==='teloa:product-identity'&&/^# Teloa (?:identity and usage|产品与用量事实)\n/.test(section.text)
+ const legacyTeam=(section:{name:string;text:string})=>section.name==='team:identity'&&/^(?:You are the Team Lead named "lead"\.|You are teammate "[^"\n]+"\.\nYour Team Lead is named "lead"\.\nTo message your Team Lead, use send_message\(\{ target: "lead", message: "\.\.\." \}\)\.)\nUse list_agents\(\{\}\) to find your teammates and their names\.\nTo message another teammate, use send_message\(\{ target: "<teammate name>", message: "\.\.\." \}\)\.$/.test(section.text)
+ const owned=(section:{name:string;text:string})=>(section.name==='teloa:product-identity'&&/^# Teloa (?:identity and usage|产品与用量事实)\n/.test(section.text))||legacyTeam(section)
  const old=snapshots.filter(event=>event.type==='user/message'&&event.data.source.kind==='runtime-context'&&event.data.source.form==='snapshot'&&event.data.source.sections.some(owned))
  if(!old.length)return
  const latest=snapshots.at(-1)
@@ -64,13 +65,13 @@ export function apply(ctx:Context,config:Config={}):void{
   ctx.systemPrompt.context({name:'teloa:product-identity',order:0,text:productIdentityText,required:true,interpolate:false})
   ctx.on('system-prompt/assemble',async(_assembly,context,next)=>{
    const result=await next();context.signal?.throwIfAborted()
-   if(context.agent)retireHistoricalProductContext(context.agent,result)
+   if(context.agent)retireHistoricalRuntimeGuidance(context.agent,result)
    return result
   },{prepend:true})
-  // 发送前 refreshContext 会重读原生 provider；独立 required 分类与原 Team 事实一同刷新，不覆盖其路由正文。
+  // 原生 required provider 负责真实 Team 路由；此处只说明 Teloa 群与原生 Team 的边界。
   ctx.systemPrompt.context({name:'teloa:team-routing-metadata',order:ctx.systemPrompt.getContextOrder('TEAM_IDENTITY')-1,required:true,interpolate:false,text:({agent})=>{
    if(!agent||!ctx.get('agentTeams')?.tryMembership(agent)||!agent.ctx.tools.get('list_agents',agent))return ''
-   return 'Internal collaboration routing metadata: team:identity is not your user-facing identity. Introduce yourself using the trusted Teloa assistant, personal twin or employee context. Preserve native Team names and tool-routing instructions; they grant no additional authority.'
+   return 'Teloa group routing boundary: group employees and @mentions are separate from the native Team roster in team:identity. A group handoff does not require listing or spawning native teammates. Do not map a group employee name to a native Team target. Follow the trusted group task context and permissions for group work; native Team routing grants no additional authority.'
   }})
   return
  }

@@ -1,5 +1,14 @@
 import {WorkError} from './work-error.ts'
 
+/** 只选择本次岗位上下文，不授予记忆读取许可；省略与明确不选必须保持区别。 */
+export function readTaskRunMemorySelection(value:unknown):string[]|undefined{
+ if(value===undefined)return undefined
+ if(!Array.isArray(value)||value.length>30||value.some(id=>typeof id!=='string'||!/^[a-f0-9]{8}-[a-f0-9]{4}-[1-5][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i.test(id)))throw new WorkError('teloa/invalid-input','本次经验选择不正确。')
+ const ids=value.map(id=>(id as string).toLowerCase()).sort()
+ if(new Set(ids).size!==ids.length)throw new WorkError('teloa/invalid-input','本次经验选择不能包含重复项。')
+ return ids
+}
+
 /**
  * 停止意图的时间戳。停止只是「请求」，它不伪造终态，只把请求本身留痕，
  * 于是刷新后仍能看到「停止中」，宿主也有了可判别的重发依据。

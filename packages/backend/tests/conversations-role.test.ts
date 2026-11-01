@@ -147,3 +147,13 @@ test('内部岗位请求指纹按本人会话现读，冷重启保留；公共�
   assert.equal(await restarted.requestedRoleId(owner,linked.sessionId),roleId)
   assert.equal('requestedRoleId' in await restarted.bySession(owner,linked.sessionId),false)
 })
+
+
+test('自动执行会话只读目录并入普通手工目录，保留原task-run身份且不回写预约',async()=>{
+ const f=await fixture(),roleId=randomUUID(),taskId=randomUUID(),requestId=randomUUID(),sessionId='task-run-'+randomUUID();f.roles.set(roleId,role(roleId,{runtimeConfig:{agentPresetId:'standard'}}));
+ const manual=await f.service.create(owner,{requestId:randomUUID(),title:'手工员工聊天',roleId});
+ const dedicated=new ConversationService(f.repository,{create:async id=>id,inspect:async()=>{}},f.identity,f.readRole);const reserved=await dedicated.createRun(owner,{requestId,title:'自动调查'},{taskId,taskVersion:1,roleId,roleVersion:1,agentPresetId:'standard',sessionId});
+ const before=structuredClone(await f.repository.read()),reads:string[]=[];
+ const service=new ConversationService(f.repository,f.host,f.identity,f.readRole,async who=>{reads.push(who);return [reserved,reserved]});
+ assert.deepEqual((await service.list(owner,{})).map(row=>row.sessionId),[manual.sessionId],'普通工具目录不扩入自动工作');assert.deepEqual(reads,[]);const rows=await service.list(owner,{},true);assert.deepEqual(new Set(rows.map(row=>row.sessionId)),new Set([manual.sessionId,sessionId]));assert.equal(rows.find(row=>row.sessionId===sessionId)?.purpose,'task-run');assert.deepEqual(rows.find(row=>row.sessionId===sessionId)?.run,reserved.run);assert.equal(rows.length,2);assert.deepEqual(reads,[owner]);assert.deepEqual(await f.repository.read(),before);
+});

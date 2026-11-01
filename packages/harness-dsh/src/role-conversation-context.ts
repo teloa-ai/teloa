@@ -72,7 +72,7 @@ const summaryLine=(value:string)=>Array.from(value.replace(/\s+/g,' ').trim()).s
  * 员工单聊的业务范围与岗位方法目录。技能正文不常驻：只列岗位已绑定技能的摘要，
  * 可用性按本 agent 视角现读原生注册表与 skill 工具，由模型经原生 skill 工具按原名加载；不改工具面、不授予权限。
  */
-async function roleAssignmentText(agent:Agent,role:DigitalRole,scopeId:string|null,scopeTitle:RoleContextPorts['scopeTitle'],signal?:AbortSignal):Promise<string>{
+export async function roleAssignmentText(agent:Agent,role:DigitalRole,scopeId:string|null,scopeTitle:RoleContextPorts['scopeTitle'],signal?:AbortSignal):Promise<string>{
  const blocks:string[]=[]
  const title=scopeId!==null&&scopeTitle?await scopeTitle(scopeId):null
  if(title?.trim())blocks.push('Conversation business scope: '+summaryLine(title))

@@ -1,3 +1,5 @@
+import {roleEditCopy} from './role-edit-copy.js'
+import {EmployeeResponsibilityDetails,EmployeeCapabilityDetails} from './EmployeeEditDetails.js'
 import {TwinDraftWorkspace,type TwinDraftWorkspacePort} from './TwinDraftWorkspace.js'
 import {RoleMemory as RoleMemoryEditor} from './RoleMemory.js'
 import {skillDisplayTitle,type RoleSkillTitleReader,type SkillDisplayTitle} from './capability-skill-runtime.js';
@@ -10,6 +12,7 @@ import {EmployeeGroupInvite} from './EmployeeGroupInvite.js'
 import {EmployeeAvatar} from './EmployeeAvatar.js'
 import {EmployeeWorkOverview,type EmployeeArtifactOpen} from './EmployeeWorkOverview.js'
 import {EmployeeGrantedTools} from './EmployeeGrantedTools.js'
+import {EmployeePermissions} from './EmployeePermissions.js'
 import {employeeCoworkers} from './employee-work-presentation.js'
 import type {ArtifactApi} from './artifact-api.js'
 import type {TaskRunApi} from './task-run-api.js'
@@ -82,6 +85,7 @@ import { readRosterFold, writeRosterFold, type RosterFoldState } from './team-ro
 import type { PageCreateApi } from './page-create-api.js';
 import { HIRE_ACTIONS, HIRE_DEFAULT_LIMITS, HIRE_LEVELS, HIRE_PRESETS, hireActionLabel, hireDrifted, hireLevelLabel, hireMergeLimit, hireMergePreset, hirePresetFields, type HireAction, type HireAppliedFields, type HireLevel } from './role-hire-presets.ts';
 type Props = {
+    objectLinkActions?:ReactNode;
     twinDrafts?:TwinDraftWorkspacePort|undefined;
     taskRuns?:TaskRunApi|undefined;
     employeeArtifacts?:Pick<ArtifactApi,'listByRole'>|undefined;
@@ -102,6 +106,7 @@ type Props = {
     runtimeConfigs?: RoleRuntimeConfigApi | undefined;
     capabilityState?: CapabilityPreview | undefined;
     persistence?: {
+        directoryKnown?: boolean;
         assignmentPending: boolean;
         recoverAssignment: () => Promise<string>;
         assign: (role: PreviewRole, fields: {
@@ -112,7 +117,7 @@ type Props = {
         assignConfirmed?: (role:PreviewRole,fields:{title:string;goal:string;scope:CollaborationScope})=>Promise<string>;
         lifecycle: RoleLifecyclePort;
         pendingFields: () => RoleFields | undefined;
-        create: (fields: RoleFields) => Promise<string>;
+        create: (fields: RoleFields, requestId?: string) => Promise<string>;
         edit: (role: PreviewRole, fields: RoleFields) => Promise<void>;
         updateProfile?: (role: PreviewRole, fields: Pick<RoleFields,'name'|'avatarKey'>) => Promise<void>;
         load: () => void;
@@ -136,6 +141,9 @@ type Props = {
     resources: () => void;
     nativeSettings: () => void;
     capabilities: (id: string) => ReactNode;
+    permissionTools?: ((id:string,refresh:()=>void)=>ReactNode)|undefined;
+    permissionConnections?: ((id:string)=>ReactNode)|undefined;
+    assignConversation?: ((roleId:string,expectedVersion:number,scope?:CollaborationScope,goal?:string)=>void|Promise<void>)|undefined;
     plans: (id: string) => ReactNode;
     scopeLabels: readonly BusinessScopeLabel[];
     /** 从业务页「查看同事」跳进来时聚焦的业务范围：展开该分区并滚到眼前（透传给 StaffRoster 的既有 focusScope）。 */
@@ -176,7 +184,7 @@ const closed = (state: string) => state === 'completed' || state === 'cancelled'
 const firstSentence = (text: string) => text.split(/[。.!?！？\n]/)[0]?.trim() || text.trim();
 /** 全宽名单工具行上的三个状态胶囊（原型 数字员工形象.jsx:107 的 statusFilters）。恢复旧筛选记忆时也拿它当白名单。 */
 const STATUS_PILL_IDS = ['all', 'busy', 'paused'] as const;
-export function TeamPage({ twinDrafts,employeeArtifacts,openEmployeeArtifact,taskRuns,skillTitleReader,phone,templateSharing,delegations,roleTools,delegationChanged,savedGroups,navigation,work, resourceApi, memoryApi, dailyLogApi, autoDreamTrigger, dailyLogSchedule, runtimeConfigs, capabilityState, persistence, embedded = false, autoFocus = true, conversations, talk, visible, state, collaboration, selected, select, change, openTask, openGroup, openBusiness, resources, nativeSettings, capabilities, plans, scopeLabels, focusScope, profileName = defaultPersonalDisplayName, profileInitials = personalAvatarInitials(profileName), pageCreate }: Props) {
+export function TeamPage({ objectLinkActions,twinDrafts,employeeArtifacts,openEmployeeArtifact,taskRuns,skillTitleReader,phone,templateSharing,delegations,roleTools,delegationChanged,savedGroups,navigation,work, resourceApi, memoryApi, dailyLogApi, autoDreamTrigger, dailyLogSchedule, runtimeConfigs, capabilityState, persistence, embedded = false, autoFocus = true, conversations, talk, visible, state, collaboration, selected, select, change, openTask, openGroup, openBusiness, resources, nativeSettings, capabilities, permissionTools, permissionConnections, assignConversation, plans, scopeLabels, focusScope, profileName = defaultPersonalDisplayName, profileInitials = personalAvatarInitials(profileName), pageCreate }: Props) {
     const { locale, t, list, number } = useI18n();
     const allowed=useApplicationCapability('people');
     profileName = personalDisplayName(profileName, t('profile.account'));
@@ -215,6 +223,10 @@ export function TeamPage({ twinDrafts,employeeArtifacts,openEmployeeArtifact,tas
     // 名单与个人主页显示的分身名字是「{用户名} 的分身」，搜索也按这个名字命中；存储里的 role.name 一并保留在候选里。
     const roleDisplayName=(role:PreviewRole)=>role.kind==='twin'?twinDisplayName(profileName,t):role.name;
     const isSandbox=directoryMode==='sandbox',directoryRoles=visibleRoleDirectory(state.roles,directoryMode),directoryState={...state,roles:directoryRoles,tasks:visibleTaskDirectory(state.tasks,directoryMode)};
+    const directoryLoading=!isSandbox&&!!persistence&&(persistence.loading||persistence.directoryKnown===false&&!persistence.error);
+    const directoryError=isSandbox?undefined:persistence?.error;
+    // 首轮读取未成功时，空数组只代表尚无名单，不能据此宣称零人或尚未配置。
+    const directoryUnavailable=directoryRoles.length===0&&(directoryLoading||!!directoryError);
     // 「有待办」判据用 roleIsBusy（与分区头三个数同一口径），其余三档仍按 role.state 精确匹配。
     const searching=!!query.trim();
     const rows = directoryRoles.filter(role => rosterShowsRetired(role,{searching,showRetired,selected}) && (businessFilter==='all'||role.scopes.includes(businessFilter)) && (status === 'all' || (role.kind === 'employee' && (status === 'busy' ? roleIsBusy(role.id, directoryState.tasks) : role.state === status))) && [roleDisplayName(role), role.name, role.duty, ...role.skills].some(text => text.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase())));
@@ -239,8 +251,9 @@ export function TeamPage({ twinDrafts,employeeArtifacts,openEmployeeArtifact,tas
     const retiredCount=directoryRoles.filter(item=>item.kind==='employee'&&item.state==='retired').length;
     const resetDirectory=()=>{setQuery('');setStatus('all');select(null)};
     const showRoster = !embedded;
+    const directoryNotice=(directoryLoading||directoryError)&&<div className={css.buttons} role={directoryLoading?'status':'alert'}>{directoryLoading?<p>{t('team.loading')}</p>:<><p>{directoryError}</p><button type="button" onClick={persistence!.load}>{t('common.retry')}</button></>}</div>;
     const detailPane = role
-      ? <RoleDetail twinDrafts={isSandbox?undefined:twinDrafts} employeeArtifacts={employeeArtifacts} openEmployeeArtifact={openEmployeeArtifact} openRole={select} taskRuns={taskRuns} skillTitleReader={skillTitleReader} templateSharing={isSandbox?undefined:templateSharing} delegations={isSandbox?undefined:delegations} roleTools={roleTools} delegationChanged={delegationChanged} savedGroups={savedGroups} profileName={profileName} profileInitials={profileInitials} work={work} resourceApi={resourceApi} memoryApi={memoryApi} dailyLogApi={dailyLogApi} autoDreamTrigger={autoDreamTrigger} dailyLogSchedule={dailyLogSchedule} runtimeConfigs={runtimeConfigs} capabilityState={capabilityState} persistence={isSandbox?undefined:persistence} conversations={conversations} {...(!isSandbox?{talk,phone}:{})} input={inputs[role.id] ?? emptyInput()} update={patch => setInputs(current => ({ ...current, [role.id]: { ...(current[role.id] ?? emptyInput()), ...patch } }))} key={role.id} role={role} businessContext={businessFilter==='all'?undefined:businessFilter} state={directoryState} collaboration={collaboration} change={change} back={() => select(null)} openTask={openTask} openGroup={openGroup} openBusiness={isSandbox?undefined:openBusiness} resources={resources} nativeSettings={nativeSettings} capabilities={capabilities} plans={plans}/>
+      ? <RoleDetail twinDrafts={isSandbox?undefined:twinDrafts} employeeArtifacts={employeeArtifacts} openEmployeeArtifact={openEmployeeArtifact} openRole={select} taskRuns={taskRuns} skillTitleReader={skillTitleReader} templateSharing={isSandbox?undefined:templateSharing} delegations={isSandbox?undefined:delegations} roleTools={roleTools} delegationChanged={delegationChanged} savedGroups={savedGroups} profileName={profileName} profileInitials={profileInitials} work={work} resourceApi={resourceApi} memoryApi={memoryApi} dailyLogApi={dailyLogApi} autoDreamTrigger={autoDreamTrigger} dailyLogSchedule={dailyLogSchedule} runtimeConfigs={runtimeConfigs} capabilityState={capabilityState} persistence={isSandbox?undefined:persistence} conversations={conversations} {...(!isSandbox?{talk,phone}:{})} input={inputs[role.id] ?? emptyInput()} update={patch => setInputs(current => ({ ...current, [role.id]: { ...(current[role.id] ?? emptyInput()), ...patch } }))} key={role.id} role={role} businessContext={businessFilter==='all'?undefined:businessFilter} state={directoryState} collaboration={collaboration} change={change} back={() => select(null)} openTask={openTask} openGroup={openGroup} openBusiness={isSandbox?undefined:openBusiness} resources={resources} nativeSettings={nativeSettings} capabilities={capabilities} permissionTools={permissionTools} permissionConnections={permissionConnections} assignConversation={assignConversation} plans={plans}/>
       : <div className={css.empty}><Bot size={38}/><h2>{t('team.landingTitle')}</h2></div>;
     return <section data-team-directory-mode={directoryMode} className={clsx(css.page, css.alignedPage,isSandbox&&css.sandboxMode, teamCss.teamPage, embedded && css.embeddedPage, embedded && teamCss.embeddedTeam)} aria-label={t('navigation.team')}>{!selected&&<CapabilityNotice capability="people"/>}
 
@@ -252,7 +265,7 @@ export function TeamPage({ twinDrafts,employeeArtifacts,openEmployeeArtifact,tas
     }
     finally {
         setRecovering(false);
-    } }}>{t('team.recoverAssignment')}</button>}{assignmentError && <p role="alert">{assignmentError}</p>}{persistence && <RoleLifecycleRecovery api={persistence.lifecycle}/>}{persistence?.pendingFields() && <button type="button" onClick={() => setCreating(true)}>{t('team.continueCreation')}</button>}{persistence?.error && <p role="alert">{persistence.error}</p>}</div>}
+    } }}>{t('team.recoverAssignment')}</button>}{assignmentError && <p role="alert">{assignmentError}</p>}{persistence && <RoleLifecycleRecovery api={showRoster&&persistence.lifecycle.error===directoryError?{...persistence.lifecycle,error:undefined}:persistence.lifecycle}/>}{persistence?.pendingFields() && <button type="button" onClick={() => setCreating(true)}>{t('team.continueCreation')}</button>}{!showRoster&&persistence?.error && <p role="alert">{persistence.error}</p>}</div>}
     {/* 三态装配（简报 功能验证）：非嵌入未选中＝一页全宽名单；非嵌入已选中＝一页个人主页；嵌入态照旧只有详情。 */}
     <div {...directoryFocus} className={clsx(embedded ? css.layout : showRoster ? teamCss.rosterPage : teamCss.detailPage, embedded && role && css.hasSelection)}>
       {showRoster
@@ -263,13 +276,14 @@ export function TeamPage({ twinDrafts,employeeArtifacts,openEmployeeArtifact,tas
                   <h1>{t('navigation.team')}</h1>
                   {persistence&&!isSandbox&&<button type="button" className={directoryCss.iconAction} disabled={persistence.loading} aria-label={t(persistence.loading ? 'team.loading' : 'team.refresh')} title={t(persistence.loading ? 'team.loading' : 'team.refresh')} onClick={persistence.load}><RefreshCw size={15}/></button>}
                 </div>
-                <p className={teamCss.rosterSummary}>{t(summaryKey, { people: number(summaryPeople), busy: number(summaryBusy), waiting: number(summaryWaiting) })}</p>
+                {!directoryUnavailable&&<p className={teamCss.rosterSummary}>{t(summaryKey, { people: number(summaryPeople), busy: number(summaryBusy), waiting: number(summaryWaiting) })}</p>}
               </div>
               <div className={teamCss.rosterActions}>{templateSharing&&<ToolbarIconButton label={t('templateShare.import')} icon={Download} onClick={templateSharing.receive}/>}
               {templateSharing&&!isSandbox&&sharedTemplates&&directoryRoles.some(item=>item.storage==='persistent'&&item.kind==='employee'&&item.state!=='retired')&&<ToolbarIconButton label={t('templateShare.shareTeam')} icon={Share2} onClick={()=>setSharingTeam(true)}/>}
               {templateSharing&&!isSandbox&&sharedTemplates&&pageCreate&&<ToolbarIconButton label={t('templateShare.describe')} icon={Sparkles} aria-pressed={describing} onClick={()=>setDescribing(value=>!value)}/>}
               <button type="button" className={teamCss.rosterHire} disabled={!allowed} onClick={() => setCreating(true)}><Plus size={16}/>{t('team.action.new')}</button></div>
             </header>
+            {directoryNotice}
             {describing&&pageCreate&&sharedTemplates&&<div><CreateEntry entity={'share' as PageCreateEntity} directSentence descriptionPlaceholderKey="create.sentence.placeholder.employee" sentenceDraft={{key:'teloa.team-template-creation-input/v1',storage:sharedTemplates.storage}} api={pageCreate.api} prepare={prompt=>pageCreate.prepare({...prompt,text:t('market.create.defaultEmployeePrompt')+'\n\n'+prompt.text})} openMarket={pageCreate.openMarket} renderConfirmation={({preview})=><button type="button" onClick={()=>{try{sharedTemplates.openDraft(readSharePackage((JSON.parse(preview.draft.body) as {package:unknown}).package))}catch{setAssignmentError(t('templateShare.invalid'))}}}>{t('templateShare.previewShare')}</button>}/></div>}
             <div className={teamCss.rosterBar}>
               <label className={teamCss.rosterSearch}><Search size={16}/><input aria-label={t('team.search')} value={query} onChange={event => setQuery(event.target.value)} placeholder={t('team.search')}/>{query && <button type="button" className={teamCss.rosterSearchClear} aria-label={t('team.page.searchClear')} title={t('team.page.searchClear')} onClick={() => setQuery('')}><X size={14}/></button>}</label>
@@ -280,18 +294,18 @@ export function TeamPage({ twinDrafts,employeeArtifacts,openEmployeeArtifact,tas
               {retiredCount>0&&<ToolbarIconButton label={showRetired?t('team.page.retired.hide'):t('team.page.retired.show',{count:number(retiredCount)})} icon={Archive} aria-pressed={showRetired} data-roster-retired-toggle onClick={()=>setShowRetired(value=>!value)}/>}
               <label className={rosterCss.sortControl}><span>{directoryChoiceCopy(locale,'sort')}</span><select aria-label={directoryChoiceCopy(locale,'sort')} value={sort} onChange={event=>setSort(event.target.value as RosterSort)}><option value="name">{directoryChoiceCopy(locale,'name')}</option><option value="duty">{directoryChoiceCopy(locale,'duty')}</option></select></label>
               {/* 目录总数按员工身份去重。 */}
-              <div className={rosterCss.rosterCount}>
+              {!directoryUnavailable&&<div className={rosterCss.rosterCount}>
                 <span>{t('team.roster.count', { count: number(rosterTotal(rows)) })}</span>
-              </div>
+              </div>}
             </div>
 
             {rows.length > 0
               ? <StaffRoster sort={sort} onOpenTask={openTask} onPhone={isSandbox||!phone?undefined:id=>{void phone(id).catch(error=>setAssignmentError(localizeWorkError(locale,error)))}} profileName={profileName} profileInitials={profileInitials} roles={rows} labels={scopeLabels} tasks={directoryState.tasks} {...(focusScope ? { focusScope } : {})} fold={fold} onFoldChange={setFold} searching={searching} onSelect={id => select(id)} onTalk={isSandbox?undefined:id=>{void talk(id).then(opened=>{if(!opened)setAssignmentError(t('team.profile.historyEmpty'))}).catch(error=>setAssignmentError(localizeWorkError(locale,error)))}} onHire={() => {if(applicationPresentation.can('people'))setCreating(true)}}/>
-              : <div className={css.empty}><Bot size={30}/><h2>{t(directoryRoles.length ? 'team.empty.noMatch' : 'team.empty.unconfigured')}</h2><p>{t(directoryRoles.length ? 'team.empty.noMatchDescription' : 'team.empty.unconfiguredDescription')}</p>{directoryRoles.length > 0 && <button type="button" onClick={() => { setQuery(''); setStatus('all'); setBusinessFilter('all'); }}>{t('team.empty.reset')}</button>}</div>}
+              : directoryUnavailable?null:<div className={css.empty}><Bot size={30}/><h2>{t(directoryRoles.length ? 'team.empty.noMatch' : 'team.empty.unconfigured')}</h2><p>{t(directoryRoles.length ? 'team.empty.noMatchDescription' : 'team.empty.unconfiguredDescription')}</p>{directoryRoles.length > 0 && <button type="button" onClick={() => { setQuery(''); setStatus('all'); setBusinessFilter('all'); }}>{t('team.empty.reset')}</button>}</div>}
           </section>
         : detailPane}
     </div>
-    {!embedded&&role&&<RoleProfileDrawer kind={role.kind} title={roleDisplayName(role)} close={()=>select(null)}>{detailPane}</RoleProfileDrawer>}
+    {!embedded&&role&&<RoleProfileDrawer kind={role.kind} title={roleDisplayName(role)} close={()=>select(null)} headerActions={objectLinkActions}>{directoryNotice}{detailPane}</RoleProfileDrawer>}
     {sharingTeam&&sharedTemplates&&<TeamTemplateShare origin="directory" roles={directoryRoles.filter(item=>item.storage==='persistent'&&(businessFilter==='all'||item.scopes.includes(businessFilter)))} open close={()=>setSharingTeam(false)} scope={businessFilter==='all'?'general':businessFilter} title={businessFilter==='all'?t('navigation.team'):collaborationScopes[businessFilter]??scopeLabels.find(label=>label.scope===businessFilter)?.title??businessFilter}/>}
     {creating&&pageCreate&&persistence&&!isSandbox&&!persistence.pendingFields()
       ?<EmployeeCreateEntry api={pageCreate.api} scope={businessFilter==='all'?'general':businessFilter} scopeName={collaborationScopes[businessFilter==='all'?'general':businessFilter]??businessFilter} storage={templateSharing?.storage??sharedTemplates?.storage} prepare={pageCreate.prepare} create={persistence.create} close={()=>setCreating(false)} created={select}/>
@@ -304,7 +318,7 @@ export function TeamPage({ twinDrafts,employeeArtifacts,openEmployeeArtifact,tas
   </section>;
 }
 // 导出给 team-profile-sections.test.ts 用 renderToStaticMarkup 直接核对「编辑」态的五组呈现，不必经过 TeamPage 的内部选中态。
-export function RoleDetail({ twinDrafts,employeeArtifacts,openEmployeeArtifact,openRole,taskRuns,skillTitleReader,phone,templateSharing,delegations,roleTools,delegationChanged,savedGroups,work, resourceApi, memoryApi, dailyLogApi, autoDreamTrigger, dailyLogSchedule, runtimeConfigs, capabilityState, persistence, conversations, talk, input, update, role, businessContext, state, collaboration, change, back, openTask, openGroup, openBusiness, resources, nativeSettings, capabilities, plans, profileName = defaultPersonalDisplayName, profileInitials = personalAvatarInitials(profileName) }: {
+export function RoleDetail({ twinDrafts,employeeArtifacts,openEmployeeArtifact,openRole,taskRuns,skillTitleReader,phone,templateSharing,delegations,roleTools,delegationChanged,savedGroups,work, resourceApi, memoryApi, dailyLogApi, autoDreamTrigger, dailyLogSchedule, runtimeConfigs, capabilityState, persistence, conversations, talk, input, update, role, businessContext, state, collaboration, change, back, openTask, openGroup, openBusiness, resources, nativeSettings, capabilities, permissionTools, permissionConnections, assignConversation, plans, profileName = defaultPersonalDisplayName, profileInitials = personalAvatarInitials(profileName) }: {
     twinDrafts?:TwinDraftWorkspacePort|undefined;
     openRole?:Props['select']|undefined;
     taskRuns?:TaskRunApi|undefined;
@@ -344,6 +358,9 @@ export function RoleDetail({ twinDrafts,employeeArtifacts,openEmployeeArtifact,o
     resources: Props['resources'];
     nativeSettings: Props['nativeSettings'];
     capabilities: Props['capabilities'];
+    permissionTools?:Props['permissionTools'];
+    permissionConnections?:Props['permissionConnections'];
+    assignConversation?:Props['assignConversation'];
     plans: Props['plans'];
 }) {
     const { locale, t, dateTime, list } = useI18n();
@@ -377,7 +394,32 @@ export function RoleDetail({ twinDrafts,employeeArtifacts,openEmployeeArtifact,o
     const actionDrafts=(owner:object)=>{let owners=actionInputs.get(work);if(!owners){owners=new WeakMap();actionInputs.set(work,owners)}let contexts=owners.get(owner);if(!contexts){contexts=new Map();owners.set(owner,contexts)}let drafts=contexts.get(actionKey);if(!drafts){drafts={};contexts.set(actionKey,drafts)}return drafts}
     const publishDraft=()=>{if(isActionCurrent())update({actionDrafts:actionInputs})}
     const closeAction=(view:ActionView)=>{if(isActionCurrent()&&actionViewRef.current===view)setForm(undefined)}
-    const openAssignment=()=>{const drafts=actionDrafts(work);drafts.assign??={role,value:{title:'',goal:'',scope:role.scopes[0]!}};publishDraft();setActionView({kind:'assign',draft:drafts.assign,owner:work,key:actionKey});setForm('assign')}
+    type AssignmentOpening={origin:typeof actionOrigin}
+    const [assignmentAttempt,setAssignmentAttempt]=useState<AssignmentOpening>()
+    const assignmentOpening=useRef<AssignmentOpening>()
+    const openingAssignment=assignmentAttempt?.origin===actionOrigin
+    const openAssignment=async()=>{
+      if(assignmentOpening.current?.origin===actionOrigin)return
+      const drafts=actionDrafts(work),original=drafts.assign,value=original?.value
+      // 已提交原请求仍走原表单等待其回执，不借自然语言入口另起一条。
+      if(role.storage==='persistent'&&role.kind==='employee'&&assignConversation&&!original?.pending){
+        if(original&&(original.role.id!==role.id||original.role.version!==role.version)){setError(t('roleDelegation.status.stale'));return}
+        const attempt={origin:actionOrigin};assignmentOpening.current=attempt;setAssignmentAttempt(attempt);setError(undefined)
+        const goal=value?[value.title.trim(),value.goal.trim()].filter(Boolean).join('\n\n')||undefined:undefined
+        const scope=value?.scope??businessContext
+        try{
+          await assignConversation(role.id,role.version,scope,goal)
+          // 新会话与输入实际准备好后才清这一份原稿，不能清在途新写入。
+          if(original&&drafts.assign===original&&original.value===value)drafts.assign=undefined
+          if(isActionCurrent())publishDraft()
+        }catch(cause){if(isActionCurrent()&&!(cause&&typeof cause==='object'&&'code'in cause&&cause.code==='teloa/cancelled'))setError(localizeWorkError(locale,cause))}
+        finally{if(assignmentOpening.current===attempt)assignmentOpening.current=undefined;if(actionMounted.current)setAssignmentAttempt(current=>current===attempt?undefined:current)}
+        return
+      }
+      drafts.assign??={role,value:{title:'',goal:'',scope:businessContext??role.scopes[0]!}};publishDraft();setActionView({kind:'assign',draft:drafts.assign,owner:work,key:actionKey});setForm('assign')
+    }
+    const savedAssignment=actionDrafts(work).assign
+    const staleAssignment=savedAssignment&&!savedAssignment.pending&&(savedAssignment.role.id!==role.id||savedAssignment.role.version!==role.version)?savedAssignment:undefined
     const openMemory=()=>{const owner=memoryApi??work,drafts=actionDrafts(owner);drafts.memory??={role,value:{title:'',text:'',scope:role.scopes[0]!}};publishDraft();setActionView({kind:'memory',draft:drafts.memory,owner,key:actionKey});setForm('memory')}
     // N13（可选）：编辑窗口外点/Esc 只收起，未保存修改留到下次打开；保存成功后清空。
     const [roleEditSlot,roleEdit]=useRoleFormDraft(roleEditDrafts,work,actionKey),[editingRole,setEditingRole]=useState<PreviewRole>()
@@ -482,6 +524,7 @@ export function RoleDetail({ twinDrafts,employeeArtifacts,openEmployeeArtifact,o
     // 页顶不再常驻 team.detail.version：版本号是系统态，照原型只留返回链接（终审 T5），版本移进「它的变更记录」里的折叠小字。
     return <article data-teloa-pane="detail" tabIndex={-1} className={clsx(css.detail,teamCss.roleDetail)} aria-label={t('navigation.team')}><CapabilityNotice capability="people"/><header className={css.detailHeader}><button type="button" className={css.back} onClick={back}><ArrowLeft size={16}/>{t('team.detail.back')}</button></header>
     {error && <div className={css.error} role="alert">{error}<button type="button" aria-label={t('team.detail.closeError')} onClick={() => setError(undefined)}><X size={15}/></button></div>}
+    {staleAssignment&&<aside className={teamCss.inlineNotice} role="status"><p>{employeeCopy(locale,'assignmentDraftStale')}</p><details><summary>{employeeCopy(locale,'assignmentOriginal')}</summary><p>{staleAssignment.value.title}</p><p style={{whiteSpace:'pre-wrap'}}>{staleAssignment.value.goal}</p></details><button type="button" disabled={openingAssignment} onClick={()=>{const drafts=actionDrafts(work);if(drafts.assign===staleAssignment&&!staleAssignment.pending){drafts.assign=undefined;publishDraft();setError(undefined)}}}>{employeeCopy(locale,'assignmentDiscard')}</button></aside>}
     {role.storage === 'persistent' && memoryApi?.recoveryMessage() && <p role="alert">{localizeWorkError(locale, memoryApi.recoveryMessage())} {t('recovery.nextStep')}</p>}
     {role.storage === 'persistent' && memoryApi?.recoveryMessage() && <button type="button" onClick={() => { memoryApi.discard(); setMemoryDiscarded(true); }}>{t('recovery.discard')}</button>}
     {memoryDiscarded && <p role="status">{t('recovery.discarded')}</p>}
@@ -513,7 +556,8 @@ export function RoleDetail({ twinDrafts,employeeArtifacts,openEmployeeArtifact,o
         </div>
         <p>{dutyLead}</p>
         <div className={teamCss.identityActions} aria-label={t('team.profile.title')}>
-          <button type="button" className={teamCss.primaryPill} disabled={!talk} aria-describedby={talkDisabledReason?`role-chat-note-${encodeURIComponent(role.id)}`:undefined} onClick={()=>{if(!talk)return;setChatNotice(undefined);void talk(role.id).then(opened=>{if(!opened)setChatNotice(t('team.profile.historyEmpty'))}).catch(error=>setError(localizeWorkError(locale,error)))}}><MessageCircle size={14} aria-hidden/>{retired?t('team.profile.action.history'):employeeCopy(locale,'message')}</button>
+          {!retired&&role.state==='active'&&role.storage==='persistent'&&role.kind==='employee'&&assignConversation&&<button type="button" className={teamCss.primaryPill} disabled={!allowed||openingAssignment} onClick={()=>void openAssignment()}><ListPlus size={14} aria-hidden/>{employeeCopy(locale,'assignTask')}</button>}
+          <button type="button" className={assignConversation&&!retired&&role.state==='active'&&role.kind==='employee'?teamCss.outlinePill:teamCss.primaryPill} disabled={!talk} aria-describedby={talkDisabledReason?`role-chat-note-${encodeURIComponent(role.id)}`:undefined} onClick={()=>{if(!talk)return;setChatNotice(undefined);void talk(role.id).then(opened=>{if(!opened)setChatNotice(t('team.profile.historyEmpty'))}).catch(error=>setError(localizeWorkError(locale,error)))}}><MessageCircle size={14} aria-hidden/>{retired?t('team.profile.action.history'):employeeCopy(locale,'message')}</button>
           <button type="button" className={teamCss.outlinePill} disabled={!phone||retired||role.storage!=='persistent'} aria-describedby={!phone?`role-phone-note-${encodeURIComponent(role.id)}`:undefined} onClick={()=>{void phone?.(role.id).catch(error=>setError(localizeWorkError(locale,error)))}}><Phone size={14} aria-hidden/>{employeeCopy(locale,'call')}</button>
           <DetailsMenu menuRef={profileMenu} className={teamCss.profileMenu} resetKey={role.id} closeOnSelect>
             <summary aria-label={employeeCopy(locale,'moreActions')} title={employeeCopy(locale,'moreActions')}><MoreHorizontal size={16}/></summary>
@@ -523,7 +567,7 @@ export function RoleDetail({ twinDrafts,employeeArtifacts,openEmployeeArtifact,o
               {!retired&&<button type="button" disabled={!allowed} onClick={()=>{setEditingRole(input.profileEdit?.role??role);setForm('profile')}}><Pencil size={14} aria-hidden/>{employeeCopy(locale,'editProfile')}</button>}
               <span className={teamCss.menuDivider} aria-hidden="true"/>
               {(['memory','log','plans','conversations'] as const).filter(panel=>panel!=='conversations'||role.storage==='persistent').map(panel=>{const Icon={memory:Brain,log:ScrollText,plans:Zap,conversations:MessagesSquare}[panel];return <button type="button" key={panel} onClick={()=>openProfilePanel(panel)}><Icon size={14}/>{profilePanelLabels[panel]}</button>})}
-              {!retired&&<button type="button" disabled={!allowed||role.state!=='active'} onClick={openAssignment}><ListPlus size={14}/>{t('team.profile.action.assign')}</button>}
+              {!retired&&<button type="button" disabled={!allowed||role.state!=='active'||openingAssignment} onClick={()=>void openAssignment()}><ListPlus size={14}/>{t('team.profile.action.assign')}</button>}
               <button type="button" onClick={()=>openProfilePanel('management')}><UserCog size={14}/>{profilePanelLabels.management}</button>
               <button type="button" onClick={()=>openProfilePanel('permissions')}><ShieldCheck size={14}/>{profilePanelLabels.permissions}</button>
               {templateSharing&&role.storage==='persistent'&&<button type="button" onClick={()=>setSharing(true)}><Share2 size={14}/>{employeeCopy(locale,'profileShare')}</button>}
@@ -555,17 +599,18 @@ export function RoleDetail({ twinDrafts,employeeArtifacts,openEmployeeArtifact,o
             <header><h3 id={`${bodyId}-heading`}>{employeeCopy(locale,copy)}</h3>{section==='how'&&!retired&&<button type="button" disabled={!allowed} onClick={openRoleEditor}>{t('team.action.edit')}</button>}{section==='tools'&&<button type="button" onClick={()=>openProfilePanel('permissions')}>{profilePanelLabels.permissions}</button>}{section==='reading'&&<ToolbarIconButton label={employeeCopy(locale,'profileManageMaterials')} icon={BookOpen} onClick={resources}/>}</header>
             <div id={bodyId} className={teamCss.profileSectionBody}>
               {section === 'how' && <>
-                {detailedDuty&&(detailedDuty.length>480?<details><summary>{employeeCopy(locale,'profileFullDuty')}</summary><p>{detailedDuty}</p></details>:<p>{detailedDuty}</p>)}
-                {role.responsibility ? <dl className={teamCss.responsibilities}>{responsibilityGroups(role.responsibility).filter(group => (['triggers', 'autonomousActions', 'deliveryChecks'] as string[]).includes(group.key)).map(group => <div key={group.key}><dt>{t(group.labelKey)}</dt><dd>{group.items.length ? <ul>{group.items.map(item => <li key={item}>{item}</li>)}</ul> : t('team.detail.notSet')}</dd></div>)}</dl> : <p className={teamCss.inlineNotice}>{t('team.detail.responsibilityMissing')}</p>}
+                {dutyLead&&<p>{dutyLead}</p>}
+                <details><summary>{employeeCopy(locale,'profileFullDuty')}</summary>{detailedDuty&&<p>{detailedDuty}</p>}
+                {role.responsibility ? <dl className={teamCss.responsibilities}>{responsibilityGroups(role.responsibility).filter(group => (['triggers', 'autonomousActions', 'deliveryChecks'] as string[]).includes(group.key)).map(group => <div key={group.key}><dt>{t(group.labelKey)}</dt><dd>{group.items.length ? <ul>{group.items.map(item => <li key={item}>{item}</li>)}</ul> : t('team.detail.notSet')}</dd></div>)}</dl> : <p className={teamCss.inlineNotice}>{t('team.detail.responsibilityMissing')}</p>}</details>
               </>}
               {section === 'tools' && <>
                 <div className={teamCss.resourceChips}>{role.skills.map(skill=><button type="button" key={skill} title={skill} onClick={nativeSettings}><Wrench size={13}/>{skillDisplayTitle(skillTitles,{name:skill})}</button>)}</div>
                 {!role.skills.length&&<p className={teamCss.muted}>{employeeCopy(locale,'profileNoSkills')}</p>}
-                <EmployeeGrantedTools role={role} api={roleTools} open={()=>openProfilePanel('permissions')}/>
-                <p className={teamCss.muted}>{workModeNotice??workMode.label}</p>
+                <EmployeeGrantedTools compact role={role} api={roleTools} open={()=>openProfilePanel('permissions')}/>
+
               </>}
               {section === 'reading' && <>
-                <p>{role.dataScope}</p>
+                <details><summary>{t('team.form.dataScope')}</summary><p>{role.dataScope}</p></details>
                 <RoleKnowledge compact api={resourceApi} ids={role.knowledge} scopes={role.scopes}/>
               </>}
               {section === 'limit' && <>
@@ -587,7 +632,7 @@ export function RoleDetail({ twinDrafts,employeeArtifacts,openEmployeeArtifact,o
         </div>
       </section>
     </div>}
-    {!twin&&<ContextDrawer compact open={profilePanel==='permissions'} title={profilePanelLabels.permissions} close={()=>setProfilePanel(undefined)}><div className={teamCss.profilePanelBody}>{delegationNode}{capabilities(role.id)}</div></ContextDrawer>}
+    {!twin&&<ContextDrawer compact open={profilePanel==='permissions'} title={profilePanelLabels.permissions} close={()=>setProfilePanel(undefined)}><div className={teamCss.profilePanelBody}><EmployeePermissions role={role} toolApi={roleTools} resources={resourceApi} delegations={delegations} tools={refresh=>permissionTools?.(role.id,refresh)??capabilities(role.id)} connections={permissionConnections?.(role.id)} ongoing={delegationNode}/></div></ContextDrawer>}
     {!twin&&profilePanel&&profilePanel!=='permissions'&&<ContextDrawer compact title={profilePanelLabels[profilePanel]} close={()=>setProfilePanel(undefined)}><div className={teamCss.profilePanelBody}>
       {profilePanel==='memory'?memorySection:profilePanel==='log'?role.storage==='persistent'&&dailyLogApi?<RoleDailyLogPanel trigger={autoDreamTrigger} {...(dailyLogSchedule?{schedule:dailyLogSchedule(role.id)}:{})} roleId={role.id} kind="daily-digest" api={dailyLogApi} memoryApi={memoryApi}/>:<p className={css.muted}>{t('team.memory.demoNote')}</p>:profilePanel==='plans'?plans(role.id):profilePanel==='conversations'?conversations(role.id):managementSection}
     </div></ContextDrawer>}
@@ -647,6 +692,7 @@ export function RoleForm({skillTitles,work,resourceApi,runtimeConfigs,initial,pe
   const collaborationScopes=useBusinessScopes()
   const mode:'hire'|'edit'=role?'edit':'hire'
   const [step,setStep]=useState(0)
+  const [editConfigOpen,setEditConfigOpen]=useState(false),[editCapabilitiesOpen,setEditCapabilitiesOpen]=useState(false)
   const preset=HIRE_PRESETS[0]
   const [limits,setLimits]=useState<Readonly<Record<HireAction,HireLevel>>>(()=>{
     const restored={...HIRE_DEFAULT_LIMITS}
@@ -665,6 +711,8 @@ export function RoleForm({skillTitles,work,resourceApi,runtimeConfigs,initial,pe
   useEffect(()=>()=>{importGeneration.current++},[])
   const [validationError,setValidationError]=useState<string>()
   const nameRef=useRef<HTMLInputElement>(null),dutyRef=useRef<HTMLTextAreaElement>(null),dataRef=useRef<HTMLTextAreaElement>(null),executionRef=useRef<HTMLTextAreaElement>(null),scopeRef=useRef<HTMLInputElement>(null)
+  // 抽屉打开后的父级 effect 将焦点交给主输入，沿用共享抽屉的关闭与焦点恢复。
+  useEffect(()=>{if(role)dutyRef.current?.focus()},[])
   useEffect(()=>{
    if(!validationError)return
    const target=validationError===employeeCopy(locale,'nameRequired')?nameRef.current:validationError===employeeCopy(locale,'dataRequired')?dataRef.current:validationError===employeeCopy(locale,'executionRequired')?executionRef.current:validationError===employeeCopy(locale,'scopeRequired')?scopeRef.current:dutyRef.current
@@ -680,14 +728,14 @@ export function RoleForm({skillTitles,work,resourceApi,runtimeConfigs,initial,pe
   // 纯函数逐句返回执行边界，拼成一行是界面层的事：分隔符按语言取词条，不写死中文分号。
   const listJoin=t('team.hire.listJoin')
   const joinScope=(fields:HireAppliedFields):RoleFields=>({...fields,executionScope:fields.executionScope.join(listJoin)})
-  const [value,setValue]=useState<RoleFields>(role?{...(role.avatarKey===undefined?{}:{avatarKey:role.avatarKey}),name:role.name,kind:role.kind,scopes:role.scopes,duty:role.duty,dataScope:role.dataScope,executionScope:role.executionScope,skills:role.skills,knowledge:role.knowledge,responsibility:role.responsibility??emptyResponsibility(),...(role.runtimeConfig===undefined?{}:{runtimeConfig:role.runtimeConfig})}:initialFields??({...joinScope(hireMergePreset({name:'',avatarKey:'general',kind:'employee',scopes:['general'],duty:'',dataScope:t('team.form.defaultDataScope'),executionScope:t('team.form.defaultExecutionScope'),skills:[],knowledge:[],responsibility:emptyResponsibility()},hirePresetFields(HIRE_PRESETS[0],t,scopeSummary(['general'])),HIRE_DEFAULT_LIMITS,t)),duty:''}))
+  const [value,setValue]=useState<RoleFields>(role?{...(role.avatarKey===undefined?{}:{avatarKey:role.avatarKey}),name:role.name,kind:role.kind,scopes:role.scopes,duty:role.duty,dataScope:role.dataScope,executionScope:role.executionScope,skills:role.skills,knowledge:role.knowledge,...(role.responsibility===undefined?{}:{responsibility:role.responsibility}),...(role.runtimeConfig===undefined?{}:{runtimeConfig:role.runtimeConfig})}:initialFields??({...joinScope(hireMergePreset({name:'',avatarKey:'general',kind:'employee',scopes:['general'],duty:'',dataScope:t('team.form.defaultDataScope'),executionScope:t('team.form.defaultExecutionScope'),skills:[],knowledge:[],responsibility:emptyResponsibility()},hirePresetFields(HIRE_PRESETS[0],t,scopeSummary(['general'])),HIRE_DEFAULT_LIMITS,t)),duty:''}))
   useEffect(()=>{onDraft?.(value)},[value,onDraft])
   // 预设基线按「当前选中的预设 + 当前勾选的业务范围」现算，业务范围一变，下次切预设/开关时 dataScope 就会带上新范围（复审 HIGH-1）。
   const presetBase=hirePresetFields(preset,t,scopeSummary(value.scopes))
   const [runtimeState,setRuntimeState]=useState<RuntimeConfigLoadState>({status:'idle'})
   const [runtimeChanged,setRuntimeChanged]=useState(false)
   const [modelState,setModelState]=useState<RoleModelLoadState>({status:'idle'})
-  const [modelOpen,setModelOpen]=useState(mode==='edit'||!!value.runtimeConfig?.model||!!value.runtimeConfig?.fallbackModel)
+  const [modelOpen,setModelOpen]=useState(mode==='edit'?false:!!value.runtimeConfig?.model||!!value.runtimeConfig?.fallbackModel)
   const [modelRetry,setModelRetry]=useState(0)
   const runtimeDirectory=runtimeState.directory
   const patch=(changes:Partial<RoleFields>)=>{setValidationError(undefined);if(changes.duty!==undefined)setSourceError(undefined);setValue(current=>({...current,...changes}))}
@@ -699,15 +747,15 @@ export function RoleForm({skillTitles,work,resourceApi,runtimeConfigs,initial,pe
   const toggleScope=(scopeId:CollaborationScope,checked:boolean)=>{const scopes=checked?[...value.scopes,scopeId]:value.scopes.filter(scope=>scope!==scopeId);if(hireDrifted(value,presetBase,limits,t,listJoin))setPendingHireChange({kind:'scope',scopes});else applyScope(scopes)}
   const confirmPendingHireChange=()=>{if(!pendingHireChange)return;if(pendingHireChange.kind==='limit')applyLimit(pendingHireChange.action,pendingHireChange.level);else applyScope(pendingHireChange.scopes);setPendingHireChange(undefined)}
   // 入职④屏不读取预设目录，agentPresetId 仍按裁定 7 继承默认；模型只在主动展开时读取。
-  useEffect(()=>{let active=true;if(step!==3||mode!=='edit'||!runtimeConfigs)return;setRuntimeState(runtimeConfigLoading());void runtimeConfigs.list().then(directory=>{if(active)setRuntimeState(runtimeConfigReady(directory))}).catch(error=>{if(active)setRuntimeState(runtimeConfigFailed(error,locale))});return()=>{active=false}},[step,mode,runtimeConfigs,locale])
-  useEffect(()=>{let active=true;if(step!==3||!modelOpen||!runtimeConfigs?.models)return;setModelState({status:'loading'});void runtimeConfigs.models().then(directory=>{if(active)setModelState({status:'ready',directory})}).catch(()=>{if(active)setModelState({status:'error'})});return()=>{active=false}},[step,mode,modelOpen,modelRetry,runtimeConfigs])
+  useEffect(()=>{let active=true;if(!editConfigOpen||mode!=='edit'||!runtimeConfigs)return;setRuntimeState(runtimeConfigLoading());void runtimeConfigs.list().then(directory=>{if(active)setRuntimeState(runtimeConfigReady(directory))}).catch(error=>{if(active)setRuntimeState(runtimeConfigFailed(error,locale))});return()=>{active=false}},[editConfigOpen,mode,runtimeConfigs,locale])
+  useEffect(()=>{let active=true;if((mode==='edit'?!editConfigOpen:step!==3)||!modelOpen||!runtimeConfigs?.models)return;setModelState({status:'loading'});void runtimeConfigs.models().then(directory=>{if(active)setModelState({status:'ready',directory})}).catch(()=>{if(active)setModelState({status:'error'})});return()=>{active=false}},[step,mode,editConfigOpen,modelOpen,modelRetry,runtimeConfigs])
   const hireSteps=[['team.hire.step.identity','team.hire.step.identityDesc'],['team.hire.step.job','team.hire.step.jobDesc'],['team.hire.step.limit','team.hire.step.limitDesc'],['team.hire.step.badge','team.hire.step.badgeDesc']] as const
   const editSteps=[['team.form.step.identity','team.form.step.identityDesc'],['team.form.step.scope','team.form.step.scopeDesc'],['team.form.step.capabilities','team.form.step.capabilitiesDesc'],['team.form.step.runtime','team.form.step.runtimeDesc'],['team.form.step.review','team.form.step.reviewDesc']] as const
   const steps=mode==='hire'?hireSteps:editSteps
   const identityReady=!!value.name.trim()&&(mode==='hire'&&step===0||!!value.duty.trim())
   const scopeReady=value.scopes.length>0&&!!value.dataScope.trim()&&!!value.executionScope.trim()
   const initialAgentPresetId=(role?role.runtimeConfig:initialFields?.runtimeConfig)?.agentPresetId
-  const presetReady=runtimeConfigCanSave({initialAgentPresetId,agentPresetId:value.runtimeConfig?.agentPresetId,changed:runtimeChanged,directory:runtimeDirectory})
+  const presetReady=(mode==='edit'&&!runtimeChanged&&value.runtimeConfig?.agentPresetId===initialAgentPresetId)||runtimeConfigCanSave({initialAgentPresetId,agentPresetId:value.runtimeConfig?.agentPresetId,changed:runtimeChanged,directory:runtimeDirectory})
   const runtimeReady=presetReady&&roleModelsCanSave(role?role.runtimeConfig:initialFields?.runtimeConfig,value.runtimeConfig,modelState.directory)
   // 三问只有 4 屏，借用旧五步的门禁判据：①→旧 0、②→旧 1、③无门禁（旧 2）、④→旧 4（同时要 identityReady/scopeReady/runtimeReady）。
   const gateStep=(index:number):number=>mode==='hire'?HIRE_GATE_STEPS[index]??index:index
@@ -723,6 +771,17 @@ export function RoleForm({skillTitles,work,resourceApi,runtimeConfigs,initial,pe
   }
   const mustPause=persistent&&role?.state==='active'
   const submit=()=>{
+   if(role){
+    if(!value.name.trim()){setValidationError(employeeCopy(locale,'nameRequired'));return}
+    if(!value.duty.trim()){setValidationError(employeeCopy(locale,'dutyRequired'));return}
+    if(!value.scopes.length){setValidationError(employeeCopy(locale,'scopeRequired'));return}
+    if(!value.dataScope.trim()){setValidationError(employeeCopy(locale,'dataRequired'));return}
+    if(!value.executionScope.trim()){setValidationError(employeeCopy(locale,'executionRequired'));return}
+    if(!runtimeReady){setEditConfigOpen(true);setModelOpen(true);setValidationError(t('roleModels.confirmBeforeSave'));return}
+    setValidationError(undefined)
+    if(!applicationPresentation.can('people')||mustPause)return
+    return save({...value,name:value.name===role.name?value.name:value.name.trim(),duty:value.duty===role.duty?value.duty:value.duty.trim()})
+   }
    if(!value.name.trim()){setValidationError(employeeCopy(locale,'nameRequired'));setStep(0);nameRef.current?.focus();return}
    if((mode==='edit'||step>0)&&!value.duty.trim()){setValidationError(employeeCopy(locale,'dutyRequired'));setStep(mode==='hire'?1:0);dutyRef.current?.focus();return}
    if(step>0&&!value.scopes.length){setValidationError(employeeCopy(locale,'scopeRequired'));setStep(1);return}
@@ -731,6 +790,37 @@ export function RoleForm({skillTitles,work,resourceApi,runtimeConfigs,initial,pe
    if(step===steps.length-1&&!runtimeReady){setModelOpen(true);setValidationError(t('roleModels.confirmBeforeSave'));setStep(3);return}
    setValidationError(undefined)
    if(readingSource||sourceMode==='import'&&sourceError||!applicationPresentation.can('people')||!canContinue||mustPause&&step===steps.length-1)return;return step<steps.length-1?setStep(step+1):save({...value,name:value.name.trim(),duty:value.duty.trim(),skills:value.skills,knowledge:value.knowledge})}
+  if(role)return <Dialog pending={pending} noValidate capability="people" title={t('team.form.editRole')} drawer close={close} submit={submit}>
+    {discard&&<div className={teamCss.inlineNotice}><p>{t('roleDelegation.status.stale')}</p><button type="button" onClick={discard}>{t('collaboration.resources.discardDraft')}</button></div>}
+    {validationError&&<p className={teamCss.inlineNotice} role="alert">{validationError}</p>}
+    {mustPause&&<p className={teamCss.inlineNotice} role="status">{t('roleModels.pauseBeforeEdit')}</p>}
+    <label>{roleEditCopy(locale,'description')}<textarea ref={dutyRef} autoFocus aria-invalid={!!validationError&&!value.duty.trim()} required rows={7} maxLength={4000} value={value.duty} onChange={event=>patch({duty:event.target.value})} placeholder={t('team.form.missionPlaceholder')}/></label>
+    <p className={teamCss.stepHint}>{roleEditCopy(locale,'hint')}</p>
+    <details className={teamCss.sectionNote}><summary>{roleEditCopy(locale,'identity')}</summary>
+      <label>{t('team.form.name')}<input ref={nameRef} aria-invalid={!!validationError&&!value.name.trim()} required maxLength={80} value={value.name} onChange={event=>patch({name:event.target.value})}/></label>
+      {value.kind==='employee'&&<EmployeeAvatarPicker value={value.avatarKey} name={value.name} onChange={avatarKey=>patch({avatarKey})}/>}
+    </details>
+    <details className={teamCss.sectionNote}><summary>{t('team.form.step.scope')}</summary>
+      <fieldset className={teamCss.scopes}><legend>{t('team.detail.businessScope')}</legend>{roleScopeOptions(collaborationScopes,value.scopes).map(([id,label])=><label key={id}><input ref={value.scopes.length?undefined:scopeRef} type="checkbox" checked={value.scopes.includes(id as CollaborationScope)} onChange={event=>patch({scopes:event.target.checked?[...value.scopes,id as CollaborationScope]:value.scopes.filter(scope=>scope!==id)})}/>{label}</label>)}</fieldset>
+      <label>{t('team.form.dataScope')}<textarea ref={dataRef} required rows={3} maxLength={4000} value={value.dataScope} onChange={event=>patch({dataScope:event.target.value})}/></label>
+      <label>{t('team.form.executionScope')}<textarea ref={executionRef} required rows={3} maxLength={4000} value={value.executionScope} onChange={event=>patch({executionScope:event.target.value})}/></label>
+      <p className={teamCss.inlineNotice}>{t('team.form.scopeNote')}</p>
+    </details>
+    <details className={teamCss.sectionNote}><summary>{roleEditCopy(locale,'responsibility')}</summary>
+      <EmployeeResponsibilityDetails key={role.id+':'+role.version} value={value.responsibility??emptyResponsibility()} change={responsibility=>patch({responsibility})}/>
+    </details>
+    <details className={teamCss.sectionNote} open={editCapabilitiesOpen} onToggle={event=>setEditCapabilitiesOpen(event.currentTarget.open)}><summary>{roleEditCopy(locale,'capabilities')}</summary>{editCapabilitiesOpen&&<>
+      <EmployeeCapabilityDetails key={role.id+':'+role.version} work={work} resourceApi={resourceApi} skills={value.skills} knowledge={value.knowledge} scopes={value.scopes} skillTitles={skillTitles} query={skillQueryDraft.value??''} changeQuery={query=>skillQuerySlot.set(query)} changeSkills={skills=>patch({skills})} changeKnowledge={knowledge=>patch({knowledge})}/>
+    </>}</details>
+    <details className={teamCss.sectionNote} open={editConfigOpen} onToggle={event=>{setEditConfigOpen(event.currentTarget.open);setModelOpen(event.currentTarget.open)}}><summary>{roleEditCopy(locale,'runtime')}</summary>{editConfigOpen&&<>
+      {runtimeState.status==='loading'&&<p className={css.muted}>{t('team.form.runtimeLoading')}</p>}{runtimeState.error&&<p className={teamCss.inlineNotice} role="alert">{runtimeState.error}</p>}
+      {!runtimeDirectory&&value.runtimeConfig?.agentPresetId&&<div className={teamCss.runtimeSummary}><strong>{t('team.form.runtimePinned',{id:value.runtimeConfig.agentPresetId})}</strong><span>{t('team.form.runtimeMissing')}</span><button type="button" onClick={()=>patchRuntime('')}>{t('team.form.runtimeInherit')}</button></div>}
+      {runtimeDirectory&&<label>{t('team.form.runtimeSelect')}<select value={value.runtimeConfig?.agentPresetId??''} onChange={event=>patchRuntime(event.target.value)}>{runtimeConfigOptions(value.runtimeConfig?.agentPresetId,runtimeDirectory,locale).map(item=><option key={item.id} value={item.id} disabled={item.disabled}>{item.label}</option>)}</select></label>}
+      {runtimeConfigs?.models&&<RoleModelFields runtime={value.runtimeConfig} state={modelState} change={(field,model)=>setValue(current=>{const next={...current},runtime=patchRoleModel(current.runtimeConfig,field,model);if(runtime)next.runtimeConfig=runtime;else delete next.runtimeConfig;return next})} retry={()=>setModelRetry(count=>count+1)}/>}
+    </>}</details>
+    <p className={teamCss.stepNote}>{t('team.form.noGrant')}</p>
+    <footer className={css.buttons}><button type="button" onClick={close}>{t('team.form.cancel')}</button><button type="submit" disabled={!allowed||mustPause}>{t(persistent?'team.form.saveRole':'team.form.saveDemoRole')}</button></footer>
+  </Dialog>
   // 员工配置保留 required，由上述校验统一提示并聚焦，避免原生气泡抢先拦截。
   return <Dialog pending={pending} noValidate capability="people" title={t(role?'team.form.editRole':'team.form.newRole')} drawer={!!role} wide={!role} close={close} submit={submit}>
     {discard&&<div className={teamCss.inlineNotice}><p>{t('roleDelegation.status.stale')}</p><button type="button" onClick={discard}>{t('collaboration.resources.discardDraft')}</button></div>}

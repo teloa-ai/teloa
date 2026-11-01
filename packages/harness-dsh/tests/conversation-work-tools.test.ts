@@ -9,19 +9,24 @@ import {SessionStore,SessionId} from '@deepseek-ai/dsh-session'
 import {AgentRegistry} from '@deepseek-ai/dsh-agent'
 import {AgentLoop} from '@deepseek-ai/dsh-agent-loop'
 import {SessionProjectionRegistry} from '@deepseek-ai/dsh-session-projection'
-import {WorkError,encodeBusinessRecordReference} from '@teloa/contract'
+import {WorkError,encodeBusinessRecordReference,encodeEmployeeMention} from '@teloa/contract'
 import {ArtifactRevisionRequestService} from '@teloa/backend'
 import {registerConversationWorkTools,conversationWorkToolNames,type ConversationWorkToolsPorts} from '../src/conversation-work-tools.ts'
 import {loopWorkFixture,loopText,loopTool} from './fixtures/native-loop-work-admission.ts'
 import {registerCredentialGuards} from '../src/credential-guards.ts'
 const owner='owner',roleId='22222222-2222-4222-8222-222222222222'
 const coordinationSummary='当前工作的业务与接手约定'
-test('工作工具英文静态说明不改变八项原生参数与工具协议',async t=>{
+test('NF02仅扩展数据查询的默认业务与本月参数，其余七工具协议不变',async t=>{
  const f=await setup();t.after(()=>f.ctx.fiber.dispose())
  const schemas=f.ctx.tools.schemas(f.agent).filter(tool=>(conversationWorkToolNames as readonly string[]).includes(tool.name)).sort((a,b)=>a.name.localeCompare(b.name))
  const withoutDescriptions=(value:unknown):unknown=>Array.isArray(value)?value.map(withoutDescriptions):value&&typeof value==='object'?Object.fromEntries(Object.entries(value).filter(([key])=>key!=='description').sort(([a],[b])=>a.localeCompare(b)).map(([key,child])=>[key,withoutDescriptions(child)])):value
  assert.equal(schemas.length,8)
- assert.equal(createHash('sha256').update(JSON.stringify(withoutDescriptions(schemas))).digest('hex'),'b0d14cbda922ab690b40ee2467f1f436abbafd7ce8b0026c0cf4f76035efed33','英文改写只能改变description，工具名字和原生参数协议逐项保持')
+ const data=schemas.find(tool=>tool.name==='teloa_business_data_query')!
+ const dataParameters=data.parameters as {properties:Record<string,unknown>;required?:string[]}
+ assert.equal(dataParameters.required?.includes('scope')??false,false)
+ assert.ok('period' in dataParameters.properties)
+ const historical=schemas.map(tool=>tool.name!=='teloa_business_data_query'?tool:{...tool,parameters:{...dataParameters,properties:Object.fromEntries(Object.entries(dataParameters.properties).filter(([key])=>key!=='period')),required:['scope',...dataParameters.required??[]]}})
+ assert.equal(createHash('sha256').update(JSON.stringify(withoutDescriptions(historical))).digest('hex'),'b0d14cbda922ab690b40ee2467f1f436abbafd7ce8b0026c0cf4f76035efed33','英文改写只能改变description，工具名字和原生参数协议逐项保持')
  const check=(value:unknown):void=>{if(Array.isArray(value)){value.forEach(check);return}if(value&&typeof value==='object')for(const [key,child]of Object.entries(value)){if(key==='description'&&typeof child==='string')assert.doesNotMatch(child,/\p{Script=Han}/u);else check(child)}}
  schemas.forEach(check)
 })
@@ -60,6 +65,7 @@ async function setup(overrides:Partial<ConversationWorkToolsPorts>={},origin?:'s
  agent.session.append('user/message',createUserMessage({source:{kind:'user'},content:[{type:'text',text:'请交给调查员'}]}),{surfaceOp:'append'})
  const approvals:string[]=[];let approve=async()=> 'allowed-once';ctx.provide('approval',{request:async(input:{reason:string})=>{approvals.push(input.reason);return approve()}})
  const dispatched:unknown[]=[],ports:ConversationWorkToolsPorts={owner,conversation:async id=>({ownerId:owner,sessionId:id,status:'ready'}),readTaskPolicy:async()=>null,isRoleConversation:async()=>false,context:async()=>null,freeze:async()=>null,roles:async()=>[{id:roleId,ownerId:owner,version:1,name:'调查员',kind:'employee',state:'active',scopes:['SOC'],duty:'调查',skills:[],knowledge:[],dataScope:'业务',executionScope:'业务',createdAt:'2026-09-29T00:00:00Z',updatedAt:'2026-09-29T00:00:00Z'}],scopes:async()=>['general','SOC'],dispatch:async(input)=>{dispatched.push(input);return {accepted:true}},status:async()=>({}),stop:async()=>({}),facts:async()=>({}),data:async()=>{throw new WorkError('teloa/source-unavailable','安全告警来源未配置；没有返回示例数据。')},now:()=>new Date().toISOString(),...overrides}
+ ports.businessAuthorization??={...ports,isTaskConversation:ports.isTaskConversation??(async()=>false),binding:async()=>undefined,scopes:async()=>(await ports.scopes()).filter(scope=>scope!=='general').map(scope=>({scope,title:scope}))}
  registerConversationWorkTools(ctx,ports)
  const call=(name:string,args:Record<string,unknown>={},id='call')=>ctx.tools.execute({agent,name,arguments:args,callId:ToolCallId(id),signal:AbortSignal.timeout(5000)})
  return {ctx,agent,dispatched,call,ports,approvals,approve:(fn:typeof approve)=>approve=fn}
@@ -558,4 +564,55 @@ test('模型可见的恢复说明与主会话指引明确区分成果续改与�
  const decision=await f.ctx.waterfall('agent/pre-step',{agent:f.agent,messages,turn:1,step:1,signal:new AbortController().signal},async()=>({kind:'enter' as const,messages})) as unknown as {messages:Array<{content:ReadonlyArray<{type:string;text?:string}>}>}
  const notice=decision.messages.at(-1)!.content.map(block=>block.text??'').join('')
  assert.match(notice,/new linked artifact revision/);assert.match(notice,/teloa-revision/);assert.match(notice,/not a requestId or retry/)
+})
+
+test('NF02真实SDK查询省略业务默认当前SOC、本月按宿主时区过滤且保留真实来源分页',async t=>{
+ let query:unknown,actor:unknown,scopeId='SOC'
+ const item=(id:string,observedAt:string)=>{const snapshot={scope:'SOC',type:'alert',id,version:1,title:id,source:'actual-source',observedAt,receivedAt:observedAt,quality:'complete',summary:'',fields:[{label:'数量',value:0},{label:'已确认',value:false}]};return {...snapshot,snapshotHash:createHash('sha256').update(JSON.stringify(snapshot)).digest('hex')}}
+ const f=await setup({context:async()=>({sessionId:'work-origin',scopeId,roleId:null,version:1,locked:false}),now:()=> '2026-10-31T16:01:00.000Z',timezone:()=> 'Asia/Singapore',data:async(input,_signal,value)=>{query=input;actor=value;return {schema:'teloa.business-data-page/v1',sourceId:'real-http-source',capturedAt:'2026-12-01T00:00:00.000Z',items:[item('before','2026-10-31T15:59:59.999Z'),item('start','2026-10-31T16:00:00.000Z'),item('last','2026-11-30T15:59:59.999Z'),item('end','2026-11-30T16:00:00.000Z')],nextCursor:'original-next'}}});t.after(()=>f.ctx.fiber.dispose())
+ const result=await f.call('teloa_business_data_query',{period:'this-month',limit:10})
+ assert.equal(result.isError,false,JSON.stringify(result));assert.deepEqual(actor,{ownerId:'owner',scopeIds:['SOC']});assert.deepEqual(query,{scope:'SOC',limit:10,observedAfter:'2026-10-31T16:00:00.000Z'})
+ const page=JSON.parse(result.value as string);assert.deepEqual(page.items.map((row:{id:string})=>row.id),['start','last']);assert.equal(page.sourceId,'real-http-source');assert.equal(page.nextCursor,'original-next');assert.equal(page.items[0].fields[1].value,false)
+ assert.equal((await f.call('teloa_business_data_query',{scope:'AppSec',limit:1})).isError,true)
+ assert.equal((await f.call('teloa_business_data_query',{period:'this-month',observedAfter:'2026-01-01T00:00:00.000Z',limit:1})).isError,true)
+ scopeId='AppSec';assert.equal((await f.call('teloa_business_data_query',{limit:1})).isError,true,'其它业务不能接收SOC来源回包')
+})
+
+test('NF02正常SDK发送仅投本会话业务来源并在stream前复核，两个独立会话不串目录',async t=>{
+ const {readBusinessScopeContext}=await import('../src/business-scope-context.ts')
+ for(const selected of ['SOC','AppSec']){
+  const f=await loopWorkFixture(t,true),base=await setup();t.after(()=>base.ctx.fiber.dispose())
+  const context={sessionId:f.agent.session.id,scopeId:selected,roleId:null,version:1,locked:true}
+  const authorization={...base.ports,isTaskConversation:async()=>false,binding:async()=>undefined,context:async()=>context,scopes:async()=>[{scope:selected,title:selected}]}
+  let reads=0
+  registerConversationWorkTools(f.ctx,{...base.ports,freeze:async()=>context,businessContext:(exec,expected)=>readBusinessScopeContext({authorization,now:()=> '2026-10-31T16:01:00.000Z',timezone:()=> 'Asia/Singapore',resources:async actor=>{reads++;assert.deepEqual(actor.scopeIds,[selected]);return [{id:selected+'-manual',title:selected+'来源手册',ownerId:owner,scopeIds:[selected],sourceId:selected+'-source',sourceVersion:'a'.repeat(64),version:1,status:'active',createdAt:'2026-01-01T00:00:00.000Z',updatedAt:'2026-01-01T00:00:00.000Z'}]},definitions:async()=>[{scope:selected,domain:selected,origin:{kind:'local-configuration',configurationVersion:2,configurationHash:'b'.repeat(64)},objectTypes:[],views:[],actions:[],mappings:[],widgets:[],dashboards:[],sources:new Map([[selected+'-actual',{connected:true}]])}]},exec,expected)})
+  f.adapter.scripts.push(loopText);f.agent.followup(createUserMessage({source:{kind:'user'},content:[{type:'text',text:'统计本月告警量'}]}));await f.agent.whenIdle()
+  assert.equal(f.adapter.requests.length,1);assert.ok(reads>=2,'SDK实际stream前需复核目录')
+  const input=f.adapter.requests[0]!.messages.flatMap(message=>message.content.filter(block=>block.type==='text').map(block=>block.text)).join('\n')
+  assert.ok(input.includes(selected+'来源手册'));assert.ok(input.includes(selected+'-actual'));assert.ok(input.includes('2026-10-31T16:00:00.000Z'));assert.ok(input.includes('host-timezone'))
+  assert.ok(!input.includes((selected==='SOC'?'AppSec':'SOC')+'来源手册'))
+ }
+})
+
+
+test('NF01显式员工提及仅覆盖本次接手偏好，真正派发仍需原生审批及execute复核',async t=>{
+ const marker=encodeEmployeeMention({roleId,roleVersion:1}),preference='33333333-3333-4333-8333-333333333333'
+ for(const revokeAfterApproval of [false,true]){
+  let revoked=false,checks=0
+  const context={sessionId:'work-origin',scopeId:'SOC',roleId:preference,version:1,locked:true}
+  const f=await setup({context:async()=>context,employeeDispatch:async(sessionId,text)=>{
+   assert.equal(sessionId,'work-origin');assert.ok(text.includes(marker));checks++
+   if(revoked)throw new WorkError('teloa/version-conflict','员工版本已变化。')
+   return {roleId,expectedRoleVersion:1,scope:'SOC'}
+  }});t.after(()=>f.ctx.fiber.dispose())
+  f.agent.session.append('turn/start',{turn:1} as never)
+  f.agent.session.append('user/message',createUserMessage({source:{kind:'user'},content:[{type:'text',text:marker+' 请完成本次核对'}]}),{surfaceOp:'append'})
+  f.approve(async()=>{revoked=revokeAfterApproval;return 'allowed-once'})
+  const result=await f.call('teloa_work_dispatch',{scope:'SOC',roleId,expectedRoleVersion:1,title:'本次核对',goal:'核对已给资料并交回结论'})
+  assert.equal(result.isError,revokeAfterApproval,JSON.stringify(result));assert.equal(f.approvals.length,1)
+  assert.ok(checks>=2,'批准后必须再次从原本人消息核对员工')
+  assert.equal(f.dispatched.length,revokeAfterApproval?0:1)
+  assert.equal(context.roleId,preference,'不会修改既有接手偏好或业务负责人')
+  assert.ok(!f.approvals[0]!.includes(marker),'原生审批以真实员工名显示引用')
+ }
 })

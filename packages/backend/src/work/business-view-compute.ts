@@ -1,6 +1,6 @@
 import type {Pool,PoolClient} from 'pg'
 import {
- WorkError,businessLedgerLimits,isBusinessMatchField,isBusinessMatchValue,parseDurationSeconds,parseBooleanValue,
+ WorkError,type BusinessFieldValue,parseBusinessNumberValue,businessLedgerLimits,isBusinessMatchField,isBusinessMatchValue,parseDurationSeconds,parseBooleanValue,
  type BusinessActionRecord,type BusinessLedger,type BusinessLedgerBlock,type BusinessLedgerObject,
  type BusinessObjectFieldDefinition,type BusinessObjectTypeRecord,type BusinessTimeBucket,
  type BusinessViewDefinition,type BusinessViewFilter,type BusinessViewMeasure,type BusinessViewRecord,
@@ -83,11 +83,16 @@ export function viewFields(view:BusinessViewDefinition):Set<string>{
  * 度量计入 null，字段名进 `missingFields`。这与数据源自报的 `quality:'missing'` 是两回事——
  * 那一路是来源说自己不全，这一路是本层按声明读不出来；两者都算缺失，但 `quality` 不由本层改写（规格 §5.4 第 4 档）。
  */
-export function parseBusinessBasicField(field:BusinessObjectFieldDefinition,raw:string|undefined,known:Map<string,Set<string>>):BusinessBasicFieldValue|undefined{
+export function parseBusinessBasicField(field:BusinessObjectFieldDefinition,raw:BusinessFieldValue|undefined,known:Map<string,Set<string>>):BusinessBasicFieldValue|undefined{
  if(raw===undefined)return undefined
+ if(typeof raw==='number')return field.type==='number'?parseBusinessNumberValue(raw,field):undefined
+ if(typeof raw==='boolean')return field.type==='boolean'?raw:undefined
  if(field.type==='text')return raw
  if(field.type==='enum')return field.values?.includes(raw)?raw:undefined
- if(field.type==='number'){const value=Number.parseFloat(raw);return Number.isFinite(value)&&Math.abs(value)<=1e15?value:undefined}
+ if(field.type==='number'){
+  if(field.integer||field.minimum!==undefined||field.decimalScale!==undefined)return parseBusinessNumberValue(raw,field)
+  const value=Number.parseFloat(raw);return Number.isFinite(value)&&Math.abs(value)<=1e15?value:undefined
+ }
  if(field.type==='datetime')return Number.isFinite(Date.parse(raw))&&new Date(raw).toISOString()===raw?raw:undefined
  // duration 归一为秒、boolean 归一为真假：解析规则在契约包里，与 SQL 改写器共用同一份（规格 §4.2）。
  if(field.type==='duration')return parseDurationSeconds(raw)

@@ -101,6 +101,18 @@ test('同对象可关联多个原生工作，普通结果版本固定，重启�
  const rebuilt=new api.BusinessObjectWorkLinkService(pool,identity,{authorizeSession:authorize})
  assert.deepEqual(await rebuilt.results(f.actor,{workLinkId:link.id}),[result]);assert.equal((await f.records.get(f.actor,{scope:first.scope,type:first.type,id:first.id})).version,1)
 })
+
+test('撤回成果不得新发布到业务对象工作；既有发布回执和成果版本保留',async()=>{
+ const f=await fixture();await api.initializeBusinessObjectWork(pool);await api.initializeArtifactSnapshots(pool);await api.initializeArtifacts(pool)
+ const first=(await f.records.batch(f.actor,f.input)).items[0]!,reference={scope:first.scope,type:first.type,id:first.id,version:first.version,snapshotHash:first.snapshotHash}
+ const work=new api.BusinessObjectWorkLinkService(pool,identity,{authorizeSession:async()=>{}}),link=await work.link(f.actor,{requestId:randomUUID(),reference,sessionId:f.origin.sessionId,title:'合成工作'})
+ const source={kind:'session' as const,id:f.origin.sessionId,scope:first.scope,version:'synthetic-v1',title:'本轮合成来源'},artifacts=new api.ArtifactService(pool,identity,async()=>({source,sessionIds:[source.id]}))
+ const saved=await artifacts.create(f.actor.ownerId,{requestId:randomUUID(),source,content:{title:'合成成果',sections:[{id:'body',title:'正文',text:'保留原件'}],snapshotIds:[],note:'原件'}})
+ const input={requestId:randomUUID(),workLinkId:link.id,slot:'summary',expectedRevision:0,summary:'关联固定成果',state:'completed',artifactVersions:[{artifactId:saved.artifactId,number:1}]},result=await work.publish(f.actor,input,f.origin)
+ await artifacts.withdraw(f.actor.ownerId,{requestId:randomUUID(),artifactId:saved.artifactId,expectedVersion:1,source})
+ await assert.rejects(work.publish(f.actor,{...input,requestId:randomUUID(),expectedRevision:1},f.origin),{code:'teloa/source-unavailable'})
+ assert.deepEqual(await work.publish(f.actor,input,f.origin),result);assert.deepEqual(await work.results(f.actor,{workLinkId:link.id}),[result]);assert.deepEqual(await artifacts.list(f.actor.ownerId,{artifactId:saved.artifactId}),[saved])
+})
 test('待办不被终态挤出；工作和结果有固定游标，可读超过原100项上限',async()=>{
  const f=await fixture(),draft=await f.changes.prepare(f.actor,f.input,f.origin)
  assert.equal(typeof f.changes.listPage,'function')

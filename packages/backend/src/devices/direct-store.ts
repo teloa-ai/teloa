@@ -38,14 +38,19 @@ export function createDirectDeviceStore(pool:Pool,identity:{ownerId:string;insta
    create table if not exists teloa_device_pairing_jobs(id uuid primary key,owner_id text not null,installation_id text not null,record jsonb not null);
   `)},
   register,
-  async completePairing(job:{id:string;digest?:string},input:Registration){
+  async completePairing(job:{id:string;digest?:string},input:Registration,assertCurrent:()=>void=()=>{}){
    const client=await pool.connect()
    try{
     await client.query('begin')
+    assertCurrent()
     const stored=(await client.query('select record from teloa_device_pairing_jobs where id=$1 and owner_id=$2 and installation_id=$3 for update',[job.id,ownerId,installationId])).rows[0]?.record
+    assertCurrent()
     if(!stored||stored.state!=='ready'||stored.digest!==job.digest||stored.expiresAt<=Date.now()||stored.id!==input.id||stored.assistantSessionId!==input.assistantSessionId||stored.contextVersion!==input.contextVersion||stored.allowApprovals!==(input.allowApprovals===true))throw forbidden()
     active(await register(input,client))
+    assertCurrent()
     await client.query('update teloa_device_pairing_jobs set record=$4 where id=$1 and owner_id=$2 and installation_id=$3',[job.id,ownerId,installationId,{...stored,state:'paired'}])
+    // 此同步复核与发出 COMMIT 之间不再等待；之后的取消不得倒改已提交完成事实。
+    assertCurrent()
     await client.query('commit')
    }catch(error){await client.query('rollback');throw error}finally{client.release()}
   },

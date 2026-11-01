@@ -1,0 +1,23 @@
+{
+  "schema": "teloa.dsh-compat-patch/v1",
+  "package": "@deepseek-ai/dsh-client-ui-workspace",
+  "version": "0.2.1-rc.2",
+  "upstreamCommit": "687f282e8625c6b8d11ff58211a90524be2e4317",
+  "patchSha256": "c3aa35c1dd8b26a735676ad084b1f7ef63736edd4b7209b4b40c3fb92c6a8dd7",
+  "files": [
+    {
+      "path": "lib/client.js",
+      "beforeSha256": "52765aacb6c7f96327da5d8709d8cbb30dd2957d4744a42da04c18e07fe264e5",
+      "afterSha256": "032b765f65a009020730bcb2e40106812701f4c96d5f2e1c08dd79cae9b1f122"
+    }
+  ],
+  "api": [
+    "uiWorkspace.ordinaryBlankReuse"
+  ],
+  "scope": {
+    "behavior": "初始工作区连接及新建入口只自动复用普通空白会话；排除社区契约保留的 task-run 与 group-routing 身份。",
+    "source": "保留身份判定逐字来自 packages/contract/src/execution-session-identity.ts。",
+    "boundary": "本人显式打开和已保存会话恢复保持官方行为；不改运行配置、授权、任务内容、会话存储或宿主选择接口。",
+    "patchContext": "仅一个零上下文判定行；启动前核对固定官方输入、补丁和输出摘要。"
+  }
+}

@@ -1,3 +1,4 @@
+import {taskReferenceReadTool} from '@teloa/backend'
 import {WorkError,taskInput,taskToolArgumentsAllowed,readTaskToolArgumentRules,isWorkspaceFileRule,workspaceFileToolNames,type TaskToolArgumentRule,type ResourceContext} from '@teloa/contract'
 import type {RoleToolGrantService} from '@teloa/backend'
 import {isNativeToolName,nativeGrantToolNames} from './native-tool-access.ts'
@@ -8,7 +9,7 @@ import {skillHttpGrantedSkills,skillHttpToolName} from './skill-http-tool.ts'
 export const roleToolGrantEndpoints=['role-tools/get','role-tools/change','role-tools/candidates']
 /** 公共参考资料 MCP 的 server 名；资源工具的 server 参数只认这一个值。 */
 export const referenceServerName='teloa_reference'
-export const referenceReadTool='mcp__teloa_reference__read_reference'
+export const referenceReadTool=taskReferenceReadTool
 /** 0.1.6 的 dsh-mcp-resources 默认把三个共享资源工具对模型开放；Teloa 一律先拒，再按岗位放开。 */
 export const mcpResourceTools=['list_mcp_resources','list_mcp_resource_templates','read_mcp_resource'] as const
 /** 只有列举类资源工具能固定成精确参数；read_mcp_resource 必带 uri，平台在授权时无从枚举，故不进候选。 */
@@ -108,7 +109,7 @@ export function externalEgressToolAllowed(allowedTools:readonly string[]|null,na
 }
 /** 首批复用公共参考资料 MCP，只开放岗位已选资料的明确来源版本。 */
 export function referenceToolRules(contents:readonly Pick<ResourceContext['contents'][number],'sourceId'|'sourceVersion'>[]):TaskToolArgumentRule[]{
- // 行业来源通过平台资料上下文提供；公共 MCP 尚无本人行业来源的读取适配。
+ // 行业来源仍由平台上下文提供；本机/粘贴知识由宿主按可信Run适配，公共项保留原MCP路径。
  const allowed=contents.filter(item=>!item.sourceId.startsWith('industry_')).map(item=>({id:item.sourceId,version:item.sourceVersion}))
  if(!allowed.length)return []
  // 资源工具与正文读取同进退：岗位没有公共资料可读时，也没有枚举该 server 的理由。

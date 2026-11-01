@@ -15,6 +15,7 @@ import css from './TemplateShareDrawer.module.css'
 import {templateShareErrorKey,templateSharePolicyKey} from './template-share-errors.js'
 import {createRoleFormDrafts,useRoleFormDraft} from './role-form-drafts.js'
 import {ConnectionTemplateSetup,ConnectionTemplateSetupEditor} from './ConnectionTemplateSetup.js'
+import type {TemplateShareObjectSources,ShareObjectDraft,ShareObjectComposition} from './template-share-object-sources.ts'
 
 /**
  * 分享桥：在契约 v1 桥的基础上接受 v2 包并可选提供投稿；契约 v2 合入后以 `TemplateShareBridge` 替换本类型。
@@ -29,7 +30,7 @@ export type ShareBridge=Omit<TemplateShareBridge,'publish'|'read'>&{
  receiveLink?(input:string):void
 }
 /** 分享来源：按员工绑定的原生技能名解析实际安装身份、版本与（许可允许时的）静态正文；连接按受管记录解析。 */
-export type TemplateShareSources={skills:(names:readonly string[],selection?:{installationId:string})=>Promise<ShareSkillSource[]>;connections?:(serverNames?:readonly string[])=>Promise<ShareConnectionSource[]>}
+export type TemplateShareSources={skills:(names:readonly string[],selection?:{installationId:string})=>Promise<ShareSkillSource[]>;connections?:(serverNames?:readonly string[])=>Promise<ShareConnectionSource[]>;objects?:TemplateShareObjectSources;bundle?:(contentId:string,publisher:string)=>Promise<SharePackage>}
 export type TemplateShareContextValue={storage:WorkbenchNavigationStorage;bridge?:ShareBridge|undefined;publisher:string;sources?:TemplateShareSources|undefined;receive:()=>void;openDraft:(pkg:SharePackage)=>void}
 const TemplateShareContext=createContext<TemplateShareContextValue|undefined>(undefined)
 export const TemplateShareProvider=TemplateShareContext.Provider
@@ -55,12 +56,13 @@ export function TemplateFiles({pkg}:{pkg:SharePackage}){
 const inspect=async(pkg:SharePackage)=>{const result=await inspectBusinessShareContent(shareInspectionInput(pkg));return {digest:result.digest,findings:result.findings.length}}
 
 /** 员工、团队、单独能力和自然语言草案共用的分享抽屉：草稿按入口键保留；导出或发布前以预览时的检查摘要核验正文未变。 */
-export function SharePackageDrawer({open,close,storage,bridge,draftKey,hint,title,initial,editable=true,allowBundle=false,onPublished,expectedDigest,children}:{open:boolean;close:()=>void;storage:WorkbenchNavigationStorage;bridge?:ShareBridge|undefined;draftKey:string;hint?:TemplateShareMessageKey;title:string;initial:()=>Promise<SharePackage>|SharePackage;editable?:boolean;allowBundle?:boolean;onPublished?:(receipt:TemplateShareReceipt)=>Promise<void>|void;expectedDigest?:string;children?:ReactNode}){
+export function SharePackageDrawer({open,close,storage,bridge,draftKey,hint,title,initial,editable=true,allowBundle=false,onPublished,expectedDigest,validateSource,children}:{open:boolean;close:()=>void;storage:WorkbenchNavigationStorage;bridge?:ShareBridge|undefined;draftKey:string;hint?:TemplateShareMessageKey;title:string;initial:()=>Promise<SharePackage>|SharePackage;editable?:boolean;allowBundle?:boolean;onPublished?:(receipt:TemplateShareReceipt)=>Promise<void>|void;expectedDigest?:string;validateSource?:()=>Promise<void>;children?:ReactNode}){
  const {t}=useI18n(),key='teloa.template-draft/v2/'+draftKey
  const [draft,setDraft]=useState<Draft>(),[error,setError]=useState<string>(),[busy,setBusy]=useState(false),[copied,setCopied]=useState(false),[policy,setPolicy]=useState<TemplateSharePolicy>(),[links,setLinks]=useState<TemplateShareReceipt[]>([]),[attested,setAttested]=useState(false),[notes,setNotes]=useState('')
  const [publicationHandled,setPublicationHandled]=useState(false)
  const persist=(value:Draft)=>{storage.setItem(key,JSON.stringify(value));setDraft(value);setCopied(false)}
- const run=async(action:()=>Promise<void>)=>{setError(undefined);setBusy(true);try{await action()}catch(error){setError(t(templateShareErrorKey(error)))}finally{setBusy(false)}}
+ const errorKey=(error:unknown)=>error&&typeof error==='object'&&'code' in error&&error.code==='share-source-limit'?'templateShare.contentLimit' as const:templateShareErrorKey(error)
+ const run=async(action:()=>Promise<void>)=>{setError(undefined);setBusy(true);try{await action()}catch(error){setError(t(errorKey(error)))}finally{setBusy(false)}}
  useEffect(()=>{
   if(!open)return
   let alive=true
@@ -75,7 +77,7 @@ export function SharePackageDrawer({open,close,storage,bridge,draftKey,hint,titl
     if(!raw)storage.setItem(key,JSON.stringify(value))
     setDraft(value)
     if(!value.inspection){const inspection=await inspect(value.package);if(alive)persist({...value,inspection})}
-   }catch(error){if(alive)setError(t(templateShareErrorKey(error,'templateShare.invalid')))}
+   }catch(error){if(alive)setError(t(errorKey(error)))}
   })()
   if(bridge)void bridge.policy().then(p=>{if(alive)setPolicy(p)}).catch(()=>{if(alive)setPolicy({receiveMode:'preview-only',canPublish:false})})
   return()=>{alive=false}
@@ -83,7 +85,7 @@ export function SharePackageDrawer({open,close,storage,bridge,draftKey,hint,titl
  const replace=async(pkg:SharePackage)=>{const next:Draft={package:pkg,requestId:crypto.randomUUID(),attempted:false};persist(next);persist({...next,inspection:await inspect(pkg)})}
  const change=(title:string,description:string)=>{if(!draft||draft.attempted)return;try{const pkg=editSharePackage(draft.package,title,description);persist({...draft,package:pkg,inspection:undefined});void inspect(pkg).then(inspection=>setDraft(current=>current&&current.package===pkg?(storage.setItem(key,JSON.stringify({...current,inspection})),{...current,inspection}):current))}catch{setError(t('templateShare.invalid'))}}
  /** 任何导出或发布都先按预览时的检查摘要核验正文未变、无疑似凭据。 */
- const verified=async(value:Draft)=>{if(!value.inspection)throw Object.assign(Error('inspection pending'),{code:'invalid'});await assertBusinessShareInspection(shareInspectionInput(value.package),value.inspection.digest)}
+ const verified=async(value:Draft)=>{if(!value.inspection)throw Object.assign(Error('inspection pending'),{code:'invalid'});await validateSource?.();await assertBusinessShareInspection(shareInspectionInput(value.package),value.inspection.digest)}
  const exportFile=()=>run(async()=>{if(!draft)return;await verified(draft);downloadEmployeeTemplate(draft.package)})
  const confirmPublication=async(value:Draft)=>{
   const receipt=value.receipt
@@ -192,12 +194,35 @@ export function SharePackageDrawer({open,close,storage,bridge,draftKey,hint,titl
  </TemplateShareDrawer>
 }
 
-const roleSource=(role:PreviewRole):ShareRoleSource=>({id:role.id,name:role.name,kind:role.kind,...(role.avatarKey===undefined?{}:{avatarKey:role.avatarKey}),duty:role.duty,dataScope:role.dataScope,executionScope:role.executionScope,skills:role.skills,knowledge:role.knowledge,responsibility:role.responsibility})
+/** 来源读取与明确选择留在原分享抽屉。新选择另存草稿，不改写已发布包。 */
+const objectKindKeys:Record<string,TemplateShareMessageKey>={knowledge:'templateShare.knowledge',sop:'templateShare.sop',plan:'templateShare.plan','work-template':'templateShare.workTemplate',mcp:'templateShare.connection',plugin:'templateShare.plugin','data-source':'templateShare.connection','execution-tool':'templateShare.connection','business-configuration':'templateShare.businessConfiguration'}
+function ObjectSharePackageDrawer({shared,roles,scope,draftKey,initial,children,...props}:{shared:TemplateShareContextValue;roles:readonly ShareRoleSource[];scope:string;draftKey:string;initial:(composition:ShareObjectComposition)=>Promise<SharePackage>;children?:ReactNode;open:boolean;close:()=>void;title:string;hint:TemplateShareMessageKey;allowBundle?:boolean}){
+ const {t}=useI18n(),source=shared.sources?.objects,signature=JSON.stringify(roles),[snapshot,setSnapshot]=useState<{source:TemplateShareObjectSources;signature:string;scope:string;storage:WorkbenchNavigationStorage;value:ShareObjectDraft;selected:string[]}>(),[error,setError]=useState(false),[attempt,setAttempt]=useState(0)
+ const current=snapshot?.source===source&&snapshot?.signature===signature&&snapshot?.scope===scope&&snapshot?.storage===shared.storage?snapshot:undefined,value=current?.value,selected=current?.selected??[]
+ useEffect(()=>{
+  if(!props.open||!source)return
+  let current=true;setSnapshot(undefined);setError(false)
+  void source.prepare(roles,scope).then(draft=>{
+   if(!current)return
+   const key='teloa.share-object-selection/v1/'+draft.key,raw=shared.storage.getItem(key),choice:unknown=raw===null?draft.candidates.filter(c=>c.available&&c.defaultSelected).map(c=>c.key):JSON.parse(raw)
+   if(!Array.isArray(choice)||new Set(choice).size!==choice.length||choice.some(key=>typeof key!=='string'||!draft.candidates.some(c=>c.key===key&&c.available)))throw Error('Invalid source selection')
+   setSnapshot({source,signature,scope,storage:shared.storage,value:draft,selected:choice})
+  }).catch(()=>{if(current)setError(true)})
+  return()=>{current=false}
+ },[props.open,source,signature,scope,shared.storage,attempt])
+ if(source&&!value)return <TemplateShareDrawer open={props.open} close={props.close} title={props.title}>{children}<p role={error?'alert':'status'}>{t(error?'templateShare.objectSourceUnavailable':'templateShare.inspecting')}</p>{error&&<button type="button" onClick={()=>setAttempt(x=>x+1)}>{t('templateShare.retry')}</button>}</TemplateShareDrawer>
+ const composition=<>{children}{value?<section className={css.composition}><strong>{t('templateShare.objectSelection')}</strong><p className={css.note}>{t('templateShare.objectSelectionHint')}</p><ul>{value.candidates.map(candidate=><li key={candidate.key}><label className={css.option}><input type="checkbox" checked={selected.includes(candidate.key)} disabled={!candidate.available} onChange={event=>{const next=event.target.checked?[...selected,candidate.key]:selected.filter(key=>key!==candidate.key);try{shared.storage.setItem('teloa.share-object-selection/v1/'+value.key,JSON.stringify(next));setSnapshot(previous=>previous&&previous===current?{...previous,selected:next}:previous);setError(false)}catch{setError(true)}}}/><span className={css.compositionText}><strong>{candidate.title||t('templateShare.objectSourceUnavailable')}</strong><small>{t(objectKindKeys[candidate.kind]??'templateShare.resources')}{candidate.version?' · v'+candidate.version:''}{!candidate.available?' · '+t(candidate.reason==='too-large'?'templateShare.contentLimit':'templateShare.objectSourceUnavailable'):''}</small></span></label></li>)}</ul>{error&&<p role="alert">{t('templateShare.unknown')}</p>}</section>:<p className={css.note}>{t('templateShare.objectSourceUnavailable')}</p>}</>
+ const key=draftKey+(value?'/'+value.key+'/'+JSON.stringify([...selected].sort()):'')
+ return <SharePackageDrawer key={key} {...props} storage={shared.storage} bridge={shared.bridge} draftKey={key} initial={async()=>initial(value?await value.compose(selected):{connections:[],bindings:roles.map(role=>({roleId:role.id,connections:[],plugins:[]}))})} {...(value?{validateSource:value.assertCurrent}:{})}>{composition}</SharePackageDrawer>
+}
+
+const roleSource=(role:PreviewRole):ShareRoleSource=>({id:role.id,version:role.version,name:role.name,kind:role.kind,...(role.avatarKey===undefined?{}:{avatarKey:role.avatarKey}),duty:role.duty,dataScope:role.dataScope,executionScope:role.executionScope,skills:role.skills,knowledge:role.knowledge,responsibility:role.responsibility})
 /** 员工分享：技能按员工绑定的原生技能名解析实际安装身份；没有来源端口时只写成接收方需配置项。 */
 export function EmployeeTemplateShare({role,open,close,storage,bridge}:{role:PreviewRole;open:boolean;close:()=>void;storage:WorkbenchNavigationStorage;bridge?:ShareBridge|undefined}){
  const {t}=useI18n(),shared=useTemplateShare()
- const initial=async()=>buildSharePlan({subject:'employee',publisher:shared?.publisher??'',roles:[roleSource(role)],skills:await shared?.sources?.skills(role.skills)??[],connections:await shared?.sources?.connections?.()??[]})
- return <SharePackageDrawer open={open} close={close} storage={storage} bridge={bridge} draftKey={'employee/'+role.id} hint="templateShare.shareHint" title={t('templateShare.create')} initial={initial} allowBundle/>
+ const owner:TemplateShareContextValue=shared??{storage,bridge,publisher:'',receive:()=>{},openDraft:()=>{}}
+ const initial=async(composition:ShareObjectComposition)=>buildSharePlan({subject:'employee',publisher:owner.publisher,roles:[roleSource(role)],skills:await owner.sources?.skills(role.skills)??[],...composition})
+ return <ObjectSharePackageDrawer shared={owner} roles={[roleSource(role)]} scope={role.scopes.length===1?role.scopes[0]!:'general'} open={open} close={close} draftKey={'employee/'+role.id} hint="templateShare.shareHint" title={t('templateShare.create')} initial={initial} allowBundle/>
 }
 type TeamShareProps={roles:readonly PreviewRole[];open:boolean;close:()=>void;scope:string;title:string;coordinatorRoleId?:string|undefined;origin?:'directory'|'business'}
 type TeamShareRole={source:ShareRoleSource;version:number;state:PreviewRole['state']}
@@ -228,7 +253,7 @@ function TeamTemplateShareEditor({roles,open,close,scope,title,coordinatorRoleId
  // 原静态包与已发布回执仍留在原键；本人放弃选择后另起原稿，不能悄悄重用旧版本包。
  const discard=()=>slot.set({...current,revision:crypto.randomUUID()})
  const chosen=draft.roles.filter(role=>members.includes(role.source.id))
- const initial=async()=>buildSharePlan({subject:'team',title,publisher:shared.publisher,roles:chosen.map(role=>role.source),skills:await shared.sources?.skills([...new Set(chosen.flatMap(role=>role.source.skills))])??[],connections:await shared.sources?.connections?.()??[],...(lead&&members.includes(lead)?{coordinatorRoleId:lead}:{})})
+ const initial=async(composition:ShareObjectComposition)=>buildSharePlan({subject:'team',title,publisher:shared.publisher,roles:chosen.map(role=>role.source),skills:await shared.sources?.skills([...new Set(chosen.flatMap(role=>role.source.skills))])??[],...composition,...(lead&&members.includes(lead)?{coordinatorRoleId:lead}:{})})
  // 同一成员与协调者组合回到同一份草稿；改选即换草稿键，不覆盖已发布版本。
  const draftKey='team/'+scope+'/'+[...members].sort().join(',')+'/'+(lead||'-')+(draft.revision?'/'+draft.revision:'')
  const composition=<div className={css.composition}>
@@ -238,7 +263,7 @@ function TeamTemplateShareEditor({roles,open,close,scope,title,coordinatorRoleId
    {snapshot.value&&<button type="button" onClick={discard}>{t('collaboration.resources.discardDraft')}</button>}
   </div>
  if(stale)return <TemplateShareDrawer open={open} close={close} title={t('templateShare.shareTeam')}>{composition}<p className={css.alert} role="alert">{t('artifact.panel.text.119')}</p></TemplateShareDrawer>
- return <SharePackageDrawer key={draftKey} open={open} close={close} storage={shared.storage} bridge={shared.bridge} draftKey={draftKey} hint="templateShare.teamHint" title={t('templateShare.shareTeam')} initial={initial}>{composition}</SharePackageDrawer>
+ return <ObjectSharePackageDrawer key={draftKey} shared={shared} roles={chosen.map(role=>role.source)} scope={scope} open={open} close={close} draftKey={draftKey} hint="templateShare.teamHint" title={t('templateShare.shareTeam')} initial={initial}>{composition}</ObjectSharePackageDrawer>
 }
 /** 单独能力分享：技能、应用（技能加连接）或连接；来源不可读时显示准确的不可用状态。 */
 export function CapabilityTemplateShare({subject,skills,connections,open,close,draftKey}:{subject:Exclude<ShareSubject,'employee'|'team'>;skills:readonly ShareSkillSource[];connections?:readonly ShareConnectionSource[];open:boolean;close:()=>void;draftKey:string}){

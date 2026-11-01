@@ -5,6 +5,7 @@ import {createUserMessage} from '@deepseek-ai/dsh-llm'
 import {nativeInputRecoveryCandidate,nativeInputRecoveryCandidateVersion,type NativeInputRecoveryCandidateInput} from '../src/native-input-provider.ts'
 import {nativeInputIdentity} from '../src/native-input-access.ts'
 import {nativeProviderKernel} from './fixtures/native-input-provider.ts'
+import {nativePendingInputOccurrence} from '../src/native-input-recovery-candidate.ts'
 
 test('共享只读候选使用官方完整 Inbox 投影筛选全部原始根', {timeout:15000},async t=>{
  const f=await nativeProviderKernel(t);await f.ctx.plugin(f.loopPackage.AgentLoop,{agents:[]})
@@ -14,6 +15,7 @@ test('共享只读候选使用官方完整 Inbox 投影筛选全部原始根', {
  type Event=Omit<SessionEvent,'seq'|'time'>
  const insert=(messages:UserMessage[],target:'next-turn'|'next-step'='next-turn',start=0):Event=>({type:'agent/inbox/spliced',data:{target,start,removedCount:0,inserted:messages}})
  const remove:Event={type:'agent/inbox/spliced',data:{target:'next-turn',start:0,removedCount:1,inserted:[]}}
+ const edit=(message:UserMessage,target:'next-turn'|'next-step'='next-turn'):Event=>({type:'agent/inbox/spliced',data:{target,start:0,removedCount:1,inserted:[message],outcome:'canceled'}})
  const start:Event={type:'turn/start',data:{turn:1}},end:Event={type:'turn/end',data:{turn:1,reason:{kind:'completed'}}}
  let serial=0
  const input=(raw:Event[],inherited=false):NativeInputRecoveryCandidateInput=>{
@@ -57,6 +59,30 @@ test('共享只读候选使用官方完整 Inbox 投影筛选全部原始根', {
   assert.ok(nativeInputRecoveryCandidate(input([insert([first]),start])))
   const candidate=nativeInputRecoveryCandidate(input([insert([first]),start,remove,end,insert([second])]));assert.ok(candidate)
   assert.equal(candidate.messages.length,1);assert.equal(candidate.messages[0]!.id,second.id)
+ })
+
+ await t.test('同一未领取项连续编辑只使用最后真实事件和正文，不回退旧稿',()=>{
+  const edited={...first,content:[{type:'text' as const,text:'edited v2'}]},latest={...first,content:[{type:'text' as const,text:'edited v3'}]}
+  const source=input([insert([first]),edit(edited),edit(latest)]),candidate=nativeInputRecoveryCandidate(source)
+  assert.ok(candidate);assert.deepEqual(candidate.messages,[latest]);assert.deepEqual(candidate.acceptedEvents,[source.snapshot.events[2]])
+  assert.equal(candidate.roots[0]?.payloadSha256,nativeInputIdentity(latest,'request-a').payloadSha256)
+  assert.equal(nativePendingInputOccurrence(source.snapshot.events,first.id)?.event.seq,2)
+  assert.ok(nativeInputRecoveryCandidate(input([insert([first]),start,edit(edited)])),'取消被替换旧稿不是实际claim')
+ })
+
+ await t.test('编辑改写来源、跨队列复用、移除后同id伪重试均拒绝，其他独立输入不受污染',()=>{
+  const changed={...first,source:{kind:'user' as const,rpcId:'different-owner-request'}}
+  for(const raw of [
+   [insert([first]),edit(changed)],
+   [insert([first]),insert([first],'next-step')],
+   [insert([first]),remove,insert([first])],
+   [insert([first]),{type:'agent/inbox/spliced',data:{target:'next-turn',start:0,removedCount:1,inserted:[first]}}],
+   [insert([first]),remove,insert([first],'next-step'),edit(first,'next-step')],
+  ]){
+   const events=raw.map((event,index)=>({...event,seq:SessionSeq(index),time:index+1}) as SessionEvent)
+   assert.equal(nativePendingInputOccurrence(events,first.id),undefined)
+  }
+  assert.ok(nativeInputRecoveryCandidate(input([insert([first]),remove,insert([first]),remove,insert([second])])))
  })
 
  for(const [name,events,inherited] of [

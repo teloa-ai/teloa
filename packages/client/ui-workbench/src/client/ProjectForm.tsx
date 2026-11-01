@@ -18,7 +18,8 @@ function descriptionTitle(value:string){
 export function ProjectForm({initial,draft,changeDraft,pending,editing=false,openTasks=0,scopeName,scopes,close,save}:{initial:ProjectDefinition;draft?:ProjectFormDraft;changeDraft?:(draft:ProjectFormDraft)=>void;pending?:Promise<void>|undefined;editing?:boolean;openTasks?:number;scopeName?:string;scopes?:readonly {scope:string;label:string}[];close:()=>void;save:(fields:ProjectDefinition)=>Promise<void>}){
  const {t,locale}=useI18n(),dialog=useRef<HTMLDialogElement>(null),input=useRef<HTMLInputElement>(null),description=useRef<HTMLTextAreaElement>(null)
  const [fields,updateFields]=useState(draft?.fields??initial),[busy,setBusy]=useState(!!pending),[error,setError]=useState(''),[ack,updateAck]=useState(draft?.ack??false),[titleEdited,updateTitleEdited]=useState(draft?.titleEdited??!!(draft?.fields.title??initial.title))
- const setFields=(fields:ProjectDefinition,edited=titleEdited)=>{updateFields(fields);updateTitleEdited(edited);changeDraft?.({fields,ack,titleEdited:edited})},setAck=(ack:boolean)=>{updateAck(ack);changeDraft?.({fields,ack,titleEdited})},dismiss=useDialogDismiss(close,!busy)
+ const publish=(draft:ProjectFormDraft)=>{try{changeDraft?.(draft);setError('')}catch(e){setError(localizeWorkError(locale,e))}}
+ const setFields=(fields:ProjectDefinition,edited=titleEdited)=>{updateFields(fields);updateTitleEdited(edited);publish({fields,ack,titleEdited:edited})},setAck=(ack:boolean)=>{updateAck(ack);publish({fields,ack,titleEdited})},dismiss=useDialogDismiss(close,!busy)
  const warning=editing&&initial.state!=='completed'&&fields.state==='completed'&&openTasks>0
  useEffect(()=>openDialog(dialog.current,editing?input.current:description.current),[])
  useEffect(()=>{if(!pending)return;let active=true;void pending.then(()=>{if(active)setBusy(false)},e=>{if(active){setError(localizeWorkError(locale,e));setBusy(false)}});return()=>{active=false}},[pending,locale])

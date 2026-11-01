@@ -5,6 +5,7 @@ import type {WorkbenchNavigationStorage} from './workbench-navigation-state.js'
 import {ContextDrawer} from './ContextDrawer.js'
 import {CreateEntry} from './CreateEntry.js'
 import {createRoleFormInitial} from './page-create-presentation.js'
+import {employeeDraftRequestId} from './employee-draft-request.js'
 import {useI18n} from './i18n/provider.js'
 import {useApplicationCapability} from './CapabilityNotice.js'
 import css from './MarketTemplateCreator.module.css'
@@ -15,7 +16,7 @@ type Prompt={sourceId:string;title:string;text:string}
 export function EmployeeCreateEntry({api,scope,scopeName,storage,prepare,create,created,close}:{
  api:PageCreateApi;scope:string;scopeName:string;storage?:WorkbenchNavigationStorage|undefined
  prepare:(prompt:Prompt,scope?:string)=>void|Promise<void>
- create:(fields:RoleFields)=>Promise<string>
+ create:(fields:RoleFields,requestId:string)=>Promise<string>
  created:(id:string)=>void;close:()=>void
 }){
  const {t}=useI18n(),allowed=useApplicationCapability('people'),[busy,setBusy]=useState(false)
@@ -27,7 +28,7 @@ export function EmployeeCreateEntry({api,scope,scopeName,storage,prepare,create,
    onPrepared={close}
    onConfirm={async preview=>{
     if(!allowed)throw Object.assign(Error(),{code:'teloa/forbidden'})
-    return create(createRoleFormInitial(preview))
+    return create(createRoleFormInitial(preview),await employeeDraftRequestId(preview.draft))
    }}
    afterConfirm={id=>{close();created(id)}}/></div>
  </ContextDrawer>

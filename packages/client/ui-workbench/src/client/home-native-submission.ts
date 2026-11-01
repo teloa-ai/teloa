@@ -1,7 +1,8 @@
+import {isContextGoalRequiredError} from './i18n/errors.js'
 type Storage={getItem(key:string):string|null;setItem(key:string,value:string):void;removeItem(key:string):void}
 /** 准入前的确定性拒收：请求未入队、未写会话日志，不属于「结果未知」。gateway/bad-request 覆盖空内容与贴密钥拒收（规格 §6）。 */
 const deterministicPromptRejections=new Set(['gateway/bad-request','session/model-unavailable','session/attachment-invalid','session/invalid-time-zone','session/agent-busy','session/writer-held'])
-export const isDeterministicPromptRejection=(code:unknown):boolean=>typeof code==='string'&&deterministicPromptRejections.has(code)
+export const isDeterministicPromptRejection=(code:unknown,details?:unknown):boolean=>typeof code==='string'&&deterministicPromptRejections.has(code)||isContextGoalRequiredError({code,details})
 /** 仅记录官方已经分配的请求身份；不重发 prompt、不拥有正文和附件。 */
 export class HomeSubmissionJournal{
  private readonly storage:Storage

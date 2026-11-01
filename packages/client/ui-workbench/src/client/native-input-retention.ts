@@ -2,7 +2,7 @@ import type {InputState} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {SessionBinding,SessionReference} from '@deepseek-ai/dsh-api-session-controller/client'
 import type {SessionId} from '@deepseek-ai/dsh-session'
 type Source<T>={getSnapshot:()=>T;subscribe:(listener:()=>void)=>()=>void}
-type Ports={current:Source<SessionId|undefined>;owner:Source<string|null>;sessions:{binding:(id:SessionId)=>SessionBinding|undefined;list:Pick<Source<unknown>,'subscribe'>;retain:(id:SessionId,options:{source:'teloaDraftInput'})=>SessionReference};input:(binding:SessionBinding)=>Source<InputState>;monitor:(binding:SessionBinding)=>Source<boolean>}
+type Ports={current:Source<SessionId|undefined>;owner:Source<string|null>;sessions:{binding:(id:SessionId)=>SessionBinding|undefined;list:Pick<Source<unknown>,'subscribe'>;retain:(id:SessionId,options:{source:'teloaDraftInput'})=>SessionReference};input:(binding:SessionBinding)=>Source<InputState>;monitor:(binding:SessionBinding)=>Source<boolean>;attachments?:(binding:SessionBinding,owner:string)=>()=>void}
 declare module '@deepseek-ai/dsh-api-session-controller/client'{interface SessionReferenceSourceMap{teloaDraftInput:unknown}}
 type Entry={binding:SessionBinding;reference?:SessionReference;off:Array<()=>void>}
 /** 只延长官方作用域生命周期；不保存输入快照或附件。纯文本仍沿官方持久镜像。 */
@@ -28,6 +28,8 @@ export function retainNativeInputs(ports:Ports):()=>void{
   if(binding&&!formerOwnerBindings.has(binding)&&!entries.has(binding.sessionId)){
    const entry:Entry={binding,off:[]};entries.set(binding.sessionId,entry)
    entry.off=[ports.input(binding).subscribe(update),binding.session.subscribe(update),ports.monitor(binding).subscribe(update)]
+   const releaseAttachments=ports.attachments?.(binding,nextOwner!)
+   if(releaseAttachments)entry.off.push(releaseAttachments)
   }
   for(const entry of entries.values()){
    if(entry.reference)continue

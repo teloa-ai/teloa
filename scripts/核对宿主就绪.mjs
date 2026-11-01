@@ -13,6 +13,9 @@ const killEscalation = 5_000
 const mountWindow = 20_000
 const mountRetryInterval = 500
 const sleep = milliseconds => new Promise(done => setTimeout(done, milliseconds))
+const probeTimeoutError = () => Object.assign(Error('Teloa 工作通道在就绪窗口内没有回包，拒绝按就绪对外服务。'), { probeTimedOut: true })
+// 只认这次探针自己的期限；外部取消或同名异常不能借此获得重试。
+const isProbeTimeout = (error, signal) => signal.aborted && signal.reason?.name === 'TimeoutError' && (error?.name === 'TimeoutError' || error?.name === 'AbortError')
 
 /**
  * 从宿主启动输出里取出带一次性令牌的根地址；返回值只能喂给自检，不得写进日志。
@@ -42,12 +45,16 @@ export async function authorizeSession(startupUrl, { fetch: send = fetch } = {})
  */
 export async function probeTeloaChannel(origin, cookie, { fetch: send = fetch, timeout = probeTimeout } = {}) {
   const rpcId = randomUUID()
-  const response = await send(new URL('/teloa/conversations/list', origin), {
-    method: 'POST',
-    headers: { 'content-type': 'application/json', cookie },
-    body: JSON.stringify({ type: 'client-request', rpcId, method: 'conversations/list', payload: {} }),
-    signal: AbortSignal.timeout(timeout),
-  })
+  const signal = AbortSignal.timeout(timeout)
+  let response
+  try {
+    response = await send(new URL('/teloa/conversations/list', origin), {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', cookie },
+      body: JSON.stringify({ type: 'client-request', rpcId, method: 'conversations/list', payload: {} }),
+      signal,
+    })
+  } catch (error) { throw isProbeTimeout(error, signal) ? probeTimeoutError() : error }
   // 只有静态前端接管时的 404/405 才可能是"装配还没走到"；其余非 2xx（401/500/502…）
   // 说明通道已经在应答但状态不对，再重试只会把一台故障宿主拖到窗口耗尽才报错。
   if (response.status === 404 || response.status === 405) throw Object.assign(Error('Teloa 工作通道未挂载，宿主已就绪但业务不可用（HTTP ' + response.status + '）。'), { mounting: true })
@@ -55,38 +62,36 @@ export async function probeTeloaChannel(origin, cookie, { fetch: send = fetch, t
   // 解析失败的原文会把响应体片段带进诊断消息，这里只留固定文案。
   let envelope
   try { envelope = await response.json() }
-  catch { throw Error('Teloa 工作通道回包不是合法 JSON，拒绝按就绪对外服务。') }
+  catch (error) { throw isProbeTimeout(error, signal) ? probeTimeoutError() : Error('Teloa 工作通道回包不是合法 JSON，拒绝按就绪对外服务。') }
   if (envelope?.type !== 'server-response' || envelope.rpcId !== rpcId) throw Error('Teloa 工作通道回包身份不符，拒绝按就绪对外服务。')
   if (envelope.result?.ok !== true) throw Error('Teloa 工作通道返回失败：' + (envelope.result?.error?.code ?? '未知原因') + '。')
 }
 
 /**
- * 完整自检：换一次 Cookie（启动令牌是一次性的，重试不能再换），再在挂载窗口内反复打只读端点。
- * 只有"未挂载"重试；回包身份不符、非法 JSON、业务失败都是已挂载后的真实故障，立即失败。
+ * 在同一个总窗口内等待只读通道；仅未挂载或探针自身超时可重试。
+ * 每次请求与间隔都夹到剩余期限，认证、回包身份、JSON 与业务硬失败立即上抛。
  */
-export async function assertTeloaReady(startupUrl, options = {}) {
-  const { mountTimeout = mountWindow, ...request } = options
-  const cookie = await authorizeSession(startupUrl, request)
-  const origin = new URL(startupUrl).origin, deadline = Date.now() + mountTimeout
-  let mounting
+export async function waitForTeloaChannel(origin, cookie, { mountTimeout = mountWindow, timeout = probeTimeout, retryInterval = mountRetryInterval, ...request } = {}) {
+  const deadline = Date.now() + mountTimeout
+  let mounting, timedOut
   for (;;) {
-    // 窗口已尽就把上一次"未挂载"原样抛出：再补一次必然超时的探针，只会把诊断换成无意义的 AbortError。
-    if (mounting && Date.now() >= deadline) throw mounting
-    // 单发探针最多等到窗口结束：否则 30 秒的默认超时会让一个 1 秒的窗口实际拖满 30 秒。
-    const timeout = Math.max(1, Math.min(probeTimeout, deadline - Date.now()))
-    try { return await probeTeloaChannel(origin, cookie, { ...request, timeout }) }
+    if ((mounting || timedOut) && Date.now() >= deadline) throw mounting ?? timedOut
+    const remaining = Math.max(1, Math.min(timeout, deadline - Date.now()))
+    try { return await probeTeloaChannel(origin, cookie, { ...request, timeout: remaining }) }
     catch (error) {
-      // 夹窗探针被掐断（AbortSignal.timeout 抛 TimeoutError，手动 abort 抛 AbortError）：
-      // 末轮剩余窗口小于宿主响应时延时必然走到这里。诊断要么是上一次"未挂载"，
-      // 要么是固定中文超时文案，绝不能把 fetch 的英文 AbortError 当成结论抛给用户。
-      if (error?.name === 'AbortError' || error?.name === 'TimeoutError') throw mounting ?? Error('Teloa 工作通道在就绪窗口内没有回包，拒绝按就绪对外服务。')
-      if (error?.mounting !== true) throw error
-      mounting = error
-      if (Date.now() >= deadline) throw error
-      // 等待同样不越过窗口，否则下一轮只剩一个零头超时可用。
-      await sleep(Math.min(mountRetryInterval, deadline - Date.now()))
+      if (error?.mounting === true) mounting = error
+      else if (error?.probeTimedOut === true) timedOut = error
+      else throw error
+      if (Date.now() >= deadline) throw mounting ?? timedOut
+      await sleep(Math.min(retryInterval, deadline - Date.now()))
     }
   }
+}
+
+/** 完整自检只消费一次启动令牌，后续重试复用同一 Cookie。 */
+export async function assertTeloaReady(startupUrl, options = {}) {
+  const cookie = await authorizeSession(startupUrl, options)
+  return waitForTeloaChannel(new URL(startupUrl).origin, cookie, options)
 }
 
 /** 自检失败即终止宿主子进程并返回 1；成功返回 0 且不产生任何输出。 */

@@ -1,5 +1,5 @@
 /**
- * `duration` 与 `boolean` 两种字段的解析（规格 §4.2「字段类型与解析」）。
+ * number、duration 与 boolean 字段的共用解析。
  * 契约（校验筛选字面量）与服务端（`parseField` / `compare`）共用这一份，不抄两份；
  * 解析不出来一律返回 undefined，由调用方按"缺失"处理，不猜、不回退零值。
  */
@@ -33,9 +33,43 @@ export function parseDurationSeconds(raw:string):number|undefined{
 }
 
 /** 大小写不敏感 true/false、是/否、1/0；其余 undefined。不做 trim：快照取值带空白就是带空白，按缺失处理。 */
-export function parseBooleanValue(raw:string):boolean|undefined{
+export function parseBooleanValue(raw:string|boolean):boolean|undefined{
+ if(typeof raw==='boolean')return raw
  const value=raw.toLowerCase()
  if(value==='true'||value==='是'||value==='1')return true
  if(value==='false'||value==='否'||value==='0')return false
  return undefined
+}
+
+/** 对齐有效十进制位比较下限，不构造巨大指数的幂，也不先舍入原文。 */
+function belowNumberMinimum(raw:string,minimum:number):boolean{
+ const parts=(text:string)=>{
+  const [mantissa,exponent='0']=text.toLowerCase().split('e'),unsigned=mantissa!.replace(/^[+-]/,''),digits=unsigned.replace('.','').replace(/^0+/,'')
+  return {negative:!!digits&&mantissa![0]==='-',digits:digits||'0',order:digits?digits.length+Number(exponent)-(unsigned.split('.')[1]?.length??0):-Infinity}
+ }
+ const a=parts(raw),b=parts(String(minimum))
+ if(a.negative!==b.negative)return a.negative
+ const width=Math.max(a.digits.length,b.digits.length),left=a.digits.padEnd(width,'0'),right=b.digits.padEnd(width,'0')
+ const compared=a.order<b.order?-1:a.order>b.order?1:left<right?-1:left>right?1:0
+ return a.negative?compared>0:compared<0
+}
+
+/** 数字原值共用校验；整数性和下限按十进制原文判断，防止浮点舍入或下溢。 */
+export function parseBusinessNumberValue(raw:string|number,rule:{integer?:true;minimum?:number;decimalScale?:number}={}):number|undefined{
+ if(typeof raw==='number')raw=String(raw)
+ const match=/^([+-]?)(\d+(?:\.\d+)?|\.\d+)(?:[eE]([+-]?\d+))?$/.exec(raw)
+ if(!match)return undefined
+ const value=Number(raw)
+ if(!Number.isFinite(value)||Math.abs(value)>1e15)return undefined
+ const digits=match[2]!.replace('.',''),nonzero=/[1-9]/.test(digits)
+ if(rule.integer&&nonzero){
+  const decimals=match[2]!.split('.')[1]?.length??0,trailing=digits.length-digits.replace(/0+$/,'').length
+  if(Number(match[3]??0)<decimals-trailing)return undefined
+ }
+ if(rule.decimalScale!==undefined&&nonzero){
+  const decimals=match[2]!.split('.')[1]?.length??0,trailing=digits.length-digits.replace(/0+$/,'').length
+  if(Number(match[3]??0)<decimals-trailing-rule.decimalScale)return undefined
+ }
+ if(rule.minimum!==undefined&&belowNumberMinimum(raw,rule.minimum))return undefined
+ return value
 }

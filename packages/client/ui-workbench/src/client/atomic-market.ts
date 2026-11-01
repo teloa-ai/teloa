@@ -1,4 +1,4 @@
-import type {LocalizedMetadata} from '@teloa/contract'
+import type {LocalizedMetadata,IndustryModelDependency} from '@teloa/contract'
 import type {AtomicSkillContent} from './atomic-skill.ts'
 import type {MarketItem,MarketItemLocalized} from './market-preview.ts'
 
@@ -17,15 +17,16 @@ const copy={
 } satisfies Record<string,Ten>
 
 /** 单个技能条目的说明字段与本地化：`imported` 是刚导入（文件已读取），`stored` 是已保存在本机、详情还没读取。 */
-export function atomicSkillCopy(kind:'imported'|'stored',name:{title:string;localizedTitle?:LocalizedMetadata|undefined}):Pick<MarketItem,'summary'|'requirements'|'output'|'compatibility'>&{status:string;localized:MarketItemLocalized}{
+export function atomicSkillCopy(kind:'imported'|'stored',name:{title:string;localizedTitle?:LocalizedMetadata|undefined;modelDependencies?:IndustryModelDependency[]}):Pick<MarketItem,'summary'|'requirements'|'output'|'compatibility'>&{status:string;localized:MarketItemLocalized}{
  const summary=kind==='imported'?copy.importedSummary:copy.storedSummary,compatibility=kind==='imported'?copy.importedCompatibility:copy.storedCompatibility,status=kind==='imported'?copy.importedStatus:copy.storedStatus
- return {summary:summary[0],requirements:[copy.requirement[0]],output:copy.output[0],compatibility:compatibility[0],status:status[0],localized:{
-  ...(name.localizedTitle?{title:name.localizedTitle}:{}),summary:ten(summary),requirements:[ten(copy.requirement)],output:ten(copy.output),compatibility:ten(compatibility),
+ const models=(name.modelDependencies??[]).map(dependency=>{const prefix=dependency.catalogId+' @ '+dependency.version+' · '+dependency.usage+' · ',zh=prefix+(dependency.required?'必需，运行前须准备':'可选'),hant=prefix+(dependency.required?'必要，執行前須準備':'選用'),en=prefix+(dependency.required?'Required; prepare before use':'Optional');return {original:zh,defaultLocale:'en',locales:{'zh-CN':zh,'zh-Hant':hant,en}}})
+ return {summary:summary[0],requirements:[copy.requirement[0],...models.map(model=>model.original)],output:copy.output[0],compatibility:compatibility[0],status:status[0],localized:{
+  ...(name.localizedTitle?{title:name.localizedTitle}:{}),summary:ten(summary),requirements:[ten(copy.requirement),...models],output:ten(copy.output),compatibility:ten(compatibility),
   components:[{name:name.localizedTitle??{original:name.title,defaultLocale:'und',locales:{}},status:ten(status)}],
  }}
 }
 
 export function atomicSkillItem(content:AtomicSkillContent):MarketItem{
- const {status,...text}=atomicSkillCopy('imported',{title:content.title,localizedTitle:content.localized?.title})
+ const {status,...text}=atomicSkillCopy('imported',{title:content.title,localizedTitle:content.localized?.title,...(content.modelDependencies?{modelDependencies:content.modelDependencies}:{})})
  return {id:'atomic-'+content.hash,kind:'skill',resourceKind:'skill',title:content.title,version:content.version,scope:'general',visibility:'personal',...text,author:'本人导入',license:'来源许可待核对',source:{kind:'upload',name:content.entryPath,size:content.files.reduce((sum,file)=>sum+file.bytes.length,0)},owner:'DSH',components:[{name:content.title,required:true,status}],hash:content.hash,capabilityCategories:[...content.categories],atomicSkill:structuredClone(content)}
 }

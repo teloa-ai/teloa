@@ -9,8 +9,9 @@ import {AgentRegistry} from '@deepseek-ai/dsh-agent'
 import {AgentLoop} from '@deepseek-ai/dsh-agent-loop'
 import {SessionProjectionRegistry} from '@deepseek-ai/dsh-session-projection'
 import {captureRetrievalPreparation,WorkError,readRetrievalSearchResult,retrievalEndpoints,type RetrievalSearchResult,type EmbeddingProviderId,type DigitalRole} from '@teloa/contract'
-import type {ResourceActor,RetrievalStatus} from '@teloa/backend'
-import {registerLocalRetrieval,readEmbeddingProvider,knowledgeSearchToolName,embeddingProviderId,type LocalRetrievalPorts,type EmbeddingServiceLike} from '../src/local-retrieval.ts'
+import type {ResourceActor,RetrievalStatus,ConversationWorkContext} from '@teloa/backend'
+import {registerLocalRetrieval,authorizeOrdinaryRetrievalContext,readEmbeddingProvider,knowledgeSearchToolName,embeddingProviderId,type LocalRetrievalPorts,type EmbeddingServiceLike,type OrdinaryRetrievalFallback} from '../src/local-retrieval.ts'
+import type {BusinessConversationAuthorizationPorts} from '../src/business-conversation-authorization.ts'
 import {retrievalPreparationDetails} from '../../local-embedding/src/preparation-details.ts'
 import {registerTaskToolGuard,type TaskToolPolicy} from '../src/task-tool-guard.ts'
 
@@ -73,7 +74,7 @@ function stubRetrieval(options:{build?:()=>Promise<void>}={}){
    if(options.build)await Promise.race([options.build(),new Promise<void>(done=>signal.addEventListener('abort',()=>done(),{once:true}))])
    return {ready:1,failed:0}
   },
-  async reconcile(hash?:string){record('reconcile',hash);return {removed:0}},
+  async reconcile(actor:ResourceActor,hash?:string){record('reconcile',actor,hash);return {removed:0}},
  }
  return {retrieval,calls,of:(method:string)=>calls.filter(call=>call.method===method)}
 }
@@ -102,6 +103,96 @@ async function setup(overrides:Partial<LocalRetrievalPorts>={},options:{subagent
  return {ctx,agent,call,embedding,store,logs,taskAuthorizations,registered,handle:(endpoint:string,payload:unknown)=>registered.handle(endpoint,payload,AbortSignal.timeout(5000))}
 }
 const text=(result:{content:Array<{type:string;text?:string}>})=>result.content.filter(item=>item.type==='text').map(item=>item.text).join('\n')
+
+function ordinaryContext(){
+ const scope='business_retrieval_current'
+ const state={context:{sessionId,scopeId:scope,roleId:null,version:1,locked:true} as ConversationWorkContext|null,owner,scopes:[{scope,title:'当前业务'}],role:false,task:false,binding:undefined as Awaited<ReturnType<BusinessConversationAuthorizationPorts['binding']>>}
+ const ports:BusinessConversationAuthorizationPorts={owner,conversation:async id=>({ownerId:state.owner,sessionId:id,status:'ready'}),readTaskPolicy:async()=>null,isRoleConversation:async()=>state.role,isTaskConversation:async()=>state.task,binding:async()=>state.binding,context:async()=>state.context,scopes:async()=>state.scopes}
+ return {scope,state,ports,authorize:(exec:Parameters<typeof authorizeOrdinaryRetrievalContext>[1],fallback:OrdinaryRetrievalFallback)=>authorizeOrdinaryRetrievalContext(ports,exec,fallback)}
+}
+
+test('普通业务检索：general 元数据沿合法工作上下文解析，检索前后复核同一业务授权',async t=>{
+ const business=ordinaryContext(),e=await setup({conversation:async id=>({ownerId:owner,sessionId:id,status:'ready',scopeIds:['general']}),ordinaryAuthorization:business.authorize})
+ t.after(()=>e.ctx.fiber.dispose())
+ const result=await e.call({query:'交付窗口'})
+ assert.equal(result.isError,false,text(result))
+ const actor={ownerId:owner,kind:'agent',scopeIds:[business.scope]}
+ assert.deepEqual(e.store.of('status')[0]!.args,[actor,profileHash])
+ assert.deepEqual(e.store.of('search')[0]!.args.slice(0,2),[actor,[business.scope]])
+ assert.equal(e.taskAuthorizations.length,0)
+ for(const context of [null,{sessionId,scopeId:'general',roleId:null,version:1,locked:false}]){
+  business.state.context=context
+  assert.equal((await e.call({query:'通用资料'})).isError,false)
+  assert.deepEqual(e.store.of('search').at(-1)!.args.slice(0,2),[{ownerId:owner,kind:'agent',scopeIds:['general']},['general']])
+ }
+})
+
+test('已有业务上下文失效或篡改：在嵌入前拒绝，不降级 general',async t=>{
+ const business=ordinaryContext(),e=await setup({ordinaryAuthorization:business.authorize});t.after(()=>e.ctx.fiber.dispose())
+ const original=structuredClone(business.state)
+ const mutations=[()=>{business.state.owner='foreign-owner'},()=>{business.state.context!.sessionId='other-session'},()=>{business.state.context!.scopeId='not registered'},()=>{business.state.context!.version=0},()=>{business.state.scopes=[]},()=>{business.state.role=true},()=>{business.state.task=true},()=>{business.state.binding={kind:'builder',sessionId,draftId:'draft'} as never},()=>{business.state.binding={kind:'daily',sessionId,scope:'other-business'} as never}]
+ for(const mutate of mutations){
+  Object.assign(business.state,structuredClone(original));mutate()
+  const result=await e.call({query:'交付窗口'})
+  assert.equal(result.isError,true,text(result));assert.equal(e.store.of('search').length,0);assert.equal(e.embedding.embedded.length,0)
+ }
+})
+
+test('业务权限在守卫、正文或异步检索间变化：不得交出旧范围结果',async t=>{
+ for(const phase of ['guard','search'] as const){
+  const business=ordinaryContext();let checks=0
+  const e=await setup({ordinaryAuthorization:async(exec,fallback)=>{checks++;if(phase==='guard'&&checks===2)business.state.scopes=[];return business.authorize(exec,fallback)}});t.after(()=>e.ctx.fiber.dispose())
+  if(phase==='search')e.embedding.service.embed=async(_id,input)=>{business.state.scopes=[];return {profileHash,vectors:input.texts.map(()=>new Float32Array(1024))}}
+  const result=await e.call({query:'交付窗口'})
+  assert.equal(result.isError,true,text(result));assert.doesNotMatch(text(result),/报销单先由/)
+  if(phase==='guard'){assert.equal(e.store.of('search').length,0);assert.equal(e.embedding.embedded.length,0)}
+ }
+ const business=ordinaryContext(),e=await setup({ordinaryAuthorization:business.authorize});t.after(()=>e.ctx.fiber.dispose())
+ e.embedding.service.embed=async(_id,input)=>{business.state.context={sessionId,scopeId:'general',roleId:null,version:2,locked:true};return {profileHash,vectors:input.texts.map(()=>new Float32Array(1024))}}
+ assert.equal((await e.call({query:'交付窗口'})).isError,true)
+})
+
+test('员工、Task 与 Group 冻结许可不进入普通业务解析',async t=>{
+ const ordinaryAuthorization=async()=>{throw Error('不应读取普通业务上下文')}
+ const roleId='22222222-2222-4222-8222-222222222222',role={id:roleId,ownerId:owner,scopes:['SOC'],knowledge:[resourceId]} as DigitalRole
+ const employee=await setup({ordinaryAuthorization,requestedRoleId:async()=>roleId,role:async()=>role});t.after(()=>employee.ctx.fiber.dispose())
+ assert.equal((await employee.call({query:'员工资料'})).isError,false)
+ for(const knowledgeIds of [[resourceId],[]]){
+  const e=await setup({ordinaryAuthorization,readTaskPolicy:async()=>({allowedTools:[knowledgeSearchToolName]}),taskAuthorization:async()=>({actor:{ownerId:owner,kind:'agent',scopeIds:['SOC']},targetScopes:['SOC'],knowledgeIds})});t.after(()=>e.ctx.fiber.dispose())
+  assert.equal((await e.call({query:'固定任务资料'})).isError,false)
+  assert.deepEqual(e.store.of('search')[0]!.args.at(-1),knowledgeIds)
+  if(!knowledgeIds.length)assert.equal(e.embedding.embedded.length,0)
+ }
+})
+
+test('初始无上下文也保留指纹：嵌入期间新增业务或原会话绑定变化均不交回 general',async t=>{
+ for(const change of ['context','conversation'] as const){
+  const business=ordinaryContext();business.state.context=null
+  let scopes=['general']
+  const e=await setup({conversation:async id=>({ownerId:owner,sessionId:id,status:'ready',scopeIds:[...scopes]}),ordinaryAuthorization:business.authorize});t.after(()=>e.ctx.fiber.dispose())
+  e.embedding.service.embed=async(_id,input)=>{
+   if(change==='context')business.state.context={sessionId,scopeId:business.scope,roleId:null,version:1,locked:true}
+   else scopes=[business.scope]
+   return {profileHash,vectors:input.texts.map(()=>new Float32Array(1024))}
+  }
+  const result=await e.call({query:'交付窗口'})
+  assert.equal(result.isError,true,text(result));assert.doesNotMatch(text(result),/报销单先由/)
+  assert.deepEqual(e.store.of('search')[0]!.args.slice(0,2),[{ownerId:owner,kind:'agent',scopeIds:['general']},['general']])
+ }
+})
+
+test('明确 general 与无上下文：角色任务、搭建、pending 和 daily 绑定错配不能借兼容路径放行',async t=>{
+ for(const context of [null,{sessionId,scopeId:'general',roleId:null,version:1,locked:true}]){
+  const business=ordinaryContext();business.state.context=context
+  const baseline=structuredClone(business.state),e=await setup({ordinaryAuthorization:business.authorize});t.after(()=>e.ctx.fiber.dispose())
+  const mutations=[()=>{business.state.role=true},()=>{business.state.task=true},()=>{business.state.binding={kind:'builder',sessionId,draftId:'draft'} as never},()=>{business.state.binding={kind:'daily',sessionId,draftId:'pending',scope:'general'} as never},()=>{business.state.binding={kind:'daily',sessionId,scope:business.scope} as never},()=>{business.state.binding={kind:'daily',sessionId:'other-session',scope:'general'} as never}]
+  for(const mutate of mutations){
+   Object.assign(business.state,structuredClone(baseline));mutate()
+   const result=await e.call({query:'通用资料'})
+   assert.equal(result.isError,true,text(result));assert.equal(e.store.of('search').length,0);assert.equal(e.embedding.embedded.length,0)
+  }
+ }
+})
 
 test('工具经公开工具注册；没有绑定会话时报 not-bound，子 Agent 会话拒绝',async t=>{
  const e=await setup();t.after(()=>e.ctx.fiber.dispose())
@@ -196,6 +287,29 @@ test('受限任务查询不触发本人全量自动整理，待整理只保留�
  assert.equal(result.isError,false,text(result))
  await e.registered.idle()
  assert.equal(e.store.of('buildPending').length,0,'任务许可不能转成本人全部资料的正文和passage读取')
+})
+
+test('原件变版待本人核对，读取状态不反复触发自动整理',async t=>{
+ const e=await setup();t.after(()=>e.ctx.fiber.dispose())
+ e.store.retrieval.status=async()=>({items:[{sourceId:'src_policy',resourceId,title:'差旅制度',version:1,state:'stale',chunkCount:null,sourceChanged:true}],enrolled:1,chunks:7})
+ await e.handle('retrieval/status',{});await e.registered.idle()
+ assert.equal(e.store.of('buildPending').length,0)
+})
+
+test('历史旧绑定保留但不自动整理，tool原样呈现historical且不要求重复确认',async t=>{
+ const e=await setup();t.after(()=>e.ctx.fiber.dispose())
+ const oldId='33333333-3333-4333-8333-333333333333'
+ e.store.retrieval.status=async()=>({items:[{sourceId:'src_policy',resourceId:oldId,title:'旧版',version:1,state:'stale',chunkCount:null,sourceChanged:true,sourceState:'historical'},{sourceId:'src_policy',resourceId,title:'当前版',version:1,state:'ready',chunkCount:1}],enrolled:1,chunks:2})
+ e.store.retrieval.search=async()=>({...fixture,coverage:{...fixture.coverage,pending:[{resourceId:oldId,title:'旧版',reason:'stale',sourceState:'historical'}],note:'当前版本已确认，历史版本保留追溯，无需再次确认。'}})
+ await e.handle('retrieval/status',{});await e.registered.idle()
+ assert.equal(e.store.of('buildPending').length,0)
+ const result=await e.call({query:'当前规则'})
+ assert.equal(result.isError,false,text(result))
+ const value=readRetrievalSearchResult(JSON.parse(text(result)))
+ assert.equal(value.coverage.pending[0]!.sourceState,'historical')
+ assert.match(value.coverage.note,/无需再次确认/)
+ assert.match(e.ctx.tools.get(knowledgeSearchToolName,e.agent)!.description,/not request reconfirmation/)
+ assert.equal(e.embedding.prepared.length,0);assert.equal(e.store.of('buildPending').length,0)
 })
 
 test('模型未就绪或扩展未启用时报 dependency-unavailable，不调用 prepare、不安装、不检索',async t=>{
@@ -297,11 +411,11 @@ test('重建：模型未就绪时 dependency-unavailable；就绪时后台按 re
 test('宿主启动对账只在进程内调用并带当前 profileHash；停止时中止后台建索引',async t=>{
  const e=await setup();t.after(()=>e.ctx.fiber.dispose())
  await e.registered.reconcile()
- assert.deepEqual(e.store.of('reconcile')[0]!.args,[profileHash])
+ assert.deepEqual(e.store.of('reconcile')[0]!.args,[human,profileHash])
  assert.equal(retrievalEndpoints.some(endpoint=>/reconcile/.test(endpoint)),false,'对账不是 RPC 端点')
  const missing=await setup({},{noService:true});t.after(()=>missing.ctx.fiber.dispose())
  await missing.registered.reconcile()
- assert.deepEqual(missing.store.of('reconcile')[0]!.args,[undefined])
+ assert.deepEqual(missing.store.of('reconcile')[0]!.args,[human,undefined])
  const slow=await setup({},{build:()=>new Promise(()=>{})});t.after(()=>slow.ctx.fiber.dispose())
  await slow.handle('retrieval/reindex',{})
  await slow.registered.dispose()
@@ -315,7 +429,8 @@ test('已取消的界面请求不开始下载、加入或重建',async t=>{
  const e=await setup();t.after(()=>e.ctx.fiber.dispose())
  const reason=new Error('浏览器请求已取消'),signal=AbortSignal.abort(reason)
  for(const [endpoint,payload] of [['retrieval-model/prepare',{}],['retrieval/enroll',{sourceIds:['src_policy']}],['retrieval/reindex',{}],['retrieval/cancel',{}]] as const){
-  await assert.rejects(e.registered.handle(endpoint,payload,signal),error=>error===reason)
+  if(endpoint==='retrieval/enroll')assert.equal((await e.registered.handle(endpoint,payload,signal) as {enrollment:{outcome:string}}).enrollment.outcome,'not-committed')
+  else await assert.rejects(e.registered.handle(endpoint,payload,signal),error=>error===reason)
  }
  assert.equal(e.embedding.prepared.length,0)
  assert.equal(e.store.calls.length,0)
@@ -423,7 +538,7 @@ test('加入/移出在等待服务或本人主体时取消/停机，写入前拒
   t.after(async()=>{release.resolve();await e.registered.dispose();await e.ctx.fiber.dispose()})
   const rpc=new AbortController(),error=new Error('请求等待中取消')
   const pending=e.registered.handle(endpoint,{sourceIds:['src_policy']},rpc.signal)
-  const rejected=assert.rejects(pending,cause=>reason==='cancel'?cause===error:(cause as WorkError).code==='teloa/dependency-unavailable')
+  const rejected=endpoint==='retrieval/enroll'?pending.then(value=>assert.equal((value as {enrollment:{outcome:string}}).enrollment.outcome,'not-committed')):assert.rejects(pending,cause=>reason==='cancel'?cause===error:(cause as WorkError).code==='teloa/dependency-unavailable')
   await entered.promise
   if(reason==='cancel')rpc.abort(error);else await e.registered.dispose()
   release.resolve()
@@ -448,12 +563,12 @@ test('加入已进入提交后才取消请求：不承诺回滚，已受理的�
 })
 
 test('真实 Cordis 兄弟服务：冷启动先通用对账，扩展出现补当前 profile；停用不对账，重新提供跟新 profile',{timeout:5000},async t=>{
- const ctx=new Context(),store=stubRetrieval(),held=deferred(),waiting=deferred(),reconciling=deferred(),finishReconcile=deferred()
+ const ctx=new Context(),store=stubRetrieval(),held=deferred(),waiting=deferred(),actorHeld=deferred(),actorWaiting=deferred(),reconciling=deferred(),finishReconcile=deferred()
  for(const plugin of [LlmRuntime,SystemPrompt,ToolRuntime])await ctx.plugin(plugin)
  let host:ReturnType<typeof registerLocalRetrieval>|undefined,hostScope:Context|undefined
- t.after(async()=>{held.resolve();finishReconcile.resolve();await host?.dispose();await ctx.fiber.dispose()})
+ t.after(async()=>{held.resolve();actorHeld.resolve();finishReconcile.resolve();await host?.dispose();await ctx.fiber.dispose()})
  const hashes:(string|undefined)[]=[],first=deferred(),second=deferred()
- let hash=profileHash,delayRead=false,delayReconcile=false
+ let hash=profileHash,delayRead=false,delayActor=false,delayReconcile=false
  const embedding=stubEmbedding('standby'),service=embedding.service
  const snapshot=service.snapshot
  service.snapshot=()=>{const value=snapshot() as {providers:{profileHash:string}[]};value.providers[0]!.profileHash=hash;return value}
@@ -462,8 +577,9 @@ test('真实 Cordis 兄弟服务：冷启动先通用对账，扩展出现补当
  const hostFiber=ctx.plugin({name:'retrieval-lifecycle-host',inject:['tools'],async apply(scope:Context){
   hostScope=scope
   host=registerLocalRetrieval(scope,{
-   owner,conversation:async id=>({ownerId:owner,sessionId:id,status:'ready',scopeIds:['general']}),requestedRoleId:async()=>null,role:async()=>null,readTaskPolicy:async()=>null,taskAuthorization:async()=>({actor:human,targetScopes:['general']}),humanActor:async()=>human,
-   retrieval:async()=>{if(delayRead){waiting.resolve();await held.promise}return {...store.retrieval,async reconcile(value?:string){
+   owner,conversation:async id=>({ownerId:owner,sessionId:id,status:'ready',scopeIds:['general']}),requestedRoleId:async()=>null,role:async()=>null,readTaskPolicy:async()=>null,taskAuthorization:async()=>({actor:human,targetScopes:['general']}),humanActor:async()=>{if(delayActor){actorWaiting.resolve();await actorHeld.promise}return human},
+   retrieval:async()=>{if(delayRead){waiting.resolve();await held.promise}return {...store.retrieval,async reconcile(actor:ResourceActor,value?:string){
+    assert.deepEqual(actor,human)
     hashes.push(value)
     if(value===profileHash)first.resolve()
     if(value==='c'.repeat(64))second.resolve()
@@ -498,7 +614,14 @@ test('真实 Cordis 兄弟服务：冷启动先通用对账，扩展出现补当
  assert.deepEqual(hashes,[undefined,profileHash,'c'.repeat(64)],'等待读口期间停用，不能用旧 profile 发起清理')
  assert.deepEqual(embedding.prepared,[])
  assert.deepEqual(embedding.cancelled,[])
- delayRead=false;delayReconcile=true;hash='e'.repeat(64)
+ delayRead=false;delayActor=true;hash='e'.repeat(64)
+ const pendingActor=ctx.plugin(extensionPlugin)
+ await pendingActor;await actorWaiting.promise
+ const stoppedActor=pendingActor.dispose()
+ await new Promise<void>(resolve=>setImmediate(resolve))
+ actorHeld.resolve();await stoppedActor
+ assert.deepEqual(hashes,[undefined,profileHash,'c'.repeat(64)],'等待本人主体期间停用，也不能向后端下发清理')
+ delayActor=false;delayReconcile=true;hash='f'.repeat(64)
  await ctx.plugin(extensionPlugin)
  await reconciling.promise
  let disposed=false
@@ -776,7 +899,7 @@ test('持久选择尚在加载时界面、工具、对账与整理均等待，�
  await new Promise<void>(resolve=>setImmediate(resolve))
  assert.deepEqual(e.store.calls,[]);assert.deepEqual(embedding.embedded,[])
  loaded.resolve();await Promise.all(requests);await e.registered.idle()
- assert.deepEqual(e.store.of('reconcile').map(call=>call.args[0]),[gemmaProfileHash])
+ assert.deepEqual(e.store.of('reconcile').map(call=>call.args),[[human,gemmaProfileHash]])
  assert.deepEqual(e.store.of('buildPending').map(call=>call.args[1]),[gemmaProfileHash])
  assert.deepEqual(e.store.of('search').map(call=>call.args[3]),[gemmaProfileHash])
 })
@@ -809,7 +932,7 @@ test('模型选择损坏或读取失败时关闭检索，不静默回退 Qwen',a
   const embedding=dualEmbedding(),e=await setup({embedding:()=>embedding.service,modelSelection:{read,write:async()=>{}}})
   t.after(async()=>{await e.registered.dispose();await e.ctx.fiber.dispose()})
   await assert.rejects(e.handle('retrieval/status',{}))
-  await assert.rejects(e.handle('retrieval/enroll',{sourceIds:['src_policy']}))
+  assert.equal((await e.handle('retrieval/enroll',{sourceIds:['src_policy']}) as {enrollment:{outcome:string}}).enrollment.outcome,'not-committed')
   await assert.rejects(e.registered.reconcile())
   assert.equal((await e.call({query:'报销'})).isError,true)
   assert.deepEqual(e.store.calls,[]);assert.deepEqual(embedding.embedded,[])
@@ -852,11 +975,11 @@ test('模型切换与宿主停止等待已开始的对账清理实际收尾',{ti
  const embedding=dualEmbedding(),store=stubRetrieval(),started=deferred(),release=deferred(),stopStarted=deferred(),stopRelease=deferred(),writes:EmbeddingProviderId[]=[]
  const originalReconcile=store.retrieval.reconcile
  let cleanups=0,disposed=false
- store.retrieval.reconcile=async hash=>{
+ store.retrieval.reconcile=async(actor,hash)=>{
   const first=++cleanups===1
   const checkpoint=first?started:stopStarted;checkpoint.resolve()
   await (first?release:stopRelease).promise
-  return originalReconcile(hash)
+  return originalReconcile(actor,hash)
  }
  const e=await setup({embedding:()=>embedding.service,retrieval:async()=>store.retrieval,modelSelection:{read:async()=>embeddingProviderId,write:async id=>{writes.push(id)}}})
  t.after(async()=>{release.resolve();stopRelease.resolve();if(!disposed)await e.registered.dispose();await e.ctx.fiber.dispose()})
@@ -867,7 +990,7 @@ test('模型切换与宿主停止等待已开始的对账清理实际收尾',{ti
  assert.deepEqual(store.of('buildPending'),[],'旧 purge 不能和新 profile 整理重叠')
  release.resolve();await Promise.all([cleanup,selecting]);await e.registered.idle()
  assert.deepEqual(writes,[gemmaProviderId])
- assert.deepEqual(store.of('reconcile').map(call=>call.args[0]),[profileHash])
+ assert.deepEqual(store.of('reconcile').map(call=>call.args),[[human,profileHash]])
  assert.deepEqual(store.of('buildPending').map(call=>call.args[1]),[gemmaProfileHash])
  const stoppingCleanup=e.registered.reconcile();await stopStarted.promise
  const closing=e.registered.dispose().then(()=>{disposed=true})
@@ -887,4 +1010,39 @@ test('尚未进入清理的旧 profile 对账跨模型切换后跳过，不阻�
  assert.deepEqual(store.of('buildPending').map(call=>call.args[1]),[gemmaProfileHash])
  release.resolve();await cleanup
  assert.deepEqual(store.of('reconcile'),[],'不能下发跨切换保留下来的旧 hash')
+})
+
+test('对账只传可信本人主体，拒绝 Agent、其他本人或主体读取失败',async t=>{
+ for(const actor of [{...human,kind:'agent' as const},{...human,ownerId:'another-owner'}]){
+  const e=await setup({humanActor:async()=>actor});t.after(()=>e.ctx.fiber.dispose())
+  await assert.rejects(e.registered.reconcile(),{code:'teloa/forbidden'})
+  assert.deepEqual(e.store.of('reconcile'),[])
+ }
+ const failed=await setup({humanActor:async()=>{throw new WorkError('teloa/storage-unavailable','主体暂不可读取。')}})
+ t.after(()=>failed.ctx.fiber.dispose())
+ await assert.rejects(failed.registered.reconcile(),{code:'teloa/storage-unavailable'})
+ assert.deepEqual(failed.store.of('reconcile'),[])
+})
+
+test('本人主体异步读取期间切换模型，旧配置不再发起对账',{timeout:5000},async t=>{
+ const embedding=dualEmbedding(),store=stubRetrieval(),reading=deferred(),release=deferred(),writes:EmbeddingProviderId[]=[]
+ let reads=0
+ const e=await setup({embedding:()=>embedding.service,retrieval:async()=>store.retrieval,humanActor:async()=>{if(++reads===1){reading.resolve();await release.promise}return human},modelSelection:{read:async()=>embeddingProviderId,write:async id=>{writes.push(id)}}})
+ t.after(async()=>{release.resolve();await e.registered.dispose();await e.ctx.fiber.dispose()})
+ const cleanup=e.registered.reconcile();await reading.promise
+ await e.handle('retrieval-model/select',{providerId:gemmaProviderId,profileHash:gemmaProfileHash});await e.registered.idle()
+ assert.deepEqual(writes,[gemmaProviderId])
+ release.resolve();await cleanup
+ assert.deepEqual(store.of('reconcile'),[],'不能用主体读取前的旧 profile 清理索引')
+ assert.deepEqual(store.of('buildPending').map(call=>call.args.slice(0,2)),[[human,gemmaProfileHash]])
+})
+
+test('本人主体异步读取期间停止宿主，迟到结果不再发起对账',{timeout:5000},async t=>{
+ const reading=deferred(),release=deferred()
+ const e=await setup({humanActor:async()=>{reading.resolve();await release.promise;return human}})
+ t.after(async()=>{release.resolve();await e.ctx.fiber.dispose()})
+ const cleanup=e.registered.reconcile();await reading.promise
+ await e.registered.dispose()
+ release.resolve();await cleanup
+ assert.deepEqual(e.store.of('reconcile'),[])
 })

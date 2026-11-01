@@ -2,7 +2,7 @@ import {isDeepStrictEqual} from 'node:util'
 import {createHash,randomUUID} from 'node:crypto'
 import type {Pool,PoolClient} from 'pg'
 import {registeredBusinessSnapshotSources} from './business-snapshot-source.ts'
-import {WorkError,isBusinessScopeKey,businessObjectReference,readBusinessRecordCreate,readBusinessRecordEdit,readBusinessRecordArchive,readBusinessRecordGet,readBusinessRecordList,readBusinessRecordReceipt,readBusinessRecordBatch,readBusinessRichFieldValue,type BusinessRecordBatchResult,type BusinessObjectTypeDefinition,type BusinessObjectTypeDefinitionV2,type BusinessObjectReference,type BusinessObjectSnapshot,type BusinessDataPage,type BusinessRecordCreate,type BusinessRecordEdit,type BusinessRecordArchive,type BusinessRecordTarget} from '@teloa/contract'
+import {WorkError,isBusinessScopeKey,businessObjectReference,readBusinessRecordCreate,readBusinessRecordEdit,readBusinessRecordArchive,readBusinessRecordGet,readBusinessRecordList,readBusinessRecordReceipt,readBusinessRecordBatch,readBusinessRichFieldValue,type BusinessFieldValue,type BusinessRecordBatchResult,type BusinessObjectTypeDefinition,type BusinessObjectTypeDefinitionV2,type BusinessObjectReference,type BusinessObjectSnapshot,type BusinessDataPage,type BusinessRecordCreate,type BusinessRecordEdit,type BusinessRecordArchive,type BusinessRecordTarget} from '@teloa/contract'
 import {readBusinessObjectSnapshot,businessObjectSnapshotHash} from './business-data.ts'
 import type {BusinessDefinitionSourceReader} from './business-definition-source.ts'
 import type {BusinessWarehouseService} from './business-warehouse.ts'
@@ -29,10 +29,10 @@ type ReceiptRow={request_hash:string;operation:string;scope_id:string;result_ref
 const invalid=()=>new WorkError('teloa/invalid-input','本地业务记录参数或字段值不合法。')
 const corrupt=()=>new WorkError('teloa/storage-corrupt','本地业务记录、固定快照或回执不一致，已停止读取。')
 const conflict=()=>new WorkError('teloa/conflict','请求标识已用于不同的记录操作。')
-function referenceIds(field:Prepared['definition']['fields'][number],value:string|undefined):string[]{
- if(field.type==='reference')return value===undefined||value===''?[]:[value]
+function referenceIds(field:Prepared['definition']['fields'][number],value:BusinessFieldValue|undefined):string[]{
+ if(field.type==='reference')return typeof value==='string'&&value!==''?[value]:[]
  if(field.type==='multi-reference'){
-  const parsed=readBusinessRichFieldValue(field,value)
+  const parsed=readBusinessRichFieldValue(field,typeof value==='string'?value:undefined)
   return parsed?.type==='multi-reference'?parsed.ids:[]
  }
  return []
@@ -266,7 +266,7 @@ export class BusinessRecordService{
     if(!('fields' in input))throw invalid()
     const supplied=new Map(input.fields.map(field=>[field.name,field.value]))
     if(input.fields.some(field=>!definition.fields.some(defined=>defined.name===field.name)))throw invalid()
-    const fields:Array<{label:string;value:string}>=[]
+    const fields:Array<{label:string;value:BusinessFieldValue}>=[]
     for(const field of definition.fields){
      const value=supplied.get(field.name);assertBusinessRecordFieldValue(field,value)
      for(const id of referenceIds(field,value)){

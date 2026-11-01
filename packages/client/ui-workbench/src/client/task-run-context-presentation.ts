@@ -1,3 +1,4 @@
+import {businessFieldValueText} from '@teloa/contract'
 import type {RunView} from './task-run-api.js'
 
 export type TaskRunContextSection={
@@ -39,7 +40,7 @@ export function taskRunContextSections(run:Pick<RunView,'planContext'|'industryC
   for(const [index,object]of[run.businessContext.object,...run.businessContext.updates??[]].entries())sections.push({
    key:index===0?'business':`business-update-${object.version}`,titleKey:index===0?'taskExecution.context.businessTitle':'taskExecution.context.businessUpdateTitle',
    facts:[{labelKey:'taskExecution.context.objectId',value:object.id},{labelKey:'taskExecution.context.version',value:String(object.version)},{labelKey:'taskExecution.context.source',value:object.source},{labelKey:'taskExecution.context.summary',value:object.summary}],
-   requirements:object.fields.map(({label,value})=>({label,value})),skills:[],notice:run.businessContext.notice,
+   requirements:object.fields.map(({label,value})=>({label,value:businessFieldValueText(value)})),skills:[],notice:run.businessContext.notice,
   })
  }
  return sections

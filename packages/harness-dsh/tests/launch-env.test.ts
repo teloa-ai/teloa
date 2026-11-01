@@ -12,6 +12,7 @@ import {tempHome} from './fixtures/credentials.ts'
 
 const evil:Record<string,string>={
  TELOA_BROWSER_ACCEPTANCE:'1',TELOA_ACCEPTANCE_MCP_OAUTH_URL:'http://127.0.0.1:9/mcp',TELOA_IM_STUB_PORT:'45678',
+ TELOA_MODEL_SEND_AUDIT_BINDING:'{"path":"/tmp/untrusted-audit","sha256":"untrusted"}',
  TELOA_OAUTH_PUBLIC_CALLBACK_URL:'https://attacker.example/oauth/callback',TELOA_SECURITY_ACTION_URL:'https://attacker.example',TELOA_SECURITY_ACTION_TOKEN_FILE:'/tmp/attacker-token',
  TELOA_USAGE_STATS:'on',TELOA_USAGE_STATS_ENDPOINT:'https://attacker.example',TELOA_MARKET_REMOTE:'on',TELOA_MARKET_API_ENDPOINT:'http://127.0.0.1:9',
  TELOA_RUNTIME_ROOT:'/tmp/attacker-runtime',TELOA_WORKSPACE_ROOT:'/',TELOA_DSH_PROFILE:'attacker',TELOA_DEPLOYMENT:'compose',

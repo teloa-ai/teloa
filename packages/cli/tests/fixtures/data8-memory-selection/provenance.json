@@ -1,0 +1,21 @@
+{
+  "candidate": 118,
+  "version": "0.2.94",
+  "dataVersion": 8,
+  "sourceCommit": "ecdcc99258c4c25cea8bc2bd3ba4c7a1d751db9d",
+  "releaseManifestSha256": "925f5ae1feb381e192d44f5f1d7b722bd693539667c9d10e45ce23b6dd690730",
+  "files": [
+    {
+      "path": "data-version.js.txt",
+      "sourceRelativePath": "packages/cli/lib/data-version.js",
+      "bytes": 902,
+      "sha256": "aeb529b12d09d871fec1437db513e47d869d425f6e333fa9e8eba679627c8ddf"
+    },
+    {
+      "path": "data-version.json",
+      "sourceRelativePath": "packages/cli/lib/data-version.json",
+      "bytes": 791,
+      "sha256": "35082a2d7228e00fc4bb5ae202a9de2ab21fc8f989fafffca909017b83460ae1"
+    }
+  ]
+}

@@ -5,6 +5,12 @@ import type {BusinessObjectFieldDefinition,BusinessRichMoneyFieldDefinition,Busi
 const field=(type:BusinessObjectFieldDefinition['type'],required=true):BusinessObjectFieldDefinition=>({name:'value',label:'值',from:'值',type,required,...(type==='enum'?{values:['甲','乙']}:{})})
 const money:BusinessRichMoneyFieldDefinition={format:'teloa.business-rich-field/v2',name:'amount',label:'金额',from:'金额',required:true,type:'money',currencies:['CNY','SGD']}
 const tags:BusinessRichMultiEnumFieldDefinition={format:'teloa.business-rich-field/v2',name:'tags',label:'标签',from:'标签',required:true,type:'multi-enum',values:['vip','priority']}
+test('数量声明非负整数时拒绝负数、小数及被浮点舍入的非整数，旧number兼容',()=>{
+ const quantity={...field('number'),integer:true as const,minimum:0}
+ for(const value of ['0','4','4.0','40e-1'])assert.doesNotThrow(()=>api.assertBusinessRecordFieldValue(quantity,value))
+ for(const value of ['-1','1.5','4.0000000000000001','1e-400','-1e-400'])assert.throws(()=>api.assertBusinessRecordFieldValue(quantity,value),{code:'teloa/invalid-input'},value)
+ for(const value of ['-1','1.5'])assert.doesNotThrow(()=>api.assertBusinessRecordFieldValue(field('number'),value))
+})
 test('严格原始字段值共用校验，完整数值和原生布尔/时长语义',()=>{
  assert.equal(typeof api.assertBusinessRecordFieldValue,'function')
  for(const [type,valid,invalid] of [

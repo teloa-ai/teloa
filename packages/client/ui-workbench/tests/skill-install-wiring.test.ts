@@ -1,6 +1,8 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import {readFile} from 'node:fs/promises'
+import ts from 'typescript'
+import {createSkillInstallApi,skillUninstallBlockers} from '../src/client/skill-install-api.ts'
 import type {SkillInstallationRecord} from '../src/client/skill-install-api.ts'
 import {mergeSkillInstallation,uniqueSkillInstallations} from '../src/client/skill-install-state.ts'
 
@@ -80,4 +82,14 @@ test('旧A恢复按钮点击时pending已换成B则不调用recover',async()=>{
   assert.equal(calls,0)
   await recoverSkillForSource(api,sourceB)
   assert.equal(calls,1)
+})
+
+test('正式工作台卸载回包保留已选版本和历史运行保护原因',async()=>{
+ const source=await readFile(new URL('../src/client/index.ts',import.meta.url),'utf8'),file=ts.createSourceFile('index.ts',source,ts.ScriptTarget.Latest,true,ts.ScriptKind.TS)
+ let initializer:ts.Expression|undefined
+ const visit=(node:ts.Node)=>{if(ts.isVariableDeclaration(node)&&ts.isIdentifier(node.name)&&node.name.text==='skillInstallApi')initializer=node.initializer;ts.forEachChild(node,visit)};visit(file)
+ assert.ok(initializer,'读取实际工作台装配，不替代其错误回包处理')
+ const input={requestId:'22222222-2222-4222-8222-222222222222',installationId:'33333333-3333-4333-8333-333333333333',expectedVersion:2,expectedBundleHash:'c'.repeat(64),confirm:true as const},details={reason:'skill-in-use',blockers:['selected','run-history']}
+ const api=new Function('createSkillInstallApi','callWithReceipt','journal','return ('+initializer.getText(file)+')')(createSkillInstallApi,async(method:string,payload:unknown)=>{assert.equal(method,'skill-installations/uninstall');assert.deepEqual(payload,input);return {ok:false,error:{code:'teloa/conflict',message:'技能仍被当前选择与历史运行引用。',details}}},()=>undefined) as ReturnType<typeof createSkillInstallApi>
+ await assert.rejects(api.uninstall(input),(error:unknown)=>{assert.deepEqual(skillUninstallBlockers(error),['selected','run-history']);assert.equal((error as {code:string}).code,'teloa/conflict');assert.equal((error as {rejected:boolean}).rejected,true);return true})
 })

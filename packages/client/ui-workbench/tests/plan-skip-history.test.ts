@@ -49,3 +49,18 @@ test('请求世代拒绝筛选往返后的旧跳过记录',async()=>{
  gate.begin();const current=gate.begin();release();await late;if(gate.current(current))events.push('current')
  assert.deepEqual(events,['current'])
 })
+
+ test('正常空日跳过可回读，但不能伪造阻塞任务关系',()=>{
+  for(const reason of ['no-work-evidence','digest-exists']){
+   const skipped={...item,reason,blockingClaimId:null,taskId:null}
+   assert.deepEqual(readPlanSkipHistoryPage({items:[skipped]},planId).items,[skipped])
+   assert.throws(()=>readPlanSkipHistoryPage({items:[{...skipped,blockingClaimId:claimId}]},planId),/跳过记录/)
+   assert.throws(()=>readPlanSkipHistoryPage({items:[{...skipped,taskId}]},planId),/跳过记录/)
+  }
+ })
+
+test('AD02-DST：纽约跳过历史与分页游标保留原身份',()=>{
+ const ny={...item,occurrenceId:'2026-11-01T01:30[America/New_York]',scheduledAt:'2026-11-01T05:30:00.000Z',skippedAt:'2026-11-01T05:30:01.000Z'}
+ const cursor={skippedAt:ny.skippedAt,configVersion:ny.configVersion,occurrenceId:ny.occurrenceId}
+ assert.deepEqual(readPlanSkipHistoryPage({items:[ny],cursor},planId,{limit:1}),{items:[ny],cursor})
+})

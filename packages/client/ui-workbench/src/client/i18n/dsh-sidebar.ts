@@ -133,5 +133,7 @@ export const DSH_SIDEBAR_NAMESPACES:Readonly<Record<'sidebarRight'|'sidebarTermi
 
 /** 为 DSH 右栏与三个内容插件补充 Teloa 提供的外部语言；简中与英文继续用上游自带词典。 */
 export function installDshSidebarLanguagePack(locale:DshLocalePort,traditionalLocale:'zh-Hant'|'zh-TW'|'zh-HK'):Array<()=>void>{
-  return installDshLanguagePack(locale,traditionalLocale,DSH_SIDEBAR_NAMESPACES)
+  return installDshLanguagePack(locale,traditionalLocale,DSH_SIDEBAR_NAMESPACES,{
+    sidebarRight:{'command.close':'關閉目前頁面或視窗','command.refresh':'重新整理目前頁面','command.toggle':'切換右側邊欄','command.fullscreen':traditionalLocale==='zh-HK'?'切換面板全屏顯示':'切換面板全螢幕'},
+  })
 }

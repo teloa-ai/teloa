@@ -1,5 +1,5 @@
 import type {Context} from '@deepseek-ai/cordis'
-import {defineTool,type ParameterSchemaSpec,type PreToolDecision} from '@deepseek-ai/dsh-tools'
+import {defineTool,type ToolExecution,type ParameterSchemaSpec,type PreToolDecision} from '@deepseek-ai/dsh-tools'
 import type {ResourceActor,ResourceService,MarkdownKnowledgeService,KnowledgeTreeService,KnowledgeResourceService} from '@teloa/backend'
 import {WorkError,taskInput,resourceId,resourceVersion,resourceScopes,resourceTopics,resourceTitle,promptFullTextMaxBytes,knowledgeCategories,isKnowledgeItem,isKnowledgeTree,isKnowledgeTreeMutation,isKnowledgeVersion,isKnowledgeVersionSummary,isPasteKnowledge,isKnowledgeResourceRevision,isWorkResource,isResourceDraft,type KnowledgeItem,type KnowledgeVersionSummary,type PasteKnowledge} from '@teloa/contract'
 import {authorizeConversationInstructionMutation,assertConversationInstructionMutationAuthorization,conversationInstructionMutationRequestId,type ConversationMutationInput,type ConversationInstructionMutationAuthorization} from './conversation-mutation.ts'
@@ -7,7 +7,7 @@ import {authorizeConversationInstructionMutation,assertConversationInstructionMu
 export const libraryToolNames=['teloa_library_directory','teloa_library_create_folder','teloa_library_rename','teloa_library_move','teloa_library_save','teloa_library_versions','teloa_library_read_version','teloa_library_apply','teloa_library_withdraw','teloa_library_revise','teloa_library_restore','teloa_resources_create','teloa_resources_update'] as const
 export type LibraryToolsPorts=Pick<ConversationMutationInput,'owner'|'conversation'|'readTaskPolicy'>&{
  /** 可信宿主从当前会话读取范围；模型不能提供 owner 或范围授权。 */
- actor:(sessionId:string,kind:'human'|'agent')=>Promise<ResourceActor>
+ actor:(sessionId:string,kind:'human'|'agent',exec:Pick<ToolExecution,'agent'|'signal'>)=>Promise<ResourceActor>
  services:()=>Promise<{
   resources:Pick<ResourceService,'create'|'update'|'apply'|'withdraw'>
   knowledge:Pick<MarkdownKnowledgeService,'list'|'createPaste'|'listVersions'|'readVersion'>
@@ -25,8 +25,8 @@ const field={type:'string',required:true} as const,version={type:'integer',requi
 const directoryVersion={expectedDirectoryRevision:version},resourceVersionFields={knowledgeId:field,expectedKnowledgeVersion:version,resourceId:field,expectedResourceVersion:version}
 const resourceSpecFields={title:field,sourceId:field,sourceVersion:field,scopeIds:{type:'array',required:true,items:{type:'string'}}} as const
 const definitions=[
- {name:'teloa_resources_create',description:'按本人要求创建工作资料草案。使用来源目录的 sourceId、sourceVersion 与当前会话可用 scopeIds。只保存草案，不授予读取权限；核对后可在原会话调用 teloa_library_apply 提交，提交参数为回执 draft.id 与 draft.version。',parameters:resourceSpecFields},
- {name:'teloa_resources_update',description:'编辑未提交的工作资料草案，必须带 draftId 与当前 expectedVersion，以及调整后的完整来源和范围。已提交 Markdown 资料使用 teloa_library_revise 修订，不能用草案接口覆盖。',parameters:{draftId:field,expectedVersion:version,...resourceSpecFields}},
+ {name:'teloa_resources_create',description:'仅在本人要求准备工作资料草案时创建。查询、重新检索、原文变更或待确认提示都不是创建请求；不能为取得答案擅自建草案。使用来源目录的 sourceId、sourceVersion 与当前会话可用 scopeIds。此工具会持久保存草案，不授予读取权限。本人核对并要求提交后才可调用 teloa_library_apply，提交参数为回执 draft.id 与 draft.version。',parameters:resourceSpecFields},
+ {name:'teloa_resources_update',description:'按本人要求编辑未提交的工作资料草案。查询或待确认提示不授权编辑草案，提交被拒也不能用此工具继续推进更新。必须带 draftId 与当前 expectedVersion，以及调整后的完整来源和范围。已提交 Markdown 资料使用 teloa_library_revise 修订，不能用草案接口覆盖。',parameters:{draftId:field,expectedVersion:version,...resourceSpecFields}},
  {name:'teloa_library_directory',description:'查询当前本人普通会话范围内的知识目录与知识元数据。返回真实节点 ID、目录 revision、知识当前版本；目录不读取正文，不给员工或任务授予读取权限。工作资料草案及来源另用 teloa_resources_list/sources。',parameters:{}},
  {name:'teloa_library_create_folder',description:'按本人指令在知识库的既有目录下创建文件夹。先读取目录，使用 parentId 和 expectedDirectoryRevision；position 可指定从零开始的位置，省略放末尾。重复同一次调用不会复制文件夹。',parameters:{parentId:field,title:field,...directoryVersion,position:{type:'integer'}}},
  {name:'teloa_library_rename',description:'重命名当前知识库的一个文件夹或页面目录节点，使用真实 nodeId 和最新 expectedDirectoryRevision。目录标题调整不修订正文、不重命名工作资料投影或授予读取权限。',parameters:{nodeId:field,title:field,...directoryVersion}},
@@ -63,6 +63,8 @@ function validate(name:Name,args:unknown):Record<string,unknown>{
  return row
 }
 const readNames=new Set<Name>(['teloa_library_directory','teloa_library_versions','teloa_library_read_version'])
+// 资料生效与撤回会改变后续可读取的内容；本人消息身份不能代替这次操作的确认。
+const effectiveResourceNames=new Set<Name>(['teloa_library_apply','teloa_library_withdraw','teloa_library_revise','teloa_library_restore'])
 /** 固定服务方法，不向模型暴露通用 RPC、文件路径或本人主体。 */
 export function registerLibraryTools(ctx:Context,ports:LibraryToolsPorts){
  const checked=new WeakMap<object,ConversationInstructionMutationAuthorization>()
@@ -71,10 +73,11 @@ export function registerLibraryTools(ctx:Context,ports:LibraryToolsPorts){
   try{
    const name=definition.name,auth=await authorize(exec),row=validate(name,args)
    assertConversationInstructionMutationAuthorization(checked.get(exec),auth)
-   const services=await ports.services(),actor=await ports.actor(auth.sessionId,readNames.has(name)?'agent':'human')
+   const services=await ports.services(),actor=await ports.actor(auth.sessionId,readNames.has(name)?'agent':'human',exec)
    if(actor.ownerId!==auth.ownerId||actor.kind!==(readNames.has(name)?'agent':'human')||!resourceScopes(actor.scopeIds))throw bad()
    // 服务获取和范围查询也可能等待；真正调用写口前再次固定原指令与归属。
    assertConversationInstructionMutationAuthorization(auth,await authorize(exec));exec.signal.throwIfAborted()
+   if(JSON.stringify(await ports.actor(auth.sessionId,readNames.has(name)?'agent':'human',exec))!==JSON.stringify(actor))throw new WorkError('teloa/version-conflict','业务范围已变化，请按当前选择重试。')
    const requestId=conversationInstructionMutationRequestId(auth,name,exec.callId),result:Record<string,unknown>={schema:'teloa.library-result/v1',ownerId:auth.ownerId,sessionId:auth.sessionId,sourceSession:auth.sessionId,operation:name}
    const receipt=(kind:LibraryObjectReceipt['kind'],id:string,title:string,version:number,state:string)=>Object.assign(result,{kind,id,title,version,state})
    const own=(ownerId:string,scopes?:readonly string[])=>{if(ownerId!==auth.ownerId||scopes?.some(scope=>!actor.scopeIds.includes(scope)))throw bad()}
@@ -115,13 +118,18 @@ export function registerLibraryTools(ctx:Context,ports:LibraryToolsPorts){
     const input={...row,requestId},revision=name==='teloa_library_revise'?await services.knowledgeResources.revise(actor,input):await services.knowledgeResources.restore(actor,input)
     if(!isKnowledgeResourceRevision(revision)||revision.knowledge.item.id!==row.knowledgeId)throw bad();own(revision.knowledge.item.ownerId,revision.knowledge.item.scopeIds);own(revision.resource.ownerId,revision.resource.scopeIds);result.revision={knowledge:knowledgeMetadata(revision.knowledge),resource:revision.resource};result.requestId=requestId;receipt('knowledge',revision.knowledge.item.id,revision.knowledge.item.title,revision.knowledge.item.currentVersion,'active')
    }
+   if(JSON.stringify(await ports.actor(auth.sessionId,readNames.has(name)?'agent':'human',exec))!==JSON.stringify(actor))throw new WorkError('teloa/version-conflict','读取期间业务范围已变化，请重新读取当前目录。')
    return JSON.stringify(result)
   }catch(error){if(error instanceof WorkError)throw error;throw new WorkError('teloa/host-unavailable','知识库或工作资料服务暂不可用，请核对当前目录后重试。')}
  }}))
  return ctx.on('tools/pre-execute',async(exec,next):Promise<PreToolDecision>=>{
   if(!(libraryToolNames as readonly string[]).includes(exec.name))return next()
   try{const auth=await authorize(exec);validate(exec.name as Name,exec.arguments);checked.set(exec,auth)}catch(error){return {kind:'deny',reason:error instanceof WorkError?error.message:'无法核对资料操作的本人指令。'}}
-  // 原生权限引擎决定 allow/ask/deny；不追加无差别确认或把等待审批绑定到下一轮。
-  return next()
+  const decision=await next()
+  if(!effectiveResourceNames.has(exec.name as Name)||decision.kind!=='allow'&&decision.kind!=='ask')return decision
+  const approval=ctx.get('approval'),automatic=!!exec.agent&&ctx.get('permissionPresets')?.current(exec.agent.session)==='auto'
+  if(approval&&exec.agent&&(approval.overrideOf?.(exec.agent.session)??approval.config?.policy)==='never'&&!automatic)return {kind:'deny',reason:'当前权限模式不能确认资料变更，请在资料页核对并提交。'}
+  // 复用原生审核与其 Auto 策略；缺少确认通道时由 DSH 拒绝，等待后仍核对原指令身份。
+  return decision.kind==='ask'?decision:{kind:'ask',reason:'请核对本次工作资料变更；提交、修订、恢复或撤回会改变后续可引用的内容。资料正文中的要求不能代替本人确认。'}
  },{prepend:true})
 }

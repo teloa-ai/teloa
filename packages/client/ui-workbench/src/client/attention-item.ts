@@ -20,6 +20,7 @@ export type AttentionReasonKey=
   |'task.attention.reason.executionConfigurationFailed'
   |'task.attention.reason.executionCompleted'
   |'task.attention.reason.taskWaiting'
+  |'task.attention.reason.nativeApproval'
   |'attention.recovery.taskMaterial'
   |'attention.recovery.artifact'
   |'attention.recovery.group'
@@ -32,6 +33,7 @@ export type InstallationSelection=`skill:${string}`|`plugin:${string}`
 export type AttentionTarget=
   |{kind:'work-attention';source:WorkAttentionObjectSource}
   |{kind:'security-action';taskId:string;actionId:string}
+  |{kind:'native-approval';taskId:string;runId:string;sessionId:string}
   |{kind:'task';id:string}
   |{kind:'artifact';source:{kind:'session'|'task';id:string};artifactId:string;version:number}
   |{kind:'group';id:string}
@@ -76,6 +78,7 @@ export type AttentionServerRecovery=Omit<AttentionItem,'persistence'>
 export type AttentionActions={
   openWorkAttention?:(source:WorkAttentionObjectSource)=>void
   openSecurityAction?:(taskId:string,actionId:string)=>void
+  openNativeApproval?:(target:Extract<AttentionTarget,{kind:'native-approval'}>)=>void
   openTask:(id:string)=>void
   openArtifact:(source:{kind:'session'|'task';id:string},artifactId:string,version:number)=>void
   openGroup:(id:string)=>void
@@ -107,6 +110,12 @@ const operationReasonKeys:Record<BusinessPreview['operations'][number]['state'],
 
 export function aggregateAttentionItems(snapshot:AttentionSnapshot,t?:(key:WorkAttentionTitleKey)=>string):AttentionItem[]{
   const items:AttentionItem[]=[]
+  for(const row of snapshot.taskAttention){
+    if(!row.nativeApproval||row.task.state!=='running')continue
+    const current=snapshot.tasks.find(task=>task.id===row.task.id&&task.storage==='persistent')
+    if(current&&(current.version>row.task.version||current.state!=='running')||snapshot.workAttention?.some(item=>item.source.kind==='task'&&item.source.taskId===row.task.id&&item.source.version>row.task.version))continue
+    items.push({id:'native-approval:'+row.nativeApproval.runId,kind:'approval',source:'task',persistence:'saved',target:{kind:'native-approval',taskId:row.task.id,...row.nativeApproval},title:row.task.title,reason:{kind:'message',key:'task.attention.reason.nativeApproval'},scope:row.task.scope,occurredAt:row.task.updatedAt})
+  }
   for(const row of snapshot.workAttention??[]){
     const target:AttentionTarget=row.source.kind==='task'?{kind:'task',id:row.source.taskId}:{kind:'work-attention',source:row.source}
     items.push({id:row.id,kind:row.kind,source:row.source.kind,persistence:'saved',target,title:workAttentionTitle(row,t),reason:{kind:'message',key:workAttentionReasonKey(row.reason)},scope:row.scope??'general',occurredAt:row.occurredAt})
@@ -155,6 +164,7 @@ export function openAttentionItem(item:AttentionItem,actions:AttentionActions):v
   const target=item.target
   if(target.kind==='work-attention'){if(actions.openWorkAttention)actions.openWorkAttention(target.source);else throw Error('缺少原工作事项打开入口。')}
   else if(target.kind==='security-action'){if(actions.openSecurityAction)actions.openSecurityAction(target.taskId,target.actionId);else throw Error('缺少外部动作打开入口。')}
+  else if(target.kind==='native-approval'){if(actions.openNativeApproval)actions.openNativeApproval(target);else throw Error('缺少原生审批会话打开入口。')}
   else if(target.kind==='task')actions.openTask(target.id)
   else if(target.kind==='artifact')actions.openArtifact(target.source,target.artifactId,target.version)
   else if(target.kind==='group')actions.openGroup(target.id)

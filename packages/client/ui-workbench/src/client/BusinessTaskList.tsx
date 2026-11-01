@@ -36,6 +36,7 @@ function progressKey(item:BusinessTaskListItem){
  if(run.state==='active')return run.stopRequestedAt?'business.tasks.progress.stopping' as const:'business.tasks.progress.running' as const
  if(run.state==='withdrawn')return 'business.tasks.progress.stopped' as const
  if(run.state==='configuration_failed')return 'business.tasks.progress.failed' as const
+ if(run.state==='submission_unknown')return 'taskExecution.phase.submissionUnknown' as const
  return 'business.tasks.progress.pending' as const
 }
 /** 目录文案及状态、负责人、通用动作统一使用当前语言词条。 */

@@ -1,4 +1,5 @@
 import {WorkError} from './work-error.ts'
+import {industryResourceModelDependencies,type IndustryModelDependency} from './industry-model-dependencies.ts'
 import {isRecord} from './resources.ts'
 import {industryUpdateCanonical} from './industry-update-compare.ts'
 import {readBusinessObjectTypeDefinition,readBusinessViewDefinition,readBusinessActionDefinition,businessDefinitionPaths,type BusinessDefinitionPreview} from './business-definitions.ts'
@@ -64,6 +65,8 @@ export type PageCreateDraftPreview={
  next:{endpoint:string;consentKeys:string[]}
  /** `business-definition` 那一支复用第二期的预览（差异 / 影响范围 / 试算），这一位就是它的回包，本层不重算。 */
  businessPreview?:BusinessDefinitionPreview
+ /** 员工引用的只读展示投影，顺序与原正文数组一致；null 表示未能核对，不回传不可读来源的身份或名称。 */
+ roleReferences?:{knowledge:(string|null)[];skills:(string|null)[]}
  computedAt:string
 }
 
@@ -158,7 +161,7 @@ export function assertNoCredentialKeys(value:unknown):void{
  * `teloa/dependency-unavailable`（与 T3 预览服务可选注入同一做法），而不是悄悄少校验一层。
  */
 export type PageCreateAtomicSkillDraft={
- id:string;title:string;version:string;categories:string[];files:{path:string;base64:string}[]
+ id:string;title:string;version:string;categories:string[];modelDependencies?:IndustryModelDependency[];files:{path:string;base64:string}[]
 }
 
 const skillText=(value:unknown,label:string,max:number):string=>{
@@ -217,7 +220,7 @@ const assertSkillEntryFrontmatter=(id:string,base64:string):void=>{
  * 不含本地路径、凭据或任何可执行动作；确认页再按既有 `readAtomicSkill` 读取字节并固定摘要。
  */
 export function readPageCreateAtomicSkillDraft(value:unknown):PageCreateAtomicSkillDraft{
- const row=exact(value,['id','title','version','categories','files'],'技能草案正文格式不正确。')
+ const row=exact(value,['id','title','version','categories','files',...(isRecord(value)&&value.modelDependencies!==undefined?['modelDependencies']:[])],'技能草案正文格式不正确。')
  const id=skillText(row.id,'技能标识',120)
  if(!/^[a-zA-Z0-9][a-zA-Z0-9-]*$/.test(id))throw bad('技能标识仅允许字母、数字和连字符。')
  if(id.toLowerCase().startsWith('teloa-'))throw bad('以 teloa- 开头的技能名保留给 Teloa 内置技能，请换一个名称。')
@@ -241,7 +244,7 @@ export function readPageCreateAtomicSkillDraft(value:unknown):PageCreateAtomicSk
  const root=entries[0]!.path.slice(0,entries[0]!.path.lastIndexOf('/')+1)
  if(!files.every(file=>file.path.startsWith(root)))throw bad('技能文件必须位于 SKILL.md 所在目录。')
  assertSkillEntryFrontmatter(id,entries[0]!.base64)
- return {id,title,version,categories,files}
+ return {id,title,version,categories,...industryResourceModelDependencies('skill',row.modelDependencies),files}
 }
 
 export type PageCreateBodyReaders={manifest?:(value:unknown)=>unknown;skill?:(value:unknown)=>unknown}

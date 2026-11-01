@@ -1,4 +1,4 @@
-import {WorkError,taskToolArgumentsAllowed,type TaskToolArgumentRule} from '@teloa/contract'
+import {WorkError,taskToolArgumentsAllowed,type BusinessObjectReference,type TaskToolArgumentRule} from '@teloa/contract'
 import {readRunBusinessContext,type RunBusinessContext,type TaskRun,type BusinessTaskResultMapping} from '@teloa/backend'
 
 export const objectResultTool='teloa_business_object_result_record'
@@ -12,7 +12,7 @@ export async function withBusinessTaskResultMappings(context:RunBusinessContext|
 }
 
 /** 显式选择与单目标默认共用冻结目录；旧执行缺目录不得临时猜测当前配置。 */
-export function fixedBusinessTaskResultMapping(run:Pick<TaskRun,'inputText'|'allowedTools'|'argumentRules'>,mappingId:string|undefined,result:Record<string,unknown>):{mappingId:string;context:RunBusinessContext&{resultMappings:BusinessTaskResultMapping[]}}{
+export function fixedBusinessTaskResultMapping(run:Pick<TaskRun,'inputText'|'allowedTools'|'argumentRules'>,mappingId:string|undefined,result:Record<string,unknown>):{mappingId:string;reference:BusinessObjectReference;context:RunBusinessContext&{resultMappings:BusinessTaskResultMapping[]}}{
  if(!run.allowedTools.includes(objectResultTool))throw new WorkError('teloa/forbidden','本轮没有业务对象成果授权。')
  const {notice:_notice,...raw}=JSON.parse(run.inputText).businessContext??{}
  const context=readRunBusinessContext(raw),mappings=context?.resultMappings
@@ -21,5 +21,8 @@ export function fixedBusinessTaskResultMapping(run:Pick<TaskRun,'inputText'|'all
  if(!selected)throw new WorkError('teloa/forbidden',mappingId===undefined?'请从本轮成果目录选择适用的映射；不能猜测写入目标。':'此成果映射不在本轮授权目录内。')
  const args={mappingId:selected.mapping.id,result}
  if(run.argumentRules!==undefined&&!taskToolArgumentsAllowed(run.argumentRules,objectResultTool,args))throw new WorkError('teloa/forbidden','成果参数超出本轮固定授权。')
- return {mappingId:selected.mapping.id,context:{...context,resultMappings:mappings}}
+ // 原对象保留任务创建时的版本；成果只绑定本轮输入已逐项校验的最后续报，不猜测数据库最新版本。
+ const snapshot=context.updates?.at(-1)??context.object
+ const reference={scope:snapshot.scope,type:snapshot.type,id:snapshot.id,version:snapshot.version,snapshotHash:snapshot.snapshotHash}
+ return {mappingId:selected.mapping.id,reference,context:{...context,resultMappings:mappings}}
 }

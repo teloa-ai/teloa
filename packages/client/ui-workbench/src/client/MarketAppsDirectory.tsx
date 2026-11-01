@@ -12,14 +12,15 @@ import {hasCustomMcpAppApi,type ManagedMcpConnectionApi} from './mcp-connections
 import type {SkillInstallApi,SkillInstallationRecord} from './skill-install-api.js'
 import {installAppPack,type AppPackOutcome} from './market-app-pack-install.js'
 import {appsCategories,appsDirectoryRows,appsRowAction,appsRowShareSource,appsRowStatus,appsSections,skillAction,skillStatus,type AppsConnections,type AppsConnector,type AppsDeclaredPackage,type AppsStoredContent,type AppsRow,type AppsRowAction,type AppsSection,type AppsSkill,type AppsView} from './market-apps-presentation.js'
-import {CapabilityTemplateShare,useTemplateShare} from './EmployeeTemplateShare.js'
-import type {ShareSkillSource} from './share-package-plan.js'
+import {CapabilityTemplateShare,ShareDraftDrawer,useTemplateShare} from './EmployeeTemplateShare.js'
+import type {SharePackage,ShareSkillSource} from './share-package-plan.js'
 import {SkillSecretsBadgeButton} from './SkillSecretsBadgeButton.js'
 import type {SkillSecretsState} from './skill-secrets-api.js'
 import type {IndustryLoadRecord} from './industry-load-api.js'
 import type {MarketAppsMessageKey} from './i18n/locales/market-apps.js'
 import css from './MarketAppsDirectory.module.css'
 import {CustomMcpAppManager} from './CustomMcpAppEntry.js'
+import {installedSkillSourceCopy,type InstalledSkillSource} from './installed-skill-source.js'
 
 /**
  * 能力详情里的分享入口：目录技能与连接器直接按固定引用打包；本机安装技能经分享来源端口解析静态正文，
@@ -28,12 +29,21 @@ import {CustomMcpAppManager} from './CustomMcpAppEntry.js'
 function AppShareEntry({row}:{row:AppsRow}){
  const {t}=useI18n(),shared=useTemplateShare()
  const [open,setOpen]=useState(false),[resolved,setResolved]=useState<ShareSkillSource[]>(),[unavailable,setUnavailable]=useState(false),[busy,setBusy]=useState(false)
+ const identity=useRef({source:shared?.sources,storage:shared?.storage,key:JSON.stringify([row.key,row.version,row.contentId,row.installationId])})
+ identity.current={source:shared?.sources,storage:shared?.storage,key:JSON.stringify([row.key,row.version,row.contentId,row.installationId])}
+ const [origin,setOrigin]=useState<typeof identity.current>(),[bundle,setBundle]=useState<SharePackage>()
+ const matches=(value:typeof identity.current|undefined)=>!!value&&value.source===identity.current.source&&value.storage===identity.current.storage&&value.key===identity.current.key
+ useEffect(()=>{setOpen(false);setResolved(undefined);setBundle(undefined);setOrigin(undefined);setUnavailable(false);setBusy(false)},[shared?.sources,shared?.storage,identity.current.key])
  const catalog=useMemo(()=>appsRowShareSource(row),[row])
  if(!shared)return null
+ if(catalog?.contentId){
+  const resolve=async()=>{const captured=identity.current;setBusy(true);setUnavailable(false);try{if(!shared.sources?.bundle)throw Error('Sharing source is unavailable.');const value=await shared.sources.bundle(catalog.contentId!,shared.publisher);if(!matches(captured))return;setBundle(value);setOrigin(captured);setOpen(true)}catch{if(matches(captured))setUnavailable(true)}finally{if(matches(captured))setBusy(false)}}
+  return <><button type="button" disabled={busy} onClick={()=>void resolve()}>{t('templateShare.shareApp')}</button>{unavailable&&<p className={css.note} role="status">{t('templateShare.sourceUnavailable')}</p>}{open&&bundle&&matches(origin)&&<ShareDraftDrawer pkg={bundle} open close={()=>setOpen(false)}/>}</>
+ }
  if(catalog)return <><button type="button"onClick={()=>setOpen(true)}>{t(catalog.subject==='skill'?'templateShare.shareSkill':catalog.subject==='mcp'?'templateShare.shareConnection':'templateShare.shareApp')}</button>{open&&<CapabilityTemplateShare subject={catalog.subject} skills={catalog.skills} connections={catalog.connections} open close={()=>setOpen(false)} draftKey={row.key}/>}</>
  if(row.kind!=='installed-skill')return null
- const resolve=async()=>{setBusy(true);setUnavailable(false);try{if(!row.installationId||!row.nativeName){setUnavailable(true);return}const sources=await shared.sources?.skills([row.nativeName],{installationId:row.installationId})??[];const usable=sources.filter(source=>source.text!==undefined||source.publicId);if(!usable.length){setUnavailable(true);return}setResolved(usable);setOpen(true)}catch{setUnavailable(true)}finally{setBusy(false)}}
- return <><button type="button"disabled={busy} onClick={()=>void resolve()}>{t('templateShare.shareSkill')}</button>{unavailable&&<p className={css.note} role="status">{t('templateShare.sourceUnavailable')}</p>}{open&&resolved&&<CapabilityTemplateShare subject="skill" skills={resolved} open close={()=>setOpen(false)} draftKey={row.key}/>}</>
+ const resolve=async()=>{const captured=identity.current;setBusy(true);setUnavailable(false);try{if(!row.installationId||!row.nativeName){setUnavailable(true);return}const sources=await shared.sources?.skills([row.nativeName],{installationId:row.installationId})??[];if(!matches(captured))return;const usable=sources.filter(source=>source.text!==undefined||source.publicId);if(!usable.length){setUnavailable(true);return}setResolved(usable);setOrigin(captured);setOpen(true)}catch{if(matches(captured))setUnavailable(true)}finally{if(matches(captured))setBusy(false)}}
+ return <><button type="button"disabled={busy} onClick={()=>void resolve()}>{t('templateShare.shareSkill')}</button>{unavailable&&<p className={css.note} role="status">{t('templateShare.sourceUnavailable')}</p>}{open&&resolved&&matches(origin)&&<CapabilityTemplateShare subject="skill" skills={resolved} open close={()=>setOpen(false)} draftKey={row.key}/>}</>
 }
 
 type Text=(key:MarketAppsMessageKey,params?:Record<string,string|number>)=>string
@@ -71,14 +81,16 @@ export type MarketAppsDirectoryViewProps={
  onOpenTemplates?:()=>void
  skillSecrets?:{describe:(skill:string)=>Promise<SkillSecretsState>;open:(skill:string,title:string)=>void}|undefined
  renderCustomConnection?:(record:NonNullable<AppsRow['customConnection']>,close:()=>void)=>ReactNode
+ detailSuspended?:boolean|undefined
 }
 
 const actionKey=(action:AppsRowAction)=>'entryId' in action?action.entryId:action.kind==='open-package'?action.packageId:action.kind==='install-pack'?action.key:''
 
 /** 行与详情共用的主按钮文字：未添加先“添加”，已添加的应用显示连接进度，技能显示添加 / 安装状态。 */
-function actionLabel(text:Text,row:AppsRow,action:AppsRowAction,busy:string|undefined,run?:AppsPackRun):string{
+function actionLabel(text:Text,row:AppsRow,action:AppsRowAction,busy:string|undefined,run?:AppsPackRun,locale='en'):string{
  if(run?.running)return text('market.apps.action.installingPack',{done:run.done,total:run.total})
  if(action.kind==='install-pack')return text('market.apps.action.install')
+ if(action.kind==='open-source')return installedSkillSourceCopy(locale).open
  if(busy&&busy===actionKey(action))return text('market.apps.action.adding')
  if(action.kind==='add-connector'||action.kind==='add-skill')return text('market.apps.action.add')
  if(action.kind==='open-package')return text('market.apps.action.openPackage')
@@ -92,15 +104,15 @@ function actionLabel(text:Text,row:AppsRow,action:AppsRowAction,busy:string|unde
 }
 
 function AppRow({row,view,onViewChange,runAction,busy,errors,run}:Pick<MarketAppsDirectoryViewProps,'view'|'onViewChange'|'runAction'|'busy'|'errors'>&{row:AppsRow;run?:AppsPackRun|undefined}){
- const {text}=useAppsText(),action=appsRowAction(row),key=actionKey(action),error=key?errors[key]:undefined
+ const {text,locale}=useAppsText(),action=appsRowAction(row),key=actionKey(action),error=key?errors[key]:undefined
  const meta=row.contentId?[row.summary,row.publisher,row.version?'v'+row.version:undefined].filter(Boolean).join(' · '):row.kind==='library'?text('market.apps.skillCount',{count:row.skills.length})+' · '+text(row.connectors.length?'market.apps.connectionNeeded':'market.apps.noConnectionNeeded'):row.summary
  const open=()=>onViewChange({...view,detail:row.key})
  return <li className={css.row}>
-  <button type="button" className={css.main} onClick={()=>row.contentId?runAction(row,action):open()}>
+  <button type="button" className={css.main} onClick={()=>row.contentId&&row.kind!=='bundle'?runAction(row,action):open()}>
    <AppResourceIcon row={row}/>
-   <span className={css.text}><strong>{row.title}</strong><small>{meta}</small>{row.savedState?<small>{text(('market.apps.state.'+row.savedState) as MarketAppsMessageKey)}</small>:appsRowStatus(row).key==='unknown'&&<small>{text('market.apps.state.unknown')}</small>}</span>
+   <span className={css.text}><strong>{row.title}</strong><small>{meta}</small>{row.kind==='installed-skill'?<small>{text('market.apps.state.installed')}</small>:row.savedState?<small>{text(('market.apps.state.'+row.savedState) as MarketAppsMessageKey)}</small>:appsRowStatus(row).key==='unknown'&&<small>{text('market.apps.state.unknown')}</small>}</span>
   </button>
-  <button type="button" className={css.action} disabled={!!busy&&busy===key||!!run?.running} onClick={()=>action.kind==='detail'?open():runAction(row,action)}>{actionLabel(text,row,action,busy,run)}</button>
+  <button type="button" className={css.action} disabled={!!busy&&busy===key||!!run?.running} onClick={()=>action.kind==='detail'?open():runAction(row,action)}>{actionLabel(text,row,action,busy,run,locale)}</button>
   {error&&<p className={css.rowError} role="alert">{text('market.apps.action.failed',{reason:error})}</p>}
  </li>
 }
@@ -150,11 +162,11 @@ export function MarketAppsDirectoryView(props:MarketAppsDirectoryViewProps){
   </div></div>}
   {props.nativeApps}
   {props.onManagePlugins&&<div className={css.advanced}><button type="button" className={css.link} onClick={props.onManagePlugins}>{text('market.apps.managePlugins')}<ChevronRight size={14} aria-hidden/></button></div>}
-  {detail&&(detail.customConnection&&props.renderCustomConnection?props.renderCustomConnection(detail.customConnection,()=>set({})):<MarketAppDetailView row={detail} close={()=>set({})} runAction={props.runAction} busy={props.busy} error={props.errors[detail.key]??detail.entryIds.map(id=>props.errors[id]).find(Boolean)??(detail.packageId?props.errors[detail.packageId]:undefined)} packRun={props.packRuns?.[detail.key]} skillSecrets={props.skillSecrets}/>)}
+  {detail&&(detail.customConnection&&props.renderCustomConnection?props.renderCustomConnection(detail.customConnection,()=>set({})):<MarketAppDetailView open={!props.detailSuspended} row={detail} close={()=>set({})} runAction={props.runAction} busy={props.busy} error={props.errors[detail.key]??detail.entryIds.map(id=>props.errors[id]).find(Boolean)??(detail.packageId?props.errors[detail.packageId]:undefined)} packRun={props.packRuns?.[detail.key]} skillSecrets={props.skillSecrets}/>)}
  </section>
 }
 
-export type MarketAppDetailViewProps={row:AppsRow;close:()=>void;runAction:(row:AppsRow,action:AppsRowAction)=>void;busy:string|undefined;error:string|undefined;packRun?:AppsPackRun|undefined}&Pick<MarketAppsDirectoryViewProps,'skillSecrets'>
+export type MarketAppDetailViewProps={open?:boolean;row:AppsRow;close:()=>void;runAction:(row:AppsRow,action:AppsRowAction)=>void;busy:string|undefined;error:string|undefined;packRun?:AppsPackRun|undefined}&Pick<MarketAppsDirectoryViewProps,'skillSecrets'>
 
 /** 目录连接条目的设置入口：与目录应用同一动作；状态未知或未对应到目录条目时不给入口。 */
 function ConnectorButton({row,item,runAction}:{row:AppsRow;item:AppsConnector;runAction:MarketAppDetailViewProps['runAction']}){
@@ -187,15 +199,15 @@ function packMemberLabel(text:Text,row:AppsRow,entryId:string|undefined,run:Apps
 }
 
 /** 详情先给出能力与下一步；来源、安装记录和协议按需展开。关闭只回到原目录，不触发安装。 */
-export function MarketAppDetailView({row,close,runAction,busy,error,packRun,skillSecrets}:MarketAppDetailViewProps){
+export function MarketAppDetailView({open=true,row,close,runAction,busy,error,packRun,skillSecrets}:MarketAppDetailViewProps){
  const {text,locale}=useAppsText(),action=appsRowAction(row),connector=row.connectors[0],state=row.kind==='app'?connector?.state:undefined
  const stateLabel=(key:string)=>text(('market.apps.state.'+key) as MarketAppsMessageKey)
  const categories=row.categories.map(key=>getTaxonomyLabel('function',key,locale)??key)
  const tools=row.connectors.flatMap(item=>item.tools.map(tool=>({...tool,server:item.entry?.connector.serverName??item.title})))
- const primary=action.kind==='detail'||action.kind==='install-pack'?undefined:<button type="button" className={css.primary} disabled={!!busy&&busy===actionKey(action)} onClick={()=>runAction(row,action)}>{action.kind==='open-connection'&&state?.connection!=='not-connected'?text('market.apps.action.manage'):action.kind==='open-connection'?text('market.apps.action.connect'):actionLabel(text,row,action,busy)}</button>
+ const primary=action.kind==='detail'||action.kind==='install-pack'?undefined:<button type="button" className={css.primary} disabled={!!busy&&busy===actionKey(action)} onClick={()=>runAction(row,action)}>{action.kind==='open-connection'&&state?.connection!=='not-connected'?text('market.apps.action.manage'):action.kind==='open-connection'?text('market.apps.action.connect'):actionLabel(text,row,action,busy,undefined,locale)}</button>
  const toolList=(items:typeof tools)=><ul className={css.tools}>{items.map(tool=><li key={tool.server+':'+tool.name}><span>{tool.description||tool.name}</span><small>{text(tool.readOnly?'market.apps.advanced.readOnly':'market.apps.advanced.writable')}</small></li>)}</ul>
  const secretAction=(skill:AppsSkill|undefined)=>skillSecrets&&skill?.added&&skill.item?.entry.kind==='skill'&&skill.item.entry.secrets?.length?<SkillSecretsBadgeButton skill={skill.item.entry.skill.name} title={skill.title} describe={skillSecrets.describe} open={skillSecrets.open} iconOnly/>:null
- return <ContextDrawer title={text(row.pack?'market.apps.kind.pack':('market.apps.kind.'+row.kind) as MarketAppsMessageKey)} close={close} {...(css.drawer?{className:css.drawer}:{})}>
+ return <ContextDrawer open={open} title={text(row.pack?'market.apps.kind.pack':('market.apps.kind.'+row.kind) as MarketAppsMessageKey)} close={close} {...(css.drawer?{className:css.drawer}:{})}>
  <div className={css.detailBody}>
   <div className={css.detailHead}>
    <AppResourceIcon row={row} size={52}/>
@@ -261,6 +273,7 @@ export type AppsActionPorts={
  openConnection:(catalogId:string,entry:MarketCatalogConnectorEntry)=>void
  openContent:(contentId:string)=>Promise<void>|void
  openPackage?:((packageId:string)=>void)|undefined
+ openSource?:((request:InstalledSkillSource)=>void)|undefined
 }
 /**
  * 与原目录卡片同一添加语义。连接不是内容：后端目录 add 对 connector 明确拒绝，
@@ -272,6 +285,7 @@ export async function performAppsAction(action:AppsRowAction,ports:AppsActionPor
  if(action.kind==='open-package'){ports.openPackage?.(action.packageId);return {}}
  if(action.kind==='add-connector'||action.kind==='open-connection'){ports.openConnection(action.entryId,action.entry);return {}}
  if(action.kind==='open-content'){await ports.openContent(action.contentId);return {}}
+ if(action.kind==='open-source'){if(!ports.openSource)throw Object.assign(Error('Fixed source reader is unavailable.'),{code:'teloa/source-unavailable'});ports.openSource({installationId:action.installationId,source:action.source});return {}}
  const {contentId}=await ports.catalogApi.add(action.entryId)
  await ports.openContent(contentId)
  return {addedContentId:contentId}
@@ -290,6 +304,8 @@ export type MarketAppsDirectoryProps={
  openConnection:(catalogId:string,entry:MarketCatalogConnectorEntry)=>void
  openContent:(contentId:string)=>Promise<void>|void
  openPackage?:(packageId:string)=>void
+ openSource?:((request:InstalledSkillSource)=>void)|undefined
+ detailSuspended?:boolean|undefined
 }&Pick<MarketAppsDirectoryViewProps,'onDescribe'|'onImportSkill'|'onCreateSkill'|'onCreateApp'|'nativeApps'|'onManagePlugins'|'onOpenTemplates'|'skillSecrets'>
 
 /**
@@ -358,12 +374,12 @@ export function MarketAppsDirectory(props:MarketAppsDirectoryProps){
   if(key)clear(key)
   if(adding)setBusy(key)
   try{
-   const {addedContentId}=await performAppsAction(action,{catalogApi,openConnection:props.openConnection,openContent:props.openContent,openPackage:props.openPackage})
+   const {addedContentId}=await performAppsAction(action,{catalogApi,openConnection:props.openConnection,openContent:props.openContent,openPackage:props.openPackage,openSource:props.openSource})
    if(key&&addedContentId)setItems(current=>current.map(row=>row.entry.id===key?{...row,addedContentId}:row))
   }catch(error){if(key)fail(key,error)}
   finally{if(adding)setBusy(undefined)}
  }
- return <MarketAppsDirectoryView rows={rows} ranking={ranking} catalog={catalog} connections={connections} view={view} onViewChange={onViewChange} runAction={(row,action)=>void runAction(row,action)} busy={busy} errors={errors} packRuns={packRuns}
+ return <MarketAppsDirectoryView detailSuspended={props.detailSuspended} rows={rows} ranking={ranking} catalog={catalog} connections={connections} view={view} onViewChange={onViewChange} runAction={(row,action)=>void runAction(row,action)} busy={busy} errors={errors} packRuns={packRuns}
   {...(customApi?{renderCustomConnection:(record:NonNullable<AppsRow['customConnection']>,close:()=>void)=><CustomMcpAppManager key={record.id} api={customApi} id={record.id} title={record.custom?.title??record.serverName} close={close}/>}:{})}
   connectionServiceUnavailable={!connectionApi} retryCatalog={()=>setReload(current=>({...current,catalog:current.catalog+1}))} {...(connectionApi?{retryConnections:()=>setReload(current=>({...current,connections:current.connections+1}))}:{})} skillSecrets={props.skillSecrets}
   {...(props.onDescribe?{onDescribe:props.onDescribe}:{})} {...(props.onImportSkill?{onImportSkill:props.onImportSkill}:{})} {...(props.onCreateSkill?{onCreateSkill:props.onCreateSkill}:{})} {...(props.onCreateApp?{onCreateApp:props.onCreateApp}:{})} {...(props.nativeApps?{nativeApps:props.nativeApps}:{})} {...(props.onManagePlugins?{onManagePlugins:props.onManagePlugins}:{})} {...(props.onOpenTemplates?{onOpenTemplates:props.onOpenTemplates}:{})}/>

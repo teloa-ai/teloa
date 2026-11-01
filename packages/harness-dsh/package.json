@@ -26,7 +26,8 @@
     "./managed-goal-round-driver": "./src/managed-goal-round-driver.ts",
     "./managed-tool-jobs": "./src/managed-tool-jobs.ts",
     "./native-ptc-selection": "./src/native-ptc-selection.ts",
-    "./native-working-directory": "./src/native-working-directory-guard.ts"
+    "./native-working-directory": "./src/native-working-directory-guard.ts",
+    "./employee-mention-title": "./src/employee-mention-title-plugin.ts"
   },
   "engines": {
     "dsh": "0.2.1-rc.2"

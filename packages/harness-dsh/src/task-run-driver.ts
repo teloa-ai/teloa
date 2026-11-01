@@ -1,3 +1,4 @@
+import {verifiedAnalysisRun} from './task-run-analysis.ts'
 import type {TaskExecutionScope,TaskRun,TaskRunService,TaskRunSkillDatabase,TaskRunSubagent} from '@teloa/backend'
 import type {SessionEvent} from '@deepseek-ai/dsh-session/types'
 import {WorkError,type RoleRuntimeConfig,type TaskRunModelPolicy,type WorkControl} from '@teloa/contract'
@@ -13,23 +14,24 @@ export const roleRunNoExecutionToolsReason='role-run-no-execution-tools'
 /**
  * 员工运行真正能“做事”的工具。
  * `allowedTools` 只来自岗位工具授权：群表情/提及、记忆提议、小结提交这些自授权辅助工具从不写进这里
- * （授权校验拒绝它们），所以清单为空就等于没有任何执行能力。只用于启动前判定；工具守卫仍是最终闸。
+ * （授权校验拒绝它们）。清单为空不授予外部执行，可信分析范围另由后端固定；工具守卫仍是最终闸。
  */
 export function roleRunExecutionTools(run:Pick<TaskRun,'allowedTools'>):string[]{
  return [...(run.allowedTools??[])]
 }
 /**
  * 哪些运行必须带执行工具：本人运行由宿主自己装配工具；群交流回应（v2 来源 executionMode=reply）
- * 按设计冻结空工具集，只写正文，不能因为空清单被误判为空转。其余员工运行（含群 work 与普通员工任务）
- * 没有执行工具就无法完成交付，模型只会反复试探不存在的工具并耗尽工作额度。
+ * 以及后端已核验的显式受限文本能力或来源派生分析范围，按设计冻结空工具集，只生成正文。
+ * 没有可信分析依据的普通员工运行，仍须具备实际执行工具才能启动。
  */
-export function roleRunRequiresExecutionTools(run:Pick<TaskRun,'executor'|'groupContext'>):boolean{
+export function roleRunRequiresExecutionTools(run:Pick<TaskRun,'executor'|'groupContext'|'textCapability'|'analysisScope'>):boolean{
+ // 仅消费后端 get/readVerified 已核对的持久范围；控制、claim 与发送前闸仍逐一执行。
+ if(run.textCapability!==undefined||run.analysisScope!==undefined)return false
  if(run.executor?.kind==='owner')return false
- if(run.groupContext&&run.groupContext.ownerRequest===undefined)return false
  return true
 }
 /** 启动前的空工具闸：缺执行工具时停在本方准入处并给出可操作提示，不能把空目录交给模型。 */
-export function assertRoleRunToolsRunnable(run:Pick<TaskRun,'executor'|'groupContext'|'allowedTools'>):void{
+export function assertRoleRunToolsRunnable(run:Pick<TaskRun,'executor'|'groupContext'|'allowedTools'|'textCapability'|'analysisScope'>):void{
  if(!roleRunRequiresExecutionTools(run)||roleRunExecutionTools(run).length)return
  throw new WorkError('teloa/conflict','这名员工还没有可用的执行工具，已阻止启动。请先在员工详情打开工具授权，为该员工保存要用的工具，再撤回本次准备并重新准备执行。',{reason:roleRunNoExecutionToolsReason})
 }
@@ -66,6 +68,19 @@ function completedTextRun(run:TaskRun,events:readonly SessionEvent[],observed:Ta
 }
 
 export type TaskRunPorts={
+ /** 持久提交协议：只有宿主在关闭原生发布回调后签收的未发布记录才可恢复。 */
+ submissions?:import('@teloa/backend').TaskRunSubmissionJournal
+ withSubmissionFence?:<T>(run:TaskRun,signal:AbortSignal,work:(fence:import('@teloa/backend').TaskRunSubmissionFence)=>Promise<T>)=>Promise<T>
+ cancelNotPublishedSubmission?:(run:TaskRun,signal:AbortSignal)=>Promise<TaskRun>
+ disposeSubmission?:(run:TaskRun,input:unknown,signal:AbortSignal)=>Promise<TaskRun>
+ /** 仅后端同源续报账本可授予原会话接续资格，不能来自客户端参数。 */
+ sourceContinuation?:(run:TaskRun)=>Promise<TaskRun|null>
+ sourceFollowup?:(run:TaskRun)=>Promise<TaskRun|null>
+ inspectSourceFollowup?:(run:TaskRun,signal:AbortSignal)=>Promise<void>
+ /** 仅已核验同源终态或显式未知核验的宿主续办流程可退役旧资源槽；保留持久归属。 */
+ prepareContinuation?:(run:TaskRun,signal:AbortSignal,proof?:{unknownVerification:true})=>Promise<void>
+ /** 旧轮已收尾后释放其受管技能作用域；不能清除历史或执行记录。 */
+ releaseRunSkills?:(run:TaskRun,signal:AbortSignal)=>Promise<void>
  /** 本人普通交办的不可变原文投影；必须经正式 ledger 与固定原生消息核验。 */
  ownerReviewSource?:(run:TaskRun,signal:AbortSignal)=>Promise<Awaited<ReturnType<TaskRunService['ownerReviewSource']>>>
  /** 正式会话交办的同源投影；null 仅表示原 Task 确实没有会话父交办。 */
@@ -85,7 +100,7 @@ export type TaskRunPorts={
  checkModel?:(model:ModelReference,signal:AbortSignal)=>Promise<void>
  prepareModels?:(runtime:RoleRuntimeConfig|undefined,signal:AbortSignal)=>Promise<TaskRunModelPolicy>
  /** `roleId` 只供复核时补读岗位自身范围；缺席时知识复核退回任务范围。 */
- check:(run:Pick<TaskRun,'sessionId'>&Partial<Pick<TaskRun,'id'|'modelPolicy'|'permissionMode'|'taskId'|'taskVersion'|'linkVersion'|'agentPresetId'|'roleId'|'skills'|'knowledge'|'inputText'>>,signal:AbortSignal,target?:TaskExecutionScope)=>Promise<void>
+ check:(run:Pick<TaskRun,'sessionId'>&{previousRun?:TaskRun}&Partial<Pick<TaskRun,'id'|'modelPolicy'|'permissionMode'|'taskId'|'taskVersion'|'linkVersion'|'agentPresetId'|'roleId'|'skills'|'knowledge'|'inputText'>>,signal:AbortSignal,target?:TaskExecutionScope)=>Promise<void>
  /** `roleScopes` 只在通用范围任务里把主体范围并上岗位自身范围；拿不到岗位时省略，退回任务范围。 */
  loadKnowledge?:(target:TaskExecutionScope,ids:readonly string[],signal:AbortSignal,roleScopes?:readonly string[],database?:TaskRunSkillDatabase)=>Promise<TaskRun['knowledge']>
  loadSkills?:(sessionId:string,names:readonly string[],signal:AbortSignal,database?:TaskRunSkillDatabase,industryInstallationIds?:readonly string[])=>Promise<TaskRun['skills']>
@@ -123,8 +138,8 @@ export type TaskRunPorts={
  publishGroupResult?:(run:TaskRun,text:string)=>Promise<void>
 }
 export class TaskRunDriver{
- readonly service:Pick<TaskRunService,'get'|'executionScope'|'claim'|'record'|'requestStop'> & {isSystemDigestRun?:(owner:string,input:unknown)=>Promise<boolean>};readonly ports:TaskRunPorts
- constructor(service:Pick<TaskRunService,'get'|'executionScope'|'claim'|'record'|'requestStop'> & {isSystemDigestRun?:(owner:string,input:unknown)=>Promise<boolean>},ports:TaskRunPorts){this.service=service;this.ports=ports}
+ readonly service:Pick<TaskRunService,'get'|'executionScope'|'claim'|'record'|'requestStop'> & {isSystemDigestRun?:(owner:string,input:unknown)=>Promise<boolean>;isGroupReplyRun?:(owner:string,input:unknown)=>Promise<boolean>;isAnalysisRun?:(owner:string,input:unknown)=>Promise<boolean>};readonly ports:TaskRunPorts
+ constructor(service:Pick<TaskRunService,'get'|'executionScope'|'claim'|'record'|'requestStop'> & {isSystemDigestRun?:(owner:string,input:unknown)=>Promise<boolean>;isGroupReplyRun?:(owner:string,input:unknown)=>Promise<boolean>;isAnalysisRun?:(owner:string,input:unknown)=>Promise<boolean>},ports:TaskRunPorts){this.service=service;this.ports=ports}
  start(owner:string,input:unknown,signal:AbortSignal):Promise<TaskRun>{
   const operation=()=>this.startStable(owner,input,signal)
   return this.ports.stableStart?this.ports.stableStart(operation):operation()
@@ -132,17 +147,22 @@ export class TaskRunDriver{
  private async startStable(owner:string,input:unknown,signal:AbortSignal):Promise<TaskRun>{
   signal.throwIfAborted()
   const current=await this.service.get(owner,input)
-  if(current.state!=='prepared')return current
+  const recovering=current.state==='submitting'&&await this.ports.submissions?.recoverable(current)===true
+  if(current.state!=='prepared'&&!recovering)return current
   // AutoDream 每日小结只用自授权证据/提交工具：按谱系里的计划身份只读核实来源后豁免空执行工具闸；
   // 找不到来源、旧装配或读失败一律按普通运行处理（继续拦截）。
   const planId=current.lineage?.definition?.planId
   const systemDigest=typeof planId==='string'?await this.service.isSystemDigestRun?.(owner,{planId})??false:false
-  if(!systemDigest)assertRoleRunToolsRunnable(current)
+  // 新reply也冻结本人限制，不能再以ownerRequest缺失猜模式；只读口未接或校验失败时不放宽工作运行。
+  const groupReply=current.groupContext!==undefined&&await this.service.isGroupReplyRun?.(owner,{runId:current.id})===true
+  await verifiedAnalysisRun(current,signal,this.service.isAnalysisRun?async run=>this.service.isAnalysisRun!(owner,{runId:run.id}):undefined)
+  if(!systemDigest&&!groupReply)assertRoleRunToolsRunnable(current)
   if(current.lineage&&await this.ports.controlState?.(current)!=='active')throw new WorkError('teloa/forbidden','原工作已暂停或停止，请先核对恢复。')
   const target=await this.service.executionScope(owner,input)
   await this.ports.check(current,signal,target)
   signal.throwIfAborted()
-  const claimed=await this.service.claim(owner,input)
+  // 恢复保持原 Run/输入/任务状态版本；发送口的持久 CAS 只允许一个尝试领取。
+  const claimed=recovering?{run:current,dispatch:true,target}:await this.service.claim(owner,input)
   if(!claimed.dispatch)return claimed.run
   try{
    if(!claimed.target)throw new WorkError('teloa/storage-corrupt','执行发送权缺少可信任务关联。')
@@ -177,11 +197,12 @@ export class TaskRunDriver{
  async stop(owner:string,input:unknown,signal:AbortSignal):Promise<TaskRun>{
   signal.throwIfAborted()
   const run=await this.service.get(owner,input)
- if(run.state==='ended'||run.state==='withdrawn'||run.state==='configuration_failed')return run
+ if(run.state==='ended'||run.state==='withdrawn'||run.state==='configuration_failed'||run.state==='submission_unknown')return run
  if(run.state==='prepared')throw new WorkError('teloa/conflict','本次执行尚未提交。')
   // 先落停止意图再递交取消：取消回执只代表"请求已递交"，落库这一步才让停止在刷新后仍可见、
   // 也让后台循环有可判别的重发依据。幂等，重复停止不覆盖首次时间。
   const requested=await this.service.requestStop(owner,{runId:run.id})
+  if(requested.state==='submitting'&&this.ports.cancelNotPublishedSubmission&&await this.ports.submissions?.publicationState?.(requested)==='not-published')return this.ports.cancelNotPublishedSubmission(requested,signal)
   // 先阻止新派发；即使父轮已经空闲，也必须取消已登记子级与后台工作。
   const cancellations=await Promise.allSettled([this.ports.stop(requested,signal),this.ports.stopChildren?.(requested,signal)])
   const failed=cancellations.find(result=>result.status==='rejected')
@@ -192,7 +213,7 @@ export class TaskRunDriver{
   signal?.throwIfAborted()
   const run=await this.service.get(owner,input)
   signal?.throwIfAborted()
-  if(run.state==='prepared'||run.state==='withdrawn'||run.state==='configuration_failed')return run
+  if(run.state==='prepared'||run.state==='withdrawn'||run.state==='configuration_failed'||run.state==='submission_unknown')return run
   // 已落定证据不可被迟到通知改写；交付失败仍能按同一终态重试既有幂等发布器。
   if(run.state==='ended'&&run.evidence?.state==='ended'){
    if(run.executor?.kind==='owner'&&run.evidence.reason==='completed')await this.ports.publishOwnerResult?.(run)

@@ -20,6 +20,8 @@ import {markBusinessDataChanged} from './business-data.ts'
 import type {BusinessObjectReference} from '@teloa/contract'
 import type {BusinessSyncFetchPage} from './business-sync-sources.ts'
 import type {BusinessSyncSourceResolver,BusinessSyncSourcePort} from './business-sync-sources.ts'
+import {objectTimestamp,objectCursorBasis,trustedObjectTimestamp,sameObjectContent,objectCursorConflict,type ObjectTimestamp} from './business-sync-object-cursor.ts'
+import {businessSyncSourceIdentity as sourceIdentity,initializeBusinessMappingMigrations,mappingReplacementProof,storedMappingMigrationKeys,prepareMappingObjectMigration,applyMappingObjectMigration,type PreparedMappingObjectMigration} from './business-sync-mapping-migration.ts'
 
 export type {BusinessSyncRun,BusinessSyncStatus} from '@teloa/contract'
 export type BusinessSyncActor={ownerId:string;scopeIds:string[]}
@@ -64,13 +66,6 @@ function sourceLabel(mapping:BusinessSourceMappingDefinition):string{
  const source=mapping.source
  return clean(source.kind==='business-data-port'?source.sourceId:source.kind==='mcp-tool'?source.serverName+'/'+source.tool:'role-result',120)
 }
-/** 映射 ID 固定逻辑来源；MCP 同工具的不同参数仍是不同连接范围。参数顺序不改变身份。 */
-function sourceIdentity(mapping:BusinessSourceMappingDefinition,sourceId:string):string{
- const source=mapping.source
- const argumentsKey=source.kind==='mcp-tool'?Object.entries(source.arguments).sort(([a],[b])=>a<b?-1:a>b?1:0):[]
- return createHash('sha256').update(JSON.stringify(['teloa.business-sync-source/v1',mapping.id,source.kind,sourceId,argumentsKey,source.kind==='role-result'?source.roleId??null:null])).digest('hex')
-}
-
 /**
  * 纯函数：一条原始条目 → 快照（不含 version/hash）。字段取值全部转文本（数值 42 → "42"，对象与数组取 JSON）；
  * 快照 `fields[].label` 取对象类型字段的 `from`（台账与改写器都按它匹配）。缺主键 → 跳过；observedAt 缺省 capturedAt，
@@ -117,6 +112,8 @@ export async function initializeBusinessSync(pool:Pool):Promise<void>{
  )`)
  // 旧试点身份未固定实际来源时保持不可读；下次受管同步核验后补上，不猜来源。
  await pool.query('alter table teloa_business_sync_object_ids add column if not exists source_id text')
+ // 旧行保持 NULL：只有同事务核验的来源时间与快照头才能建立对象级基线。
+ await pool.query('alter table teloa_business_sync_object_ids add column if not exists source_cursor text, add column if not exists source_cursor_basis text')
  await pool.query(`create table if not exists teloa_business_sync_runs (
    owner_id text not null, scope_id text not null, mapping_id text not null, run_id uuid not null,
    trigger text not null check(trigger in ('schedule','manual','tool')),
@@ -146,6 +143,7 @@ export async function initializeBusinessSync(pool:Pool):Promise<void>{
   primary key(owner_id,run_id,mapping_id,object_type,object_id,object_version),
   foreign key(owner_id,run_id,mapping_id) references teloa_business_task_result_receipts(owner_id,run_id,mapping_id),
   foreign key(owner_id,scope_id,object_type,object_id,object_version) references teloa_business_object_snapshots(owner_id,scope_id,object_type,object_id,object_version));`)
+ await initializeBusinessMappingMigrations(pool)
 }
 
 function actorOf(actor:BusinessSyncActor):void{
@@ -491,7 +489,8 @@ export class BusinessSyncService{
    const cursors=new Map<string,CursorState>()
    for(const row of (await db.query('select * from teloa_business_sync_cursors where owner_id=$1 and scope_id=$2',[owner,checked])).rows as Array<Record<string,unknown>>)cursors.set(String(row.mapping_id),cursorOf(row))
    const rows=await this.warehouse.scopeRowCount(db,owner,checked)
-   return mappings.map(({mapping})=>{
+   // 成果映射只接受员工工具写入；同步状态也是界面手动同步的来源清单。
+   return mappings.filter(({mapping})=>mapping.source.kind!=='role-result').map(({mapping})=>{
     const lastRow=runs.find(row=>row.mapping_id===mapping.id),state=cursors.get(mapping.id)
     let nextRunAt:string|undefined
     if(mapping.source.kind!=='role-result'){
@@ -638,7 +637,7 @@ export class BusinessSyncService{
  /** 写入（在调用方事务内）：全量 + compare 才对比缺席；增量映射按本批条目推进水位。 */
  private async apply(db:PoolClient,owner:string,scope:string,resolved:ResolvedMapping,cursor:string|undefined,fetched:Fetched,signal?:AbortSignal):Promise<Outcome>{
   const {key,entries}=fetched
-  const outcome=await this.write(db,owner,scope,resolved,key,entries,cursor===undefined&&resolved.mapping.deletionSemantics==='compare',signal)
+  const outcome=await this.write(db,owner,scope,resolved,key,entries,cursor===undefined&&resolved.mapping.deletionSemantics==='compare',signal,false,fetched.basis)
   const incremental=resolved.mapping.incrementalCursor
   if(!incremental)return outcome
   let mark=cursor
@@ -679,9 +678,13 @@ export class BusinessSyncService{
   * 端口是版本权威，(对象,版本) 已在且摘要相同跳过、摘要不同 source-conflict、不在则直接插入端口版本；
   * 对象一旦有过 tombstone 即与端口版本号脱钩，此后按内容去重、max+1 写入。
   */
- private async write(db:PoolClient,owner:string,scope:string,resolved:ResolvedMapping,sourceId:string,entries:Array<{item:unknown;capturedAt:string}>,compare:boolean,signal?:AbortSignal,fixedObjectResult=false):Promise<Omit<Outcome,'nextCursor'>>{
+ private async write(db:PoolClient,owner:string,scope:string,resolved:ResolvedMapping,sourceId:string,entries:Array<{item:unknown;capturedAt:string}>,compare:boolean,signal?:AbortSignal,fixedObjectResult=false,timestampBasis?:string):Promise<Omit<Outcome,'nextCursor'>>{
   const {mapping,objectType}=resolved,raw=mapping.mapping.length===0,type=objectType.id,sourceKey=sourceIdentity(fixedObjectResult?{...mapping,source:{kind:'role-result'}}:mapping,sourceId)
-  const external=new Map<string,{snapshot:MappedSnapshot&{version?:number};deleted:boolean;capturedAt:string}>()
+  const ordered=!raw&&mapping.source.kind!=='role-result'&&mapping.incrementalCursor?.kind==='timestamp'&&timestampBasis!==undefined
+  const proof=ordered?await mappingReplacementProof(db,this.pool,owner,scope,mapping,objectType):undefined
+  const resetBaselines=new Set<string>();let migrationUpserted=0,migrationTombstoned=0
+  type Candidate={snapshot:MappedSnapshot&{version?:number};deleted:boolean;capturedAt:string;timestamp?:ObjectTimestamp}
+  const external=new Map<string,Candidate>()
   for(const {item,capturedAt} of entries){
    if(raw){
     let parsed:Snapshot
@@ -691,14 +694,38 @@ export class BusinessSyncService{
    }else{
     const mapped=mapSourceItem(mapping,objectType,item,capturedAt)
     if('skipped' in mapped)continue
-    external.set(mapped.snapshot.id,{...mapped,capturedAt})
+    const timestamp=ordered?objectTimestamp(evaluateJsonPath(item,mapping.incrementalCursor!.path)):undefined
+    const previous=external.get(mapped.snapshot.id)
+    if(ordered&&previous){
+     const same=sameObjectContent({...previous.snapshot,...(previous.deleted?{deletedAt:previous.capturedAt}:{})},mapped.deleted,mapped.snapshot)
+     if(previous.timestamp&&timestamp){
+      if(timestamp.time<previous.timestamp.time)continue
+      if(timestamp.time===previous.timestamp.time&&!same)throw objectCursorConflict()
+     }else if(!same)throw objectCursorConflict()
+     else if(previous.timestamp&&!timestamp)continue
+    }
+    external.set(mapped.snapshot.id,{...mapped,capturedAt,...(timestamp?{timestamp}:{})})
    }
   }
   signal?.throwIfAborted()
-  const candidates=new Map<string,{snapshot:MappedSnapshot&{version?:number};deleted:boolean;capturedAt:string}>()
+  const plannedKeys=new Set(external.keys())
+  if(proof)for(const key of await storedMappingMigrationKeys(db,owner,scope,type,sourceId,sourceKey,proof))plannedKeys.add(key)
+  const sortedKeys=[...plannedKeys].sort(),internalIds=new Map<string,string>(),migrations:PreparedMappingObjectMigration[]=[]
+  // 配额锁之后不得再领取下一个键或来源 head：先规划整批真实锁，再按投影计算总写入量。
+  for(const key of sortedKeys)await db.query("select pg_advisory_xact_lock(hashtext($1),hashtext($2))",[owner+'\u001f'+scope+'\u001f'+type,key])
+  for(const key of sortedKeys){
+   const plan=proof?await prepareMappingObjectMigration({db,pool:this.pool,owner,scope,type,externalKey:key,sourceId,sourceKey,proof,timestampBasis:timestampBasis!,now:this.identity.now()}):undefined
+   if(plan){
+    migrations.push(plan);internalIds.set(key,plan.canonicalId)
+    if(plan.resetBaseline){if(!external.has(key))throw corrupt('来源迁移缺少建立新基线的真实条目。');resetBaselines.add(plan.canonicalId)}
+    migrationUpserted+=plan.upserted;migrationTombstoned+=plan.tombstoned
+   }else{
+    internalIds.set(key,await this.objectId(db,owner,scope,type,sourceKey,sourceId,key,mapping.source.kind==='business-data-port'))
+   }
+  }
+  const candidates=new Map<string,Candidate>()
   for(const externalId of [...external.keys()].sort()){
-   const candidate=external.get(externalId)!
-   const id=await this.objectId(db,owner,scope,type,sourceKey,sourceId,externalId,mapping.source.kind==='business-data-port')
+   const candidate=external.get(externalId)!,id=internalIds.get(externalId)!
    candidates.set(id,{...candidate,snapshot:id===externalId?candidate.snapshot:{...candidate.snapshot,id}})
   }
   const ids=[...candidates.keys()]
@@ -707,6 +734,11 @@ export class BusinessSyncService{
     where owner_id=$1 and scope_id=$2 and object_type=$3 and object_id=any($4::text[]) order by object_id,object_version desc`,[owner,scope,type,ids])).rows as Array<Record<string,unknown>>){
    latest.set(String(row.object_id),{version:Number(row.object_version),hash:String(row.snapshot_hash),snapshot:storedSnapshot(row,scope,type)})
   }
+  // 尚未写出的迁移只作为本事务规划投影；实际 apply 与后续普通版本仍在同一总 quota 之后。
+  for(const plan of migrations)latest.set(plan.canonicalId,plan.selected)
+  const objectCursors=new Map<string,{source_cursor:unknown;source_cursor_basis:unknown}>()
+  if(ordered)for(const row of (await db.query('select object_id,source_cursor,source_cursor_basis from teloa_business_sync_object_ids where owner_id=$1 and scope_id=$2 and object_type=$3 and source_key=$4 and source_id=$5 and object_id=any($6::text[]) for update',[owner,scope,type,sourceKey,sourceId,ids])).rows)objectCursors.set(String(row.object_id),row)
+  for(const plan of migrations)objectCursors.set(plan.canonicalId,plan.cursor)
   const exact=new Map<string,string>(),decoupled=new Set<string>()
   if(raw&&ids.length){
    const versions=ids.map(id=>candidates.get(id)!.snapshot.version!)
@@ -715,9 +747,26 @@ export class BusinessSyncService{
    for(const row of (await db.query(`select distinct object_id from teloa_business_object_snapshots
      where owner_id=$1 and scope_id=$2 and object_type=$3 and object_id=any($4::text[]) and snapshot->>'deletedAt' is not null`,[owner,scope,type,ids])).rows)decoupled.add(String(row.object_id))
   }
-  const inserts:Array<{item:Snapshot;capturedAt:string}>=[],tombstones:string[]=[]
+  const inserts:Array<{item:Snapshot;capturedAt:string}>=[],tombstones:string[]=[],cursorUpdates=new Map<string,ObjectTimestamp>()
   for(const [id,candidate] of candidates){
    const current=latest.get(id),alive=current!==undefined&&current.snapshot.deletedAt===undefined
+   if(ordered){
+    const row=objectCursors.get(id)
+    if(!row)throw corrupt('来源对象的固定身份不存在。')
+    if(!current&&(row.source_cursor!==null||row.source_cursor_basis!==null))throw corrupt('来源对象的时间记录缺少对应快照。')
+    const previous=current?trustedObjectTimestamp(row,objectCursorBasis(sourceKey,timestampBasis!,current)):undefined
+    const same=current!==undefined&&sameObjectContent(current.snapshot,candidate.deleted,candidate.snapshot)
+    if(resetBaselines.has(id)){if(!candidate.timestamp)throw objectCursorConflict()}
+    else if(current){
+     if(previous&&candidate.timestamp){
+      if(candidate.timestamp.time<previous.time)continue
+      if(candidate.timestamp.time===previous.time&&!same)throw objectCursorConflict()
+     }else if(!same)throw objectCursorConflict()
+     // 旧行/口径变化且正文未变时不凭本次响应建立基线；必须显式新映射。
+     if(!previous)continue
+    }
+    if(candidate.timestamp&&(!previous||candidate.timestamp.time>previous.time)&&(!candidate.deleted||current))cursorUpdates.set(id,candidate.timestamp)
+   }
    if(candidate.deleted){if(alive)tombstones.push(id);continue}
    const next=(current?.version??0)+1
    if(raw&&!decoupled.has(id)){
@@ -740,13 +789,37 @@ export class BusinessSyncService{
   if(compare&&!candidates.size)console.warn('[teloa] 业务同步全量拉取没有得到有效条目（0 条），已跳过缺席对比：范围 '+scope+'，映射 '+mapping.id+'。')
   else if(compare){
    // 只对比本映射已固定身份的当前版本；旧记录归属未可证时留存，不据缺席推断删除。
-   const present=(await db.query(`select c.object_id from ${currentVersionOf()} as c join teloa_business_sync_object_ids m
+   const present=new Set((await db.query(`select c.object_id from ${currentVersionOf()} as c join teloa_business_sync_object_ids m
      on m.owner_id=$1 and m.scope_id=$2 and m.object_type=$3 and m.object_id=c.object_id
-     where c.snapshot->>'deletedAt' is null and m.source_key=$4 and m.source_id=$5 and c.source_id=$5 order by c.object_id`,[owner,scope,type,sourceKey,sourceId])).rows.map(row=>String(row.object_id))
-   for(const id of present)if(!candidates.has(id))tombstones.push(id)
+     where c.snapshot->>'deletedAt' is null and m.source_key=$4 and m.source_id=$5 and c.source_id=$5 order by c.object_id`,[owner,scope,type,sourceKey,sourceId])).rows.map(row=>String(row.object_id)))
+   for(const plan of migrations){if(plan.duplicate)present.delete(plan.duplicate.tracking.object_id);present.add(plan.canonicalId)}
+   const absent=[...present].filter(id=>!candidates.has(id)),heads=new Map<string,{version:number;hash:string}>()
+   if(absent.length){
+    // 普通 compare 的拟归档 head 也在 quota 前锁住；不与成果入口的 source-share→quota 顺序倒置。
+    for(const row of (await db.query(`select s.object_id,s.object_version,s.snapshot_hash,s.snapshot from teloa_business_object_snapshots s
+     where s.owner_id=$1 and s.scope_id=$2 and s.object_type=$3 and s.object_id=any($4::text[]) and s.object_version=(select max(h.object_version) from teloa_business_object_snapshots h where h.owner_id=s.owner_id and h.scope_id=s.scope_id and h.object_type=s.object_type and h.object_id=s.object_id)
+     order by s.object_id for update of s`,[owner,scope,type,absent])).rows){storedSnapshot(row,scope,type);heads.set(String(row.object_id),{version:Number(row.object_version),hash:String(row.snapshot_hash)})}
+    for(const plan of migrations)if(absent.includes(plan.canonicalId))heads.set(plan.canonicalId,plan.selected)
+   }
+   if(ordered&&absent.length){
+    // 缺席不带对象时间，不能绕过旧 NULL / 授权口径 / 快照头核验；可信同口径全量 compare 仍沿原删除语义。
+    const cursors=new Map((await db.query('select object_id,source_cursor,source_cursor_basis from teloa_business_sync_object_ids where owner_id=$1 and scope_id=$2 and object_type=$3 and source_key=$4 and source_id=$5 and object_id=any($6::text[]) for update',[owner,scope,type,sourceKey,sourceId,absent])).rows.map(row=>[String(row.object_id),row] as const))
+    for(const plan of migrations)if(absent.includes(plan.canonicalId))cursors.set(plan.canonicalId,plan.cursor)
+    for(const [id,row] of cursors){
+     const head=heads.get(id)
+     if(!head)throw corrupt('来源对象的当前快照不存在。')
+     const previous=trustedObjectTimestamp(row,objectCursorBasis(sourceKey,timestampBasis!,head))
+     if(!previous)throw objectCursorConflict()
+     // 仅把同一来源时间重新绑定到真实 tombstone head，不从缺席、接收时间或水位发明新时间。
+     cursorUpdates.set(id,previous)
+    }
+    if(absent.some(id=>!cursorUpdates.has(id)))throw corrupt('来源对象的固定身份不存在。')
+   }
+   for(const id of absent)tombstones.push(id)
   }
   signal?.throwIfAborted()
-  await this.warehouse.assertQuota(db,owner,scope,inserts.length+tombstones.length)
+  await this.warehouse.assertQuota(db,owner,scope,inserts.length+tombstones.length+migrationUpserted+migrationTombstoned)
+  for(const plan of migrations)await applyMappingObjectMigration(plan,this.warehouse,this.events?.object?async(id,version)=>{await this.events!.object!(db,owner,{kind:'business-object',scope,type,id},String(version))}:undefined)
   for(const {item,capturedAt} of inserts){
    const inserted=await db.query(`insert into teloa_business_object_snapshots(owner_id,scope_id,object_type,object_id,object_version,snapshot_hash,snapshot,source_id,first_seen_at)
      values($1,$2,$3,$4,$5,$6,$7,$8,$9) on conflict do nothing`,[owner,scope,type,item.id,item.version,businessObjectSnapshotHash(item),JSON.stringify(item),sourceId,capturedAt])
@@ -763,8 +836,18 @@ export class BusinessSyncService{
     if(Number.isSafeInteger(Number(version)))await this.events.object(db,owner,{kind:'business-object',scope,type,id},String(version))
    }
   }
-  if(inserts.length||tombstoned)await markBusinessDataChanged(db,owner,scope)
-  return {fetched:entries.length,upserted:inserts.length,tombstoned}
+  if(cursorUpdates.size){
+   const heads=(await db.query('select distinct on (object_id) object_id,object_version,snapshot_hash,snapshot from teloa_business_object_snapshots where owner_id=$1 and scope_id=$2 and object_type=$3 and object_id=any($4::text[]) order by object_id,object_version desc',[owner,scope,type,[...cursorUpdates.keys()]])).rows
+   for(const row of heads){
+    storedSnapshot(row,scope,type)
+    const id=String(row.object_id),timestamp=cursorUpdates.get(id)!,basis=objectCursorBasis(sourceKey,timestampBasis!,{version:Number(row.object_version),hash:String(row.snapshot_hash)})
+    const updated=await db.query('update teloa_business_sync_object_ids set source_cursor=$7,source_cursor_basis=$8 where owner_id=$1 and scope_id=$2 and object_type=$3 and source_key=$4 and source_id=$5 and object_id=$6',[owner,scope,type,sourceKey,sourceId,id,timestamp.value,basis])
+    if(updated.rowCount!==1)throw corrupt('来源对象的固定身份发生变化。')
+   }
+   if(heads.length!==cursorUpdates.size)throw corrupt('来源对象的当前快照不存在。')
+  }
+  if(inserts.length||tombstoned||migrationUpserted||migrationTombstoned)await markBusinessDataChanged(db,owner,scope)
+  return {fetched:entries.length,upserted:inserts.length+migrationUpserted,tombstoned:tombstoned+migrationTombstoned}
  }
 
  private async record(db:PoolClient,owner:string,scope:string,mappingId:string,run:{runId:string;trigger:BusinessSyncTrigger;startedAt:string;finishedAt?:string;status:BusinessSyncRun['status'];outcome:Omit<Outcome,'nextCursor'>&{nextCursor?:string};error?:{code:WorkErrorCode;reason:string}}):Promise<BusinessSyncRun>{

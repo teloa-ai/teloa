@@ -6,13 +6,14 @@ import {tmpdir} from 'node:os'
 import {spawn} from 'node:child_process'
 import {pathToFileURL} from 'node:url'
 import {isDeepStrictEqual} from 'node:util'
-import type {BackupManifest,DatabaseChoice,InstallState,Status} from './contracts.ts'
+import type {BackupManifest,SubmissionMaintenanceBackup,DatabaseChoice,InstallState,Status} from './contracts.ts'
 import {canonical,exactVersion,within,resolveLayout,programRoot} from './layout.ts'
 import {readPrivateJson,writePrivateJson,writeInstall,withInstallLock} from './state.ts'
 import {verifyRelease,stageRelease} from './releases.ts'
 import {serviceStatus,portAvailable} from './service.ts'
 import {prepareDatabase,stopDatabase,databasePool,databaseConfig,ownContainer,databaseName,localConnection} from './database.ts'
 import {command} from './process.ts'
+import {maintenanceHelper} from './maintenance-process.ts'
 import {canUseData,supportedDataVersion} from './data-version.ts'
 
 const digest=(value:Buffer)=>createHash('sha256').update(value).digest('hex')
@@ -33,16 +34,29 @@ async function listFiles(root:string):Promise<string[]>{
  await walk(root);return result.sort()
 }
 export async function verifyBackup(root:string):Promise<BackupManifest>{
+ return await verifyArchive(root,false) as BackupManifest
+}
+export async function verifySubmissionMaintenanceBackup(root:string,expected:{installId:string;home:string;bindingSha256:string}):Promise<SubmissionMaintenanceBackup>{
+ const value=await verifyArchive(root,true) as SubmissionMaintenanceBackup
+ if(value.installId!==expected.installId||value.home!==expected.home||value.bindingSha256!==expected.bindingSha256)throw Error('维护备份只能用于原安装、原目录和本次停发证明，不能恢复到新安装。')
+ const receipt=await readPrivateJson(join(root,'maintenance-receipt.json')) as {bindingSha256?:string}
+ if(receipt.bindingSha256!==value.bindingSha256)throw Error('维护备份的停发证据不一致。')
+ return value
+}
+async function verifyArchive(root:string,maintenance:boolean):Promise<BackupManifest|SubmissionMaintenanceBackup>{
  const files=await listFiles(root)
- const value=await readPrivateJson(join(root,'backup-manifest.json')) as BackupManifest
- if(!value||Object.keys(value).sort().join(',')!=='createdAt,dataVersion,externalWorkspaceIncluded,files,id,installId,schema,version'||value.schema!=='teloa.backup/v1'||!uuid(value.id)||!uuid(value.installId)||!exactVersion(value.version)||!Number.isFinite(Date.parse(value.createdAt))||value.externalWorkspaceIncluded!==false||!Array.isArray(value.files))throw Error('备份清单无效。')
+ const value=await readPrivateJson(join(root,'backup-manifest.json')) as SubmissionMaintenanceBackup|BackupManifest
+ if(!maintenance&&value?.schema==='teloa.maintenance-backup/v1')throw Error('这是同安装维护备份，不能通过普通restore恢复，也不提供自动回滚。')
+ if(!value||Object.keys(value).sort().join(',')!==(maintenance?'bindingSha256,createdAt,dataVersion,externalWorkspaceIncluded,files,home,id,installId,schema,version':'createdAt,dataVersion,externalWorkspaceIncluded,files,id,installId,schema,version')||value.schema!==(maintenance?'teloa.maintenance-backup/v1':'teloa.backup/v1')||!uuid(value.id)||!uuid(value.installId)||!exactVersion(value.version)||!Number.isFinite(Date.parse(value.createdAt))||value.externalWorkspaceIncluded!==false||!Array.isArray(value.files))throw Error('备份清单无效。')
+ if(maintenance&&(!isAbsolute((value as SubmissionMaintenanceBackup).home)||!/^[a-f0-9]{64}$/.test((value as SubmissionMaintenanceBackup).bindingSha256)))throw Error('维护备份归属无效。')
  if(!supportedDataVersion(value.dataVersion))throw Error('备份数据版本尚不支持。')
  const names=new Set<string>()
  for(const row of value.files){
-  if(!row||Object.keys(row).sort().join(',')!=='path,sha256'||!safePath(row.path)||names.has(row.path)||!/^[a-f0-9]{64}$/.test(row.sha256)||!(row.path==='database.dump'||row.path==='installation.json'||row.path.startsWith('dsh/')||row.path.startsWith('runtime/')))throw Error('备份清单路径无效。')
+  if(!row||Object.keys(row).sort().join(',')!=='path,sha256'||!safePath(row.path)||names.has(row.path)||!/^[a-f0-9]{64}$/.test(row.sha256)||!(row.path==='database.dump'||row.path==='installation.json'||maintenance&&row.path==='maintenance-receipt.json'||row.path.startsWith('dsh/')||row.path.startsWith('runtime/')))throw Error('备份清单路径无效。')
   names.add(row.path)
  }
  if(!names.has('database.dump')||!names.has('installation.json')||JSON.stringify([...names].sort())!==JSON.stringify(files.filter(path=>path!=='backup-manifest.json')))throw Error('备份实际文件与清单不一致。')
+ if(maintenance&&!names.has('maintenance-receipt.json'))throw Error('维护备份缺少停发证明。')
  for(const row of value.files)if(digest(await readFile(join(root,row.path)))!==row.sha256)throw Error('备份文件摘要不一致。')
  return value
 }
@@ -50,8 +64,32 @@ export function assertMaintenanceStopped(status:Pick<Status,'app'|'activeWork'>,
  if(status.app!=='stopped'||phase!=='stopped')throw Error('请先让任务收尾并运行 teloa stop；维护要求本安装明确停止。')
 }
 export async function assertMaintenanceDatabase(db:{query:(sql:string)=>Promise<{rows:any[]}>}):Promise<void>{
+ await assertMaintenanceWork(db)
+}
+/** 仅停发证明覆盖的单一原Run可进入专用备份；所有外部未收口边界保持。 */
+export async function assertSubmissionMaintenanceDatabase(db:{query:(sql:string,args?:unknown[])=>Promise<{rows:any[]}>},run:{owner:string;runId:string}):Promise<void>{
+ if(typeof run.owner!=='string'||!run.owner||!uuid(run.runId))throw Error('维护运行身份无效。')
+ await assertMaintenanceWork(db,run)
+ for(const sql of [
+  "select 1 from teloa_task_run_subagents where state in ('reserved','started') limit 1",
+  "select 1 from teloa_task_run_flows where owner_id=$1 and run_id=$2 limit 1",
+  "select 1 from teloa_task_run_runtime_links where owner_id=$1 and run_id=$2 and (kind<>'job' or payload->>'record' is distinct from 'owner') limit 1",
+ ])if((await db.query(sql,sql.includes('$1')?[run.owner,run.runId]:undefined)).rows.length)throw Error('仍有子任务或后台工作未核清，不能进入提交维护。')
+}
+/** 唯一具名 prepared 例外；原调用仍只支持 submitting，不放宽普通维护。 */
+export async function assertPreparedMaintenanceDatabase(db:{query:(sql:string,args?:unknown[])=>Promise<{rows:any[]}>},run:{owner:string;runId:string}):Promise<void>{
+ if(!run.owner||!uuid(run.runId))throw Error('维护运行身份无效。')
+ await assertMaintenanceWork(db,{...run,state:'prepared'})
+ for(const sql of [
+  "select 1 from teloa_task_run_subagents where state in ('reserved','started') limit 1",
+  "select 1 from teloa_task_run_flows where state not in ('completed','compensated','failed') limit 1",
+  "select 1 from teloa_task_run_submissions where owner_id=$1 and run_id=$2 limit 1",
+  "select 1 from teloa_task_run_runtime_links where owner_id=$1 and run_id=$2 and (kind<>'job' or payload->>'record' is distinct from 'owner') limit 1",
+ ])if((await db.query(sql,sql.includes('$1')?[run.owner,run.runId]:undefined)).rows.length)throw Error('仍有未结清的提交、子级或后台工作，不能保全准备执行。')
+}
+async function assertMaintenanceWork(db:{query:(sql:string,args?:unknown[])=>Promise<{rows:any[]}>},allowed?:{owner:string;runId:string;state?:'prepared'}):Promise<void>{
  const pending=await db.query(`select
-  (select count(*)::integer from teloa_task_runs where state in ('prepared','submitting','accepted','active')) as runs,
+  (select count(*)::integer from teloa_task_runs where state in ('prepared','submitting','accepted','active') and not(state='${allowed?.state==='prepared'?'prepared':'submitting'}' and owner_id=coalesce($1,'') and id=coalesce($2::uuid,'00000000-0000-0000-0000-000000000000'::uuid))) as runs,
   (select count(*)::integer from teloa_plan_occurrences o
    join teloa_plan_task_links l on l.claim_id=o.id join teloa_tasks t on t.id=l.task_id
    left join teloa_task_runs r on r.owner_id=o.owner_id and r.request_id=o.id
@@ -61,7 +99,7 @@ export async function assertMaintenanceDatabase(db:{query:(sql:string)=>Promise<
     or l.task_request_id is distinct from o.task_request_id or t.request_id is distinct from o.task_request_id
    )) as plans,
   (select count(*)::integer from teloa_security_action_executions where state in ('dispatching','accepted','effect_unknown')) as effects,
-  (select count(*)::integer from teloa_plugin_installations where state in ('preparing','unknown')) as plugins`)
+  (select count(*)::integer from teloa_plugin_installations where state in ('preparing','unknown')) as plugins`,[allowed?.owner??null,allowed?.runId??null])
  const row=pending.rows[0]
  if(!row||Object.values(row).some(value=>!Number.isSafeInteger(value)||Number(value)<0))throw Error('数据库维护状态不可确认。')
  if(row.runs)throw Error('数据库仍有未收尾的运行；请回到原安装处理后再备份。')
@@ -114,6 +152,7 @@ export const isGeneratedBackupDirectory=(path:string)=>/^profiles\/(?:[^/]+\/(?:
 export const isBackupCopyPath=(path:string,isFile=false)=>!/^\.credentials\./.test(path)&&!/^mcp\/credentials(?:\/|$)/.test(path)&&path!=='.env'&&!(isFile&&path.split('/').at(-1)==='session.lock')
 export async function copyBackupData(source:string,target:string,releaseRoot:string,skipGenerated=false,options:BackupCopyOptions={}):Promise<void>{
  await mkdir(target,{recursive:true,mode:0o700})
+ let cloneHelper:string|undefined
  async function visit(from:string,to:string,generated:boolean){
   for(const entry of await readdir(from,{withFileTypes:true})){
    const src=join(from,entry.name),dst=join(to,entry.name)
@@ -153,7 +192,17 @@ export async function copyBackupData(source:string,target:string,releaseRoot:str
     if(skip)throw Error('生成的依赖目录含本地扩展文件，不能省略备份。')
     // 操作系统锁及派生缓存重建，避免复制过期 PID 或源机器锁身份。
     if(!isBackupCopyPath(rel,true))continue
-    await copyFile(src,dst);await chmod(dst,0o600)
+    const info=await lstat(src)
+    if(process.platform==='darwin'&&info.size>=16*1024*1024){
+     // 新CLI的可信helper可为旧安装创建保护点；不要求旧发行具备新clone操作。
+     const [sourceRoot,targetRoot]=await Promise.all([lstat(source),lstat(target)])
+     if(!sourceRoot.isDirectory()||sourceRoot.isSymbolicLink()||!targetRoot.isDirectory()||targetRoot.isSymbolicLink())throw Error('大文件备份根目录不能是符号链接。')
+     cloneHelper??=await maintenanceHelper(programRoot)
+     const copied=await command(cloneHelper,['clone-backup',source,target,rel],{timeout:30_000})
+     if(copied.code!==0)throw Error('大文件的安全共享块备份失败；未回退普通复制，请保留原数据并检查目标卷是否支持APFS克隆。')
+     const proof=JSON.parse(copied.stdout)
+     if(proof.schema!=='teloa.backup-clone/v1'||proof.method!=='fclonefileat'||proof.bytes!==info.size)throw Error('大文件备份克隆回执无效，备份已停止。')
+    }else{await copyFile(src,dst);await chmod(dst,0o600)}
    }else throw Error('数据含不支持的文件类型，备份已停止。')
   }
  }
@@ -292,4 +341,37 @@ export async function restoreBackup(archive:string,targetHome:string,database:Da
    throw Error('旧备份中的凭据导入失败；其余数据已恢复到 '+layout.home+'，应用保持停止。启动后请在设置中重新录入凭据。')
   }
  })
+}
+
+/** 同安装提交维护的保护点；普通restore永远拒绝此清单，失败保持maintenance。 */
+type BoundMaintenanceProof={bindingSha256:string;receipt:Record<string,unknown>;assertCurrent:()=>Promise<void>}
+export async function createSubmissionMaintenanceBackup(state:InstallState,output:string,proof:BoundMaintenanceProof,dataVersion:2|5|6=2):Promise<SubmissionMaintenanceBackup>{return createBoundMaintenanceBackup(state,output,proof,dataVersion)}
+export async function createPreparedMaintenanceBackup(state:InstallState,output:string,proof:BoundMaintenanceProof):Promise<SubmissionMaintenanceBackup>{return createBoundMaintenanceBackup(state,output,proof,'prepared')}
+async function createBoundMaintenanceBackup(state:InstallState,output:string,proof:BoundMaintenanceProof,dataVersion:2|5|6|'prepared'):Promise<SubmissionMaintenanceBackup>{
+ if(state.phase!=='maintenance'||!/^[a-f0-9]{64}$/.test(proof.bindingSha256))throw Error('提交维护必须保持原安装maintenance状态。')
+ await proof.assertCurrent();await portAvailable(state.port)
+ const destination=await canonical(output)
+ if(within(state.layout.home,destination)||within(destination,state.layout.home))throw Error('维护备份必须保存在原安装目录之外。')
+ try{await lstat(destination);throw Error('维护备份目标已存在，不能覆盖。')}catch(error){if((error as NodeJS.ErrnoException).code!=='ENOENT')throw error}
+ const release=await verifyRelease(state.layout.releaseRoot),staging=destination+'.incomplete-'+randomUUID()
+ if(release.version!==state.version||(dataVersion==='prepared'?release.dataVersion<4||!canUseData(release,release.dataVersion):![2,5,6].includes(dataVersion)||release.dataVersion!==dataVersion||!canUseData(release,dataVersion)))throw Error('维护保护点与原发行数据版本不符。')
+ await mkdir(dirname(destination),{recursive:true,mode:0o700});await mkdir(staging,{mode:0o700})
+ await transferDatabase(state,join(staging,'database.dump'),'dump')
+ await copyBackupData(state.layout.dshHome,join(staging,'dsh'),state.layout.releaseRoot,true)
+ await copyBackupData(state.layout.runtimeRoot,join(staging,'runtime'),state.layout.releaseRoot,false,{managedRuntimePackages:await managedRuntimePackageChecks(state.layout.runtimeRoot,state.layout.releaseRoot)})
+ await writePrivateJson(join(staging,'installation.json'),{workspaceRoot:state.layout.workspaceRoot,port:state.port})
+ await writePrivateJson(join(staging,'maintenance-receipt.json'),{...proof.receipt,bindingSha256:proof.bindingSha256})
+ const names=await listFiles(staging),manifest:SubmissionMaintenanceBackup={schema:'teloa.maintenance-backup/v1',id:randomUUID(),createdAt:new Date().toISOString(),installId:state.id,home:state.layout.home,bindingSha256:proof.bindingSha256,version:state.version,dataVersion:release.dataVersion,externalWorkspaceIncluded:false,files:await Promise.all(names.map(async path=>({path,sha256:digest(await readFile(join(staging,path)))})))}
+ await writePrivateJson(join(staging,'backup-manifest.json'),manifest)
+ await verifySubmissionMaintenanceBackup(staging,{installId:state.id,home:state.layout.home,bindingSha256:proof.bindingSha256});await proof.assertCurrent()
+ // 保护点先落盘再发布目录；进程中断不能留下看似完整、内容尚未持久的维护备份。
+ const directories=new Set([staging])
+ for(const path of [...names,'backup-manifest.json']){
+  const absolute=join(staging,path),handle=await open(absolute,'r');try{await handle.sync()}finally{await handle.close()}
+  for(let directory=dirname(absolute);within(staging,directory);directory=dirname(directory)){directories.add(directory);if(directory===staging)break}
+ }
+ for(const path of [...directories].sort((a,b)=>b.length-a.length)){const handle=await open(path,'r');try{await handle.sync()}finally{await handle.close()}}
+ await proof.assertCurrent();await rename(staging,destination)
+ const parent=await open(dirname(destination),'r');try{await parent.sync()}finally{await parent.close()}
+ return manifest
 }

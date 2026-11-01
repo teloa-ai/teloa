@@ -31,7 +31,7 @@ export function securityActionEvidence(action:SecurityAction,panel:SecurityActio
  const entries:EvidenceEntry[]=[entry({kind:'text',title:format.goalTitle,body:action.goal,observedAt:action.createdAt})]
  const execution=panel.executions.find(row=>row.actionId===action.id)
  // 工具、剧本与目标是结构化字段，由面板既有区域承担；这条依据只放要逐字核对的参数本身，
- // 并且必须说清它此刻出自谁、什么时候：未执行是数字员工的提案，已执行是执行器的派发。
+ // 来源只区分动作提案与执行器派发，并保留对应时间；不能由执行状态推断提案作者。
  entries.push(entry({
   kind:'command',
   title:format.dispatchTitle,

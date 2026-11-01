@@ -76,14 +76,14 @@ const createdAt='2026-09-15T01:00:00.000Z'
 const action={id:'a1',ownerId:'o',taskId:'t',version:2,state:'approved',title:'隔离主机',goal:'**确认** C2 外联后隔离 prod-03',tool:'security.endpoint.isolate',riskTier:'high',reversible:'irreversible',playbookVersion:'1.0.0',targetSet:['prod-03'],params:{reason:'C2 外联'},supersedesActionId:null,frozen:null,proposerId:'o',createdAt,updatedAt:observedAt} as unknown as SecurityAction
 const approval={id:'ap1',ownerId:'o',actionId:'a1',actionVersion:1,decision:'approved',approverId:'o',reason:'目标与影响已核对',impactConfirmed:true,frozen:{} as never,createdAt:'2026-09-15T01:30:00.000Z'}
 const panelOf=(executions:SecurityActionExecution[])=>({taskId:'t',actions:[action],approvals:[approval],executions,proposal:{tools:[]}} as unknown as SecurityActionPanel)
-const format={receiptTitle:(kind:'acceptance'|'effect')=>kind==='acceptance'?'受理回执':'效果回执',approvalTitle:(decision:'approved'|'rejected')=>decision==='approved'?'批准意见':'拒绝意见',targetState:(state:'unknown'|'succeeded'|'failed')=>({unknown:'未知',succeeded:'成功',failed:'失败'})[state],goalTitle:'动作目标',dispatchTitle:'派发参数',dispatchSource:(dispatched:boolean)=>dispatched?'执行器派发':'AI 员工提案'}
+const format={receiptTitle:(kind:'acceptance'|'effect')=>kind==='acceptance'?'受理回执':'效果回执',approvalTitle:(decision:'approved'|'rejected')=>decision==='approved'?'批准意见':'拒绝意见',targetState:(state:'unknown'|'succeeded'|'failed')=>({unknown:'未知',succeeded:'成功',failed:'失败'})[state],goalTitle:'动作目标',dispatchTitle:'派发参数',dispatchSource:(dispatched:boolean)=>dispatched?'执行器派发':'动作提案'}
 
-test('未执行的动作：goal 是叙述，派发参数只放参数本身且署名提案人与提案时间',()=>{
+test('未执行的动作：goal 是叙述，派发参数只放参数本身并标明提案阶段与提案时间',()=>{
  const entries=securityActionEvidence(action,panelOf([]),format)
  assert.deepEqual(entries.map(entry=>[entry.kind,entry.title]),[['text','动作目标'],['command','派发参数'],['text','批准意见']])
  assert.equal(entries[0]!.body,'**确认** C2 外联后隔离 prod-03')
  assert.equal(entries[1]!.body,JSON.stringify({reason:'C2 外联'},null,2))
- assert.equal(entries[1]!.source,'AI 员工提案')
+ assert.equal(entries[1]!.source,'动作提案')
  assert.equal(entries[1]!.observedAt,createdAt)
  // 工具、剧本与目标属于结构化字段，不混进等宽命令正文。
  assert.doesNotMatch(entries[1]!.body,/security\.endpoint\.isolate|1\.0\.0|prod-03/)

@@ -1,4 +1,4 @@
-import {WorkError} from './work-error.ts'
+import {WorkError,workErrorCodes,type WorkErrorCode} from './work-error.ts'
 import {isRecord,resourceId,resourceVersion} from './resources.ts'
 
 /**
@@ -12,6 +12,21 @@ import {isRecord,resourceId,resourceVersion} from './resources.ts'
 export const retrievalEndpoints=['retrieval/status','retrieval/enroll','retrieval/remove','retrieval/reindex','retrieval/cancel','retrieval-model/status','retrieval-model/prepare','retrieval-model/cancel','retrieval-model/select'] as const
 export type RetrievalEndpoint=typeof retrievalEndpoints[number]
 export const retrievalLimits={maxEnrollments:500,maxSourceBytes:2*1024*1024,maxChunks:50000,maxQueryChars:500,maxResults:8,maxExcerptBytes:2048,maxTotalExcerptBytes:16384,dimensions:1024,vectorBytes:4096} as const
+
+/** 加入请求的事务结果，不是可查询或重放的 requestId。未知结果不能按错误码改判为未提交。 */
+export type RetrievalEnrollmentOutcome='not-committed'|'committed'|'unknown'
+export type RetrievalEnrollmentReceipt={outcome:RetrievalEnrollmentOutcome;sourceIds:string[];errorCode?:WorkErrorCode}
+export function readRetrievalEnrollmentSources(input:unknown):string[]{
+ if(!isRecord(input)||Object.keys(input).some(key=>key!=='sourceIds')||!Array.isArray(input.sourceIds)||input.sourceIds.length<1||input.sourceIds.length>retrievalLimits.maxEnrollments||!input.sourceIds.every((id:unknown):id is string=>typeof id==='string'&&/^[a-zA-Z0-9_-]{1,128}$/.test(id))||new Set(input.sourceIds).size!==input.sourceIds.length)throw new WorkError('teloa/invalid-input','本地检索输入格式不正确。')
+ return [...input.sourceIds]
+}
+export function readRetrievalEnrollmentReceipt(input:unknown):RetrievalEnrollmentReceipt{
+ const invalid=()=>new WorkError('teloa/invalid-host-response','本地检索加入回执格式不正确。')
+ if(!isRecord(input)||Object.keys(input).some(key=>!['outcome','sourceIds','errorCode'].includes(key))||typeof input.outcome!=='string'||!['not-committed','committed','unknown'].includes(input.outcome)||input.errorCode!==undefined&&!(workErrorCodes as readonly unknown[]).includes(input.errorCode)||input.outcome!=='committed'&&input.errorCode===undefined)throw invalid()
+ let sourceIds:string[]
+ try{sourceIds=readRetrievalEnrollmentSources({sourceIds:input.sourceIds})}catch{throw invalid()}
+ return {outcome:input.outcome as RetrievalEnrollmentOutcome,sourceIds,...(input.errorCode===undefined?{}:{errorCode:input.errorCode as WorkErrorCode})}
+}
 
 /** 发行默认变体（关键决定 9；改默认是设计约束，扩展 runtime/assets.json 的 defaultVariant 须与之一致）。 */
 export const embeddingDefaultVariant='fp32' as const
@@ -49,7 +64,8 @@ export type RetrievalPendingReason='stale'|'building'|'failed'
 export type RetrievalCoverage={
  searched:{resourceId:string;title:string;version:number}[]
  /** 只列目标范围内已加入但当前不可检索的资料；范围外资料不计数也不提示。 */
- pending:{resourceId:string;title:string;reason:RetrievalPendingReason}[]
+ /** 缺省保持旧回执兼容；historical 须有本次范围内真实核验的当前版本，changed 不代表全局未经确认。 */
+ pending:{resourceId:string;title:string;reason:RetrievalPendingReason;sourceState?:'historical'|'changed'}[]
  note:string
 }
 export type RetrievalSearchHit={
@@ -67,6 +83,28 @@ export type RetrievalSearchHit={
 }
 export type RetrievalSearchResult={coverage:RetrievalCoverage;results:RetrievalSearchHit[]}
 export type RetrievalCitationIdentity={sessionId:string;resourceId:string;resourceVersion:number;sourceVersion:string;chars:[number,number]}
+/** 任务内已选全文的导航身份；本身不授予读取权，读取时仍核验可信会话及当前范围。 */
+export type TaskReferenceCitationIdentity={taskId:string;resourceId:string;resourceVersion:number;sourceVersion:string}
+export type TaskReferenceCitationRequest={sessionId:string;path:string}
+export type TaskReferenceCitation=TaskReferenceCitationIdentity&{sessionId:string;citationPath:string;sourceId:string;title:string;text:string}
+export function taskReferenceCitationPath(value:TaskReferenceCitationIdentity):string{
+ const path=`teloa-source/task/${value.taskId}/${value.resourceId}/${value.resourceVersion}/${value.sourceVersion}`
+ if(!readTaskReferenceCitationPath(path))throw new WorkError('teloa/invalid-input','任务引用身份格式不正确。')
+ return path
+}
+export function readTaskReferenceCitationPath(value:unknown):TaskReferenceCitationIdentity|undefined{
+ if(typeof value!=='string')return
+ const parts=value.split('/'),version=Number(parts[4])
+ if(parts.length!==6||parts[0]!=='teloa-source'||parts[1]!=='task'||!resourceId(parts[2])||!resourceId(parts[3])||!resourceVersion(version)||String(version)!==parts[4]||!/^[a-f0-9]{64}$/.test(parts[5]!))return
+ return {taskId:parts[2]!,resourceId:parts[3]!,resourceVersion:version,sourceVersion:parts[5]!}
+}
+export function readTaskReferenceCitation(value:unknown):TaskReferenceCitation{
+ const bad=()=>new WorkError('teloa/invalid-input','任务来源回执格式不正确。')
+ const row=exact(value,['taskId','resourceId','resourceVersion','sourceVersion','sessionId','sourceId','title','text','citationPath'],[],bad)
+ const fixed=readTaskReferenceCitationPath(row.citationPath)
+ if(!fixed||Object.entries(fixed).some(([key,value])=>row[key]!==value)||typeof row.sessionId!=='string'||!row.sessionId||row.sessionId.length>128||/[\x00-\x20\x7f/\\]/.test(row.sessionId)||typeof row.sourceId!=='string'||!sourceIdPattern.test(row.sourceId)||!label(row.title,200)||typeof row.text!=='string')throw bad()
+ return {...fixed,sessionId:row.sessionId,sourceId:row.sourceId,title:row.title,text:row.text,citationPath:row.citationPath as string}
+}
 export function retrievalCitationPath(sessionId:string,hit:Pick<RetrievalSearchHit,'resourceId'|'resourceVersion'|'sourceVersion'|'chars'>):string{
  const path='teloa-source/'+encodeURIComponent(sessionId)+'/'+hit.resourceId+'/'+hit.resourceVersion+'/'+hit.sourceVersion+'/'+hit.chars.join('-')
  if(!readRetrievalCitationPath(path))throw new WorkError('teloa/invalid-input','检索引用身份格式不正确。')
@@ -138,10 +176,11 @@ function readCoverage(value:unknown):RetrievalCoverage{
   return {resourceId:r.resourceId,title:r.title,version:r.version}
  })
  const pending=row.pending.map(item=>{
-  const r=exact(item,['resourceId','title','reason'],[],badResult)
+  const r=exact(item,['resourceId','title','reason'],['sourceState'],badResult)
   if(!resourceId(r.resourceId)||!label(r.title,200)||(r.reason!=='stale'&&r.reason!=='building'&&r.reason!=='failed'))throw badResult()
+  if(r.sourceState!==undefined&&(r.reason!=='stale'||(r.sourceState!=='historical'&&r.sourceState!=='changed')))throw badResult()
   claim(r.resourceId)
-  return {resourceId:r.resourceId,title:r.title,reason:r.reason as RetrievalPendingReason}
+  return {resourceId:r.resourceId,title:r.title,reason:r.reason as RetrievalPendingReason,...(r.sourceState===undefined?{}:{sourceState:r.sourceState as 'historical'|'changed'})}
  })
  return {searched,pending,note:row.note}
 }

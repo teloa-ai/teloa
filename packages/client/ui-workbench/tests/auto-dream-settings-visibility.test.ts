@@ -171,7 +171,7 @@ test('只保留生成时刻与最近日志，不再渲染总开关及其关闭�
  assert.equal(app.find(el=>el.type==='input'&&el.props.type==='time').props.value,'23:30')
  const select=app.find(el=>el.type==='select')
  assert.equal(select.props.value,'Asia/Singapore')
- assert.equal(elements(select).filter(el=>el.type==='option').length,3)
+ assert.equal(elements(select).filter(el=>el.type==='option').length,contract.scheduleTimezones.length)
 })
 
 test('页根 section 的 aria-label 是产品名 autoDream.name（浏览器脚本按 region 名定位）',async()=>{
@@ -239,4 +239,15 @@ test('零在岗岗位时显示 autoDream.recent.empty，不渲染任何 7 天行
  app.publishSettingsPanelVisible(true);await app.flush()
  assert.ok(elements(app.render()).some(el=>el.props.children==='autoDream.recent.empty'))
  assert.equal(elements(app.render()).filter(el=>el.props['data-role-id']!==undefined).length,0)
+})
+
+test('AD02-DST：自动小结真实控件选择纽约，正常保存保留23:30和原版本',async()=>{
+ const saved=plan(),calls:unknown[][]=[]
+ const api:AutoDreamSettingApi={list:async()=>[saved],setTrigger:async(...args)=>{calls.push(args)}}
+ const app=mount({api});app.publishSettingsPanelVisible(true);await app.flush()
+ assert.deepEqual(calls,[])
+ const select=app.find(el=>el.type==='select')
+ assert.ok(elements(select).some(el=>el.type==='option'&&el.props.value==='America/New_York'))
+ await select.props.onChange({target:{value:'America/New_York'}});await app.flush()
+ assert.deepEqual(calls,[[[saved],'23:30','America/New_York']])
 })

@@ -1,5 +1,6 @@
 import {createServer} from 'node:net'
 import {spawn} from 'node:child_process'
+import {realpath} from 'node:fs/promises'
 import {join} from 'node:path'
 import {pathToFileURL} from 'node:url'
 import type {InstallState,ProcessIdentity,Status} from './contracts.ts'
@@ -58,15 +59,17 @@ export function serviceEnvironment(base:NodeJS.ProcessEnv,plannedRestartId?:stri
 }
 /** plannedRestartId 只由 upgradeInstall 传入：新宿主据此一次性恢复本次重启撤防所暂停的工作。 */
 export async function startService(state:InstallState,{timeoutMs=75_000,plannedRestartId}:{timeoutMs?:number;plannedRestartId?:string}={}):Promise<Status>{
- if(state.phase==='maintenance')throw Error('安装处于维护状态，不能启动；请用已保存备份恢复到新目录。')
+ if(state.phase==='maintenance')throw Error('安装处于维护状态，不能启动；请继续原维护命令并核对备份用途。提交维护的专用备份不能用普通restore恢复，也不提供自动回滚。')
  const status=await serviceStatus(state)
  if(status.app==='ready')return status
  if(status.app==='starting')return waitForReady(state,()=>false,timeoutMs)
  if(status.app==='unknown')throw Error('现有服务失联，无法证明进程身份；拒绝启动第二个实例。')
  await portAvailable(state.port)
  const {runtimeEnvironment}=await import(pathToFileURL(join(state.layout.releaseRoot,'scripts/runtime/profile.mjs')).href)
+ // Node 会解析主模块的符号链接；argv 也使用物理入口，保持 supervisor 的直接执行判定一致。
+ const entry=await realpath(join(state.layout.releaseRoot,'packages/cli/lib/service-entry.js'))
  await writeInstall({...state,phase:'prepared'})
- const child=spawn(process.execPath,[join(state.layout.releaseRoot,'packages/cli/lib/service-entry.js'),state.layout.home],{cwd:state.layout.workspaceRoot,env:serviceEnvironment(runtimeEnvironment({...state.layout,programRoot:state.layout.releaseRoot,profileName:'teloa'}),plannedRestartId),detached:true,stdio:'ignore'})
+ const child=spawn(process.execPath,[entry,state.layout.home],{cwd:state.layout.workspaceRoot,env:serviceEnvironment(runtimeEnvironment({...state.layout,programRoot:state.layout.releaseRoot,profileName:'teloa'}),plannedRestartId),detached:true,stdio:'ignore'})
  let spawnError=false
  child.once('error',()=>{spawnError=true})
  child.unref()

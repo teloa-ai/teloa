@@ -12,7 +12,7 @@ import light from './light-actions.module.css'
 
 type Props={planId:string;planVersion:number;api:Pick<PlanApi,'executions'>;openTask:(taskId:string)=>void;face?:'timeline';onPage?:(page:PlanExecutionHistoryPage)=>void}
 type ViewState={key:string;page?:PlanExecutionHistoryPage;loading:boolean;more:boolean;error:string;errorPhase?:'first'|'more'}
-const runStates={prepared:'plan.run.prepared',submitting:'plan.run.submitting',accepted:'plan.run.accepted',active:'plan.run.active',ended:'plan.run.ended',withdrawn:'plan.run.withdrawn',configuration_failed:'plan.run.configurationFailed'} as const
+const runStates={prepared:'plan.run.prepared',submitting:'plan.run.submitting',accepted:'plan.run.accepted',active:'plan.run.active',ended:'plan.run.ended',withdrawn:'plan.run.withdrawn',configuration_failed:'plan.run.configurationFailed',submission_unknown:'taskExecution.phase.submissionUnknown'} as const
 
 export function PlanExecutionHistory({planId,planVersion,api,openTask,face,onPage}:Props){
  const {locale,t}=useI18n()

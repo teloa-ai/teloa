@@ -82,7 +82,52 @@ const namespaces:Readonly<Record<string,readonly Row[]>>={
 /** 为 DSH 自有设置组件补充 Teloa 提供的外部语言；未覆盖的深层文案继续安全回退英文。 */
 export function installDshSettingsLanguagePack(locale:DshLocalePort,traditionalLocale:'zh-Hant'|'zh-TW'|'zh-HK'):Array<()=>void>{
   return installDshLanguagePack(locale,traditionalLocale,namespaces,{
-    conversation:{'placeholder.hero':'描述你想建立的內容，/ 呼叫指令，@ 檔案或對話','placeholder.workspace':'選擇工作區以開始'},
+    // 固定版 DSH 的字體選項已按 text/code/terminal 分組，舊 fontSize.title 不再被畫面讀取。
+    'settings.theme':{
+      'fontSize.text.title':'字體大小','fontSize.text.description':'只影響會話內容的字體大小',
+      'fontSize.text.increase':'放大字體','fontSize.text.decrease':'縮小字體',
+      'fontSize.code.title':'程式碼字體大小','fontSize.code.description':'用於程式碼區塊、行內程式碼與工具輸出',
+      'fontSize.code.increase':'放大程式碼字體','fontSize.code.decrease':'縮小程式碼字體',
+      'fontSize.terminal.title':'終端機字體大小','fontSize.terminal.description':'用於側邊欄終端機',
+      'fontSize.terminal.increase':'放大終端機字體','fontSize.terminal.decrease':'縮小終端機字體',
+      'fontFamily.text.title':'正文字體','fontFamily.text.description':'用於介面與會話正文。多種字體以逗號分隔，留空使用預設字體',
+      'fontFamily.code.title':'程式碼字體','fontFamily.code.description':'用於程式碼區塊、行內程式碼與工具輸出。多種字體以逗號分隔，留空使用預設字體',
+      'fontFamily.terminal.title':'終端機字體','fontFamily.terminal.description':'用於側邊欄終端機。多種字體以逗號分隔，留空使用預設字體',
+      'fontFamily.placeholder':'預設','fontSize.more':'更多字體設定',
+    },
+    chat:{
+      'settings.transcript.description':'選擇工具呼叫的步驟詳細程度',
+      'settings.transcript.standard':'標準','settings.transcript.detailed':'詳細','settings.transcript.verbose':'完整',
+      'settings.collapse.title':'工作步驟收合時機','settings.collapse.description':'選擇何時自動收合工作步驟',
+      'settings.collapse.completion':'回答結束後','settings.collapse.nextInput':'下一則訊息時',
+      'settings.performance.title':'效能與用量','settings.performance.description':'選擇效能與用量資訊的詳細程度',
+      'settings.performance.compact':'精簡','settings.performance.detailed':'詳細',
+    },
+    // 固定版快捷鍵編輯器獨立讀取 shortcuts；只補設定列不會翻譯彈窗與錄鍵回執。
+    shortcuts:{
+      title:'快速鍵',open:'開啟快速鍵',settings:'快速鍵',view:'編輯快速鍵',description:'檢視及編輯可用的快速鍵與輸入操作',
+      'edit-label':'修改「{command}」快速鍵',record:'按下快速鍵','record-help':'放開組合鍵即儲存。Tab 切換操作，Esc 取消錄製。',
+      'web-help':'瀏覽器可用組合：Mod+/、Mod+Shift+,、Mod+Shift+.。Mod 在 Mac 上為 Command，其他系統為 Ctrl。',
+      'unsupported-key':'暫不支援此按鍵。',reserved:'此組合已保留給系統或文字編輯操作。','modifier-required':'請同時按下 Command、Ctrl 或 Alt 修飾鍵。',
+      'too-many-keys':'最多同時按下兩個非修飾鍵。請放開後重試。',
+      'macos-web-help':'可設定 Command+/、Command+,、Command+反斜線、Control+反引號、Command+Option+按鍵或 Command+Shift+按鍵。亦支援三個或四個不同修飾鍵的組合。瀏覽器或系統佔用的組合可能無法傳到頁面。',
+      'windows-web-help':'可設定 Ctrl+/、Ctrl+,、Ctrl+Alt+按鍵或 Ctrl+Shift+按鍵。亦支援三個或四個不同修飾鍵的組合。瀏覽器或系統佔用的組合可能無法傳到頁面。',
+      'unsupported-browser':'此瀏覽器暫不支援這個組合。',conflict:'已由「{commands}」使用',saved:'已修改',clear:'移除','retry-save':'重試儲存',reset:'還原預設',
+      'reset-all':'還原全部預設','modified-count':'已自訂 {count} 項','reset-title':'還原全部預設快速鍵？',
+      'reset-description':'將還原目前平台的預設快速鍵。你修改或移除的快速鍵都會還原，其他平台不受影響。',cancel:'取消','reset-saved':'已還原預設快速鍵','close-confirmation':'關閉確認',
+      'reset-failed':'無法還原預設。原有快速鍵已保留，請重試。',review:'已核對最新設定',stale:'快速鍵設定或可用指令已更新。請核對最新鍵位後再儲存。',
+      'write-failed':'無法儲存。原有快速鍵和目前草稿已保留，請重試。','not-ready':'快速鍵尚未準備好，請稍後重試。',
+      read:'無法讀取 {location}。請檢查存取權限後{reload}。',invalid:'{location} 的快速鍵設定已損壞。請先備份並修復設定，再{reload}。',future:'{location} 的快速鍵設定由較新版本建立。請升級 Harness 後重試。',
+      'web-document':'目前網站本機儲存中的 dsh.keybindings.v1','desktop-document':'userData/keybindings.json','web-reload':'重新整理頁面','desktop-reload':'重新啟動 Harness',
+      'using-defaults':'目前使用預設鍵位。','using-accepted':'目前繼續使用上次成功讀取的鍵位。','native-failed':'無法啟用桌面錄鍵保護，請關閉後重試。',
+      'global-hint':'從任何位置開啟','clear-search':'清除搜尋',search:'搜尋快速鍵',close:'關閉快速鍵',application:'應用操作',input:'訊息輸入',menus:'選單與彈出視窗',approval:'審批區域',
+      unbound:'尚無快速鍵',empty:'沒有符合的快速鍵',move:'移動選單選項',select:'選取選單項目',dismiss:'關閉選單或最上層視窗',
+    },
+    workspace:{'session.new':'新增會話','search.sessions.aria':'搜尋會話','workspace.add':'新增工作區','rename.session.title':'重新命名會話','menu.fork':'分支會話','menu.archiveSession':'封存會話'},
+    'open-in-app':{'open.tooltip':'在本機開啟'},
+    approval:{allowOnce:'允許一次',reject:'拒絕'},
+    conversation:{'placeholder.hero':'描述你想建立的內容，/ 呼叫指令，@ 檔案或對話','placeholder.workspace':'選擇工作區以開始',
+      'shortcut.newline':'換行','shortcut.complementary':'使用另一種排隊傳送／即時補充操作','shortcut.slash':'開啟指令選單','shortcut.mention':'開啟引用選單','input.stop':'停止產生','input.send':'傳送訊息'},
     'settings.agentPreset':{presetStandardName:'標準模式'},
     'permission.access':{
       mode:'存取模式，目前：{name}',close:'關閉',

@@ -2,7 +2,32 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import {filterWorkspaceSearchResults,searchWorkspace,workspaceSearchKinds} from '../src/client/workspace-search.ts'
 import {searchableKnowledgeDocuments} from '../src/client/workspace-search-knowledge.ts'
+import {readFile} from 'node:fs/promises'
+import {createRequire} from 'node:module'
+import ts from 'typescript'
+import React from 'react'
+import {renderToStaticMarkup} from 'react-dom/server'
 const source={conversations:[],tasks:[{storage:'persistent' as const,id:'same',title:'研究任务',goal:'核对公开证据',state:'ready' as const,scope:'general' as const}],roles:[{storage:'persistent' as const,id:'same',name:'研究岗位',duty:'核对来源',state:'paused' as const}],groups:[{storage:'persistent' as const,id:'same',name:'研究协作',announcement:'项目沟通',archived:false}],spaces:[{storage:'persistent' as const,scope:'space-research' as const,title:'研究业务'}],knowledge:[],capabilities:[{key:'skill:20000000-0000-4000-8000-000000000001',id:'20000000-0000-4000-8000-000000000001',type:'skill' as const,title:'事件报告',detail:'生成可审阅报告',open:{kind:'installation' as const,id:'skill:20000000-0000-4000-8000-000000000001' as const}}],market:[{id:'market-security-solution',title:'SOC 告警研判方案',summary:'分析告警并形成可审阅结论'}]}
+
+test('全局搜索任务来源加载或失败不显示假无结果，真实空目录才显示空态',async()=>{
+ // 只在内存转译此组件并用真实 React 渲染；DOM/样式端口不参与本条状态语义验证。
+ const require=createRequire(import.meta.url),exports:Record<string,any>={}
+ const script=ts.transpileModule(await readFile(new URL('../src/client/WorkspaceSearch.tsx',import.meta.url),'utf8'),{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.ReactJSX,esModuleInterop:true}}).outputText
+ const ports:Record<string,unknown>={
+  './dialog-focus.js':{openDialog:()=>{}},'./use-dialog-dismiss.js':{useDialogDismiss:()=>({})},
+  './workspace-search.js':{filterWorkspaceSearchResults,searchWorkspace,workspaceSearchKinds},
+  './i18n/provider.js':{useI18n:()=>({locale:'en',t:(key:string)=>key})},'./i18n/errors.js':{localizeWorkError:()=> 'error'},
+  './dialogue-copy.js':{dialogueCopy:(_locale:string,kind:string)=>kind},'./EmployeeAvatar.js':{EmployeeAvatar:()=>null},
+  './WorkspaceSearch.module.css':{__esModule:true,default:new Proxy({},{get:(_target,key)=>String(key)})},
+ }
+ new Function('require','exports',script)((id:string)=>Object.hasOwn(ports,id)?ports[id]:require(id),exports)
+ const empty:Parameters<typeof searchWorkspace>[0]={...source,conversations:[],tasks:[],roles:[],groups:[],spaces:[],knowledge:[],capabilities:[],market:[]}
+ const render=(taskState:'loading'|'failed'|'ready',taskSource:Parameters<typeof searchWorkspace>[0]=empty)=>renderToStaticMarkup(React.createElement(exports.WorkspaceSearch,{visible:true,source:taskSource,taskState,retryTasks:()=>{},conversationStatus:'',knowledgeStatus:'',capabilityStatus:'',close:()=>{},open:async()=>{},searchMessages:()=>{}}))
+ const loading=render('loading');assert.match(loading,/task\.directory\.loading/);assert.match(loading,/aria-busy="true"/);assert.doesNotMatch(loading,/workspaceSearch\.emptyTitle/)
+ const failed=render('failed');assert.match(failed,/task\.directory\.loadFailed/);assert.match(failed,/common\.retry/);assert.doesNotMatch(failed,/workspaceSearch\.emptyTitle/)
+ const ready=render('ready');assert.match(ready,/workspaceSearch\.emptyTitle/);assert.doesNotMatch(ready,/common\.retry/)
+ const known=render('ready',{...empty,tasks:source.tasks});assert.match(known,/研究任务/);assert.doesNotMatch(known,/workspaceSearch\.emptyTitle/)
+})
 test('我的资源统一筛选已核验应用与导入资源，保留各自原身份及打开目标',()=>{
  const rows=searchWorkspace(source,'')
  const resources=filterWorkspaceSearchResults(rows,'resource')

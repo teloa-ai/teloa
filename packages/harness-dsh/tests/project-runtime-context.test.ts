@@ -1,12 +1,13 @@
 import test,{type TestContext} from 'node:test'
 import assert from 'node:assert/strict'
-import {createAssistantMessage,createSystemMessage,createUserMessage,ToolCallId,type GenerateOptions,type StreamChunk} from '@deepseek-ai/dsh-llm'
+import {createAssistantMessage,createSystemMessage,createUserMessage,freezeMessage,ToolCallId,type GenerateOptions,type StreamChunk} from '@deepseek-ai/dsh-llm'
 import {createHash} from 'node:crypto'
-import {Session,SessionId} from '@deepseek-ai/dsh-session'
+import {Session,SessionId,type SessionMessageProjection} from '@deepseek-ai/dsh-session'
 import {patchedHotLlmPackage,HotAdapter,textAnswer,toolAnswer,drain,nativeHotCausalityFixture,hotGate} from './fixtures/native-hot-causality.ts'
 import {Context} from '@deepseek-ai/cordis'
 import {registerProjectRuntimeContext,type ProjectRuntimePrepared,type ProjectRuntimeContextPorts} from '../src/project-runtime-context.ts'
-import {WorkError} from '@teloa/contract'
+import {WorkError,encodeEmployeeMention,type DigitalRole} from '@teloa/contract'
+import {registerEmployeeMentionContext} from '../src/employee-mention-context.ts'
 import type {Agent} from '@deepseek-ai/dsh-agent'
 import {readFile,writeFile,mkdtemp,rm} from 'node:fs/promises'
 import {join} from 'node:path'
@@ -25,10 +26,12 @@ import {defineTool} from '@deepseek-ai/dsh-tools'
 import * as workBehavior from '../src/work-behavior.ts'
 import {productIdentityText} from '../src/work-prompts/product-identity.ts'
 
+declare module '@deepseek-ai/dsh-session'{interface SessionEventMap{'test/owner-input-projection':{targetSeq:number}}}
+
 function projectPorts(){
- const state={generation:1,text:'项目规则：只交付桌面版，保留 {{literal}}。',memoryMode:'enabled' as 'enabled'|'off',calls:0,uses:[] as Parameters<ProjectRuntimeContextPorts['recordUsed']>[0][],prepared:[] as ProjectRuntimePrepared[]}
+ const state={generation:1,retainUserInputFromGeneration:undefined as number|undefined,text:'项目规则：只交付桌面版，保留 {{literal}}。',memoryMode:'enabled' as 'enabled'|'off',calls:0,uses:[] as Parameters<ProjectRuntimeContextPorts['recordUsed']>[0][],prepared:[] as ProjectRuntimePrepared[]}
  const ports:ProjectRuntimeContextPorts={owner:'project-owner',
-  async prepare(input){const prepared:ProjectRuntimePrepared={binding:{sessionId:input.sessionId,projectId:'project-one',version:1,title:'项目会话',memoryMode:state.memoryMode,generation:state.generation,contextVersion:state.generation,settingsVersion:state.generation},manifestId:'manifest-'+(++state.calls),text:state.text,sources:[{kind:'rule',id:'rule-one',version:state.generation,hash:'a'.repeat(64),title:'桌面交付规则'}],reset:state.generation>1,providerSessionId:input.sessionId+'-generation-'+state.generation};state.prepared.push(prepared);return prepared},
+  async prepare(input){const prepared:ProjectRuntimePrepared={binding:{sessionId:input.sessionId,projectId:'project-one',version:1,title:'项目会话',memoryMode:state.memoryMode,generation:state.generation,contextVersion:state.generation,settingsVersion:state.generation},manifestId:'manifest-'+(++state.calls),text:state.text,sources:[{kind:'rule',id:'rule-one',version:state.generation,hash:'a'.repeat(64),title:'桌面交付规则'}],reset:state.generation>1,providerSessionId:input.sessionId+'-generation-'+state.generation,...state.retainUserInputFromGeneration===undefined?{}:{retainUserInputFromGeneration:state.retainUserInputFromGeneration}};state.prepared.push(prepared);return prepared},
   async assertCurrent(input){if(input.generation!==state.generation)throw new WorkError('teloa/conflict','generation changed')},
   assertPreparedCurrentSync(prepared){if(prepared.binding.generation!==state.generation)throw new WorkError('teloa/conflict','generation changed')},
   async recordUsed(input){state.uses.push(input)},
@@ -95,7 +98,7 @@ test('关闭记忆只接受固定SDK与宿主的必要上下文，未知记忆pr
 })
 test('同项目同代次的正式fork子Agent清除父模型旧历史，不借父marker跳过最小输入重建',async t=>{
  const f=await nativeHotSubagentFixture(t,'continuable'),{ports}=projectPorts()
- const runtime=registerProjectRuntimeContext(f.ctx,{...ports,prepare:async input=>{const prepared=await ports.prepare(input);return {...prepared!,text:input.sessionId===f.parent.id?'父项目背景':'子任务获准的项目背景'}}})
+ const runtime=registerProjectRuntimeContext(f.ctx,{...ports,prepare:async input=>{const prepared=await ports.prepare(input);return {...prepared!,retainUserInputFromGeneration:1,text:input.sessionId===f.parent.id?'父项目背景':'子任务获准的项目背景'}}})
  t.after(()=>runtime.close());f.adapter.parentId=f.parent.id+'-generation-1';f.adapter.parentCalls=1
  const old=createUserMessage({source:{kind:'user',rpcId:'old-owner-history'},content:[{type:'text',text:'此前个人历史：private-parent-history'}]})
  await f.work.withNewInput(f.parent,old,{producer:'prompt',identity:'old-owner-history'},()=>f.parent.followup(old));await f.parent.whenIdle()
@@ -111,7 +114,7 @@ async function sendText(f:Awaited<ReturnType<typeof nativeHotCausalityFixture>>,
  await f.work.withNewInput(agent,message,{producer:'prompt',identity:id},()=>agent.followup(message))
  await agent.whenIdle();return message
 }
-async function compactionFixture(t:TestContext){
+async function compactionFixture(t:TestContext,config:{contextWindow?:number;thresholdRatio?:number}={}){
  const pkg=await patchedNativePackage<typeof import('@deepseek-ai/dsh-compaction-basic')>(t,{packageName:'@deepseek-ai/dsh-compaction-basic',compatBasename:'dsh-compaction-basic-0.2.1-rc.2-summary-request'})
  const basic=pathToFileURL(join(pkg.root,'lib/index.js')).href
  const copy=async(relative:string,name:string,replacements:Record<string,string>={})=>{
@@ -129,8 +132,8 @@ async function compactionFixture(t:TestContext){
  const module=await import(kernel) as {nativeHotCausalityFixture:typeof nativeHotCausalityFixture}
  const f=await module.nativeHotCausalityFixture(t)
  await f.ctx.plugin(TokenMeter)
- f.adapter.resolveModel=async(provider,model)=>({provider,id:model,name:model,inputModalities:['text'] as const,context:{contextWindow:2400},defaultMaxTokens:256})
- await f.agent.ctx.plugin(pkg.namespace.BasicCompactionEngine,{headroomTokens:128,maxTokens:256,retainTokens:0,compactionRetries:0,maxOverflowRetries:1})
+ f.adapter.resolveModel=async(provider,model)=>({provider,id:model,name:model,inputModalities:['text'] as const,context:{contextWindow:config.contextWindow??2400},defaultMaxTokens:256})
+ await f.agent.ctx.plugin(pkg.namespace.BasicCompactionEngine,{headroomTokens:128,maxTokens:256,retainTokens:0,compactionRetries:0,maxOverflowRetries:1,...config.thresholdRatio===undefined?{}:{thresholdRatio:config.thresholdRatio}})
  return f
 }
 
@@ -177,6 +180,38 @@ test('清洁surface重建保留人工历史，移除旧回复、工具与摘要�
  const count=session.snapshotEvents().length
  runtime.rebuildProjectModelSurface(session,2)
  assert.equal(session.snapshotEvents().length,count,'同代次不能重复生成surface替换')
+})
+
+test('换项目不能沿用本人输入保留标记，原事件仍保留供本人查看',async()=>{
+ const {rebuildProjectModelSurface}=await import('../src/project-runtime-context.ts'),session=Session.create(SessionId('project-change'))
+ session.append('system/message',{turn:1,step:1,message:createSystemMessage('系统规则')},{surfaceOp:'append'})
+ const original=session.append('user/message',createUserMessage({source:{kind:'user'},content:[{type:'text',text:'仅项目甲可用的本人订单'}]}),{surfaceOp:'append'})
+ session.append('user/message',createUserMessage({source:{kind:'runtime-context',form:'snapshot',sections:[{name:'teloa/project-context-generation',text:JSON.stringify([session.id,'project-a',1])}]},content:[{type:'text',text:'项目甲上下文'}]}),{surfaceOp:'append'})
+ rebuildProjectModelSurface(session,JSON.stringify([session.id,'project-b',2]),1)
+ assert.doesNotMatch(JSON.stringify(session.deriveMessages()),/仅项目甲可用|项目甲上下文/)
+ assert.equal(session.snapshotEvents().find(event=>event.seq===original.seq),original)
+})
+
+test('压缩来源恢复遵守原消息的已提交projection，不从原日志复活已替换正文',async()=>{
+ const {rebuildProjectModelSurface}=await import('../src/project-runtime-context.ts')
+ const projection:SessionMessageProjection<'test/owner-input-projection'>={type:'test/owner-input-projection',project(event,context){
+  const target=context.events.find(row=>row.seq===event.data.targetSeq);assert.ok(target?.type==='user/message')
+  return new Map([[target.seq,freezeMessage({...target.data,content:[{type:'text',text:'已投影的本人订单：4件27.25元。'}]})]])
+ }}
+ const session=Session.create(SessionId('projected-owner-history'),undefined,undefined,undefined,[projection])
+ session.append('system/message',{turn:1,step:1,message:createSystemMessage('系统规则')},{surfaceOp:'append'})
+ const original=session.append('user/message',createUserMessage({source:{kind:'user'},content:[{type:'text',text:'不得复活的原文 RAW-REDACTED'}]}),{surfaceOp:'append'})
+ const marker=session.append('user/message',createUserMessage({source:{kind:'runtime-context',form:'snapshot',sections:[{name:'teloa/project-context-generation',text:JSON.stringify([session.id,null,1])}]},content:[{type:'text',text:'旧岗位指引'}]}),{surfaceOp:'append'})
+ session.append('test/owner-input-projection',{targetSeq:original.seq})
+ // SDK形状的checkpoint只作projection边界夹具；真正压缩生成在另一个官方Loop用例覆盖。
+ session.append('user/message',createUserMessage({source:{kind:'compact-checkpoint',compactionId:'projection-checkpoint' as never},content:[{type:'text',text:'混合旧摘要 MIXED-SUMMARY'}]}),{surfaceOp:{op:'replace',startSeq:original.seq,endSeq:marker.seq},sourceEventSeqs:[original.seq,marker.seq]})
+ rebuildProjectModelSurface(session,JSON.stringify([session.id,null,2]),1)
+ const messages=JSON.stringify(session.deriveMessages())
+ assert.match(messages,/27\.25/);assert.doesNotMatch(messages,/RAW-REDACTED|MIXED-SUMMARY|旧岗位指引/)
+ const count=session.snapshotEvents().length
+ rebuildProjectModelSurface(session,JSON.stringify([session.id,null,2]),1)
+ assert.equal(session.snapshotEvents().length,count,'恢复后的同代次装配不得重复追加')
+ assert.match(JSON.stringify(session.snapshotEvents().find(event=>event.seq===original.seq)),/RAW-REDACTED/,'人工历史不被回写')
 })
 
 test('两条真实普通会话使用相同规则，实际adapter输入与manifest分别归属原会话',async t=>{
@@ -267,6 +302,130 @@ test('官方压缩请求使用同一许可代次与远端身份，实际摘要�
  for(const request of f.adapter.requests)assert.equal(request.sessionId,f.agent.id+'-generation-1')
  assert.equal(p.state.uses.filter(use=>use.stage==='dispatched').length,3)
  assert.ok(f.events().some(event=>event.type==='compaction/end'&&!event.data.error))
+})
+
+test('岗位换代从官方压缩节点恢复本人订单，连续换代与再次压缩不能穿透撤回断点',async t=>{
+ const f=await compactionFixture(t),p=projectPorts(),runtime=registerProjectRuntimeContext(f.ctx,p.ports);t.after(runtime.close)
+ const longText='OLD-ASSISTANT-DERIVED '.repeat(2500),longAnswer:readonly StreamChunk[]=[{type:'block-start',index:0,blockType:'text'},{type:'text-delta',index:0,text:longText},{type:'block-end',index:0,block:{type:'text',text:longText}},{type:'finish',reason:{kind:'stop'}}]
+ f.adapter.scripts.push(longAnswer,textAnswer,textAnswer,textAnswer,textAnswer)
+ await sendText(f,'订单 J2-A 4件27.25元；J2-B 2件9.50元。','orders-before-compaction')
+ await sendText(f,'下一步继续核对。','compact-original-orders')
+ assert.equal(f.events().filter(event=>event.type==='compaction/end'&&!event.data.error).length,1)
+ const original=f.events().find(event=>event.type==='user/message'&&event.data.source.kind==='user'&&'rpcId'in event.data.source&&event.data.source.rpcId==='orders-before-compaction')!
+ assert.ok(!f.agent.session.surface.nodes.includes(original.seq),'原订单确已被官方压缩替换')
+ p.state.generation=2;p.state.retainUserInputFromGeneration=1;p.state.text='当前岗位新职责 NEW-ROLE-RULE'
+ await sendText(f,'新增 J2-C 3件18.75元，合并原订单。','role-after-compaction')
+ let request=JSON.stringify(f.adapter.requests.at(-1)!.messages)
+ assert.match(request,/27\.25/);assert.match(request,/9\.50/);assert.match(request,/18\.75/)
+ assert.match(request,/NEW-ROLE-RULE/);assert.doesNotMatch(request,/OLD-ASSISTANT-DERIVED|只交付桌面版/)
+ p.state.generation=3
+ await sendText(f,'再按当前职责复核。','second-role-update')
+ assert.match(JSON.stringify(f.adapter.requests.at(-1)!.messages),/27\.25/,'宿主恢复节点在连续软换代中保留原本人输入')
+ p.state.generation=4;p.state.retainUserInputFromGeneration=undefined;p.state.text='撤回后仅使用新资料。'
+ f.adapter.scripts.push(longAnswer,textAnswer,textAnswer,textAnswer)
+ await sendText(f,'开始新的独立工作 OWNER-AFTER-REVOKE。','hard-rebuild')
+ await sendText(f,'补充本次独立输入。','compact-after-revoke')
+ assert.equal(f.events().filter(event=>event.type==='compaction/end'&&!event.data.error).length,2)
+ p.state.generation=5;p.state.retainUserInputFromGeneration=4
+ await sendText(f,'岗位已更新，继续本次独立工作。','role-after-hard-compaction')
+ request=JSON.stringify(f.adapter.requests.at(-1)!.messages)
+ assert.match(request,/OWNER-AFTER-REVOKE/)
+ assert.doesNotMatch(request,/27\.25|9\.50|18\.75|OLD-ASSISTANT-DERIVED/,'压缩来源追溯必须在硬重建节点停止')
+ assert.equal(f.events().filter(event=>event.type==='user/message'&&event.data.source.kind==='user'&&'rpcId'in event.data.source&&event.data.source.rpcId==='orders-before-compaction').length,1,'恢复不能伪造第二次本人发送')
+})
+
+test('岗位换代恢复超窗本人历史时零派发且保留原压缩节点，选择更大窗口后可重新继续',async t=>{
+ const f=await compactionFixture(t,{contextWindow:3600,thresholdRatio:0.45}),p=projectPorts(),runtime=registerProjectRuntimeContext(f.ctx,p.ports);t.after(runtime.close)
+ const overflow:Array<{purpose:string;tokens:number}>=[],stream=f.adapter.stream.bind(f.adapter)
+ f.adapter.stream=async function*(options){
+  const capacity=options.model==='large-model'?16000:3600
+  const tokens=options.messages.reduce((total,message)=>total+f.ctx.tokenMeter.estimateMessage(message.id===undefined?createUserMessage({source:{kind:'runtime-context',form:'notice',summary:'Capacity measurement fixture'},content:message.content}):message),0)+(options.maxTokens??256)
+  if(tokens>capacity){overflow.push({purpose:options.purpose??'main',tokens});throw Error('fixture: context window exceeded')}
+  yield* stream(options)
+ }
+ f.adapter.scripts.push(...Array.from({length:12},()=>textAnswer))
+ await sendText(f,'OWNER-FIRST 27.25 '+ 'a'.repeat(7400),'long-owner-first')
+ await sendText(f,'OWNER-SECOND 9.50 '+ 'b'.repeat(7400),'long-owner-second')
+ await sendText(f,'核对两份原输入。','long-owner-compacted')
+ assert.equal(f.events().filter(event=>event.type==='compaction/end'&&!event.data.error).length,2,'先由真实官方引擎完成两次压缩')
+ assert.deepEqual(overflow,[],'原会话在小窗口内可正常运行')
+ const surface=[...f.agent.session.surface.nodes],dispatched=f.adapter.requests.length
+ p.state.generation=2;p.state.retainUserInputFromGeneration=1;p.state.text='岗位已更新 NEW-ROLE-LIMIT'
+ await sendText(f,'使用两份原输入继续核对。','long-owner-denied')
+ assert.deepEqual(overflow,[],'恢复预验必须在首次超窗主请求或摘要请求之前拒绝')
+ assert.equal(f.adapter.requests.length,dispatched)
+ assert.deepEqual([...f.agent.session.surface.nodes],surface,'拒绝不能改写原 checkpoint 或代次 marker')
+ const failure=f.events().filter(event=>event.type==='turn/end').at(-1)
+ assert.ok(failure?.type==='turn/end'&&failure.data.reason.kind==='error')
+ assert.match(failure.data.reason.error.message,/更大.*上下文|上下文.*更大/)
+ assert.equal(f.agent.status,'idle','已 claim 的失败回合必须退出，不能锁住输入')
+ f.adapter.resolveModel=async(provider,model)=>({provider,id:model,name:model,inputModalities:['text'] as const,context:{contextWindow:model==='large-model'?16000:3600},defaultMaxTokens:256})
+ // 官方 Agent 选模的 prompt/request 双 waterfall；不修改旧 request/header 冒充新模型。
+ const {installModelSelection}=await import('@deepseek-ai/dsh-agent')
+ const release=installModelSelection(f.agent.ctx,{current:{provider:'hot-test',model:'large-model'},assembled:undefined});t.after(release)
+ await sendText(f,'使用两份原输入继续核对。','long-owner-retry')
+ const request=f.adapter.requests.at(-1)!
+ assert.equal(request.model,'large-model')
+ assert.match(JSON.stringify(request.messages),/OWNER-FIRST 27\.25/);assert.match(JSON.stringify(request.messages),/OWNER-SECOND 9\.50/)
+ assert.deepEqual(overflow,[])
+ assert.equal(f.adapter.requests.length,dispatched+1,'扩大窗口后的恢复只向新模型派发；旧小模型不得先摘要展开后的历史')
+ assert.equal(f.events().filter(event=>event.type==='turn/end').at(-1)?.data.reason.kind,'completed')
+ for(const rpcId of ['long-owner-first','long-owner-second','long-owner-retry'])assert.equal(f.events().filter(event=>event.type==='user/message'&&event.data.source.kind==='user'&&'rpcId'in event.data.source&&event.data.source.rpcId===rpcId).length,1)
+ assert.equal(f.counters.tools,0)
+})
+
+test('岗位恢复暂存经官方压缩并在pre-step取消后，重试仍恢复原本人输入且不复活旧混合正文',async t=>{
+ const f=await compactionFixture(t),p=projectPorts(),runtime=registerProjectRuntimeContext(f.ctx,p.ports);t.after(runtime.close)
+ const old='OLD-MIXED-ANSWER '.repeat(2500),answer:readonly StreamChunk[]=[{type:'block-start',index:0,blockType:'text'},{type:'text-delta',index:0,text:old},{type:'block-end',index:0,block:{type:'text',text:old}},{type:'finish',reason:{kind:'stop'}}]
+ f.adapter.scripts.push(answer,textAnswer,textAnswer,textAnswer,textAnswer)
+ await sendText(f,'原订单 OWNER-CANCELLED 27.25。','owner-before-cancel')
+ await sendText(f,'核对原订单。','owner-before-role-update')
+ assert.equal(f.events().filter(event=>event.type==='compaction/end'&&!event.data.error).length,1)
+ p.state.generation=2;p.state.retainUserInputFromGeneration=1;p.state.text='当前新岗位 NEW-AFTER-CANCEL'
+ const before=f.adapter.requests.length
+ const cancel=f.agent.ctx.on('agent/pre-step',async({agent,signal})=>{
+  assert.doesNotMatch(JSON.stringify(agent.session.deriveMessages()),/OWNER-CANCELLED|OLD-MIXED-ANSWER|只交付桌面版/,'暂存阶段既不展开历史也不保留旧岗位混合正文')
+  const nodes=agent.session.surface.nodes
+  const compaction=agent.ctx.get('compaction') as import('@deepseek-ai/dsh-compaction-basic').BasicCompactionEngine|undefined;assert.ok(compaction)
+  await compaction.compactRegion(nodes[1]!,nodes.at(-1)!,agent,signal)
+  agent.cancel({kind:'user'});signal.throwIfAborted()
+  throw Error('fixture cancellation did not abort')
+ })
+ await sendText(f,'继续原订单。','owner-role-cancelled');cancel()
+ assert.equal(f.agent.status,'idle')
+ const stopped=f.events().filter(event=>event.type==='turn/end').at(-1)
+ assert.equal(stopped?.data.reason.kind,'aborted',JSON.stringify(stopped?.data.reason))
+ const interim=f.adapter.requests.slice(before)
+ assert.equal(interim.length,1);assert.equal(interim[0]?.purpose,'compaction')
+ assert.doesNotMatch(JSON.stringify(interim),/OWNER-CANCELLED|OLD-MIXED-ANSWER|只交付桌面版/)
+ await sendText(f,'继续原订单。','owner-role-retried')
+ assert.match(JSON.stringify(f.adapter.requests.at(-1)?.messages),/OWNER-CANCELLED 27\.25/)
+ assert.doesNotMatch(JSON.stringify(f.adapter.requests.at(-1)?.messages),/OLD-MIXED-ANSWER|只交付桌面版/)
+ assert.equal(f.events().filter(event=>event.type==='turn/end').at(-1)?.data.reason.kind,'completed')
+ assert.equal(f.events().filter(event=>event.type==='user/message'&&event.data.source.kind==='user'&&'rpcId'in event.data.source&&event.data.source.rpcId==='owner-before-cancel').length,1)
+ assert.equal(f.counters.tools,0)
+})
+
+test('岗位恢复容量包括已持久化的显式输出上限，不用新模型默认值覆盖',async t=>{
+ const f=await compactionFixture(t,{contextWindow:16000,thresholdRatio:0.1}),p=projectPorts(),runtime=registerProjectRuntimeContext(f.ctx,p.ports);t.after(runtime.close)
+ const explicit=f.agent.ctx.on('agent/request',async(_payload,next)=>({...await next(),maxTokens:4000}))
+ f.adapter.scripts.push(...Array.from({length:6},()=>textAnswer))
+ await sendText(f,'OWNER-CAPPED '+ 'a'.repeat(7400),'owner-with-output-cap')
+ await sendText(f,'核对原输入。','owner-cap-compacted');explicit()
+ assert.equal(f.events().filter(event=>event.type==='compaction/end'&&!event.data.error).length,1)
+ assert.equal(f.agent.session.requestHeader()?.config.maxTokens,4000)
+ assert.notEqual(f.agent.session.requestHeader()?.adapterDefaults?.maxTokens,true)
+ f.adapter.resolveModel=async(provider,model)=>({provider,id:model,name:model,inputModalities:['text'] as const,context:{contextWindow:model==='smaller-model'?5000:16000},defaultMaxTokens:256})
+ const {installModelSelection}=await import('@deepseek-ai/dsh-agent')
+ const release=installModelSelection(f.agent.ctx,{current:{provider:'hot-test',model:'smaller-model'},assembled:undefined});t.after(release)
+ const surface=[...f.agent.session.surface.nodes],before=f.adapter.requests.length
+ p.state.generation=2;p.state.retainUserInputFromGeneration=1
+ await sendText(f,'继续核对原输入。','owner-cap-denied')
+ assert.equal(f.adapter.requests.length,before,'历史显式4000输出加恢复正文超过5000窗口，应在主/摘要派发前拒绝')
+ assert.deepEqual([...f.agent.session.surface.nodes],surface)
+ const failure=f.events().filter(event=>event.type==='turn/end').at(-1)
+ assert.ok(failure?.type==='turn/end'&&failure.data.reason.kind==='error')
+ assert.match(failure.data.reason.error.message,/上下文窗口/)
 })
 
 test('撤回后先清洁重建再处理压缩，旧长资料不会进入下一摘要或主模型',async t=>{
@@ -432,3 +591,58 @@ function projectChangeAnswer(args:unknown):readonly StreamChunk[]{
   {type:'finish',reason:{kind:'tool-calls'}},
  ]
 }
+
+test('MEM06 同代次受管正文按稳定段落替换，纯继续不重复且原审计前缀保留',async t=>{
+ const f=await nativeHotCausalityFixture(t),p=projectPorts(),runtime=registerProjectRuntimeContext(f.ctx,p.ports);t.after(runtime.close)
+ t.after(()=>t.diagnostic('MEM06 fixture adapter requests='+f.adapter.requests.length))
+ const a='MEM06_AUTOMATIC_A',b='MEM06_AUTOMATIC_B'
+ const body=(request:GenerateOptions)=>request.messages.flatMap(message=>message.content.flatMap(block=>block.type==='text'?[block.text]:[])).join('\n')
+ const count=(text:string,value:string)=>text.split(value).length-1
+ p.state.text=a;f.adapter.scripts.push(textAnswer,textAnswer,textAnswer)
+ await sendText(f,'第一个独立问题','mem06-stable-a')
+ const original=f.agent.session.snapshotEvents(),firstRequest=JSON.stringify(f.adapter.requests[0])
+ p.state.text=b;await sendText(f,'新的独立问题','mem06-stable-b')
+ assert.equal(count(body(f.adapter.requests[1]!),a),0);assert.equal(count(body(f.adapter.requests[1]!),b),1)
+ p.state.text=a+'\n'+b;await sendText(f,'继续','mem06-stable-continue')
+ assert.equal(count(body(f.adapter.requests[2]!),a),1);assert.equal(count(body(f.adapter.requests[2]!),b),1)
+ assert.deepEqual(f.agent.session.snapshotEvents().slice(0,original.length),original)
+ assert.equal(JSON.stringify(f.adapter.requests[0]),firstRequest)
+ assert.ok(f.agent.session.snapshotEvents().some(event=>event.type==='user/message'&&event.data.source.kind==='runtime-context'&&JSON.stringify(event.data).includes(a)),'旧自动段落仍保留在原审计事件中')
+})
+
+test('MEM06 只替换受管自动段落，本人同文、模型引用与显式工具读取保留',async t=>{
+ const f=await nativeHotCausalityFixture(t),p=projectPorts(),runtime=registerProjectRuntimeContext(f.ctx,p.ports);t.after(runtime.close)
+ t.after(()=>t.diagnostic('MEM06 fixture adapter requests='+f.adapter.requests.length))
+ const a='MEM06_EXPLICIT_A',b='MEM06_CURRENT_B',owner='本人原话 '+a+' '+a,quote='已明确引用 '+a;let reads=0
+ f.ctx.tools.register(defineTool({name:'mem06_read_exact',description:'按本人要求读取合成值',parameters:{},output:{schema:{type:'string'},render:(_args,value)=>[{type:'text',text:value}]},execute:async()=>{reads++;return a}}))
+ const quoted=textAnswer.map(chunk=>chunk.type==='text-delta'?{...chunk,text:quote}:chunk.type==='block-end'&&chunk.block.type==='text'?{...chunk,block:{...chunk.block,text:quote}}:chunk)
+ const tool=toolAnswer.map(chunk=>chunk.type==='tool-call-delta'?{...chunk,name:'mem06_read_exact'}:chunk.type==='block-end'&&chunk.block.type==='tool-call'?{...chunk,block:{...chunk.block,name:'mem06_read_exact'}}:chunk)
+ f.adapter.scripts.push(quoted,tool,textAnswer);p.state.text=a
+ await sendText(f,owner,'mem06-owner-literal')
+ const original=f.agent.session.snapshotEvents();p.state.text=a+'\n'+b
+ await sendText(f,'请通过 mem06_read_exact 读取原值','mem06-explicit-read')
+ const request=f.adapter.requests.at(-1)!,texts=(message:typeof request.messages[number])=>message.content.flatMap(block=>block.type==='text'?[block.text]:[]).join('\n')
+ const automatic=request.messages.filter(message=>message.source?.kind==='runtime-context'&&message.source.form==='snapshot'&&message.source.sections.some(section=>section.name==='teloa/project-context')).map(texts).join('\n')
+ assert.equal(automatic.split(a).length-1,1);assert.equal(automatic.split(b).length-1,1)
+ assert.ok(request.messages.some(message=>message.source?.kind==='user'&&texts(message)===owner))
+ assert.ok(request.messages.some(message=>message.source?.kind==='model'&&texts(message)===quote))
+ assert.ok(request.messages.some(message=>message.role==='tool'&&texts(message)===a));assert.equal(reads,1)
+ assert.deepEqual(f.agent.session.snapshotEvents().slice(0,original.length),original)
+})
+
+
+test('NF01记忆关闭仍保留本轮员工来源及指定知识，下一轮撤回旧身份且不读取经验',async t=>{
+ const f=await nativeHotCausalityFixture(t),{ports,state}=projectPorts();state.memoryMode='off'
+ const runtime=registerProjectRuntimeContext(f.ctx,ports);t.after(()=>runtime.close())
+ const role={id:'11111111-1111-4111-8111-111111111111',ownerId:'project-owner',version:1,name:'本轮研判员-NF01',kind:'employee',state:'active',scopes:['SOC'],duty:'核对本岗位证据-NF01',dataScope:'本岗位',executionScope:'仅沟通和派发',skills:[],knowledge:[]} as unknown as DigitalRole
+ const marker=encodeEmployeeMention({roleId:role.id,roleVersion:1})
+ const selected=registerEmployeeMentionContext(f.ctx,{applies:async()=>true,resolve:async(sessionId,text)=>text.includes(marker)?{reference:{roleId:role.id,roleVersion:1},role,sessionId,scopeId:'SOC',assertCurrent:async()=>{}}:null,material:async()=>({knowledge:'本轮明确指定资料-NF01',experience:'关闭记忆不得发送-NF01',allowedTools:[],argumentRules:[],assertCurrent:async()=>{}})})
+ t.after(()=>selected.dispose());f.adapter.scripts.push(textAnswer,textAnswer)
+ await sendText(f,marker+' 请核对本岗位','off-selected-employee')
+ const first=JSON.stringify(f.adapter.requests[0]?.messages)
+ assert.match(first,/本轮研判员-NF01/);assert.match(first,/teloa.employee-mention/);assert.match(first,/本轮明确指定资料-NF01/)
+ assert.doesNotMatch(first,/关闭记忆不得发送-NF01/)
+ await sendText(f,'普通问题，不选择员工','off-no-employee')
+ const next=JSON.stringify(f.adapter.requests[1]?.messages)
+ assert.doesNotMatch(next,/本轮研判员-NF01|核对本岗位证据-NF01|本轮明确指定资料-NF01|关闭记忆不得发送-NF01/)
+})

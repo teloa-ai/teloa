@@ -1,13 +1,14 @@
 import type {Pool} from 'pg'
 import {
- WorkError,pageCreateFieldRows,pageCreateLimits,readMarketPluginRegistrySource,readPageCreateBody,readPageCreatePlanDraft,taskInput,
- type MarketPluginPermissionSummary,type PageCreateDraftPreview,type PageCreateEntity,
+ WorkError,pageCreateFieldRows,pageCreateLimits,readMarketPluginRegistrySource,readPageCreateBody,readPageCreatePlanDraft,roleWriteDefinition,taskInput,
+ type MarketPluginPermissionSummary,type PageCreateDraftPreview,type PageCreateEntity,type WorkResource,
 } from '@teloa/contract'
 import {validateManifest} from '../market/content-store.ts'
 import type {PageCreateActor,PageCreateDraftService,PageCreateReaders} from './page-create-drafts.ts'
 
 type BusinessPreviewPort={preview:(actor:{ownerId:string;scopeIds:string[]},input:unknown,signal?:AbortSignal)=>Promise<unknown>}
 type ExtensionPreviewPort={preview:(source:{registry:'npm';packageName:string;version:string},signal?:AbortSignal)=>Promise<{permissionSummary:MarketPluginPermissionSummary}>}
+type RoleReferencePort={knowledge:(actor:PageCreateActor)=>Promise<readonly WorkResource[]>;skills:(signal?:AbortSignal)=>Promise<readonly {name:string}[]>}
 
 const forbidden=(message:string)=>new WorkError('teloa/forbidden',message)
 const conflict=(message:string)=>new WorkError('teloa/conflict',message)
@@ -43,8 +44,10 @@ export class PageCreatePreviewService{
  private readonly readers:PageCreateReaders
  private readonly businessPreview:BusinessPreviewPort|undefined
  private readonly extensionPreview:ExtensionPreviewPort|undefined
- constructor(pool:Pool,identity:{now:()=>string},drafts:Pick<PageCreateDraftService,'draftInTransaction'>,businessPreview?:BusinessPreviewPort,extensionPreview?:ExtensionPreviewPort,readers:PageCreateReaders={}){
+ private readonly roleReferences:RoleReferencePort|undefined
+ constructor(pool:Pool,identity:{now:()=>string},drafts:Pick<PageCreateDraftService,'draftInTransaction'>,businessPreview?:BusinessPreviewPort,extensionPreview?:ExtensionPreviewPort,readers:PageCreateReaders={},roleReferences?:RoleReferencePort){
   this.pool=pool;this.identity=identity;this.drafts=drafts;this.businessPreview=businessPreview;this.extensionPreview=extensionPreview;this.readers={manifest:validateManifest,...readers}
+  this.roleReferences=roleReferences
  }
 
  async preview(actor:PageCreateActor,input:unknown,signal?:AbortSignal):Promise<PageCreateDraftPreview>{
@@ -84,11 +87,19 @@ export class PageCreatePreviewService{
     if(!this.businessPreview)throw unavailable('业务定制预览服务尚未接入。')
     businessPreview=await this.businessPreview.preview(actor,{draftId:draft.id,body:draft.body,scope:draft.scope},signal) as PageCreateDraftPreview['businessPreview']
    }
+   let roleReferences:PageCreateDraftPreview['roleReferences']|undefined
+   if(draft.entity==='role'){
+    const role=roleWriteDefinition(body),scopes=['general',...actor.scopeIds]
+    const [knowledge,skills]=await Promise.all([role.knowledge.length?this.roleReferences?.knowledge(actor)??[]:[],role.skills.length?this.roleReferences?.skills(signal)??[]:[]])
+    // 每次预览按当前目录核对；不取模型正文中的名称，也不把资料选择当成新授权。
+    roleReferences={knowledge:role.knowledge.map(id=>{const matches=knowledge.filter(row=>row.id===id&&row.ownerId===actor.ownerId&&row.status==='active'&&row.scopeIds.every(scope=>scopes.includes(scope)&&role.scopes.includes(scope)));return matches.length===1?matches[0]!.title:null}),skills:role.skills.map(name=>skills.filter(row=>row.name===name).length===1?name:null)}
+   }
+   signal?.throwIfAborted()
    await db.query('commit')
    return {
     schema:'teloa.page-create-draft-preview/v1',draft,
     fields:fields.slice(0,pageCreateLimits.fieldRows),fieldsTruncated,consequences,
-    next:rule,computedAt:this.identity.now(),...(businessPreview===undefined?{}:{businessPreview}),
+    next:rule,computedAt:this.identity.now(),...(businessPreview===undefined?{}:{businessPreview}),...(roleReferences===undefined?{}:{roleReferences}),
    }
   }catch(error){await db.query('rollback').catch(()=>{});throw error}finally{db.release()}
  }

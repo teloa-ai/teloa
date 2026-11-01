@@ -109,7 +109,7 @@ export class WorkBudgetService{
  async admitRunStartInTransaction(db:PoolClient,owner:string,budgetAccountId:string):Promise<void>{
   const {policy}=await this.lock(db,owner,budgetAccountId),total=await this.ownerPolicy(db,owner)
   const activeRuns=async(account:string|null)=>Number((await db.query(`select count(*) as n from teloa_task_runs r join teloa_task_work_lineage l on l.owner_id=r.owner_id and l.task_id=r.task_id
-   where r.owner_id=$1 and ($2::uuid is null or l.budget_account_id=$2) and r.state not in ('ended','withdrawn','configuration_failed')`,[owner,account])).rows[0]?.n)
+   where r.owner_id=$1 and ($2::uuid is null or l.budget_account_id=$2) and r.state not in ('ended','withdrawn','configuration_failed','submission_unknown')`,[owner,account])).rows[0]?.n)
   const accountStats=await this.stats(db,owner,budgetAccountId),ownerStats=await this.stats(db,owner,null)
   this.assertCapacity(accountStats,policy);this.assertCapacity(ownerStats,total.policy,0,0,'owner')
   if(Math.max(accountStats.concurrent,await activeRuns(budgetAccountId))>=policy.maxConcurrent)throw exhausted('concurrent')

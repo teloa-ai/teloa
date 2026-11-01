@@ -4,8 +4,9 @@
 .drawer[open]{display:flex;flex-direction:column}
 .header{display:flex;flex:none;align-items:center;justify-content:space-between;gap:16px;min-height:68px;padding:16px 24px;box-sizing:border-box;border-bottom:1px solid var(--teloa-border)}
 .header h2{min-width:0;margin:0;font-size:var(--teloa-font-dialog);font-weight:var(--teloa-weight-heading);line-height:var(--teloa-leading-heading);overflow-wrap:anywhere}
-.drawer>.header>button{box-sizing:border-box;display:grid;place-items:center;flex:none;width:32px;min-width:32px;height:32px;min-height:32px;padding:0;border:0;border-radius:6px;background:transparent;color:var(--teloa-muted);cursor:pointer}
-.drawer>.header>button>svg{width:20px;height:20px;flex:none}
+.headerActions{display:flex;flex:none;align-items:center;gap:8px;margin-left:auto}
+.drawer>.header>.headerActions>button{box-sizing:border-box;display:grid;place-items:center;flex:none;width:32px;min-width:32px;height:32px;min-height:32px;padding:0;border:0;border-radius:6px;background:transparent;color:var(--teloa-muted);cursor:pointer}
+.drawer>.header>.headerActions>button>svg{width:20px;height:20px;flex:none}
 .header button:hover{background:var(--teloa-hover);color:var(--teloa-text)}
 .header button:disabled{opacity:.45;cursor:default}
 .content{flex:1;min-height:0;overflow:auto;overscroll-behavior:contain;overflow-wrap:anywhere}
@@ -20,8 +21,8 @@
 .drawer.compact{width:min(480px,100vw)}
 .compact>.header{min-height:52px;padding:0 12px 0 20px;gap:12px}
 .compact>.header h2{font-size:15px;font-weight:var(--teloa-weight-heading);line-height:var(--teloa-leading-label)}
-.drawer.compact>.header>button{width:28px;min-width:28px;height:28px;min-height:28px}
-.drawer.compact>.header>button>svg{width:16px;height:16px}
+.drawer.compact>.header>.headerActions>button{width:28px;min-width:28px;height:28px;min-height:28px}
+.drawer.compact>.header>.headerActions>button>svg{width:16px;height:16px}
 .compact>.content.padded{padding:16px 20px}
 .identityHeader{justify-content:flex-end;border-bottom:0}
 .identityHeader :is(h2,[data-drawer-label]){position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}

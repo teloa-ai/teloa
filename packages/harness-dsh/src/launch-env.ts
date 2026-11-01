@@ -21,6 +21,8 @@ export function processLayerEnv(launch:LaunchEnvironmentSnapshot,names:readonly 
 export const securityEnvNames=[
  // 验收开关与只在验收环境生效的桩
  'TELOA_BROWSER_ACCEPTANCE','TELOA_ACCEPTANCE_MCP_OAUTH_URL','TELOA_IM_STUB_PORT',
+ // 明确启动的发送摘要审计；工作区 .env 不能开启或选择证据目录。
+ 'TELOA_MODEL_SEND_AUDIT_BINDING',
  // 本地中文检索验收变体开关（只在 TELOA_BROWSER_ACCEPTANCE=1 下生效；工作区 .env 不得把发行变体切成 int8）
  'TELOA_LOCAL_EMBEDDING_ACCEPTANCE','TELOA_LOCAL_EMBEDDING_VARIANT',
  // 授权与外发目标

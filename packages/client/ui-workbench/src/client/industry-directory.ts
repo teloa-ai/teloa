@@ -55,7 +55,15 @@ export async function readIndustryDirectory(inputs:readonly IndustryFileInput[],
 }
 /** 按冻结选择把 v2 分享包转成可固定保存的业务包；分享方署名与许可只是声明，不提升为已签名或已审来源。 */
 export async function shareIndustryItem(pkg:SharePackageV2,choice:{scope:string;skills:readonly string[]}):Promise<MarketItem>{
- const converted=sharePackageV2ToFiles(pkg,choice),encoder=new TextEncoder()
+ return readSharedFiles(sharePackageV2ToFiles(pkg,choice))
+}
+/** 原分享文件逐字保存，供原范围配置采用与来源核对；不做工作副本的目标转换。 */
+export async function shareOriginalIndustryItem(pkg:SharePackageV2):Promise<MarketItem>{
+ const checked=readSharePackageV2(pkg)
+ return readSharedFiles({files:checked.files,title:checked.title,publisher:checked.trust.publisher,license:checked.license})
+}
+async function readSharedFiles(converted:{files:readonly {path:string;text:string}[];title:string;publisher:string;license:string}):Promise<MarketItem>{
+ const encoder=new TextEncoder()
  const item=await readIndustryDirectory(converted.files.map(f=>{const bytes=encoder.encode(f.text);return {path:f.path,size:bytes.length,read:async()=>bytes}}),'teloa.json',converted.title)
  return {...item,author:converted.publisher,license:converted.license,trust:{publisher:converted.publisher,repository:null,license:{status:'declared',value:converted.license},signature:{status:'unverified',signer:null},compatibility:{teloa:'未声明',dsh:'未声明'},plugins:[],externalCapabilities:[],permissions:[],review:{conclusion:'needs-review',summary:'本地上传来源尚未完成签名与兼容审查'}}}
 }

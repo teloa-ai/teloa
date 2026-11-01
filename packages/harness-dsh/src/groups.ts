@@ -1,10 +1,11 @@
 import {WorkError,groupChangeInput,groupCreateInput,groupListInput,groupMessageListInput,groupReactionListInput,groupReactionToggleInput,groupResourceGetInput,groupResourceListInput,groupResourceSaveInput,groupResourceWithdrawInput,groupRoutingListInput,groupRoutingRetryInput,groupRoutingStatusInput,groupSendInput} from '@teloa/contract'
 import {groupMessageBodyInput} from '@teloa/contract'
+import {groupMessageSourcesEndpoint} from '@teloa/contract'
 import {groupReadingInput,groupMarkReadInput} from '@teloa/contract'
 import {groupMessagePageInput,groupMessageSearchInput} from '@teloa/contract'
 import {groupMentionsInput} from '@teloa/contract'
 
-export const groupEndpoints=['groups/list','groups/get','groups/create','groups/change','groups/messages/list','groups/messages/page','groups/messages/search','groups/messages/body','groups/messages/send','groups/reading/get','groups/reading/mark','groups/attention','groups/mentions/list','groups/resources/list','groups/resources/get','groups/resources/save','groups/resources/withdraw','groups/reactions/list','groups/reactions/toggle','groups/routing/list','groups/routing/status','groups/routing/retry'] as const
+export const groupEndpoints=['groups/list','groups/get','groups/create','groups/change','groups/messages/list','groups/messages/page','groups/messages/search','groups/messages/body',groupMessageSourcesEndpoint.name,'groups/messages/send','groups/reading/get','groups/reading/mark','groups/attention','groups/mentions/list','groups/resources/list','groups/resources/get','groups/resources/save','groups/resources/withdraw','groups/reactions/list','groups/reactions/toggle','groups/routing/list','groups/routing/status','groups/routing/retry'] as const
 
 type GroupOperations={
   list:(owner:string,input:unknown)=>Promise<unknown>
@@ -15,6 +16,7 @@ type GroupOperations={
   messagePage?:(owner:string,input:unknown)=>Promise<unknown>
   messageSearch?:(owner:string,input:unknown)=>Promise<unknown>
   messageBody:(owner:string,input:unknown)=>Promise<unknown>
+  messageSources?:(owner:string,input:unknown)=>Promise<unknown>
   reading?:(owner:string,input:unknown)=>Promise<unknown>
   markRead?:(owner:string,input:unknown)=>Promise<unknown>
   attention?:(owner:string,input:unknown)=>Promise<unknown>
@@ -51,6 +53,7 @@ export function createGroupHandler(owner:string,get:()=>Promise<GroupOperations|
     else if(endpoint==='groups/messages/page')groupMessagePageInput(payload)
     else if(endpoint==='groups/messages/search')groupMessageSearchInput(payload)
     else if(endpoint==='groups/messages/body')groupMessageBodyInput(payload)
+    else if(endpoint===groupMessageSourcesEndpoint.name)groupMessageBodyInput(payload)
     else if(endpoint==='groups/messages/send')admitText(groupSendInput(payload).text)
     else if(endpoint==='groups/reading/get')groupReadingInput(payload)
     else if(endpoint==='groups/reading/mark')groupMarkReadInput(payload)
@@ -78,6 +81,7 @@ export function createGroupHandler(owner:string,get:()=>Promise<GroupOperations|
       return read.call(service,owner,payload)
     }
     if(endpoint==='groups/messages/body')return service.messageBody(owner,payload)
+    if(endpoint===groupMessageSourcesEndpoint.name){if(!service.messageSources)throw new WorkError('teloa/host-unavailable','群消息引用来源暂不可用。');return service.messageSources(owner,payload)}
     if(endpoint==='groups/messages/send')return service.send(owner,payload)
     if(endpoint==='groups/attention'||endpoint==='groups/mentions/list'){
       const read=endpoint==='groups/attention'?service.attention:service.mentionMessages

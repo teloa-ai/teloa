@@ -25,6 +25,11 @@ import {IndustryPlanSource} from '../src/work/industry-plan-source.ts'
 import {IndustryWorkSource} from '../src/work/industry-work-source.ts'
 import {PlanService} from '../src/work/plans.ts'
 import {PlanOccurrenceService} from '../src/work/plan-occurrences.ts'
+import {mkdtemp,rm} from 'node:fs/promises'
+import {tmpdir} from 'node:os'
+import {BusinessConversationBindingService} from '../src/work/business-conversation-bindings.ts'
+import {ConversationService,FileConversationRepository} from '../src/work/conversations.ts'
+import {createBusinessSetupPlanHandler} from '../../harness-dsh/src/business-setup-plan.ts'
 
 let pool:Pool,container:StartedPostgreSqlContainer
 const identity={id:randomUUID,now:()=>new Date().toISOString()},unavailable=async():Promise<never>=>{throw Error('禁止真实模型或外部请求')}
@@ -61,6 +66,53 @@ async function fixture(withResources=true){
  return {...s,draft:saved,plan,request}
 }
 const applyInput=(preview:Awaited<ReturnType<BusinessSetupPlanService['preview']>>)=>({requestId:randomUUID(),draftId:preview.draftId,expectedRevision:preview.revision,expectedDigest:preview.digest,previewReceipt:preview.receipt})
+test('E05：方案列表按本人/范围/已绑定未采用状态过滤，旧库超过16份仍限制回包且零写入',async()=>{
+ const f=await fixture(false),scope=f.draft.scope,actor={...f.actor,scopeIds:[scope]}
+ const stored=(await pool.query('select body from teloa_business_setup_plans where owner_id=$1 and draft_id=$2',[actor.ownerId,f.draft.id])).rows[0].body
+ // 这是恢复后已有行的目录夹具；正常 begin 的16份限制已有独立契约，不在此绕过它发起业务创建。
+ const seed=async(i:number,options:{owner?:string;scope?:string;bound?:boolean;planState?:string;draftState?:string}={})=>{
+  const owner=options.owner??actor.ownerId,id=randomUUID(),sessionId='setup-list-'+randomUUID(),targetScope=options.scope??scope
+  const body=structuredClone(stored);body.plan={...body.plan,draftId:id,title:'目录合成方案 '+i,state:options.planState??'draft',updatedAt:new Date(Date.UTC(2030,0,1,0,0,i)).toISOString()}
+  await pool.query('insert into teloa_business_configuration_drafts(owner_id,id,scope_id,revision,base_version,candidate,hash,status,created_at,updated_at) select $1,$2,$3,revision,base_version,candidate,hash,$4,created_at,updated_at from teloa_business_configuration_drafts where owner_id=$5 and id=$6',[owner,id,targetScope,options.draftState??'draft',actor.ownerId,f.draft.id])
+  await pool.query('insert into teloa_business_setup_plans values($1,$2,$3)',[owner,id,JSON.stringify(body)])
+  await pool.query("insert into teloa_business_conversation_bindings(owner_id,request_id,kind,title,draft_id,session_id,created_at,updated_at) values($1,$2,'builder',$3,$4,$5,now(),now())",[owner,randomUUID(),body.plan.title,id,options.bound===false?null:sessionId])
+  return {draftId:id,scope,title:body.plan.title,revision:body.plan.revision,sessionId}
+ }
+ const included=[];for(let i=0;i<18;i++)included.push(await seed(i))
+ for(const [i,options] of [[30,{bound:false}],[31,{planState:'applied'}],[32,{draftState:'applied'}],[33,{scope:'other-scope'}],[34,{owner:'other-owner'}]] as const)await seed(i,options)
+ const handler=createBusinessSetupPlanHandler(actor.ownerId,async()=>actor.scopeIds,async()=>({setup:f.setup,bindings:{bySession:unavailable}}))
+ const snapshot=async()=>({plans:(await pool.query('select * from teloa_business_setup_plans order by owner_id,draft_id')).rows,requests:(await pool.query('select * from teloa_business_setup_requests order by owner_id,request_id')).rows})
+ const before=await snapshot()
+ assert.deepEqual(await handler('business-setup-plan/list',{scope}),{items:included.slice(-16).reverse()})
+ await assert.rejects(handler('business-setup-plan/list',{scope:'other-scope'}),{code:'teloa/forbidden'})
+ await assert.rejects(handler('business-setup-plan/list',{scope,ownerId:'other-owner'}),{code:'teloa/invalid-input'})
+ assert.deepEqual(await snapshot(),before);assert.equal(f.prepared(),0)
+})
+test('E05：原会话就绪查询无加载时为空，有加载时只读当前readiness，拒绝错归属且不准备',async t=>{
+ const f=await fixture(),root=await mkdtemp(join(tmpdir(),'teloa-setup-readiness-'))
+ t.after(()=>rm(root,{recursive:true,force:true}))
+ const conversations=new ConversationService(new FileConversationRepository(join(root,'conversations.json')),{create:async id=>id,inspect:async()=>{}},identity)
+ const requestId=randomUUID(),title='就绪查询合成会话',native=await conversations.create(f.actor.ownerId,{requestId,title})
+ // 复用真实已创建草案固定会话行；bySession 仍经过正式绑定服务、目录归属及草案校验。
+ await pool.query("insert into teloa_business_conversation_bindings(owner_id,request_id,kind,title,draft_id,session_id,created_at,updated_at) values($1,$2,'builder',$3,$4,$5,now(),now())",[f.actor.ownerId,requestId,title,f.draft.id,native.sessionId])
+ const bindings=new BusinessConversationBindingService(pool,identity,{drafts:f.drafts,conversations,contexts:{context:unavailable}})
+ const handler=createBusinessSetupPlanHandler(f.actor.ownerId,async()=>f.actor.scopeIds,async()=>({setup:f.setup,bindings}))
+ const input={sessionId:native.sessionId,draftId:f.draft.id}
+ const snapshot=async()=>({plan:await f.setup.read(f.actor,{draftId:f.draft.id}),requests:(await pool.query('select count(*)::int n from teloa_business_setup_requests where owner_id=$1',[f.actor.ownerId])).rows[0].n,loads:(await pool.query('select count(*)::int n from teloa_industry_loads where owner_id=$1',[f.actor.ownerId])).rows[0].n,prepared:f.prepared()})
+ const before=await snapshot();assert.equal(await handler('business-setup-plan/readiness',input),null);assert.deepEqual(await snapshot(),before)
+ const preview=await f.setup.preview(f.actor,{draftId:f.draft.id,expectedRevision:f.plan.revision,rejected:[]})
+ await f.setup.apply(f.actor,applyInput(preview));f.actor.scopeIds=[f.draft.scope]
+ const loaded=await f.setup.prepare(f.actor,{draftId:f.draft.id}),loadId=loaded.adoption!.loadId!
+ const afterLoad=await snapshot(),value=await handler('business-setup-plan/readiness',input)
+ assert.deepEqual(value,await f.setup.ports.readiness(loadId));assert.equal(f.prepared(),0);assert.deepEqual(await snapshot(),afterLoad)
+ const other=await conversations.create(f.actor.ownerId,{requestId:randomUUID(),title:'未绑定合成会话'})
+ for(const bad of [{...input,sessionId:other.sessionId},{...input,draftId:randomUUID()},{...input,ownerId:'other-owner'}])await assert.rejects(handler('business-setup-plan/readiness',bad))
+ const foreign=createBusinessSetupPlanHandler('other-owner',async()=>f.actor.scopeIds,async()=>({setup:f.setup,bindings}))
+ await assert.rejects(foreign('business-setup-plan/readiness',input),{code:'teloa/forbidden'})
+ t.mock.method(f.setup.ports,'readiness',async()=>{throw Error('合成就绪服务故障')})
+ await assert.rejects(handler('business-setup-plan/readiness',input),/合成就绪服务故障/)
+ assert.deepEqual(await snapshot(),afterLoad)
+})
 test('原草案完整采用后才加载scope；员工和自动化真实落地且保持暂停，恢复不重复',async()=>{
  const f=await fixture(),preview=await f.setup.preview(f.actor,{draftId:f.draft.id,expectedRevision:f.plan.revision,rejected:[]}),input=applyInput(preview)
  assert.equal((await pool.query('select 1 from teloa_industry_loads where owner_id=$1',[f.actor.ownerId])).rowCount,0)
@@ -214,4 +266,95 @@ test('准备阶段落地后丢回包保存unknown；沿原load恢复不重复员
  assert.equal(restored.adoption!.preparation!.state,'finished');assert.equal(restored.adoption!.loadId,loaded.adoption!.loadId)
  assert.equal((await pool.query('select 1 from teloa_roles where owner_id=$1',[f.actor.ownerId])).rowCount,1)
  assert.equal((await pool.query("select 1 from teloa_plans where owner_id=$1 and state='paused'",[f.actor.ownerId])).rowCount,1)
+})
+
+function localSourceMapping(scope:string){return {kind:'source-mapping' as const,definition:{format:'teloa.business-source-mapping/v1' as const,id:'local-ordered',version:'1.0.0',domain:scope,title:'本人本地同步',objectType:'ticket',source:{kind:'mcp-tool' as const,serverName:'local-owner-only',tool:'list_records',arguments:{syntheticPrivate:'local-only-not-a-credential'},itemsPath:'$.items'},mapping:[{path:'$.name',field:'name'}],primaryKey:['name'],incrementalCursor:{kind:'timestamp' as const,path:'$.updatedAt'},deletionSemantics:'tombstone' as const,deletedAtPath:'$.deletedAt',schedule:{kind:'every' as const,seconds:86400},acknowledgeShortInterval:false}}}
+
+test('F13 local-owner：正式绑定handler手动映射保留完整候选，portable投影无绑定，逐项预览采用及准备仍绑定完整配置',async t=>{
+ const f=services(),root=await mkdtemp(join(tmpdir(),'teloa-local-configuration-'));t.after(()=>rm(root,{recursive:true,force:true}))
+ const conversations=new ConversationService(new FileConversationRepository(join(root,'conversations.json')),{create:async id=>id,inspect:async()=>{}},identity)
+ const bindings=new BusinessConversationBindingService(pool,identity,{drafts:f.drafts,conversations,contexts:{context:unavailable}}),requestId=randomUUID(),title='本人本地配置'
+ const reserved=await bindings.reserve(f.actor,{requestId,kind:'builder',title}),native=await conversations.create(f.actor.ownerId,{requestId,title}),binding=await bindings.bind(f.actor,{requestId,sessionId:native.sessionId})
+ assert.equal(binding.draftId,reserved.draftId);const draft=await f.drafts.get(f.actor,{draftId:binding.draftId!});f.actor.scopeIds=[draft.scope]
+ const handler=createBusinessSetupPlanHandler(f.actor.ownerId,async()=>f.actor.scopeIds,async()=>({setup:f.setup,bindings})),target={sessionId:native.sessionId,draftId:draft.id},manual=await handler('business-setup-plan/manual',target) as Awaited<ReturnType<typeof f.setup.manual>>
+ const mapping=localSourceMapping(draft.scope),candidate={...manual.candidate,definitions:[{kind:'object-type' as const,definition:{format:'teloa.business-object-type/v2' as const,id:'ticket',version:'1.0.0',domain:draft.scope,title:'工单',unit:'条',lead:'本地',sourceId:manual.candidate.sources[0]!.sourceId,fields:[field]}},mapping],pages:[{id:'records',title:'工单',kind:'records' as const,objectType:'ticket',fields:['name'],allowCreate:false,allowEdit:false,allowArchive:false}],homePageId:'records'}
+ const input={...target,requestId:randomUUID(),expectedRevision:manual.revision,configurationRevision:manual.configurationRevision,configurationHash:manual.configurationHash,candidate,description:'本人显式准备，未授任何读取权限',roleEdits:[]},saved=await handler('business-setup-plan/edit',input) as Awaited<ReturnType<typeof f.setup.edit>>
+ assert.deepEqual(await handler('business-setup-plan/edit',input),saved)
+ const currentManual=await f.setup.manual(f.actor,{draftId:draft.id});assert.deepEqual(currentManual.candidate.definitions.find(d=>d.kind==='source-mapping'),mapping)
+ const content=await f.market.get({ownerId:f.actor.ownerId,kind:'human'},{contentId:saved.contentId}),portable=readMarketBusinessConfigurationResource(content,'business-configuration').configuration
+ assert.ok(!portable.definitions.some(d=>d.kind==='source-mapping'));assert.ok(portable.definitions.every(d=>d.kind!=='object-type'||d.definition.defaultAction===undefined));assert.ok(!content.files.some(f=>Buffer.from(f.bytes).includes(Buffer.from('local-only-not-a-credential'))))
+ assert.equal((await pool.query('select 1 from teloa_business_configuration_heads where owner_id=$1',[f.actor.ownerId])).rowCount,0)
+ await assert.rejects(handler('business-setup-plan/edit',{...input,requestId:randomUUID()}),{code:'teloa/version-conflict'})
+ const wrongSource=structuredClone(currentManual.candidate);wrongSource.sources[0]!.sourceId='unrelated-source';wrongSource.definitions.find(d=>d.kind==='object-type')!.definition.sourceId='unrelated-source'
+ await assert.rejects(handler('business-setup-plan/edit',{...input,requestId:randomUUID(),expectedRevision:currentManual.revision,configurationRevision:currentManual.configurationRevision,configurationHash:currentManual.configurationHash,candidate:wrongSource}),{code:'teloa/forbidden'})
+ const foreign=createBusinessSetupPlanHandler('foreign-owner',async()=>[draft.scope],async()=>({setup:f.setup,bindings}));await assert.rejects(foreign('business-setup-plan/manual',target),{code:'teloa/forbidden'})
+ const preview=await handler('business-setup-plan/preview',{...target,expectedRevision:saved.revision,rejected:[]}) as Awaited<ReturnType<typeof f.setup.preview>>
+ assert.ok(preview.changes.some(c=>c.id==='definition:source-mapping:local-ordered'))
+ await assert.rejects(handler('business-setup-plan/apply',{...target,...applyInput(preview),previewReceipt:'f'.repeat(64)}),{code:'teloa/conflict'})
+ const applied=await handler('business-setup-plan/apply',{...target,...applyInput(preview)}) as Awaited<ReturnType<typeof f.setup.apply>>
+ const full=await f.configuration.current(f.actor,{scope:draft.scope});assert.equal(full!.version,applied.configuration.version);assert.ok(full!.leaves.some(l=>l.kind==='source-mapping'&&JSON.parse(l.body).source.arguments.syntheticPrivate==='local-only-not-a-credential'))
+ const loaded=await f.setup.prepare(f.actor,{draftId:draft.id});assert.ok(loaded.adoption!.loadId);assert.equal(f.prepared(),0)
+ assert.equal((await pool.query('select 1 from teloa_plans where owner_id=$1',[f.actor.ownerId])).rowCount,0)
+})
+
+test('F13 local-owner：foreign portable包仍拒绝同步绑定，不能借本地标记绕过',async()=>{
+ const f=await fixture(false),pkg=structuredClone(f.request.package),config=JSON.parse(pkg.files.find(f=>f.path==='configuration.json')!.text);config.configuration.definitions.push(localSourceMapping(f.draft.scope));pkg.files.find(f=>f.path==='configuration.json')!.text=JSON.stringify(config)
+ await assert.rejects(f.setup.revise(f.actor,{requestId:randomUUID(),draftId:f.draft.id,expectedRevision:f.plan.revision,package:pkg,roleEdits:[]}),{code:'teloa/invalid-input'})
+ const actionPackage=structuredClone(f.request.package),actionConfig=JSON.parse(actionPackage.files.find(f=>f.path==='configuration.json')!.text);actionConfig.configuration.definitions.find((d:any)=>d.kind==='object-type').definition.defaultAction='foreign-private-action';actionPackage.files.find(f=>f.path==='configuration.json')!.text=JSON.stringify(actionConfig)
+ await assert.rejects(f.setup.revise(f.actor,{requestId:randomUUID(),draftId:f.draft.id,expectedRevision:f.plan.revision,package:actionPackage,roleEdits:[]}),{code:'teloa/invalid-input'})
+ const manual=await f.setup.manual(f.actor,{draftId:f.draft.id})
+ await assert.rejects(f.setup.edit(f.actor,{requestId:randomUUID(),draftId:f.draft.id,expectedRevision:manual.revision,configurationRevision:manual.configurationRevision,configurationHash:manual.configurationHash,candidate:manual.candidate,description:'不能提供本地内部标记',roleEdits:[],localOwnerConfiguration:true}),{code:'teloa/invalid-input'})
+ assert.equal((await pool.query('select 1 from teloa_business_configuration_heads where owner_id=$1',[f.actor.ownerId])).rowCount,0)
+})
+
+test('F13 local-owner：默认动作保存保留而portable剥离，未绑定动作仍由原来源校验拒绝采用',async()=>{
+ const f=await fixture(false),manual=await f.setup.manual(f.actor,{draftId:f.draft.id}),candidate=structuredClone(manual.candidate)
+ candidate.definitions.find(d=>d.kind==='object-type')!.definition.defaultAction='owner-private-action'
+ const edited=await f.setup.edit(f.actor,{requestId:randomUUID(),draftId:f.draft.id,expectedRevision:manual.revision,configurationRevision:manual.configurationRevision,configurationHash:manual.configurationHash,candidate,description:'保留本地动作，不执行或授予',roleEdits:[]})
+ const content=await f.market.get({ownerId:f.actor.ownerId,kind:'human'},{contentId:edited.contentId}),portable=readMarketBusinessConfigurationResource(content,'configuration').configuration
+ assert.ok(portable.definitions.every(d=>d.kind!=='object-type'||d.definition.defaultAction===undefined))
+ assert.equal((await f.setup.manual(f.actor,{draftId:f.draft.id})).candidate.definitions.find(d=>d.kind==='object-type')!.definition.defaultAction,'owner-private-action')
+ await assert.rejects(f.setup.preview(f.actor,{draftId:f.draft.id,expectedRevision:edited.revision,rejected:[]}),(error:unknown)=>error instanceof Error&&'code'in error&&error.code==='teloa/source-unavailable')
+ assert.equal((await pool.query('select 1 from teloa_business_configuration_heads where owner_id=$1',[f.actor.ownerId])).rowCount,0)
+})
+
+test('F13 local-owner：仅绑定变化时portable摘要相同但完整候选与旧预览不可混用',async()=>{
+ const f=await fixture(false),first=await f.setup.manual(f.actor,{draftId:f.draft.id}),candidate=structuredClone(first.candidate);candidate.definitions.push(localSourceMapping(f.draft.scope))
+ const edit={requestId:randomUUID(),draftId:f.draft.id,expectedRevision:first.revision,configurationRevision:first.configurationRevision,configurationHash:first.configurationHash,candidate,description:'同一静态页面的本地来源修订',roleEdits:[]},one=await f.setup.edit(f.actor,edit),oldPreview=await f.setup.preview(f.actor,{draftId:f.draft.id,expectedRevision:one.revision,rejected:[]})
+ const next=await f.setup.manual(f.actor,{draftId:f.draft.id}),changed=structuredClone(next.candidate),mapping=changed.definitions.find(d=>d.kind==='source-mapping')!;mapping.definition.source={kind:'mcp-tool',serverName:'another-local-only',tool:'list_records',arguments:{syntheticPrivate:'second-local-only'},itemsPath:'$.items'}
+ const two=await f.setup.edit(f.actor,{...edit,requestId:randomUUID(),expectedRevision:next.revision,configurationRevision:next.configurationRevision,configurationHash:next.configurationHash,candidate:changed})
+ assert.equal(two.contentHash,one.contentHash);assert.notEqual(two.configurationHash,one.configurationHash)
+ await assert.rejects(f.setup.apply(f.actor,applyInput(oldPreview)),{code:'teloa/conflict'})
+ const fresh=await f.setup.preview(f.actor,{draftId:f.draft.id,expectedRevision:two.revision,rejected:[]});assert.notEqual(fresh.digest,oldPreview.digest)
+ await assert.rejects(f.setup.apply(f.actor,{...applyInput(fresh),previewReceipt:oldPreview.receipt}),{code:'teloa/conflict'})
+ await f.setup.apply(f.actor,applyInput(fresh));f.actor.scopeIds=[f.draft.scope]
+ const full=await f.configuration.current(f.actor,{scope:f.draft.scope});assert.equal(JSON.parse(full!.leaves.find(l=>l.kind==='source-mapping')!.body).source.serverName,'another-local-only')
+ assert.equal(f.prepared(),0);assert.equal((await pool.query('select 1 from teloa_task_runs where owner_id=$1',[f.actor.ownerId])).rowCount,0)
+})
+
+for(const mode of ['empty','work-only','portable-and-work'] as const)test('F13 revise-after-local：'+mode+' 正常public续完整方案保持本地绑定及原actor/版本',async t=>{
+ const f=services(),root=await mkdtemp(join(tmpdir(),'teloa-local-revise-'));t.after(()=>rm(root,{recursive:true,force:true}));const conversations=new ConversationService(new FileConversationRepository(join(root,'conversations.json')),{create:async id=>id,inspect:async()=>{}},identity),bindings=new BusinessConversationBindingService(pool,identity,{drafts:f.drafts,conversations,contexts:{context:unavailable}}),requestId=randomUUID(),title='本地编辑后追加分工'
+ const reserved=await bindings.reserve(f.actor,{requestId,kind:'builder',title}),native=await conversations.create(f.actor.ownerId,{requestId,title});await bindings.bind(f.actor,{requestId,sessionId:native.sessionId});const draft=await f.drafts.get(f.actor,{draftId:reserved.draftId!});f.actor.scopeIds=[draft.scope]
+ const handler=createBusinessSetupPlanHandler(f.actor.ownerId,async()=>f.actor.scopeIds,async()=>({setup:f.setup,bindings})),target={sessionId:native.sessionId,draftId:draft.id},manual=await f.setup.manual(f.actor,{draftId:draft.id}),mapping=localSourceMapping(draft.scope),candidate={...manual.candidate,definitions:[{kind:'object-type' as const,definition:{format:'teloa.business-object-type/v2' as const,id:'ticket',version:'1.0.0',domain:draft.scope,title:'工单',unit:'条',lead:'本地',sourceId:manual.candidate.sources[0]!.sourceId,fields:[field]}},mapping],pages:[{id:'records',title:'工单',kind:'records' as const,objectType:'ticket',fields:['name'],allowCreate:false,allowEdit:false,allowArchive:false}],homePageId:'records'}
+ const saved=await f.setup.edit(f.actor,{requestId:randomUUID(),draftId:draft.id,expectedRevision:0,configurationRevision:manual.configurationRevision,configurationHash:manual.configurationHash,candidate,description:'保持本人原本地来源',roleEdits:[]}),content=await f.market.get({ownerId:f.actor.ownerId,kind:'human'},{contentId:saved.contentId}),manifest=structuredClone(content.metadata) as any
+ manifest.resources=mode==='portable-and-work'?manifest.resources:[];manifest.relations=[];manifest.entrypoints=[]
+ const files=mode==='portable-and-work'?content.files.map(f=>({path:f.path,text:new TextDecoder().decode(f.bytes)})):[]
+ if(mode!=='empty'){manifest.resources.push({id:'new-work',kind:'work-template',title:'新增分工',version:'1.0.0',required:true,source:{kind:'local',path:'new-work.json'}});manifest.entrypoints=['new-work'];files.push({path:'new-work.json',text:JSON.stringify({format:'teloa.work-template/v1',id:'new-work',title:'新增分工',version:'1.0.0',domain:draft.scope,description:'只准备不执行',requirements:['本轮合成材料'],output:'未发送草稿',skills:[]})})}
+ const priorManifest=files.find(f=>f.path===content.manifestPath);if(priorManifest)priorManifest.text=JSON.stringify(manifest);else files.push({path:content.manifestPath,text:JSON.stringify(manifest)})
+ const input={...target,requestId:randomUUID(),expectedRevision:saved.revision,package:{manifestPath:content.manifestPath,files},roleEdits:[]}
+ if(mode==='portable-and-work')for(const forbiddenKind of ['mapping','defaultAction']){
+  const attack=structuredClone(input),configurationFile=attack.package.files.find(f=>f.path===manifest.resources.find((r:any)=>r.kind==='business-configuration').source.path)!,resource=JSON.parse(configurationFile.text),unsafe=structuredClone(candidate)
+  if(forbiddenKind==='defaultAction'){unsafe.definitions=unsafe.definitions.filter(d=>d.kind!=='source-mapping') as typeof unsafe.definitions;Object.assign(unsafe.definitions.find(d=>d.kind==='object-type')!.definition,{defaultAction:'foreign-host-action'})}
+  resource.configuration=unsafe;configurationFile.text=JSON.stringify(resource);attack.requestId=randomUUID()
+  await assert.rejects(handler('business-setup-plan/revise',attack),{code:'teloa/invalid-input'})
+ }
+ const revised=await handler('business-setup-plan/revise',input) as Awaited<ReturnType<typeof f.setup.revise>>
+ assert.deepEqual(await handler('business-setup-plan/revise',input),revised);assert.equal(revised.revision,saved.revision+1)
+ const full=await f.setup.manual(f.actor,{draftId:draft.id});assert.deepEqual(full.candidate.definitions.find(d=>d.kind==='source-mapping'),mapping)
+ await assert.rejects(handler('business-setup-plan/revise',{...input,requestId:randomUUID()}),{code:'teloa/version-conflict'})
+ const foreign=createBusinessSetupPlanHandler('foreign-owner',async()=>[draft.scope],async()=>({setup:f.setup,bindings}));await assert.rejects(foreign('business-setup-plan/revise',{...input,requestId:randomUUID(),expectedRevision:revised.revision}),{code:'teloa/forbidden'})
+ const preview=await handler('business-setup-plan/preview',{...target,expectedRevision:revised.revision,rejected:[]}) as Awaited<ReturnType<typeof f.setup.preview>>;assert.ok(preview.changes.some(c=>c.id==='definition:source-mapping:local-ordered'))
+ await handler('business-setup-plan/apply',{...target,...applyInput(preview)});const current=await f.configuration.current(f.actor,{scope:draft.scope});assert.equal(JSON.parse(current!.leaves.find(l=>l.kind==='source-mapping')!.body).source.serverName,'local-owner-only')
+ if(mode!=='empty')assert.ok((await f.setup.read(f.actor,{draftId:draft.id}))!.adoption!.steps.some(s=>s.kind==='work-template'&&s.state==='pending'))
+ assert.equal(f.prepared(),0);assert.equal((await pool.query('select 1 from teloa_task_runs where owner_id=$1',[f.actor.ownerId])).rowCount,0)
 })

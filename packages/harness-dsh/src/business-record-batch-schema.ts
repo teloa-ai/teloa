@@ -18,6 +18,6 @@ export const businessRecordOperationsParameter={
   expectedVersion:{type:'integer',description:'edit/archive 必填：读取到的当前记录版本。'},
   title:text('create 必填；edit 可选：记录标题。'),
   summary:text('create 必填（可为空字符串）；edit 可选：记录摘要。'),
-  fields:{type:'array',description:'create/edit 必填，完整替换：每个字段一项，name 为字段定义里的 name（不是显示标签），value 为字符串，空字符串表示清空。',items:{type:'object',additionalProperties:false,properties:{name:{type:'string',required:true},value:{type:'string',required:true}}}},
+  fields:{type:'array',description:'create/edit 必填，完整替换：每个字段一项，name 为字段定义里的 name（不是显示标签），number/boolean 使用真实数值/布尔值，旧字符串原值可保留；其它字段为字符串，空字符串表示清空，不将 false/0 当空值。',items:{type:'object',additionalProperties:false,properties:{name:{type:'string',required:true},value:{required:true,oneOf:[{type:'string'},{type:'number'},{type:'boolean'}]}}}},
  }},
 } as const satisfies ParameterPropertySpec

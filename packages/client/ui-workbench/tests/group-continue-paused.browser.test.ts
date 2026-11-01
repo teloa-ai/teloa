@@ -9,11 +9,11 @@ test('续办被原任务暂停挡住：原消息下说明在等恢复并就地�
  const root=fileURLToPath(new URL('../../../../',import.meta.url)),client=fileURLToPath(new URL('../src/client/',import.meta.url)),entryId=root+'__group_continue_paused.tsx',markdown='\0group-continue-paused-markdown',crypto='\0group-continue-paused-crypto'
  const entry=String.raw`import React from 'react';import {createRoot} from 'react-dom/client';import {flushSync} from 'react-dom';import {SavedCollaborationPage} from '${client}SavedCollaborationPage.tsx';import {createGroupApi} from '${client}group-api.ts';import {createGroupRoutingApi} from '${client}group-routing-api.ts';import {createGroupReactionApi} from '${client}group-reaction-api.ts';import {createWorkControlApi} from '${client}work-control-api.ts';import tokens from '${client}theme-tokens.module.css';import {prototypeThemes} from '${client}../brand/prototype-theme.ts';import {I18nProvider} from '${client}i18n/provider.tsx';import {translateMessage} from '${client}i18n/messages.ts';import {groupMessagePageFixture,groupMessageReadingFixture} from '${client}../../tests/fixtures/group-message-page-rpc.ts';
  const id=n=>'00000000-0000-4000-8000-'+String(n).padStart(12,'0'),at=n=>new Date(Date.UTC(2026,9,19,0,0,n)).toISOString(),ids={group:id(1),role:id(3),task:id(4),run:id(5),paused:id(10),ended:id(11),stuck:id(12),pausedControl:id(20),endedControl:id(21),stuckControl:id(22),stuckRun:id(30),stuckRequest:id(31)};
- const f=window.fixture={ids,calls:[],resumed:false,opened:[],snapshot:{locale:'zh-CN',dshLocale:'zh-CN',revision:1},render:()=>{}};
+ const f=window.fixture={ids,calls:[],resumed:false,opened:[],preparedOriginal:!!window.preparedOriginal,snapshot:{locale:'zh-CN',dshLocale:'zh-CN',revision:1},render:()=>{}};
  document.body.style.margin='0';for(const [name,value] of Object.entries(prototypeThemes.light))document.body.style.setProperty(name,value);document.getElementById('root').style.height='100dvh';
  const group={id:ids.group,ownerId:'self',version:1,name:'安全运营群',scope:'general',announcement:'',rules:{historyVisibleToNewMembers:true,draftsVisibleInGroup:true,mentionAllAllowed:true},pinned:false,archived:false,createdAt:at(0),updatedAt:at(0)};
  const own=(key,n,text)=>({id:key,groupId:ids.group,rootId:null,authorId:'self',text,references:[],mentions:[],createdAt:at(n)}),rows=[own(ids.ended,1,'继续另一项已停止的工作'),own(ids.paused,2,'质量退回，继续原任务'),own(ids.stuck,3,'继续仍在执行的原工作')];
- const recipient=phase=>({roleId:ids.role,name:'T2 调查员',taskId:ids.task,runId:null,phase,resultMessageId:null,executionMode:'work'});
+ const recipient=phase=>({roleId:ids.role,name:'T2 调查员',taskId:ids.task,runId:f.preparedOriginal?ids.run:null,phase,resultMessageId:null,executionMode:'work'});
  const statusOf=messageId=>messageId===ids.paused?(f.resumed?{messageId,attemptVersion:1,phase:'running',recipients:[{...recipient('running'),runId:ids.run}],hintCode:null,canRetry:false}:{messageId,attemptVersion:1,phase:'paused',recipients:[recipient('paused')],hintCode:'continue-paused',canRetry:false,controlId:ids.pausedControl}):{messageId,attemptVersion:1,phase:'paused',recipients:[recipient('paused')],hintCode:'continue-paused',canRetry:false,controlId:messageId===ids.stuck?ids.stuckControl:ids.endedControl};
  const control=(controlId,state,version)=>({id:controlId,ownerId:'self',generation:3,version,state,scope:'round',pendingRunIds:[],unknownOperationIds:[]});
  const call=async(endpoint,input)=>{f.calls.push([endpoint,input]);
@@ -27,7 +27,7 @@ test('续办被原任务暂停挡住：原消息下说明在等恢复并就地�
   if(endpoint==='work-controls/get'&&input.controlId===ids.stuckControl)return control(ids.stuckControl,'paused',4);
   if(endpoint==='work-recovery/inspect'&&input.controlId===ids.stuckControl)return [{controlId:ids.stuckControl,expectedGeneration:3,runId:ids.stuckRun,nativeRequestId:ids.stuckRequest,goal:null,reason:'accepted',safeRecovery:false,resumable:false}];
   if(endpoint==='work-controls/get')return input.controlId===ids.endedControl?control(ids.endedControl,'stopped',5):control(ids.pausedControl,f.resumed?'active':'paused',f.resumed?10:9);
-  if(endpoint==='work-recovery/inspect')return [];
+  if(endpoint==='work-recovery/inspect')return f.preparedOriginal?[{controlId:ids.pausedControl,expectedGeneration:3,runId:ids.run,nativeRequestId:ids.stuckRequest,goal:null,reason:'unaccepted',safeRecovery:false,resumable:true}]:[];
   if(endpoint==='work-recovery/resume'){if(f.dropNext){f.dropNext=false;throw Error('连接中断')}f.resumed=true;return control(ids.pausedControl,'active',10)}
   throw Error('不应调用：'+endpoint)};
  const api=createGroupApi(call),routing=createGroupRoutingApi(call),reactions=createGroupReactionApi(call),controls=createWorkControlApi(call,window.brokenControlJournal?{read:()=>'{broken',write:()=>{},clear:()=>{f.cleared=(f.cleared||0)+1}}:undefined),roles=[{id:ids.role,name:'T2 调查员',kind:'employee',state:'active',scopes:['general'],version:1,duty:'调查',dataScope:'授权日志',executionScope:'只读',skills:[],knowledge:[],memories:[],history:[]}];
@@ -41,7 +41,7 @@ test('续办被原任务暂停挡住：原消息下说明在等恢复并就地�
  const page=await browser.newPage({viewport:{width:1440,height:960}});t.after(()=>page.close());page.setDefaultTimeout(6000)
  const errors:string[]=[];page.on('pageerror',(error:Error)=>errors.push(error.message));await page.route('**/*',(route:any)=>route.abort())
  await page.route('http://127.0.0.1:49321/group-continue-paused-test',(route:any)=>route.fulfill({status:200,contentType:'text/html',body:'<html lang="zh-CN"><body><div id="root"></div></body></html>'}))
- const mount=async(brokenControlJournal=false)=>{await page.goto('http://127.0.0.1:49321/group-continue-paused-test');if(brokenControlJournal)await page.evaluate(()=>{(window as any).brokenControlJournal=true});await page.addStyleTag({content:bundle.output.flatMap(item=>item.type==='asset'&&item.fileName.endsWith('.css')?[String(item.source)]:[]).join('\n')});await page.addScriptTag({content:bundle.output.find(item=>item.type==='chunk')!.code})}
+ const mount=async(brokenControlJournal=false,preparedOriginal=false)=>{await page.goto('http://127.0.0.1:49321/group-continue-paused-test');if(brokenControlJournal)await page.evaluate(()=>{(window as any).brokenControlJournal=true});if(preparedOriginal)await page.evaluate(()=>{(window as any).preparedOriginal=true});await page.addStyleTag({content:bundle.output.flatMap(item=>item.type==='asset'&&item.fileName.endsWith('.css')?[String(item.source)]:[]).join('\n')});await page.addScriptTag({content:bundle.output.find(item=>item.type==='chunk')!.code})}
  await mount()
  const ids=await page.evaluate(()=>(window as any).fixture.ids),calls=(endpoint:string)=>page.evaluate((name:string)=>(window as any).fixture.calls.filter(([e]:any)=>e===name).length,endpoint)
  const main=page.getByRole('region',{name:'讨论',exact:true}),draft=main.getByRole('textbox'),status=(messageId:string)=>page.locator('[data-teloa-message-id="'+messageId+'"] + [role="status"]'),paused=status(ids.paused),ended=status(ids.ended),stuck=status(ids.stuck)
@@ -102,5 +102,16 @@ test('续办被原任务暂停挡住：原消息下说明在等恢复并就地�
  await drawer.getByText('已丢弃本地恢复记录；如果上一次请求已经生效，请到目录里核对。',{exact:true}).waitFor()
  await drawer.getByText('原工作已停止，不能恢复。如需继续，请重新交办。',{exact:true}).waitFor()
  assert.equal(await page.evaluate(()=>(window as any).fixture.cleared),1,'丢弃只清本机恢复记录一次');assert.equal(await calls('work-recovery/resume'),0,'丢弃不恢复')
+ // 具名 prepared 维护投影复用同一抽屉：原 Run 已存在，读取和关闭仍不派发；明确确认只交该原候选。
+ await mount(false,true)
+ await paused.getByRole('button',{name:'恢复原工作',exact:true}).click()
+ await drawer.getByRole('button',{name:'确认恢复',exact:true}).waitFor()
+ assert.equal(await calls('work-recovery/resume'),0)
+ if(process.env.TELOA_PREPARED_RESUME_TEST_OUTPUT_DIR)await page.screenshot({path:process.env.TELOA_PREPARED_RESUME_TEST_OUTPUT_DIR+'/prepared-original-group-resume.png'})
+ await page.keyboard.press('Escape');await drawer.waitFor({state:'hidden'});assert.equal(await calls('work-recovery/resume'),0)
+ await paused.getByRole('button',{name:'恢复原工作',exact:true}).click()
+ await drawer.getByRole('button',{name:'确认恢复',exact:true}).click();await drawer.waitFor({state:'hidden'})
+ const preservedResume=await page.evaluate(()=>(window as any).fixture.calls.filter(([endpoint]:any)=>endpoint==='work-recovery/resume').map(([,input]:any)=>input))
+ assert.equal(preservedResume.length,1);assert.deepEqual(preservedResume[0].candidateRunIds,[ids.run]);assert.equal(preservedResume[0].controlId,ids.pausedControl)
  assert.deepEqual(errors,[])
 })

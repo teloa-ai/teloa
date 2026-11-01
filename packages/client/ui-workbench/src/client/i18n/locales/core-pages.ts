@@ -82,7 +82,11 @@ type CorePageMessageRow=readonly [string,string,string,string]|readonly [string,
 
 export const CORE_PAGE_MESSAGE_ROWS:readonly CorePageMessageRow[] = [
   ...MARKET_APPS_MESSAGE_ROWS,
+  ['error.employeeContextGoalRequired','经验或工作范围已变化，请重新说明需要继续的具体任务。','經驗或工作範圍已變更，請重新說明要繼續的具體任務。','The employee’s experience or work scope has changed. Restate the specific task you want to continue.'],
+  ['error.detachedProjectGoalRequired','会话已移出项目，请重新说明需要继续的具体任务。','對話已移出專案，請重新說明要繼續的具體任務。','This conversation has been moved out of the project. Restate the specific task you want to continue.'],
   ['error.roleKnowledgeUnavailable','员工资料范围包含不可用资料，请编辑员工资料后重试。','員工資料範圍包含不可用資料，請編輯員工資料後重試。','The employee’s material scope contains unavailable items. Edit the employee’s materials and try again.'],
+  ['error.roleWorkOutstanding','该员工还有未结束的关联工作。请先完成或取消关联任务、等待运行及子工作结束，并暂停活动计划或执行委托，再保存职责或执行配置。仅改姓名和头像可直接保存。','此員工仍有未結束的相關工作。請先完成或取消相關工作、等待執行及子工作結束，並暫停活動排程或執行委託，再儲存職責或執行設定。只改姓名和頭像可直接儲存。','This employee still has unfinished work. Finish or cancel associated work, wait for runs and child work to end, and pause active automations or delegations before saving responsibilities or execution settings. Name and avatar changes can be saved directly.'],
+  ['error.localMaterialRegistrationMismatch','该文件已登记。请使用原登记名称与范围，再在资料草案中调整显示名称。','此檔案已登記。請使用原登記名稱與範圍，再於資料草稿中調整顯示名稱。','This file is already registered. Use its original registration name and scope, then adjust the display name in the material draft.'],
   ['p6.planSource.conversation.label','会话中创建','對話中建立','Created in a conversation'],
   ['p6.planSource.conversation.summary','来自原会话中的工作安排。','來自原對話中的工作安排。','Created from an assignment in the original conversation.'],
   ['p6.planSource.method.label','成果方法','成果方法','From a work result'],

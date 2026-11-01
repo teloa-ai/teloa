@@ -1,6 +1,6 @@
 import type {Conversation} from '@teloa/contract'
 export type ConversationObject={kind:'role'|'task';id:string;title:string;version:number;canStart:boolean}
-export type ObjectConversationLink={kind:ConversationObject['kind'];objectId:string;objectVersion:number;conversationId:string;sessionId:string;scopeId?:string;sourceOnly?:true}
+export type ObjectConversationLink={kind:ConversationObject['kind'];objectId:string;objectVersion:number;conversationId:string;sessionId:string;scopeId?:string;sourceOnly?:true;readOnly?:true;displayTitle?:string}
 export function linkObjectConversation(links:readonly ObjectConversationLink[],object:ConversationObject,conversation:Conversation,scopeId?:string):ObjectConversationLink[]{
  if(!object.canStart)throw Error('当前对象已暂停或结束，不能新增会话关联。')
  if(conversation.status!=='ready')throw Error('工作会话尚未就绪。')

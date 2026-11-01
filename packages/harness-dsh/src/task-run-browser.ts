@@ -16,7 +16,7 @@ import type {TaskRunPorts} from './task-run-driver.ts'
 import {createSessionBrowserStop} from './session-browser-stop.ts'
 import {createNativeResourceCleanupOwner} from './native-resource-cleanup.ts'
 
-type Binding=Pick<TaskRun,'id'|'sessionId'|'nativeRequestId'>
+type Binding=Pick<TaskRun,'id'|'sessionId'|'nativeRequestId'>&Partial<Pick<TaskRun,'taskId'|'taskVersion'>>
 type BrowserLink=Extract<TaskRunRuntimeLink,{kind:'browser'}>
 type Receipt={agent:Agent;link:BrowserLink}
 type CleanupMode='stop'|'child-release'
@@ -36,12 +36,16 @@ export type TaskBrowserCleanupAccess={
 export function createTaskRunBrowser(ctx:Context,links:TaskRunRuntimeLinks,readPolicy:TaskToolPolicyReader,runtimeId=taskRunRuntimeId){
  const sessionStop=createSessionBrowserStop(ctx)
  const bindings=new Map<string,Binding>(),receipts=new Map<string,Receipt>(),active=new Map<string,number>()
+ const retired=new Set<string>(),retiring=new Set<string>(),continuations=new Map<string,Pick<TaskRun,'taskId'|'taskVersion'|'nativeRequestId'>>()
  const closing=new Map<Agent,Promise<void>>(),maintaining=new WeakSet<Agent>()
  const authorization=new AsyncLocalStorage<CleanupToken>(),cancelling=new Map<string,Promise<{closed:boolean;reason?:string}>>()
  const bind=(run:Binding)=>{
+  if(retired.has(run.id)||retiring.has(run.id))throw new WorkError('teloa/conflict','原执行浏览器归属已退役或正在核对，不能重新绑定。')
   const previous=bindings.get(run.sessionId)
-  if(previous&&!sameRun(previous,run))throw new WorkError('teloa/storage-corrupt','浏览器会话已属于另一条执行。')
-  bindings.set(run.sessionId,{id:run.id,sessionId:run.sessionId,nativeRequestId:run.nativeRequestId})
+  if(previous&&(!sameRun(previous,run)||previous.taskId!==undefined&&previous.taskId!==run.taskId||previous.taskVersion!==undefined&&previous.taskVersion!==run.taskVersion))throw new WorkError('teloa/storage-corrupt','浏览器会话已属于另一条执行。')
+  const continuation=continuations.get(run.sessionId)
+  if(continuation&&(run.taskId!==continuation.taskId||typeof run.taskVersion!=='number'||!Number.isSafeInteger(run.taskVersion)||run.taskVersion<=continuation.taskVersion||run.nativeRequestId===continuation.nativeRequestId))throw new WorkError('teloa/forbidden','浏览器续办必须使用同任务的新版本和独立请求身份。')
+  bindings.set(run.sessionId,{id:run.id,sessionId:run.sessionId,nativeRequestId:run.nativeRequestId,...(run.taskId===undefined?{}:{taskId:run.taskId}),...(run.taskVersion===undefined?{}:{taskVersion:run.taskVersion})})
  }
  const journal=async(run:Binding)=>{
   const rows=(await links.list({runId:run.id,kind:'browser'})).filter((row):row is BrowserLink=>row.kind==='browser')
@@ -78,7 +82,7 @@ export function createTaskRunBrowser(ctx:Context,links:TaskRunRuntimeLinks,readP
   if(!exec.agent||!nativeBrowserToolNames.includes(exec.name))return next()
   const agent=exec.agent,policy=await policyFor(agent,exec.signal),run=bindings.get(agent.session.id)
   if(policy===null){if(run)throw denied();return sessionStop.dispatch(exec,next)}
-  if(!run||policy.nativeRequestId!==run.nativeRequestId)throw new WorkError('teloa/forbidden','浏览器派发缺少本次任务的持久归属。')
+  if(!run||retiring.has(run.id)||retired.has(run.id)||policy.nativeRequestId!==run.nativeRequestId)throw new WorkError('teloa/forbidden','浏览器派发缺少本次任务的持久归属。')
   const token=authorization.getStore(),trusted=token?.exec===exec
   // 审批等待期间停止，或下游 wrapper 改写身份，都不能在派发口取得一次迟到的动作。
   if(policy.stopRequested===true&&(!trusted||cleanup.issue(exec)||!permitted(policy,run,token?.mode??'stop')))throw denied()
@@ -150,12 +154,31 @@ export function createTaskRunBrowser(ctx:Context,links:TaskRunRuntimeLinks,readP
   cancelling.set(run.id,pending)
   try{return await pending}finally{if(cancelling.get(run.id)===pending)cancelling.delete(run.id)}
  }
- return {bind,state,cancel,cleanup,sessionState:sessionStop.state,dispose:async()=>{await sessionStop.dispose();disposeStatus();await Promise.allSettled([...closing.values()]);cleanupOwner.close();disposeTools()}}
+ const prepareContinuation:NonNullable<TaskRunPorts['prepareContinuation']>=async(run,signal,proof)=>{
+  // 同源账本与原生日志已由 checkAgent 核验；这里只退役已结清的资源槽，不转移旧页面归属。
+  signal.throwIfAborted()
+  if(retired.has(run.id))return
+  const previous=bindings.get(run.sessionId)
+  const completed=run.state==='ended'&&run.evidence?.state==='ended'&&run.evidence.reason==='completed'&&run.stopRequestedAt===null
+  const verifiedUnknown=proof?.unknownVerification===true&&run.state==='submission_unknown'&&run.submissionDisposition!==undefined&&run.stopRequestedAt!==null
+  if(!completed&&!verifiedUnknown||typeof run.taskId!=='string'||!Number.isSafeInteger(run.taskVersion)||run.taskVersion<1||previous&&(!sameRun(previous,run)||previous.taskId!==undefined&&previous.taskId!==run.taskId||previous.taskVersion!==undefined&&previous.taskVersion!==run.taskVersion))throw new WorkError('teloa/conflict','原浏览器执行尚未正常收尾或归属不一致，不能接续。')
+  if(retiring.has(run.id)||(active.get(run.id)??0)>0||[...closing.keys()].some(agent=>bindings.get(agent.session.id)?.id===run.id))throw new WorkError('teloa/conflict','原执行仍有浏览器动作或关闭操作，不能接续。')
+  retiring.add(run.id)
+  try{
+   const current=await state(run);signal.throwIfAborted()
+   if(current.dirty||current.outstanding||current.interrupted)throw new WorkError('teloa/conflict','原执行浏览器资源尚未结清，不能接续。')
+   retired.add(run.id)
+   continuations.set(run.sessionId,{taskId:run.taskId,taskVersion:run.taskVersion,nativeRequestId:run.nativeRequestId})
+   for(const [sessionId,binding]of bindings)if(sameRun(binding,run))bindings.delete(sessionId)
+  }finally{retiring.delete(run.id)}
+ }
+ return {bind,state,cancel,cleanup,prepareContinuation,sessionState:sessionStop.state,dispose:async()=>{await sessionStop.dispose();disposeStatus();await Promise.allSettled([...closing.values()]);cleanupOwner.close();disposeTools()}}
 }
 
 /** 将资源回收纳入已有 Run 收口；不以取消回执替代官方浏览器的关闭结果。 */
 export function attachTaskRunBrowser(ports:TaskRunPorts,browser:ReturnType<typeof createTaskRunBrowser>):void{
- const {send,backgroundState,stopChildren,stopState}=ports
+ const {send,backgroundState,stopChildren,stopState,prepareContinuation}=ports
+ ports.prepareContinuation=async(run,signal,proof)=>{await prepareContinuation?.(run,signal,proof);await browser.prepareContinuation(run,signal,proof)}
  ports.send=async(run,signal,target)=>{browser.bind(run);await send(run,signal,target)}
  ports.backgroundState=async run=>{
   const previous=await backgroundState?.(run),current=await browser.state(run)

@@ -1,3 +1,4 @@
+import {taskRunTerminalStates} from '@teloa/contract'
 import type {SessionEvent} from '@deepseek-ai/dsh-session/types'
 import {groupRunAppendRequestId} from '@teloa/contract'
 import type {GroupWorkInputRecord,GroupWorkInputService} from '@teloa/backend'
@@ -43,7 +44,7 @@ export async function deliverGroupRunAppend(owner:string,item:GroupWorkInputReco
   const run=await ports.run(owner,item.runId,signal)
   const seq=groupRunAppendAcceptedSeq(await ports.events(run.sessionId),item.nativeRequestId)
   if(seq!==null){await ports.settle(owner,{requestId:item.requestId,state:'accepted',runId:item.runId,nativeRequestId:item.nativeRequestId,acceptedSeq:seq,reason:null});return 'accepted'}
-  return ['ended','withdrawn','configuration_failed'].includes(run.state)?'absent':'pending'
+  return run.state!=='submission_unknown'&&taskRunTerminalStates.includes(run.state)?'absent':'pending'
  }
  if(item.state!=='reserved')return 'skipped'
  const target=await ports.target(owner,item.requestId)

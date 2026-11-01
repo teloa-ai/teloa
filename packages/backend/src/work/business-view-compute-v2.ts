@@ -1,6 +1,6 @@
 import type {PoolClient} from 'pg'
 import {
- WorkError,assertBusinessViewV2References,readBusinessObjectTypeDefinitionVersioned,readBusinessViewDefinitionVersioned,readBusinessViewResultV2,readBusinessRichFieldValue,
+ WorkError,type BusinessFieldValue,assertBusinessViewV2References,readBusinessObjectTypeDefinitionVersioned,readBusinessViewDefinitionVersioned,readBusinessViewResultV2,readBusinessRichFieldValue,
  type BusinessObjectTypeDefinition,type BusinessObjectTypeDefinitionV2,type BusinessObjectSnapshot,type BusinessRichFieldParsedValue,
  type BusinessViewDefinition,type BusinessViewDefinitionV2,type BusinessViewFilterV2,type BusinessViewMeasureV2,type BusinessViewResultV2,type BusinessDefinitionSource,
 } from '@teloa/contract'
@@ -32,7 +32,7 @@ function average(sum:bigint,count:number):bigint{
  if(remainder*2n>divisor||remainder*2n===divisor&&quotient%2n!==0n)quotient++
  return negative?-quotient:quotient
 }
-function parse(field:Field,raw:string|undefined,known:Map<string,Set<string>>):Value|undefined{
+function parse(field:Field,raw:BusinessFieldValue|undefined,known:Map<string,Set<string>>):Value|undefined{
  if(!('format' in field))return parseBusinessBasicField(field,raw,known)
  try{
   const value=readBusinessRichFieldValue(field,raw)

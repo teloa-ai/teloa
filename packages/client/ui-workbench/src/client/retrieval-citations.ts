@@ -1,12 +1,73 @@
-import {WorkError,isRecord,readRetrievalCitationPath,readRetrievalSearchResult,retrievalCitationPath,type RetrievalSearchHit} from '@teloa/contract'
+import {WorkError,isRecord,readRetrievalCitationPath,readRetrievalSearchResult,retrievalCitationPath,readProjectContextCitation,projectCitationSelector,projectCitationMatches,projectCitationTurnSources,type ProjectContextCitation,type ProjectContextCitationRequest,type RetrievalSearchHit} from '@teloa/contract'
 import type {ConversationPlanEvents} from './conversation-plans.ts'
+import {readTaskReferenceCitationPath,readTaskReferenceCitation,type TaskReferenceCitationRequest,type TaskReferenceCitation} from '@teloa/contract'
 export type RetrievalCitation={sessionId:string;resourceId:string;resourceVersion:number;sourceId:string;sourceVersion:string;title:string;excerpts:{text:string;heading:string|null;lines:[number,number];chars:[number,number]}[]}
 export type RetrievalCitationEvents={subscribe:(listener:()=>void)=>()=>void;getSnapshot:()=>ConversationPlanEvents}
-export type RetrievalCitationPort={sessionId:string;events:RetrievalCitationEvents;current:()=>boolean;available:(id:string)=>Promise<boolean>;openResource:(address:string)=>void}
+export type RetrievalCitationPort={sessionId:string;events:RetrievalCitationEvents;current:()=>boolean;available:(id:string,version?:number,sourceVersion?:string)=>Promise<boolean>;projectSource?:(input:ProjectContextCitationRequest,signal?:AbortSignal)=>Promise<unknown>;taskSource?:(input:TaskReferenceCitationRequest,signal?:AbortSignal)=>Promise<unknown>;openResource:(address:string)=>void}
 export const retrievalCitationTabId='@teloa/client-ui-workbench/retrieval-source',retrievalCitationTabKind='teloa.retrieval-source'
 const unavailable=()=>new WorkError('teloa/source-unavailable','此引用来源暂不可用，请返回原会话重新核对。')
 const legacy=/^(?:local_material|knowledge)_[a-f0-9]{8}-[a-f0-9]{4}-[1-8][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i
-export const isRetrievalCitationLink=(path:string)=>path.startsWith('teloa-source/')||legacy.test(path)
+export const isRetrievalCitationLink=(path:string)=>path.startsWith('teloa-source/')||legacy.test(path)||!!projectCitationSelector(path)
+export async function readTaskCitation(port:RetrievalCitationPort,request:TaskReferenceCitationRequest,signal?:AbortSignal):Promise<TaskReferenceCitation>{
+ if(!port.current()||request.sessionId!==port.sessionId||!readTaskReferenceCitationPath(request.path)||!port.taskSource)throw unavailable()
+ const result=readTaskReferenceCitation(await port.taskSource(request,signal));signal?.throwIfAborted()
+ if(!port.current()||result.sessionId!==request.sessionId||result.citationPath!==request.path)throw unavailable()
+ return result
+}
+/** 只从真实同轮工具调用/回执补入口；普通消息中的相似 JSON 不形成来源。 */
+export function taskTurnCitations(entries:ConversationPlanEvents['entries'],turn:number):{path:string;title:string;version:number}[]{
+ const calls=new Map<string,{id:string;version:string}>(),found=new Map<string,{path:string;title:string;version:number}>()
+ for(const {event} of entries){
+  const data=event.data;if(!isRecord(data)||data.turn!==turn)continue
+  if(event.type==='tool/call'&&data.name==='mcp__teloa_reference__read_reference'&&typeof data.callId==='string'&&isRecord(data.arguments)&&typeof data.arguments.id==='string'&&typeof data.arguments.version==='string')calls.set(data.callId,{id:data.arguments.id,version:data.arguments.version})
+  if(event.type!=='tool/result'||data.error||!isRecord(data.message))continue
+  const message=data.message,call=typeof message.toolCallId==='string'?calls.get(message.toolCallId):undefined
+  if(!call||message.isError||!isRecord(message.source)||message.source.kind!=='tool'||message.source.callId!==message.toolCallId||!Array.isArray(message.content))continue
+  try{
+   const value=JSON.parse(message.content.filter(isRecord).filter(row=>row.type==='text').map(row=>row.text).join('\n')),citation=readTaskReferenceCitationPath(value.citationPath)
+   if(!citation||value.schema!=='teloa.reference/v1'||value.id!==call.id||value.source!==call.id||value.version!==call.version||citation.sourceVersion!==call.version||typeof value.title!=='string'||!Array.isArray(value.references)||!value.references.some((ref:unknown)=>isRecord(ref)&&ref.id===citation.resourceId&&ref.version===citation.resourceVersion))continue
+   found.set(value.citationPath,{path:value.citationPath,title:value.title,version:citation.resourceVersion})
+  }catch{/* 损坏或非匹配的回执不补来源。 */}
+ }
+ return [...found.values()]
+}
+export function projectCitationRequest(sessionId:string,path:string,turn:number):ProjectContextCitationRequest|undefined{
+ const selector=projectCitationSelector(path);if(!selector||!Number.isSafeInteger(turn)||turn<1)return
+ return 'id'in selector?{sessionId,turn,...selector}:{sessionId,turn,reference:path}
+}
+export async function readProjectCitation(port:RetrievalCitationPort,request:ProjectContextCitationRequest,signal?:AbortSignal):Promise<ProjectContextCitation>{
+ if(!port.current()||request.sessionId!==port.sessionId||!port.projectSource)throw unavailable()
+ const result=readProjectContextCitation(await port.projectSource(request,signal));signal?.throwIfAborted()
+ const selector='reference'in request?projectCitationSelector(request.reference):request
+ if(!port.current()||result.sessionId!==request.sessionId||result.turn!==request.turn||!selector||!projectCitationMatches(result,selector))throw unavailable()
+ return result
+}
+// 此处只识别已出现的历史内联链接；代码、转义文字和图片不是来源入口，不替代官方Markdown渲染。
+function citationProse(text:string):string{
+ const lines:string[]=[];let fence:{char:string;length:number}|undefined
+ for(const line of text.split('\n')){
+  const marker=/^ {0,3}(`{3,}|~{3,})(.*)$/.exec(line)
+  if(fence){if(marker&&marker[1]![0]===fence.char&&marker[1]!.length>=fence.length&&!marker[2]!.trim())fence=undefined;continue}
+  if(marker){fence={char:marker[1]![0]!,length:marker[1]!.length};continue}
+  if(/^(?: {4}|\t)/.test(line))continue
+  lines.push(line)
+ }
+ return lines.join('\n').replace(/(?<!`)(`+)(?!`)[\s\S]*?(?<!`)\1(?!`)/g,'').replace(/\\./g,'')
+}
+/** 英文自定义scheme被官方Markdown安全降为文字；仅为原回复实际引用且唯一匹配的来源补原生轮尾入口。 */
+export function projectTurnAliasCitations(entries:ConversationPlanEvents['entries'],sessionId:string,turn:number):{path:string;source:{kind:string;id:string;title:string;version:number}}[]{
+ const {rows}=projectCitationTurnSources(entries.map(row=>row.event),sessionId,turn),found=new Map<string,{path:string;source:typeof rows[number]['source']}>()
+ for(const {event} of entries){
+  if(event.type!=='assistant/message'||!isRecord(event.data)||event.data.turn!==turn||!isRecord(event.data.message)||!Array.isArray(event.data.message.content))continue
+  const text=citationProse(event.data.message.content.filter(isRecord).filter(block=>block.type==='text'&&typeof block.text==='string').map(block=>block.text).join('\n'))
+  for(const match of text.matchAll(/(?<!!)\[[^\]\r\n]{1,240}\]\(((?:memory|rule|brief|project):[a-f0-9-]{36})\)/gi)){
+   const path=match[1]!,selector=projectCitationSelector(path);if(!selector)continue
+   const matches=rows.filter(row=>projectCitationMatches(row.source,selector));if(matches.length!==1)continue
+   const source=matches[0]!.source;found.set(JSON.stringify([source.kind,source.id,source.version,source.hash]),{path,source})
+  }
+ }
+ return [...found.values()]
+}
 const identity=(hit:RetrievalSearchHit)=>JSON.stringify([hit.resourceId,hit.resourceVersion,hit.sourceId,hit.sourceVersion])
 function trustedHits(entries:ConversationPlanEvents['entries'],sessionId:string):RetrievalSearchHit[]{
  const calls=new Map<string,number>(),hits:RetrievalSearchHit[]=[]
@@ -36,11 +97,12 @@ export function resolveRetrievalCitation(entries:ConversationPlanEvents['entries
  return {sessionId,resourceId:original.resourceId,resourceVersion:original.resourceVersion,sourceId:original.sourceId,sourceVersion:original.sourceVersion,title:original.title,excerpts:[...excerpts.values()].sort((a,b)=>a.chars[0]-b.chars[0]||a.chars[1]-b.chars[1])}
 }
 export function retrievalSourceAddress(sessionId:string,path:string):string{
+ if(readTaskReferenceCitationPath(path))return 'dsh-resource://teloa-source/'+encodeURIComponent(sessionId)+'/task/'+encodeURIComponent(path)
  if(readRetrievalCitationPath(path)?.sessionId===sessionId)return 'dsh-resource://'+path
  if(legacy.test(path))return 'dsh-resource://teloa-source/'+encodeURIComponent(sessionId)+'/legacy/'+path
  throw unavailable()
 }
-export function readRetrievalSourceAddress(address:string):{sessionId:string;path:string}|undefined{
+export function readRetrievalSourceAddress(address:string):{sessionId:string;path:string;project?:ProjectContextCitationRequest;task?:TaskReferenceCitationRequest}|undefined{
  const prefix='dsh-resource://teloa-source/'
  if(!address.startsWith(prefix))return
  const path=address.slice('dsh-resource://'.length),citation=readRetrievalCitationPath(path)
@@ -49,14 +111,25 @@ export function readRetrievalSourceAddress(address:string):{sessionId:string;pat
  try{const sessionId=decodeURIComponent(parts[0]!);if(sessionId&&sessionId.length<=128&&encodeURIComponent(sessionId)===parts[0]&&!/[\x00-\x20\x7f/\\]/.test(sessionId)){
   if(parts.length===2&&parts[1]==='unavailable')return {sessionId,path:''}
   if(parts.length===3&&parts[1]==='legacy'&&legacy.test(parts[2]!))return {sessionId,path:parts[2]!}
+  if(parts.length===3&&parts[1]==='task'){const path=decodeURIComponent(parts[2]!);if(encodeURIComponent(path)===parts[2]&&readTaskReferenceCitationPath(path))return {sessionId,path,task:{sessionId,path}}}
+  if(parts.length===5&&parts[1]==='project'&&/^[1-9][0-9]*$/.test(parts[2]!)){const path=parts[3]+'/'+parts[4],project=projectCitationRequest(sessionId,path,Number(parts[2]));if(project)return {sessionId,path,project}}
  }}catch{return}
  return
 }
 /** 不取当前正文替换原版本；原件撤回、会话关闭或原工具回执被撤下均不可打开。 */
-export async function openRetrievalCitation(port:RetrievalCitationPort,path:string):Promise<void>{
+export async function openRetrievalCitation(port:RetrievalCitationPort,path:string,turn?:number):Promise<void>{
  if(!port.current())throw unavailable()
+ if(readTaskReferenceCitationPath(path)){
+  await readTaskCitation(port,{sessionId:port.sessionId,path})
+  port.openResource(retrievalSourceAddress(port.sessionId,path));return
+ }
+ if(projectCitationSelector(path)){
+  const request=projectCitationRequest(port.sessionId,path,turn??0);if(!request)throw unavailable()
+  const source=await readProjectCitation(port,request)
+  port.openResource('dsh-resource://teloa-source/'+encodeURIComponent(port.sessionId)+'/project/'+source.turn+'/'+source.kind+'/'+source.id);return
+ }
  const reference=resolveRetrievalCitation(port.events.getSnapshot().entries,port.sessionId,path)
- if(!reference||!await port.available(reference.resourceId)||!port.current())throw unavailable()
+ if(!reference||!await port.available(reference.resourceId,reference.resourceVersion,reference.sourceVersion)||!port.current())throw unavailable()
  const current=resolveRetrievalCitation(port.events.getSnapshot().entries,port.sessionId,path)
  if(!current||JSON.stringify(current)!==JSON.stringify(reference))throw unavailable()
  port.openResource(retrievalSourceAddress(port.sessionId,path))
@@ -75,13 +148,16 @@ export function installRetrievalCitationNavigation(container:HTMLElement,current
   const target=event.target instanceof Element?event.target.closest('button[title],a[href]'):null
   if(!target)return
   const path=target.getAttribute(target.tagName==='A'?'href':'title')??''
-  return isRetrievalCitationLink(path)?{path}:undefined
+  const turn=Number(target.closest('[data-chat-turn]')?.getAttribute('data-chat-turn')),selector=projectCitationSelector(path)
+  // 裸hash也可能是普通文件名；仅在原轮次快照确有该来源时接管导航，最终许可仍由宿主核对。
+  if(selector&&'hash'in selector){const port=current();if(!port||!projectCitationTurnSources(port.events.getSnapshot().entries.map(row=>row.event),port.sessionId,turn).rows.some(row=>projectCitationMatches(row.source,selector)))return}
+  return isRetrievalCitationLink(path)?{path,turn}:undefined
  }
  const click=(event:MouseEvent)=>{
   const link=destination(event);if(!link)return
   event.preventDefault();event.stopImmediatePropagation()
   const port=current();if(!port?.current())return
-  void openRetrievalCitation(port,link.path).catch(()=>{if(port.current())port.openResource('dsh-resource://teloa-source/'+encodeURIComponent(port.sessionId)+'/unavailable')})
+  void openRetrievalCitation(port,link.path,link.turn).catch(()=>{if(port.current())port.openResource('dsh-resource://teloa-source/'+encodeURIComponent(port.sessionId)+'/unavailable')})
  }
  container.addEventListener('click',click,true)
  return ()=>container.removeEventListener('click',click,true)

@@ -5,6 +5,28 @@ import {tmpdir} from 'node:os'
 import {join} from 'node:path'
 import * as setup from '../scripts/准备DSH插件.mjs'
 import * as runtime from '../scripts/runtime/profile.mjs'
+import {readMemoryConfiguration} from '../packages/harness-dsh/src/memory-configuration.ts'
+
+const memoryLaunchLayout={programRoot:'/official-release',dshHome:'/isolated/dsh',runtimeRoot:'/isolated/runtime',workspaceRoot:'/isolated/workspace',profileName:'memory-launch-test'}
+
+test('MEM05 npm启动保留本人进程层经验服务配置，缺省不启用且未知变量不扩权',()=>{
+ const supplied={TELOA_MEMORY_API_URL:'https://memory.example.invalid',TELOA_MEMORY_API_TOKEN:'MEM05_SYNTHETIC_DIRECT_TOKEN',TELOA_MEMORY_TIMEOUT_MS:'1357',TELOA_MEMORY_ALLOW_HTTP:'0',TELOA_MEMORY_UNSUPPORTED:'must-not-forward'}
+ const forwarded=runtime.runtimeEnvironment(memoryLaunchLayout,supplied)
+ assert.deepEqual(readMemoryConfiguration(forwarded),{endpoint:supplied.TELOA_MEMORY_API_URL,timeoutMs:1357,allowHttp:false,token:supplied.TELOA_MEMORY_API_TOKEN})
+ assert.equal(forwarded.TELOA_MEMORY_UNSUPPORTED,undefined)
+ assert.equal(readMemoryConfiguration(runtime.runtimeEnvironment(memoryLaunchLayout,{})),null)
+})
+
+test('MEM05 令牌文件沿既有_FILE规则转交，实际配置读取与互斥校验保持',async t=>{
+ const dir=await mkdtemp(join(tmpdir(),'teloa-memory-launch-')),path=join(dir,'synthetic-token')
+ t.after(()=>rm(dir,{recursive:true,force:true}))
+ await writeFile(path,'MEM05_SYNTHETIC_FILE_TOKEN\n',{mode:0o600})
+ const supplied={TELOA_MEMORY_API_URL:'http://127.0.0.1:1',TELOA_MEMORY_API_TOKEN_FILE:path,TELOA_MEMORY_TIMEOUT_MS:'250',TELOA_MEMORY_ALLOW_HTTP:'1'}
+ const forwarded=runtime.runtimeEnvironment(memoryLaunchLayout,supplied)
+ assert.equal(forwarded.TELOA_MEMORY_API_TOKEN_FILE,path,'令牌文件由原有通用_FILE规则转交，不重复增加实现')
+ assert.deepEqual(readMemoryConfiguration(forwarded),{endpoint:supplied.TELOA_MEMORY_API_URL,timeoutMs:250,allowHttp:true,token:'MEM05_SYNTHETIC_FILE_TOKEN'})
+ assert.throws(()=>readMemoryConfiguration(runtime.runtimeEnvironment(memoryLaunchLayout,{...supplied,TELOA_MEMORY_API_TOKEN:'MEM05_SYNTHETIC_CONFLICT'})))
+})
 
 test('可选原生依赖目录包含 Browser、Computer、Auto review 与两个随附扩展，Remote 不登记到 Web',()=>{
  const specs=runtime.optionalNativeBundleSpecs(new URL('../',import.meta.url).pathname)

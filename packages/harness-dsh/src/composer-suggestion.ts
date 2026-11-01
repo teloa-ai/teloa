@@ -43,11 +43,12 @@ export function readSuggestionFacts(events:readonly {seq:number;type:string;data
  let question='',answer='',answerSeq=-1
  for(const event of events){
   if(event.type==='user/message'){
+   if((event.data as {source?:{kind?:unknown}})?.source?.kind!=='user')continue
    const content=(event.data as {content?:unknown})?.content
    if(!Array.isArray(content))continue
    const text=content.filter(part=>(part as {type?:string})?.type==='text').map(part=>String((part as {text?:unknown}).text??'')).join('\n').trim()
-   // 运行上下文与日期行不是用户本人的问题；只认真正的输入正文。
-   if(!text||text.startsWith('Current runtime context')||text.startsWith('Time sampled'))continue
+   // 来源身份由宿主事件确定，不凭用户文本的前缀猜测身份。
+   if(!text)continue
    question=text
    answer=''
    answerSeq=-1
@@ -91,22 +92,33 @@ export type ComposerSuggestionPorts={
  * 这一层只做锦上添花，绝不打断会话，也不把错误抛给界面。
  */
 export async function readComposerSuggestion(ctx:Context,ports:ComposerSuggestionPorts,payload:unknown,signal?:AbortSignal):Promise<ComposerSuggestion>{
- const skip=()=>({text:null as string|null})
  const input=taskInput(payload,['sessionId'])
  const sessionId=String(input.sessionId)
+ const diagnosticId=createHash('sha256').update(sessionId).digest('hex').slice(0,12)
+ // 运维只记录固定阶段/状态和内部错误码，不记录事实、建议、provider 原始异常或凭据。
+ let stage='session'
+ const report=(outcome:string,code='none')=>{
+  const args=[diagnosticId,outcome,stage,code] as const
+  if(outcome==='failed')ctx.logger.warn('Teloa 输入建议状态：%s %s %s %s',...args)
+  else ctx.logger.info('Teloa 输入建议状态：%s %s %s %s',...args)
+ }
+ const failure=(error:unknown)=>{report('failed',error instanceof WorkError?error.code:error instanceof Error&&['AbortError','TimeoutError'].includes(error.name)?error.name:'unexpected');return {text:null}}
+ const skip=(reason:string)=>{report('skipped',reason);return {text:null as string|null}}
  const agent=ctx.agents.get(brandString<SessionId>(sessionId))
- if(!agent)return skip()
+ if(!agent)return skip('no-agent')
  signal?.throwIfAborted()
  let events
- try{events=readSessionEvents(agent.session)}catch{return skip()}
+ try{events=readSessionEvents(agent.session)}catch(error){return failure(error)}
  const facts=readSuggestionFacts(events)
- if(!facts)return skip()
- const config=await ports.model(sessionId).catch(()=>undefined)
+ if(!facts)return skip('no-facts')
+ stage='model-prepare'
+ let config:object|undefined
+ try{config=await ports.model(sessionId)}catch(error){return failure(error)}
  const route=config as {provider?:unknown;model?:unknown}|undefined
- if(!route||typeof route.provider!=='string'||typeof route.model!=='string')return skip()
+ if(!route||typeof route.provider!=='string'||typeof route.model!=='string')return skip('no-model')
  // 辅助模型调用必须挂在**真实受理过的用户消息**上，否则会被最终因果闸拒绝（实测）。
  const live=ctx.agents.get(brandString<SessionId>(sessionId))
- if(!live)return skip()
+ if(!live||live!==agent)return skip('stale-agent')
  let source:MessageLikeSource|undefined,completed=false
  for(const event of events){
   if(event.type==='user/message'){
@@ -119,16 +131,17 @@ export async function readComposerSuggestion(ctx:Context,ports:ComposerSuggestio
    if(reason?.kind==='completed')completed=true
   }
  }
- if(!source||!completed)return skip()
- const key=`${sessionId}\0${source.id}\0${facts.answerSeq}\0${createHash('sha256').update(facts.question+'\n'+facts.answer).digest('hex').slice(0,16)}`
- if(cache.has(key))return {text:cache.get(key)??null}
+ if(!source||!completed)return skip('no-completed-source')
+ const factsHash=createHash('sha256').update(facts.question+'\n'+facts.answer).digest('hex')
  let text:string|null=null
  try{
-  const deadline=AbortSignal.timeout(callTimeoutMs)
+  const deadline=AbortSignal.timeout(callTimeoutMs),requestSignal=signal?AbortSignal.any([signal,deadline]):deadline
   const message=freezeMessage(createUserMessage({source:{kind:'user'},content:[{type:'text',text:`用户问题：${facts.question}\n\n助手回答：${facts.answer}`}]}))
-  const options=Object.freeze({...(config as Record<string,unknown>),sessionId:live.session.id,messages:Object.freeze([message]),system:systemPrompt,maxTokens,signal:deadline}) as unknown as Readonly<GenerateOptions>
+  const options=Object.freeze({...(config as Record<string,unknown>),sessionId:live.session.id,messages:Object.freeze([message]),system:systemPrompt,maxTokens,signal:requestSignal}) as unknown as Readonly<GenerateOptions>
   // 受理证明：每次被核验时都重新读会话，确认这条用户消息仍是最近一次已完成的受理。
   const lease=Object.freeze({assertCurrent:()=>{
+   requestSignal.throwIfAborted()
+   if(ctx.agents.get(brandString<SessionId>(sessionId))!==live)throw new Error('composer-suggestion-stale')
    const now=readSessionEvents(live.session) as readonly {type:string;seq:number;data?:unknown}[]
    let latest:string|undefined,ended=false
    for(const event of now){
@@ -138,37 +151,81 @@ export async function readComposerSuggestion(ctx:Context,ports:ComposerSuggestio
      if(op==='append'&&row.source?.kind==='user'&&typeof row.id==='string'){latest=row.id;ended=false}
     }else if(event.type==='turn/end'&&latest){const reason=(event.data as {reason?:{kind?:string}}).reason;if(reason?.kind==='completed')ended=true}
    }
-   if(latest!==source!.id||!ended)throw new Error('composer-suggestion-stale')
+   const current=readSuggestionFacts(now)
+   if(latest!==source!.id||!ended||current?.answerSeq!==facts.answerSeq||createHash('sha256').update(current.question+'\n'+current.answer).digest('hex')!==factsHash)throw new Error('composer-suggestion-stale')
   }})
   // 走 Teloa 受管的辅助模型通路：必须挂在"已准备的项目/工作上下文"上，
  // 与项目记忆提炼同一条准入链（withAuxiliaryContext + withAuxiliaryModel），
  // 不绕开因果闸，也不另开 HTTP 直连。
  const hooks=projectRuntimeExposure()
- if(!hooks)return skip()
- if(!hooks)return skip()
+ stage='project-context'
+ if(!hooks)return skip('no-runtime')
  const prepared=hooks.preparedForSession(sessionId)
- if(!prepared)return skip()
- const combinedLease=Object.freeze({assertCurrent:()=>{hooks.assertPreparedCurrent(prepared);lease.assertCurrent()}})
- const nativeInput=ctx.teloaNativeInput.input
- const dispatch=()=>nativeInput.withAuxiliaryModel({source:{ownerId:ports.owner,sessionId,messageId:source!.id,eventId:'composer-suggestion:'+source!.id},options:options as never,lease:combinedLease as never},()=>ctx.llm.stream(options as never))
- const assembler=new BlockAssembler()
- for await(const chunk of hooks.withAuxiliaryContext(prepared,options,dispatch as never) as AsyncIterable<{type?:string;text?:string}>)assembler.push(chunk as never)
- const blocks=assembler.blocks() as {type?:string;text?:string}[]
- text=normalizeSuggestion(blocks.filter(block=>block.type==='text').map(block=>String(block.text??'')).join(''))
- }catch{text=null}
- if(text!==null)remember(key,text)
+ if(!prepared)return skip('no-prepared-context')
+ // 缓存只是计算复用，不能替代当前来源和会话的读取许可。异步数据库复核必须等待。
+ await hooks.assertPreparedCurrent(prepared)
+ const combinedLease=Object.freeze({assertCurrent:()=>{hooks.assertPreparedCurrentSync(prepared);lease.assertCurrent()}})
+ combinedLease.assertCurrent()
+ const key=`${ports.owner}\0${sessionId}\0${source.id}\0${facts.answerSeq}\0${factsHash}\0${prepared.manifestId}\0${prepared.binding.generation}`
+ const cache=cacheFor(ctx)
+ if(cache.results.has(key)){report('cached');return {text:cache.results.get(key)??null}}
+ let pending=cache.pending.get(key)
+ if(!pending){
+  // 同一回复的并发读取共享计算；发起者取消时本次计算作废，后来者可重新请求。
+  const forgetPending=()=>{if(cache.pending.get(key)===pending)cache.pending.delete(key)}
+  pending=Promise.resolve().then(async()=>{
+   const nativeInput=ctx.teloaNativeInput.input
+   const dispatch=()=>{stage='native-admission';return nativeInput.withAuxiliaryModel({source:{ownerId:ports.owner,sessionId,messageId:source!.id,eventId:'composer-suggestion:'+source!.id},options:options as never,lease:combinedLease as never},()=>{stage='model-stream';return ctx.llm.stream(options as never)})}
+   const assembler=new BlockAssembler()
+   for await(const chunk of hooks.withAuxiliaryContext(prepared,options,dispatch as never) as AsyncIterable<{type?:string;text?:string}>)assembler.push(chunk as never)
+   // 官方流会把 adapter 异常变为 finish.error/aborted，正常迭代结束不等于成功。
+   // 失败或截断的部分正文不能采纳，也不缓存为已成功计算的空建议。
+   stage='model-result'
+   if(assembler.finish.kind!=='stop'){
+    report('failed',['error','aborted','max-tokens','tool-calls'].includes(assembler.finish.kind)?assembler.finish.kind:'unsupported-terminal')
+    return null
+   }
+   const blocks=assembler.blocks() as {type?:string;text?:string}[]
+   stage='result-validation'
+   await hooks.assertPreparedCurrent(prepared)
+   combinedLease.assertCurrent()
+   const raw=blocks.filter(block=>block.type==='text').map(block=>String(block.text??'')).join('')
+   const value=normalizeSuggestion(raw)
+   stage='result';report(value!==null?'generated':raw.trim()===noneMarker?'abstained':'empty')
+   remember(cache.results,key,value)
+   return value
+  }).finally(()=>{requestSignal.removeEventListener('abort',forgetPending);forgetPending()})
+  cache.pending.set(key,pending)
+  // 调用方先收到取消时，adapter 可能仍在清理；不能让重试继续等待旧调用。
+  requestSignal.addEventListener('abort',forgetPending,{once:true})
+ }
+ text=await waitForSuggestion(pending,requestSignal)
+ // 等待别人的计算也不能继承对方的读取许可或忽略本次请求取消。
+ await hooks.assertPreparedCurrent(prepared)
+ combinedLease.assertCurrent()
+ }catch(error){return failure(error)}
  
  return {text}
 }
 
-const cache=new Map<string,string|null>()
+type SuggestionCache={results:Map<string,string|null>;pending:Map<string,Promise<string|null>>}
+let caches=new WeakMap<Context,SuggestionCache>()
 const cacheLimit=256
-function remember(key:string,value:string|null){
+function cacheFor(ctx:Context){let cache=caches.get(ctx);if(!cache){cache={results:new Map(),pending:new Map()};caches.set(ctx,cache)}return cache}
+function waitForSuggestion(pending:Promise<string|null>,signal:AbortSignal):Promise<string|null>{
+ signal.throwIfAborted()
+ return new Promise((resolve,reject)=>{
+  const abort=()=>{signal.removeEventListener('abort',abort);reject(signal.reason)}
+  signal.addEventListener('abort',abort,{once:true})
+  pending.then(value=>{signal.removeEventListener('abort',abort);resolve(value)},error=>{signal.removeEventListener('abort',abort);reject(error)})
+ })
+}
+function remember(cache:Map<string,string|null>,key:string,value:string|null){
  if(cache.size>=cacheLimit){const oldest=cache.keys().next();if(!oldest.done)cache.delete(oldest.value)}
  cache.set(key,value)
 }
 /** 只给测试用：清掉跨用例的同键缓存。 */
-export function clearComposerSuggestionCache(){cache.clear()}
+export function clearComposerSuggestionCache(){caches=new WeakMap()}
 
 /**
  * 系统提示只描述"用户接下来会怎么说"，并给出明确的放弃条件；

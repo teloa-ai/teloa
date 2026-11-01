@@ -1,0 +1,25 @@
+{
+  "version": "0.2.85",
+  "dataVersion": 6,
+  "releaseManifestSha256": "eef47bc303d6bdd927fff1e9214884d70c1061c52f61feeb75f16d976b72b9e2",
+  "files": [
+    {
+      "path": "run-analysis-scope.js.txt",
+      "releasePath": "packages/contract/lib/run-analysis-scope.js",
+      "bytes": 5108,
+      "sha256": "d8ed94d6e8150679c54e67f00e80e798c9e8f54f2dff51643b45b0a8986a2430"
+    },
+    {
+      "path": "data-version.js.txt",
+      "releasePath": "packages/cli/lib/data-version.js",
+      "bytes": 902,
+      "sha256": "aeb529b12d09d871fec1437db513e47d869d425f6e333fa9e8eba679627c8ddf"
+    },
+    {
+      "path": "data-version.json",
+      "releasePath": "packages/cli/lib/data-version.json",
+      "bytes": 479,
+      "sha256": "f9c6504840be3834669f98c8663a272e5082056618bfe112670823739698000b"
+    }
+  ]
+}

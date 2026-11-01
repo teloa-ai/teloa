@@ -192,7 +192,7 @@ export class BusinessImportFlow{
   const targets=new Map<string,{id:string;type:string}>()
   for(const row of preview.rows)for(const field of definition.fields){
    if(field.type!=='reference'&&field.type!=='multi-reference')continue
-   const raw=row.operation.fields.find(value=>value.name===field.name)?.value;if(!raw)continue
+   const raw=row.operation.fields.find(value=>value.name===field.name)?.value;if(typeof raw!=='string'||raw==='')continue
    const parsed=field.type==='multi-reference'?readBusinessRichFieldValue(field,raw):undefined
    const ids=field.type==='reference'?[raw]:parsed?.type==='multi-reference'?parsed.ids:[]
    for(const id of ids)targets.set(JSON.stringify([field.referenceType,id]),{type:field.referenceType!,id})

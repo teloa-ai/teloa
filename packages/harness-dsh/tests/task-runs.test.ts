@@ -2,7 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import {WorkError,type DigitalRole,type TaskRunModelPolicy} from '@teloa/contract'
 import type {TaskExecutionScope,TaskRunService,TaskRunSkillDatabase} from '@teloa/backend'
-import {TaskRunPresetError} from '@teloa/backend'
+import {TaskRunPresetError,TaskRunService as StrictTaskRunService} from '@teloa/backend'
 import {createTaskRunHandler} from '../src/task-runs.ts'
 const ordinary=(service:TaskRunService)=>Object.assign(service,{conversationParent:async()=>null})
 
@@ -134,7 +134,7 @@ test('一键准备从任务负责人读取 preset，创建并关联运行专用�
  const requestId='12345678-1234-4234-8234-123456789012',taskId='22345678-1234-4234-8234-123456789012',roleId='32345678-1234-4234-8234-123456789012',sessionId='task-run-'+requestId,calls:string[]=[]
  const primary={provider:'ollama',model:'small'},role={runtimeConfig:{model:primary}} as DigitalRole
  const service={
-  request:async()=>null,
+  sourceContinuation:async()=>null,request:async()=>null,
   preparationTarget:async()=>({taskId,taskVersion:3,title:'核对告警',roleId,roleVersion:5,agentPresetId:'security-analyst'}),
   prepare:async(_owner:string,payload:unknown,_check:unknown,_roleKnowledge:unknown,_taskKnowledge:unknown,verifyRuntime:unknown,verifyModels:unknown)=>{assert.deepEqual(payload,{requestId,taskId,expectedTaskVersion:3,roleId,expectedRoleVersion:5,sessionId,expectedLinkVersion:1});assert.equal(await (verifyRuntime as (sessionId:string)=>Promise<string>)(sessionId),'security-analyst');assert.deepEqual(await (verifyModels as (role:DigitalRole)=>Promise<TaskRunModelPolicy>)(role),{primary});return {state:'prepared',sessionId,agentPresetId:'security-analyst'}},
  } as unknown as TaskRunService
@@ -149,7 +149,7 @@ test('一键准备从任务负责人读取 preset，创建并关联运行专用�
 
 test('一键准备拒绝运行会话回执中被替换的服务端预约快照',async()=>{
  const requestId='12345678-1234-4234-8234-123456789012',taskId='22345678-1234-4234-8234-123456789012',roleId='32345678-1234-4234-8234-123456789012',sessionId='task-run-'+requestId
- const service={request:async()=>null,preparationTarget:async()=>({taskId,taskVersion:3,title:'核对告警',roleId,roleVersion:5,agentPresetId:'security-analyst'})} as unknown as TaskRunService
+ const service={sourceContinuation:async()=>null,request:async()=>null,preparationTarget:async()=>({taskId,taskVersion:3,title:'核对告警',roleId,roleVersion:5,agentPresetId:'security-analyst'})} as unknown as TaskRunService
  const handler=createTaskRunHandler('local-owner',async()=>ordinary(service),{resolvePreset:async()=> 'security-analyst',check:async()=>{},send:async()=>{},stop:async()=>{},events:async()=>[]},undefined,{
   conversations:{runReservation:async()=>null,failRunReservation:async()=>false,createRun:async()=>({id:'conversation',ownerId:'local-owner',title:'核对告警',scopeIds:['general'],version:1,status:'ready',requestedSessionId:sessionId,sessionId,createdAt:'2026-09-13T00:00:00.000Z',requestId,purpose:'task-run',run:{taskId,taskVersion:3,roleId,roleVersion:6,agentPresetId:'other-preset'}})},
   links:{change:async()=>{throw Error('不应关联被替换的预约')}},
@@ -159,7 +159,7 @@ test('一键准备拒绝运行会话回执中被替换的服务端预约快照',
 
 test('一键准备 preset 解析失败直接保留配置失败 Run，不创建会话或发送',async()=>{
  const requestId='12345678-1234-4234-8234-123456789012',taskId='22345678-1234-4234-8234-123456789012',roleId='32345678-1234-4234-8234-123456789012',failure={state:'configuration_failed'},calls:string[]=[]
- const service={request:async()=>null,preparationTarget:async()=>({taskId,taskVersion:3,title:'核对告警',roleId,roleVersion:5,agentPresetId:'missing-preset'}),failPreparation:async(_owner:string,payload:unknown,error:unknown)=>{calls.push('failed');assert.deepEqual(payload,{requestId,taskId,expectedTaskVersion:3,roleId,expectedRoleVersion:5,sessionId:'task-run-'+requestId});assert.ok(error instanceof Error);return failure}} as unknown as TaskRunService
+ const service={sourceContinuation:async()=>null,request:async()=>null,preparationTarget:async()=>({taskId,taskVersion:3,title:'核对告警',roleId,roleVersion:5,agentPresetId:'missing-preset'}),failPreparation:async(_owner:string,payload:unknown,error:unknown)=>{calls.push('failed');assert.deepEqual(payload,{requestId,taskId,expectedTaskVersion:3,roleId,expectedRoleVersion:5,sessionId:'task-run-'+requestId});assert.ok(error instanceof Error);return failure}} as unknown as TaskRunService
  const handler=createTaskRunHandler('local-owner',async()=>ordinary(service),{resolvePreset:async()=>{throw Error('missing')},check:async()=>{},send:async()=>{},stop:async()=>{},events:async()=>[]},undefined,{conversations:{runReservation:async()=>null,failRunReservation:async()=>false,createRun:async()=>{calls.push('create');throw Error()}},links:{change:async()=>{calls.push('link');throw Error()}}})
  assert.equal(await handler('task-runs/prepare',{requestId,taskId,expectedTaskVersion:3},new AbortController().signal),failure)
  assert.deepEqual(calls,['failed'])
@@ -169,7 +169,7 @@ test('一键创建运行会话失败后先固定终态 Run 再释放 pending 预
  const requestId='12345678-1234-4234-8234-123456789012',taskId='22345678-1234-4234-8234-123456789012',roleId='32345678-1234-4234-8234-123456789012',sessionId='task-run-'+requestId,calls:string[]=[]
  const failure={id:'failed-run',requestId,taskId,roleId,sessionId,state:'configuration_failed'}
  let previous:null|typeof failure=null
- const service={request:async()=>previous,preparationTarget:async()=>({taskId,taskVersion:3,title:'核对告警',roleId,roleVersion:5,agentPresetId:'security-analyst'}),failPreparation:async()=>{calls.push('failed');previous=failure;return failure}} as unknown as TaskRunService
+ const service={sourceContinuation:async()=>null,request:async()=>previous,preparationTarget:async()=>({taskId,taskVersion:3,title:'核对告警',roleId,roleVersion:5,agentPresetId:'security-analyst'}),failPreparation:async()=>{calls.push('failed');previous=failure;return failure}} as unknown as TaskRunService
  const handler=createTaskRunHandler('local-owner',async()=>ordinary(service),{resolvePreset:async()=>{calls.push('resolve');return 'security-analyst'},check:async()=>{},send:async()=>{calls.push('send')},stop:async()=>{},events:async()=>[]},undefined,{
   conversations:{runReservation:async()=>null,createRun:async()=>{calls.push('create');throw new TaskRunPresetError('teloa/preset-unavailable','session-receipt','回执不一致')},failRunReservation:async()=>{calls.push('release');return true}},
   links:{change:async()=>{calls.push('link');throw Error()}},
@@ -183,7 +183,7 @@ test('一键创建运行会话失败后先固定终态 Run 再释放 pending 预
 test('已有会话预约但任务固定岗位过期时，重放不再创建会话、关联或 Run',async()=>{
  const requestId='12345678-1234-4234-8234-123456789012',taskId='22345678-1234-4234-8234-123456789012',roleId='32345678-1234-4234-8234-123456789012',sessionId='task-run-'+requestId,calls:string[]=[]
  const reservation={id:'conversation',ownerId:'local-owner',title:'首次标题',scopeIds:['general'] as ['general'],version:1 as const,status:'pending' as const,requestedSessionId:sessionId,sessionId,createdAt:'2026-09-13T00:00:00.000Z',requestId,purpose:'task-run' as const,run:{taskId,taskVersion:3,roleId,roleVersion:5,agentPresetId:'fixed-preset'}}
- const service={request:async()=>null,preparationTarget:async()=>{calls.push('preflight');throw new WorkError('teloa/version-conflict','任务固定的数字员工版本已变化。')},prepare:async()=>{calls.push('run');return {state:'prepared'}}} as unknown as TaskRunService
+ const service={sourceContinuation:async()=>null,request:async()=>null,preparationTarget:async()=>{calls.push('preflight');throw new WorkError('teloa/version-conflict','任务固定的数字员工版本已变化。')},prepare:async()=>{calls.push('run');return {state:'prepared'}}} as unknown as TaskRunService
  const handler=createTaskRunHandler('local-owner',async()=>ordinary(service),{resolvePreset:async()=>{calls.push('resolve');return 'other'},check:async()=>{},send:async()=>{},stop:async()=>{},events:async()=>[]},undefined,{
   conversations:{runReservation:async()=>reservation,failRunReservation:async()=>false,createRun:async()=>{calls.push('create');return reservation}},
   links:{change:async()=>{calls.push('link');throw Error('不应关联')}},
@@ -195,7 +195,7 @@ test('已有会话预约但任务固定岗位过期时，重放不再创建会�
 test('一键准备重放先复核当前任务仍固定原岗位，不重新解析 preset',async()=>{
  const requestId='12345678-1234-4234-8234-123456789012',taskId='22345678-1234-4234-8234-123456789012',roleId='32345678-1234-4234-8234-123456789012',sessionId='task-run-'+requestId,calls:string[]=[]
  const reservation={id:'conversation',ownerId:'local-owner',title:'首次标题',scopeIds:['general'] as ['general'],version:1 as const,status:'ready' as const,requestedSessionId:sessionId,sessionId,createdAt:'2026-09-13T00:00:00.000Z',requestId,purpose:'task-run' as const,run:{taskId,taskVersion:3,roleId,roleVersion:5,agentPresetId:'fixed-preset'}}
- const service={request:async()=>null,preparationTarget:async()=>{calls.push('preflight');return {taskId,taskVersion:3,title:'首次标题',roleId,roleVersion:5,agentPresetId:'fixed-preset'}},prepare:async()=>({state:'prepared',sessionId,agentPresetId:'fixed-preset'})} as unknown as TaskRunService
+ const service={sourceContinuation:async()=>null,request:async()=>null,preparationTarget:async()=>{calls.push('preflight');return {taskId,taskVersion:3,title:'首次标题',roleId,roleVersion:5,agentPresetId:'fixed-preset'}},prepare:async()=>({state:'prepared',sessionId,agentPresetId:'fixed-preset'})} as unknown as TaskRunService
  const handler=createTaskRunHandler('local-owner',async()=>ordinary(service),{resolvePreset:async()=>{calls.push('resolve');throw Error('不应重新解析')},check:async()=>{},send:async()=>{},stop:async()=>{},events:async()=>[]},undefined,{
   conversations:{runReservation:async()=>reservation,failRunReservation:async()=>false,createRun:async(_owner,_input,run)=>{calls.push('create:'+run.roleVersion+':'+run.agentPresetId);return reservation}},
   links:{change:async()=>({kind:'task',objectId:taskId,objectVersion:3,conversationId:'conversation',sessionId,version:1,active:true,updatedAt:'2026-09-13T00:00:00.000Z',scopeId:null})},
@@ -233,8 +233,10 @@ test('准备执行前先核对请求级权限预设与模型，并把选择固�
 test('一键准备把请求级权限模式和模型固定到新建 Run',async()=>{
  const requestId='12345678-1234-4234-8234-123456789012',taskId='22345678-1234-4234-8234-123456789012',roleId='32345678-1234-4234-8234-123456789012',sessionId='task-run-'+requestId,model={provider:'custom-provider',model:'example-model'},checks:string[]=[];let options:unknown
  const role={skills:[],knowledge:[],runtimeConfig:{agentPresetId:'security-analyst'}} as unknown as DigitalRole,database={query:async()=>({rows:[]})} as unknown as TaskRunSkillDatabase
+ const lookupPayloads:unknown[]=[],lookupQueries:unknown[]=[]
+ const lookup=new StrictTaskRunService({connect:async()=>({query:async(sql:string,values?:unknown[])=>{if(sql.startsWith('select'))lookupQueries.push(values);return {rows:[]}},release:()=>{}})} as unknown as StrictTaskRunService['pool'],{id:()=>requestId,now:()=>new Date().toISOString()},async()=>{throw Error('幂等身份查询不读取原生会话')})
  const service={
-  request:async()=>null,
+  sourceContinuation:async()=>null,request:async(owner:string,payload:unknown)=>{lookupPayloads.push(payload);return lookup.request(owner,payload)},
   preparationTarget:async()=>({taskId,taskVersion:3,title:'核对告警',roleId,roleVersion:5,agentPresetId:'security-analyst'}),
   prepare:async(_owner:string,_payload:unknown,checkSession:unknown,_loadRoleKnowledge:unknown,_loadTaskKnowledge:unknown,resolveRuntime:unknown,_resolveModels:unknown,_admit:unknown,fixed:unknown)=>{
    options=fixed
@@ -249,5 +251,7 @@ test('一键准备把请求级权限模式和模型固定到新建 Run',async()=
  })
  assert.equal((await handler('task-runs/prepare',{requestId,taskId,expectedTaskVersion:3,permissionMode:'workspace-write',model},new AbortController().signal) as {state:string}).state,'prepared')
  assert.deepEqual(options,{permissionMode:'workspace-write',modelPolicy:{primary:model}})
+ assert.deepEqual(lookupPayloads,[{requestId,taskId,expectedTaskVersion:3}])
+ assert.deepEqual(lookupQueries,[['local-owner',requestId]])
  assert.deepEqual(checks,['mode:workspace-write','model:custom-provider/example-model','create','check:workspace-write'])
 })

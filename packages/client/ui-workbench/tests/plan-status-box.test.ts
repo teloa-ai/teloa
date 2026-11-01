@@ -181,3 +181,13 @@ test('PlanDetail 已换到对象页骨架：状态框、时间线、属性栏接
  // notification.explanation 仍由 PlanForm（零改动区）引用，词条保留；这里只确认 PlanDetail 段不再用它。
  assert.ok(!source.slice(source.indexOf('\nfunction PlanDetail'),source.indexOf('\nfunction SavedPlanSource')).includes('continuous.detail.notification.explanation'))
 })
+
+ test('正常空日或已有小结跳过显示下次日程，不警告阻塞也不打开旧任务',()=>{
+  for(const reason of ['no-work-evidence','digest-exists'] as const){
+   const latestSkip={...skip('2026-09-15T01:00:00.000Z','previous-pending',claimA),reason,blockingClaimId:null,taskId:null}
+   const model=planStatusBox(input({schedule:summary({nextAt:'2026-09-16T01:00:00.000Z',latestSkip,latest:{occurrence,task:{id:latestTaskId,state:'completed'}}}),skips:[latestSkip]}))
+   assert.equal(model.tone,'good');assert.match(model.sentence,/plan.status.active/)
+   assert.equal(model.detail,reason==='no-work-evidence'?'plan.schedule.skipNoWork':'plan.schedule.skipDigestExists')
+   assert.notEqual(model.primary?.action.kind,'open-task');assert.equal(model.hint,undefined)
+  }
+ })

@@ -5,6 +5,7 @@ import type {InputState} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {BindingClient} from './binding-client.ts'
 import type {BusinessBuilderApi,BusinessBuilderApplyInput} from './business-builder-api.ts'
 import type {HomeSubmissionMonitor} from './home-native-submission.ts'
+import type {BusinessBuilderGenerationMode} from '@teloa/contract'
 import {readBusinessSetupManualInput,serializeBusinessSetupManualInput,type BusinessSetupManualInput} from './business-setup-manual-journal.ts'
 type Storage=Pick<globalThis.Storage,'getItem'|'setItem'|'removeItem'>
 export type BusinessBuilderSwitchSnapshot={mainSessionId:string|undefined;bindingSessionId:string|undefined;bindingReady:boolean;input:InputState|null|undefined;pendingSubmissions:readonly {requestId:string}[];monitor:Pick<HomeSubmissionMonitor,'getSnapshot'|'check'>|undefined}
@@ -41,6 +42,7 @@ export function pendingBuilderDrafts(directory:BusinessConversationDirectory|nul
  return directory?.items.filter(item=>item.draft?.status==='draft')??[]
 }
 export type BusinessBuilderState={
+ generationMode?:BusinessBuilderGenerationMode|undefined
  setupPlan?:BusinessSetupPlan|null;setupPreview?:BusinessSetupPreview|null;setupReadiness?:{digest:string;rows:{itemInstanceId:string;kind:string;title:string;state:string}[]}|null;setupUnknown?:boolean;leaveConfirmation?:boolean
 
  phase:'idle'|'creating'|'recovering'|'ready'|'saving'|'unknown'|'saved'|'error'
@@ -179,7 +181,7 @@ export class BusinessBuilderFlow{
   const locationMatches=()=>this.ports.switching.read().mainSessionId===approved.mainSessionId&&this.ports.mayOpen?.()!==false
   if(!locationMatches())return Promise.reject(conflict('当前业务目标已变化，原预约可稍后恢复。'))
   const epoch=++this.epoch,approvedInput=approved.input
-  this.publish({phase:'creating',binding:null,draft:null,preview:null,page:null,pageStatus:'idle',result:null,error:null,discardedDraft:undefined,setupPlan:null,setupPreview:null,setupReadiness:null})
+  this.publish({phase:'creating',binding:null,draft:null,preview:null,page:null,pageStatus:'idle',result:null,error:null,discardedDraft:undefined,setupPlan:null,setupPreview:null,setupReadiness:null,generationMode:undefined})
   const operation=(async()=>{
    try{
     const reserved=await this.ports.api.reserve(request)
@@ -194,10 +196,12 @@ export class BusinessBuilderFlow{
      if(bound.kind!=='builder'||(['draftId','scope','workspaceId','title'] as const).some(key=>bound![key]!==reserved[key]))throw invalid()
      const draft=await this.ports.api.draft({sessionId:conversation.sessionId,draftId:bound.draftId!})
      if(bound.scope!==undefined&&draft.scope!==bound.scope)throw invalid()
+     // 新建业务的可信入口明确选择只生成预览；不从本人正文猜测或替换原生输入。
+     const generation=await this.ports.api.setGenerationMode({sessionId:conversation.sessionId,draftId:draft.id,expectedRevision:draft.revision,requestId:request.requestId,mode:'preview'})
      const latest=this.journal()
      if(latest.creation?.requestId!==request.requestId)throw conflict('创建恢复记录已变化。')
      this.write({...latest,creation:null},latest)
-     if(epoch===this.epoch)this.publish({phase:'ready',binding:bound,draft,error:null});if(epoch===this.epoch)await this.refreshSetupPlan()
+     if(epoch===this.epoch)this.publish({phase:'ready',binding:bound,draft,generationMode:generation.mode,error:null});if(epoch===this.epoch)await this.refreshSetupPlan()
     }})
     if(!bound)throw invalid()
     return bound
@@ -210,7 +214,7 @@ export class BusinessBuilderFlow{
  /** 全局目录打开原session时恢复外壳，不创建、领养或提交任何原生消息。 */
  async restoreSession(sessionId:string){
   const epoch=++this.epoch
-  this.publish({phase:'recovering',binding:null,draft:null,preview:null,page:null,pageStatus:'idle',result:null,error:null,discardedDraft:undefined,setupPlan:null,setupPreview:null,setupReadiness:null})
+  this.publish({phase:'recovering',binding:null,draft:null,preview:null,page:null,pageStatus:'idle',result:null,error:null,discardedDraft:undefined,setupPlan:null,setupPreview:null,setupReadiness:null,generationMode:undefined})
   try{
    const binding=await this.ports.api.bySession({sessionId})
    if(epoch!==this.epoch)return
@@ -219,13 +223,24 @@ export class BusinessBuilderFlow{
    if(binding.sessionId!==sessionId||!binding.draftId)return
    const draft=await this.ports.api.draft({sessionId,draftId:binding.draftId})
    if(binding.scope!==undefined&&draft.scope!==binding.scope)throw invalid()
-   if(epoch===this.epoch){this.publish({phase:'ready',draft});await this.refreshSetupPlan()}
+   if(epoch===this.epoch){this.publish({phase:'ready',draft});await this.refreshGenerationMode();await this.refreshSetupPlan()}
   }catch(error){if(epoch===this.epoch)this.publish({phase:'error',error});throw error}
  }
  private target(){
   const {binding,draft}=this.state
   if(!binding?.sessionId||!binding.draftId||!draft||draft.id!==binding.draftId)throw conflict('业务会话绑定尚未完成。')
   return {binding,draft,sessionId:binding.sessionId,draftId:draft.id}
+ }
+ async refreshGenerationMode(){
+  const target=this.target(),epoch=this.epoch,result=await this.ports.api.generationMode({sessionId:target.sessionId,draftId:target.draftId})
+  if(epoch===this.epoch&&this.state.draft?.id===target.draftId)this.publish({generationMode:result.mode})
+  return result
+ }
+ async setGenerationMode(mode:BusinessBuilderGenerationMode){
+  const target=this.target(),epoch=this.epoch
+  const result=await this.ports.api.setGenerationMode({sessionId:target.sessionId,draftId:target.draftId,expectedRevision:target.draft.revision,requestId:this.ports.id(),mode})
+  if(epoch===this.epoch&&this.state.draft?.id===target.draftId)this.publish({generationMode:result.mode,error:null})
+  return result
  }
  async refreshDraft(){
   const target=this.target(),epoch=this.epoch,generation=++this.draftRead

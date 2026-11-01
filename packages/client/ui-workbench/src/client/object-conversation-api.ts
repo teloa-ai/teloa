@@ -19,10 +19,12 @@ function request(value:unknown):Request{
  return {kind:r.kind as Command['kind'],objectId:r.objectId,expectedObjectVersion:r.expectedObjectVersion as number,sessionId:r.sessionId as string,expectedLinkVersion:r.expectedLinkVersion as number,action:r.action as Command['action'],requestId:r.requestId,...(typeof r.scopeId==='string'?{scopeId:r.scopeId}:{}),...(r.sourceOnly===true?{sourceOnly:true as const}:{})}
 }
 function read(value:unknown):SavedObjectLink{
- const r=taskInput(value,['kind','objectId','objectVersion','conversationId','sessionId','version','active','updatedAt','scopeId','sourceOnly'])
+ const r=taskInput(value,['kind','objectId','objectVersion','conversationId','sessionId','version','active','updatedAt','scopeId','sourceOnly','readOnly','displayTitle'])
  if(r.sourceOnly!==undefined&&(r.sourceOnly!==true||r.kind!=='task'))throw Error('创建来源关联响应格式不正确。')
+ if(r.readOnly!==undefined&&(r.readOnly!==true||r.kind!=='role'||!r.active||r.sourceOnly))throw Error('只读会话关联响应格式不正确。')
+ if(r.displayTitle!==undefined&&(r.readOnly!==true||typeof r.displayTitle!=='string'||!r.displayTitle.trim()||r.displayTitle.length>240))throw Error('只读会话关联显示名称不正确。')
  if(!['task','role'].includes(String(r.kind))||!uuid(r.objectId)||!identity(r.conversationId)||!identity(r.sessionId)||!Number.isSafeInteger(r.objectVersion)||(r.objectVersion as number)<1||!Number.isSafeInteger(r.version)||(r.version as number)<1||typeof r.active!=='boolean'||typeof r.updatedAt!=='string'||!Number.isFinite(Date.parse(r.updatedAt))||(r.scopeId!==undefined&&r.scopeId!==null&&!identity(r.scopeId)))throw Error('会话关联响应格式不正确。')
- return {kind:r.kind as SavedObjectLink['kind'],objectId:r.objectId,objectVersion:r.objectVersion as number,conversationId:r.conversationId as string,sessionId:r.sessionId as string,version:r.version as number,active:r.active,updatedAt:r.updatedAt,...(typeof r.scopeId==='string'?{scopeId:r.scopeId}:{}),...(r.sourceOnly===true?{sourceOnly:true as const}:{})}
+ return {kind:r.kind as SavedObjectLink['kind'],objectId:r.objectId,objectVersion:r.objectVersion as number,conversationId:r.conversationId as string,sessionId:r.sessionId as string,version:r.version as number,active:r.active,updatedAt:r.updatedAt,...(typeof r.scopeId==='string'?{scopeId:r.scopeId}:{}),...(r.sourceOnly===true?{sourceOnly:true as const}:{}),...(r.readOnly===true?{readOnly:true as const}:{}),...(typeof r.displayTitle==='string'?{displayTitle:r.displayTitle}:{})}
 }
 export type ObjectConversationApi=ReturnType<typeof createObjectConversationApi>
 export function createObjectConversationApi(call:(method:string,payload:unknown)=>Promise<unknown>,journal?:TaskRequestJournal){
@@ -30,7 +32,7 @@ export function createObjectConversationApi(call:(method:string,payload:unknown)
  try{const raw=journal?.read();if(raw){if(raw.length>3000)throw Error();const r=taskInput(JSON.parse(raw),['schema','request']);if(r.schema!=='teloa.object-conversation/v1')throw Error();pending=request(r.request)}}catch{error=recoveryStorageError()}
  const send=async()=>{
   if(error)throw error;if(busy)throw Error('会话关联正在核对。');if(!pending)throw Error('没有待核对的会话关联。');busy=true
-  try{journal?.write(JSON.stringify({schema:'teloa.object-conversation/v1',request:pending}));const row=read(await call('object-conversations/change',pending))
+  try{journal?.write(JSON.stringify({schema:'teloa.object-conversation/v1',request:pending}));const row=read(await call('object-conversations/change',pending));if(row.readOnly)throw Error('只读运行会话不能作为手工关联变更回执。')
    if(row.kind!==pending.kind||row.objectId!==pending.objectId||row.sessionId!==pending.sessionId||pending.action==='link'&&(row.sourceOnly===true)!==(pending.sourceOnly===true)||row.version<pending.expectedLinkVersion+1||row.version===pending.expectedLinkVersion+1&&(row.active!==(pending.action==='link')||row.objectVersion!==pending.expectedObjectVersion||pending.action==='link'&&pending.scopeId!==undefined&&row.scopeId!==pending.scopeId))throw Error('会话关联响应与原请求不一致。')
    journal?.clear();pending=undefined;return row
   }catch(e){if(e&&typeof e==='object'&&'rejected' in e&&e.rejected===true&&'code' in e&&['teloa/invalid-input','teloa/forbidden','teloa/conflict','teloa/version-conflict'].includes(String(e.code))){journal?.clear();pending=undefined}throw e}finally{busy=false}

@@ -1,3 +1,4 @@
+import {runAnalysisSelfAuthorizedTools} from '@teloa/contract'
 import {randomUUID} from 'node:crypto'
 import type {Context} from '@deepseek-ai/cordis'
 import type {JobStatus,JobView} from '@deepseek-ai/dsh-jobs'
@@ -12,13 +13,13 @@ import type {} from './native-input-provider.ts'
 type TaskRunJobLink=Extract<TaskRunRuntimeLink,{kind:'job'}>
 
 type Binding=Pick<TaskRun,'id'|'sessionId'|'nativeRequestId'>
-type TextBinding=Binding&Partial<Pick<TaskRun,'allowedTools'|'skills'|'stopRequestedAt'|'groupContext'|'flowId'|'subagents'|'executor'>>
+type TextBinding=Binding&Partial<Pick<TaskRun,'allowedTools'|'skills'|'stopRequestedAt'|'groupContext'|'flowId'|'subagents'|'executor'|'analysisScope'>>
 const live=(status:JobStatus)=>status==='running'||status==='stopping'
 /** 同一宿主的 root 与 Team 适配共享世代；进程重启才变化。 */
 export const taskRunRuntimeId=randomUUID()
 /** 空权限必须来自固定 Run 快照；缺失字段不能当作未授权后台能力。 */
 export function isTextOnlyTaskRun(run:TextBinding):boolean{
- return Array.isArray(run.allowedTools)&&run.allowedTools.length===0&&Array.isArray(run.skills)&&run.skills.length===0&&run.stopRequestedAt===null&&run.groupContext===undefined&&run.flowId===undefined&&(run.subagents===undefined||Array.isArray(run.subagents)&&run.subagents.length===0)
+ return runAnalysisSelfAuthorizedTools(run.analysisScope).length===0&&Array.isArray(run.allowedTools)&&run.allowedTools.length===0&&Array.isArray(run.skills)&&run.skills.length===0&&run.stopRequestedAt===null&&run.groupContext===undefined&&run.flowId===undefined&&(run.subagents===undefined||Array.isArray(run.subagents)&&run.subagents.length===0)
 }
 /** 这里只提供旧世代纯文本候选；完整原生完成轮仍由驱动核验，不能据 owner 单独收口。 */
 export function isOwnerOnlyTextRun(run:TextBinding,rows:readonly TaskRunRuntimeLink[],runtimeId:string=taskRunRuntimeId):boolean{
@@ -33,6 +34,7 @@ function onlyOldOwner(run:TextBinding,rows:readonly TaskRunRuntimeLink[],runtime
 /** RC 的 Session.append 无法持久化外部 ignorable 事件，业务关联因此经窄端口落库。 */
 export function createTaskRunBackground(ctx:Context,links:TaskRunRuntimeLinks,admit?:(run:Binding)=>boolean,runtimeId:string=taskRunRuntimeId,goalObservation?:(run:Binding,events:readonly import('@deepseek-ai/dsh-session').SessionEvent[])=>Promise<GoalObservationContext|undefined>){
  const bindings=new Map<string,Binding>(),pending=new Map<string,Promise<void>>()
+ const jobBindings=new Map<string,Binding>(),retired=new Set<string>()
  const recorded=new Map<string,JobStatus>(),failed=new Set<string>()
  const agentFor=(sessionId:string)=>{
   const agent=ctx.agents.get(SessionId(sessionId))
@@ -52,8 +54,9 @@ export function createTaskRunBackground(ctx:Context,links:TaskRunRuntimeLinks,ad
  }
  const record=(job:JobView)=>{
   if(job.owner===undefined)return
-  const run=bindings.get(job.owner)
+  const run=jobBindings.get(job.id)??bindings.get(job.owner)
   if(!run)return
+  jobBindings.set(job.id,run)
   const key=run.sessionId+':'+job.id,previous=recorded.get(key)
   if(previous===job.status)return
   const events=previous===undefined?readSessionEvents(agentFor(run.sessionId).session):undefined
@@ -73,6 +76,18 @@ export function createTaskRunBackground(ctx:Context,links:TaskRunRuntimeLinks,ad
  })
  return {
   bind,
+  /** 宿主已核实同源续报及原生终态后，释放会话槽；旧 job 的归属永久保留。 */
+  async prepareContinuation(run:Binding):Promise<void>{
+   if(retired.has(run.id))return
+   const binding=bindings.get(run.sessionId)
+   if(binding&&binding.id!==run.id)throw new WorkError('teloa/conflict','会话后台工作已属于其他执行。')
+   await pending.get(run.sessionId)
+   const agent=agentFor(run.sessionId),jobs=ctx.jobs.list(SessionId(run.sessionId)).filter(job=>job.owner===run.sessionId)
+   const input=ctx.get('teloaNativeInput')?.input,{all}=await journal(run)
+   if(failed.has(run.sessionId)||agent.status!=='idle'||agent.inbox.nextTurn.length||agent.inbox.nextStep.length||jobs.some(job=>live(job.status))||input?.hasPendingJobCompletion(run.sessionId)||input?.hasCancelledJobCompletion(run.sessionId)||all.some(row=>row.kind==='job'&&row.payload.record==='job'&&live(row.payload.status)||row.kind==='external'&&['reserved','running','stopping','unknown'].includes(row.payload.status)||row.kind==='browser'&&row.payload.status!=='closed'))throw new WorkError('teloa/conflict','原告警仍有未结清后台工作或通知，不能接续。')
+   for(const job of jobs)if(!jobBindings.has(job.id))jobBindings.set(job.id,{...run})
+   retired.add(run.id);bindings.delete(run.sessionId)
+  },
   async start(run:Binding):Promise<void>{
    // 先留进程世代，再允许外部工作出现；突然崩溃不会把遗漏状态写入伪装成完成。
    await links.put({runId:run.id,kind:'job',nativeId:'owner:'+runtimeId+':'+run.sessionId,sessionId:run.sessionId,payload:{record:'owner',runtimeId,requestId:run.nativeRequestId}})
@@ -94,7 +109,8 @@ export function createTaskRunBackground(ctx:Context,links:TaskRunRuntimeLinks,ad
    return rows.length===1&&row?.kind==='job'&&row.payload.record==='owner'&&row.runId===run.id&&row.sessionId===run.sessionId&&row.payload.requestId===run.nativeRequestId&&row.nativeId==='owner:'+row.payload.runtimeId+':'+run.sessionId
   },
   async state(run:TextBinding):Promise<{outstanding:boolean;interrupted:boolean;ownerOnly?:true;reviewOnly?:true;cancelled?:true}>{
-   bind(run)
+   if(!retired.has(run.id))bind(run)
+   const current=bindings.get(run.sessionId)?.id===run.id
    const agent=ctx.agents.get(SessionId(run.sessionId))
    const jobs=ctx.jobs.list(SessionId(run.sessionId)).filter(job=>job.owner===run.sessionId)
    for(const job of jobs)record(job)
@@ -105,11 +121,11 @@ export function createTaskRunBackground(ctx:Context,links:TaskRunRuntimeLinks,ad
    if(external.some(row=>row.runId!==run.id||row.sessionId!==run.sessionId||row.payload.requestId!==run.nativeRequestId))throw new WorkError('teloa/storage-corrupt','外部工作归属记录与执行不一致。')
    const externalLive=external.some(row=>row.payload.runtimeId===runtimeId&&['reserved','running','stopping'].includes(row.payload.status))
    const interrupted=rows.some(row=>{const payload=row.payload;return payload.runtimeId!==runtimeId||(payload.record==='job'&&live(payload.status)&&!jobs.some(job=>job.id===payload.jobId))})||external.some(row=>row.payload.status==='unknown'||row.payload.runtimeId!==runtimeId&&['reserved','running','stopping'].includes(row.payload.status))
-   const completionPending=ctx.get('teloaNativeInput')?.input.hasPendingJobCompletion(run.sessionId)??false
+   const completionPending=current&&(ctx.get('teloaNativeInput')?.input.hasPendingJobCompletion(run.sessionId)??false)
    const stoppedAt=typeof run.stopRequestedAt==='string'?Date.parse(run.stopRequestedAt):NaN
    const cancelled=(typeof run.stopRequestedAt==='string'&&ctx.get('teloaNativeInput')?.input.hasCancelledJobCompletion(run.sessionId)===true)||jobs.some(job=>job.status==='killed'&&job.finishedAt!==undefined&&job.finishedAt>=stoppedAt&&rows.some(row=>row.payload.record==='job'&&row.payload.runtimeId===runtimeId&&row.payload.jobId===job.id))
    const reviewOnly=jobs.length===0&&run.executor?.kind==='owner'&&run.stopRequestedAt===null&&run.groupContext===undefined&&run.flowId===undefined&&Array.isArray(run.allowedTools)&&Array.isArray(run.skills)&&onlyOldOwner(run,all,runtimeId)
-   return {outstanding:externalLive||completionPending||jobs.some(job=>live(job.status)&&rows.some(row=>row.payload.record==='job'&&row.payload.runtimeId===runtimeId&&row.payload.jobId===job.id))||agent?.status==='running'||(agent?.inbox.nextTurn.length??0)>0||(agent?.inbox.nextStep.length??0)>0,interrupted,...(cancelled?{cancelled:true as const}:{}),...(jobs.length===0&&isOwnerOnlyTextRun(run,all,runtimeId)?{ownerOnly:true as const}:{}),...(reviewOnly?{reviewOnly:true as const}:{})}
+   return {outstanding:externalLive||completionPending||jobs.some(job=>live(job.status)&&rows.some(row=>row.payload.record==='job'&&row.payload.runtimeId===runtimeId&&row.payload.jobId===job.id))||current&&(agent?.status==='running'||(agent?.inbox.nextTurn.length??0)>0||(agent?.inbox.nextStep.length??0)>0),interrupted,...(cancelled?{cancelled:true as const}:{}),...(jobs.length===0&&isOwnerOnlyTextRun(run,all,runtimeId)?{ownerOnly:true as const}:{}),...(reviewOnly?{reviewOnly:true as const}:{})}
   },
   async cancel(run:Binding,signal:AbortSignal):Promise<void>{
    bind(run);signal.throwIfAborted();ctx.get('teloaNativeInput')?.input.cancelJobCompletions(run.sessionId);await pending.get(run.sessionId)

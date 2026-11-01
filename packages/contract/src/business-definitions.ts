@@ -1,3 +1,4 @@
+import type {BusinessFieldValue} from './business-data.ts'
 import {WorkError} from './work-error.ts'
 import {isRecord} from './resources.ts'
 import {businessScopeKeyRule,isBusinessScopeKey} from './business-scopes.ts'
@@ -10,10 +11,10 @@ export const businessFieldTypes=['text','number','enum','datetime','reference','
 export type BusinessFieldType=typeof businessFieldTypes[number]
 /**
  * 一个字段的声明。`from` 指向固定快照 `fields[].label`（`BusinessObjectSnapshot.fields` 是
- * `{label,value}` 对，值全是字符串），除 `text` 外的类型都要在服务端按本声明解析一次，解析不出来即视为缺失。
+ * `{label,value}` 对，值支持字符串、数值和布尔）。字段按声明校验或解析，快照保留原类型及既有字符串。
  */
 export type BusinessObjectFieldLocalizedMetadata={label?:LocalizedMetadata;values?:LocalizedMetadata[]}
-export type BusinessObjectFieldDefinition={name:string;label:string;localized?:BusinessObjectFieldLocalizedMetadata;type:BusinessFieldType;required:boolean;from:string;values?:string[];referenceType?:string}
+export type BusinessObjectFieldDefinition={name:string;label:string;localized?:BusinessObjectFieldLocalizedMetadata;type:BusinessFieldType;required:boolean;from:string;values?:string[];referenceType?:string;integer?:true;minimum?:number;decimalScale?:number}
 /**
  * 对象目录首页的两项摘要由模板声明，而不是由行业名称或字段标签猜出来。
  * `stageField` 必须是枚举字段；`unfinished` 和 `waitingForYou` 都是那个枚举的取值子集，
@@ -133,7 +134,7 @@ export type BusinessViewResult={
  objects?:BusinessLedgerObject[]
 }
 /** `kind==='list'` 专用：平台四列里的三列与对象详情都来自固定快照本身。 */
-export type BusinessLedgerObject={id:string;title:string;source:string;observedAt:string;receivedAt:string;quality:'complete'|'missing';version:number;snapshotHash:string;summary:string;fields:Array<{label:string;value:string}>}
+export type BusinessLedgerObject={id:string;title:string;source:string;observedAt:string;receivedAt:string;quality:'complete'|'missing';version:number;snapshotHash:string;summary:string;fields:Array<{label:string;value:BusinessFieldValue}>}
 export type BusinessLedgerBlock={
  objectType:BusinessObjectTypeRecord
  objects:number
@@ -204,13 +205,16 @@ function localizedText(value:unknown,original:string,max:number,message:string):
 
 function fieldDefinition(value:unknown):BusinessObjectFieldDefinition{
  if(!isRecord(value))throw bad('业务对象字段定义格式不正确。')
- const hasValues=value.values!==undefined,hasReference=value.referenceType!==undefined,hasLocalized=value.localized!==undefined
- const keys=['name','label',...(hasLocalized?['localized']:[]),'type','required','from',...(hasValues?['values']:[]),...(hasReference?['referenceType']:[])]
+ const hasValues=value.values!==undefined,hasReference=value.referenceType!==undefined,hasLocalized=value.localized!==undefined,hasInteger=value.integer!==undefined,hasMinimum=value.minimum!==undefined,hasScale=value.decimalScale!==undefined
+ const keys=['name','label',...(hasLocalized?['localized']:[]),'type','required','from',...(hasValues?['values']:[]),...(hasReference?['referenceType']:[]),...(hasInteger?['integer']:[]),...(hasMinimum?['minimum']:[]),...(hasScale?['decimalScale']:[])]
  const row=exact(value,keys,'业务对象字段定义格式不正确。')
  if(typeof row.name!=='string'||!fieldName.test(row.name))throw bad('业务对象字段标识不合法。')
  if(!label(row.label,80))throw bad('业务对象字段标签不合法。')
  if(!(businessFieldTypes as readonly string[]).includes(row.type as string))throw invalidEnum('业务对象字段类型不合法。',row.type,businessFieldTypes)
  const type=row.type as BusinessFieldType
+ if(hasInteger&&(type!=='number'||row.integer!==true))throw bad('仅数字字段可声明 integer:true。')
+ if(hasMinimum&&(type!=='number'||typeof row.minimum!=='number'||!Number.isFinite(row.minimum)||Math.abs(row.minimum)>1e15))throw bad('数字字段 minimum 必须是绝对值不超过 1e15 的有限数。')
+ if(hasScale&&(type!=='number'||!Number.isInteger(row.decimalScale)||Number(row.decimalScale)<0||Number(row.decimalScale)>15))throw bad('数字字段 decimalScale 必须是 0–15 的整数。')
  if(typeof row.required!=='boolean')throw bad('业务对象字段是否必填不合法。')
  // `from` 上限 120 抄 `readBusinessObjectSnapshot`（packages/backend/src/work/business-data.ts）：声明比快照宽一格没有意义。
  if(!label(row.from,120))throw bad('业务对象字段来源不合法。')
@@ -230,7 +234,7 @@ function fieldDefinition(value:unknown):BusinessObjectFieldDefinition{
   }
   localized=result
  }
- return {name:row.name,label:row.label,...(localized?{localized}:{}),type,required:row.required,from:row.from,...(hasValues?{values:[...row.values as string[]]}:{}),...(hasReference?{referenceType:row.referenceType as string}:{})}
+ return {name:row.name,label:row.label,...(localized?{localized}:{}),type,required:row.required,from:row.from,...(hasValues?{values:[...row.values as string[]]}:{}),...(hasReference?{referenceType:row.referenceType as string}:{}),...(hasInteger?{integer:true as const}:{}),...(hasMinimum?{minimum:row.minimum as number}:{}),...(hasScale?{decimalScale:row.decimalScale as number}:{})}
 }
 
 function progressDefinition(value:unknown,fields:readonly BusinessObjectFieldDefinition[]):BusinessObjectProgressDefinition{

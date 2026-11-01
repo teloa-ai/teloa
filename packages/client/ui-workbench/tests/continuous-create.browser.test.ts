@@ -1,6 +1,6 @@
 import {test,before,after} from 'node:test'
 import assert from 'node:assert/strict'
-import {mkdtemp,writeFile,rm} from 'node:fs/promises'
+import {mkdtemp,writeFile,rm,mkdir} from 'node:fs/promises'
 import {fileURLToPath} from 'node:url'
 import {join} from 'node:path'
 import {build} from 'vite'
@@ -20,17 +20,18 @@ const roles=[role('22222222-2222-4222-8222-222222222222','安全员工',['SOC'])
 const fields={title:'原暂停计划',scope:'SOC',goal:'核对资料',dataScope:'已授权资料',delivery:'结果',roleId:roles[0].id,trigger:{kind:'schedule',cadence:'daily',weekday:1,time:'09:00',timezone:'Asia/Singapore'},notificationPolicy:'silent'};
 const original={...fields,id:'44444444-4444-4444-8444-444444444444',ownerId:'self',roleVersion:3,source:{kind:'manual'},version:1,configVersion:1,state:'paused',archivedReason:null,archivedAt:null,createdAt:stamp,updatedAt:stamp};
 const ownerExecutor={kind:'owner',grantId:original.id,grantVersion:1},completionPolicy={kind:'manual'},ownerPlan={...original,scope:'general',roleId:null,roleVersion:null,executor:ownerExecutor,completionPolicy,source:{kind:'method-reuse',artifactId:original.id,version:1,basisHash:'a'.repeat(64),taskId:'11111111-1111-4111-8111-111111111111'},workDefinition:{schema:'teloa.plan-work/v3',definitionVersion:1,authorization:ownerExecutor,definitionControlId:original.id,budgetAccountId:original.id,completion:completionPolicy,triggers:[{kind:'schedule',schedule:original.trigger}],budget:{maxGoalRounds:9,maxTokens:65536,maxElapsedMs:300000,maxConcurrent:1,maxRetries:1,stagnationRounds:3,money:null},overlap:'forbid',missed:'coalesce',safeRecovery:false}};
+const emptySkip={planId:original.id,planVersion:1,configVersion:1,occurrenceId:'2026-10-25T09:00[Asia/Singapore]',scheduledAt:'2026-10-25T01:00:00.000Z',skippedAt:'2026-10-25T01:00:01.000Z',reason:'no-work-evidence',blockingClaimId:null,taskId:null};
 const eventPlan={...original,completionPolicy:{kind:'manual'},workDefinition:{...ownerPlan.workDefinition,authorization:{kind:'delegation',delegationId:original.id,delegationVersion:1},triggers:[{kind:'local-event',eventKind:'business-object-version',sourceRef:{kind:'business-object',scope:'SOC',type:'lead',id:'lead-1'},coalesce:'latest'}]}};
 const template={key:'fixed',itemId:'fixed',templateId:'review',title:'固定安全模板',version:'1.0.0',scope:'SOC',hash:'a'.repeat(64),example:false,source:'测试固定来源',author:'本人',license:'MIT',description:'核对资料',requirements:[],output:'结果',skills:[]};
 window.planFixture={creates:[],updates:[],contacts:[],selected:[],tasks:[],conversations:[]};crypto.randomUUID=()=>'66666666-6666-4666-8666-666666666666';
 function App(){
- const mode=window.planMode,sourcePlan=mode==='event-plan'?eventPlan:mode==='owner'?ownerPlan:mode.startsWith('origin')?{...original,source:{kind:'manual',sessionId:'original-plan-session'}}:original,[plans,setPlans]=useState(mode==='event-plan'||mode==='owner'||mode==='edit'||mode.startsWith('origin')?[sourcePlan]:[]),[target,go]=useState(mode==='event-plan'||mode==='owner'||mode==='edit'||mode.startsWith('origin')?{kind:'plan',id:original.id}:mode==='business'?{kind:'plans',scope:'SOC'}:{kind:'plans'}),[seed,setSeed]=useState(mode==='template'||mode==='journal-sandbox-template'?{template:{...template,example:mode==='journal-sandbox-template'},fields:{...fields,title:template.title},...(mode==='template'?{source:{kind:'market-content',contentId:original.id,contentHash:template.hash,resourceId:'review',resourceVersion:'1.0.0'}}:{})}:null);
+ const mode=window.planMode,sourcePlan=mode==='empty-digest'?{...original,title:'Auto Dream · 每日小结',state:'active',source:{kind:'system-digest',roleId:roles[0].id}}:mode==='event-plan'?eventPlan:mode==='owner'?ownerPlan:mode.startsWith('origin')?{...original,source:{kind:'manual',sessionId:'original-plan-session'}}:original,[plans,setPlans]=useState(mode==='empty-digest'||mode==='event-plan'||mode==='owner'||mode==='edit'||mode.startsWith('origin')?[sourcePlan]:[]),[target,go]=useState(mode==='empty-digest'||mode==='event-plan'||mode==='owner'||mode==='edit'||mode.startsWith('origin')?{kind:'plan',id:original.id}:mode==='business'?{kind:'plans',scope:'SOC'}:{kind:'plans'}),[seed,setSeed]=useState(mode==='template'||mode==='journal-sandbox-template'?{template:{...template,example:mode==='journal-sandbox-template'},fields:{...fields,title:template.title},...(mode==='template'?{source:{kind:'market-content',contentId:original.id,contentHash:template.hash,resourceId:'review',resourceVersion:'1.0.0'}}:{})}:null);
  window.planFixture.enterScope=scope=>go({kind:'plans',...(scope?{scope}:{})});
  window.planFixture.enterTemplate=example=>setSeed({template:{...template,example},fields:{...fields,title:template.title},...(!example?{source:{kind:'market-content',contentId:original.id,contentHash:template.hash,resourceId:'review',resourceVersion:'1.0.0'}}:{})});
  const [sort,setSort]=useState('name');
  if(mode==='staff')return <I18nProvider runtime={runtime}><label>排序<select value={sort} onChange={event=>setSort(event.target.value)}><option value="name">姓名</option><option value="duty">岗位</option></select></label><StaffRoster roles={[...roles,roles[0]]} labels={roles.flatMap(row=>row.scopes.map(scope=>({scope,title:scope,kind:'builtin',loads:0,activeLoads:0,tasks:0,groups:0})))} tasks={[{id:'original-task',assigneeId:roles[0].id,state:'ready',title:'原始任务',updatedAt:stamp,scope:'SOC'}]} sort={sort} fold={{toggled:[]}} onFoldChange={()=>{}} searching={false} onSelect={id=>window.planFixture.selected.push(id)} onTalk={id=>window.planFixture.contacts.push(['chat',id])} onPhone={id=>window.planFixture.contacts.push(['phone',id])} onOpenTask={id=>window.planFixture.tasks.push(id)} onHire={()=>{}}/></I18nProvider>;
  const merge=rows=>setPlans(current=>[...current.filter(row=>!rows.some(next=>next.id===row.id)),...rows]);
- const api=useMemo(()=>({list:async()=>plans,directory:async()=>({items:[],cursor:null}),executions:async()=>({items:[],nextCursor:null}),skips:async()=>({items:[],nextCursor:null}),schedule:async()=>mode==='event-plan'?{available:true,overview:{planId:original.id,planVersion:1,state:'paused',nextAt:null,latest:null,latestSkip:null},health:null}:null,pending:()=>mode==='journal-pending'?{kind:'create'}:null,recoveryMessage:()=>null,create:async(fields,source)=>{window.planFixture.creates.push({fields,source});return {...original,...fields,source,id:'55555555-5555-4555-8555-555555555555'}},update:async(plan,fields)=>{window.planFixture.updates.push({plan,fields});return {...plan,...fields,version:plan.version+1}}}),[]);
+ const api=useMemo(()=>({list:async()=>plans,directory:async()=>({items:[],cursor:null}),executions:async()=>({items:[],nextCursor:null}),skips:async()=>({items:mode==='empty-digest'?[emptySkip]:[],nextCursor:null}),trigger:async()=>{throw {code:window.planFixture.triggerFailureCode??'teloa/no-work-evidence'}} ,schedule:async()=>mode==='empty-digest'?{available:true,overview:{planId:original.id,planVersion:1,state:'active',nextAt:'2026-10-26T01:00:00.000Z',latest:null,latestSkip:emptySkip},health:{health:'healthy',failureCode:null,lastAttemptAt:emptySkip.skippedAt,lastSuccessAt:emptySkip.skippedAt}}:mode==='event-plan'?{available:true,overview:{planId:original.id,planVersion:1,state:'paused',nextAt:null,latest:null,latestSkip:null},health:null}:null,pending:()=>mode==='journal-pending'?{kind:'create'}:null,recoveryMessage:()=>null,create:async(fields,source)=>{window.planFixture.creates.push({fields,source});return {...original,...fields,source,id:'55555555-5555-4555-8555-555555555555'}},update:async(plan,fields)=>{window.planFixture.updates.push({plan,fields});return {...plan,...fields,version:plan.version+1}}}),[]);
  return <I18nProvider runtime={runtime}><BusinessScopeProvider labels={['general','SOC','sales'].map(scope=>({scope,title:scope,kind:'builtin',loads:0,activeLoads:0,tasks:0,groups:0}))}><ContinuousPage draftStorage={mode.startsWith('journal')?{namespace:'owner:journal-test',storage:mode==='journal-quota'?{getItem:key=>sessionStorage.getItem(key),setItem:()=>{throw Error('QuotaExceededError')},removeItem:key=>sessionStorage.removeItem(key)}:window.sessionStorage}:undefined} openConversation={async id=>{window.planFixture.conversations.push(id);if(mode==='origin-error')throw Error('原会话暂不可用');}} prepareConversation={mode.startsWith('conversation')?async request=>{window.planFixture.conversations.push(request);if(mode==='conversation-error')throw Error('会话准备失败');}:undefined} visible state={{...emptyTaskPreview(),roles,continuous:{plans:plans.map(projectSavedPlan),runs:[],loaded:true}}} target={target} go={go} persistence={{api,plans,controls:mode==='event-plan'?{get:async()=>({ownerId:original.ownerId,scope:'definition',state:'active'}),pending:()=>null}:undefined,merge,refreshRoles:()=>{},industrySource:()=>null}} seed={seed} clearSeed={()=>setSeed(null)} change={()=>{}} openArtifacts={()=>{}} openMarket={()=>{}} openTask={()=>{}} openRole={id=>window.planFixture.contacts.push(['role',id])} openBusiness={()=>{}} team={()=>{}} attention={()=>{}}/></BusinessScopeProvider></I18nProvider>
 }createRoot(document.getElementById('root')).render(<App/>);
 `
@@ -265,4 +266,49 @@ test('原计划提交结果待核对时恢复输入不会另发创建或更新',
  assert.equal(await form.getByRole('button',{name:'保存暂停计划',exact:true}).isDisabled(),true)
  await form.locator('form').evaluate((node:HTMLFormElement)=>node.dispatchEvent(new Event('submit',{bubbles:true,cancelable:true})))
  const calls=await page.evaluate(()=>(window as any).planFixture);assert.deepEqual(calls.creates,[]);assert.deepEqual(calls.updates,[]);assert.deepEqual(calls.tasks,[])
+})
+
+test('Auto Dream 空日正常跳过在真实计划详情显示下次日程与历史，无阻塞任务动作',async t=>{
+ const page=await mount(t,'empty-digest'),status=page.locator('[aria-label="当前状态"]')
+ await status.getByText('当天没有可核对的工作，已跳过小结',{exact:true}).waitFor()
+ assert.match(await status.innerText(),/已启用.*下次/)
+ assert.equal(await page.getByText('前一任务尚未结束',{exact:true}).count(),0)
+ assert.equal(await page.getByRole('button',{name:'处理那个任务',exact:true}).count(),0)
+ assert.equal(await page.getByRole('alert').count(),0)
+ await page.locator('[data-teloa-event="skip"] > button[aria-expanded]').click()
+ await page.locator('[data-teloa-event="skip"]').getByRole('button',{name:'刷新',exact:true}).click()
+ await page.getByText('当天没有可核对的工作，已跳过小结',{exact:true}).last().waitFor()
+ assert.doesNotMatch(await page.locator('body').innerText(),/null|undefined/)
+ await status.getByRole('button',{name:'触发一次工作',exact:true}).click()
+ await status.getByRole('status').waitFor()
+ assert.match(await status.getByRole('status').innerText(),/当天没有可核对的工作.*无需生成小结/)
+ assert.equal(await status.getByRole('alert').count(),0)
+ assert.equal(await status.getByRole('button',{name:'关闭错误',exact:true}).count(),0)
+ await status.getByRole('button',{name:'关闭提示',exact:true}).waitFor()
+
+ if(process.env.TELOA_TEST_SCREENSHOTS){await mkdir(process.env.TELOA_TEST_SCREENSHOTS,{recursive:true});await page.screenshot({path:join(process.env.TELOA_TEST_SCREENSHOTS,'auto-dream-empty-day.png'),fullPage:true})}
+ await status.getByRole('button',{name:'关闭提示',exact:true}).click()
+ assert.equal(await status.getByRole('status').count(),0)
+ await page.evaluate(()=>{(window as any).planFixture.triggerFailureCode='teloa/source-unavailable'})
+ await status.getByRole('button',{name:'触发一次工作',exact:true}).click()
+ await status.getByRole('alert').waitFor()
+ assert.equal(await status.getByRole('status').count(),0)
+ await status.getByRole('button',{name:'关闭错误',exact:true}).waitFor()
+})
+
+test('AD02-DST：真实浏览器选择纽约并仅保存暂停计划',async t=>{
+ const page=await mount(t);await startGoal(page,'纽约本例资料核对')
+ const form=page.getByRole('dialog',{name:'新建持续计划',exact:true})
+ await form.getByRole('combobox',{name:/^业务范围/}).selectOption('SOC')
+ await form.getByRole('combobox',{name:/^负责员工/}).selectOption('22222222-2222-4222-8222-222222222222')
+ await form.getByRole('combobox',{name:'时区',exact:true}).selectOption('America/New_York')
+ await form.getByRole('combobox',{name:'通知策略',exact:true}).selectOption('silent')
+ await form.getByRole('combobox',{name:'时区',exact:true}).scrollIntoViewIfNeeded()
+ const evidence=process.env.TELOA_AD02_EVIDENCE_DIR
+ if(evidence){await mkdir(evidence,{recursive:true});await page.screenshot({path:join(evidence,'01-newyork-form.png'),fullPage:true})}
+ await form.getByRole('button',{name:'保存暂停计划',exact:true}).click()
+ await form.waitFor({state:'hidden'})
+ const calls=await page.evaluate(()=>(window as any).planFixture.creates)
+ assert.equal(calls.length,1);assert.equal(calls[0].fields.trigger.timezone,'America/New_York');assert.deepEqual(calls[0].source,{kind:'manual'})
+ if(evidence)await page.screenshot({path:join(evidence,'02-newyork-saved.png'),fullPage:true})
 })

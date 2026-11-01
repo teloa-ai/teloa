@@ -1,22 +1,30 @@
-import {useEffect,useMemo,useRef,useState} from 'react'
-import {Check,Clock3,History,Info,MoreHorizontal,RotateCcw,Save} from 'lucide-react'
+import {LibraryReaderHeader} from './LibraryReaderHeader.js'
+import {LibrarySourceEditor} from './LibrarySourceEditor.js'
+import {libraryReaderText} from './library-reader-copy.js'
+import {MarkdownPreview} from './knowledge-markdown.js'
+import {downloadLibraryText} from './library-text-file.js'
+import {KnowledgeCopyOrigin} from './KnowledgeCopyOrigin.js'
+import {useEffect,useMemo,useRef,useState,type ReactNode} from 'react'
+import {Check,Clock3,Download,History,Info,Pencil,RotateCcw} from 'lucide-react'
 import {verifyKnowledgeVersionContent,type KnowledgeVersion,type KnowledgeVersionSummary,type PasteKnowledge,type SourceReference} from '@teloa/contract'
 import type {ResourceApi} from './resource-api.js'
 import type {WorkbenchNavigationStorage} from './workbench-navigation-state.js'
 import {createKnowledgeEditJournal,type KnowledgeEditDraft,type KnowledgeEditPending} from './knowledge-edit-journal.js'
-import {KnowledgeMarkdownEditor} from './KnowledgeMarkdownEditor.js'
 import {useI18n} from './i18n/provider.js'
 import {localizeWorkError} from './i18n/errors.js'
 import css from './KnowledgeDocument.module.css'
 
 /** 原知识正文复用既有 Markdown 阅读/编辑区域；没有工作资料时不显示引用或撤回授权动作。 */
-export function StandaloneKnowledgeDocument({api,ownerId,source,title,storage,onPublished,onError,onNotice}:{api:ResourceApi;ownerId:string;source:SourceReference;title:string;storage:WorkbenchNavigationStorage|undefined;onPublished:()=>Promise<void>;onError:(message:string)=>void;onNotice:(message:string)=>void}){
- const {locale,t}=useI18n(),id=source.knowledge!.knowledgeId
+export function StandaloneKnowledgeDocument({navigation,api,ownerId,source,title,storage,onPublished,onError,onNotice}:{navigation?:ReactNode;api:ResourceApi;ownerId:string;source:SourceReference;title:string;storage:WorkbenchNavigationStorage|undefined;onPublished:()=>Promise<void>;onError:(message:string)=>void;onNotice:(message:string)=>void}){
+ const {locale,t}=useI18n(),reader=libraryReaderText(locale),id=source.knowledge!.knowledgeId
  const scopeLabel=(value:string)=>value==='general'?t('knowledge.ui.008'):value
  const identity=useRef({api,ownerId,id});identity.current={api,ownerId,id}
+ const infoButton=useRef<HTMLButtonElement>(null)
+
  const generation=useRef(0),journal=useMemo(()=>createKnowledgeEditJournal(api,ownerId,id,storage),[api,ownerId,id,storage])
  const current=(token:number)=>generation.current===token&&identity.current.api===api&&identity.current.ownerId===ownerId&&identity.current.id===id
- const [versions,setVersions]=useState<KnowledgeVersionSummary[]>([]),[selected,setSelected]=useState<KnowledgeVersion>(),[markdown,setMarkdown]=useState(''),[baseline,setBaseline]=useState(''),[draft,setDraft]=useState<KnowledgeEditDraft>(),[loading,setLoading]=useState(true),[busy,setBusy]=useState(false),[blocked,setBlocked]=useState(false),[inspectorOpen,setInspectorOpen]=useState(true),[storageWarning,setStorageWarning]=useState(false)
+ const [versions,setVersions]=useState<KnowledgeVersionSummary[]>([]),[selected,setSelected]=useState<KnowledgeVersion>(),[markdown,setMarkdown]=useState(''),[baseline,setBaseline]=useState(''),[draft,setDraft]=useState<KnowledgeEditDraft>(),[loading,setLoading]=useState(true),[busy,setBusy]=useState(false),[blocked,setBlocked]=useState(false),[inspectorOpen,setInspectorOpen]=useState(false),[editing,setEditing]=useState(false),[storageWarning,setStorageWarning]=useState(false)
+ useEffect(()=>{if(!inspectorOpen)return;const close=(event:KeyboardEvent)=>{if(event.key==='Escape'){event.preventDefault();setInspectorOpen(false);infoButton.current?.focus()}};document.addEventListener('keydown',close);return()=>document.removeEventListener('keydown',close)},[inspectorOpen])
  const head=versions.reduce<KnowledgeVersionSummary|undefined>((latest,row)=>!latest||row.version>latest.version?row:latest,undefined),dirty=markdown!==baseline,historical=!!head&&selected?.version!==head.version,pending=draft?.pending
  const remember=(value:KnowledgeEditDraft)=>{journal.write(value);setDraft(value);setStorageWarning(journal.warning())}
  const checkedVersion=async(version:number,rows:KnowledgeVersionSummary[])=>{
@@ -25,7 +33,7 @@ export function StandaloneKnowledgeDocument({api,ownerId,source,title,storage,on
   return value
  }
  useEffect(()=>{
-  const token=++generation.current;setLoading(true);setBusy(false);setBlocked(false)
+  const token=++generation.current;setLoading(true);setBusy(false);setBlocked(false);setInspectorOpen(false);setEditing(false)
   void (async()=>{
    const rows=await api.listKnowledgeVersions(id)
    if(rows.some(row=>row.ownerId!==ownerId||row.knowledgeId!==id))throw Object.assign(Error(),{code:'teloa/invalid-host-response'})
@@ -36,7 +44,7 @@ export function StandaloneKnowledgeDocument({api,ownerId,source,title,storage,on
    const value=await checkedVersion(version,rows)
    if(!saved&&value.contentHash!==source.version)throw Object.assign(Error(),{code:'teloa/version-conflict'})
    if(!current(token))return
-   setVersions(rows);setSelected(value);setBaseline(value.markdown);setMarkdown(saved?.pending?.kind==='restore'?value.markdown:saved?.markdown??value.markdown);setDraft(saved);setStorageWarning(journal.warning())
+   setVersions(rows);setSelected(value);setBaseline(value.markdown);setMarkdown(value.markdown);setDraft(saved);setStorageWarning(journal.warning())
    if(saved&&!saved.pending&&rows.some(row=>row.version>saved.base.version))onError(localizeWorkError(locale,{code:'teloa/version-conflict'}))
   })().catch(error=>{if(current(token)){setBlocked(true);onError(localizeWorkError(locale,error))}}).finally(()=>{if(current(token))setLoading(false)})
   return()=>{generation.current++}
@@ -73,9 +81,10 @@ export function StandaloneKnowledgeDocument({api,ownerId,source,title,storage,on
   try{const value=await checkedVersion(version,versions);if(current(token)){setSelected(value);setMarkdown(value.markdown);setBaseline(value.markdown)}}catch(error){if(current(token))onError(localizeWorkError(locale,error))}finally{if(current(token))setLoading(false)}
  }
  return <section className={css.document} aria-label={t('knowledge.ui.013')}>
-  <header className={css.documentHeader}><div className={css.titleBlock}><span>{t('library.savedKnowledge')}</span><h2>{title}</h2>{dirty&&<em className={css.dirty}>{t('knowledge.ui.041')}</em>}</div><div className={css.documentActions}>{dirty&&!pending&&<button type="button" onClick={()=>change(baseline)}>{t('knowledge.ui.042')}</button>}<button type="button" className={css.save} disabled={busy||loading||blocked||pending?.kind==='restore'||!pending&&(historical||!dirty||!markdown.trim())} onClick={()=>void submit('revise')}><Save size={15}/>{busy?t('knowledge.ui.043'):t('knowledge.ui.044')}</button><details className={css.more}><summary aria-label={t('knowledge.ui.017')}><MoreHorizontal size={18}/></summary><div><button type="button" onClick={()=>setInspectorOpen(value=>!value)}><Info size={15}/>{t(inspectorOpen?'knowledge.ui.020':'knowledge.ui.021')}</button></div></details></div></header>
-  <p className={css.versionNotice}>{t('library.standaloneBoundary')}</p>{storageWarning&&<p role="status">{t('library.draftStorage')}</p>}
-  <div className={inspectorOpen?`${css.body} ${css.bodyWithInspector}`:css.body}><div className={css.canvas}>{historical&&<div className={css.historicalNotice} role="status"><div><strong>{t('knowledge.ui.046')}{selected?.version}{t('knowledge.ui.047')}</strong><span>{t('knowledge.ui.048')}</span></div><button type="button" disabled={busy||loading||blocked||!!pending&&pending.kind!=='restore'} onClick={()=>void submit('restore')}><RotateCcw size={15}/>{busy?t('knowledge.ui.049'):t('knowledge.ui.050')}</button></div>}{loading&&!selected?<p role="status">{t('knowledge.ui.051')}</p>:selected?<KnowledgeMarkdownEditor key={`${id}:${selected.version}`} value={markdown} onChange={change} readOnly={historical||busy||loading||blocked||!!pending}/>:<p role="alert">{t('knowledge.manager.bodyUnavailable')}</p>}</div>
+  <LibraryReaderHeader navigation={navigation} title={title}><button type="button" disabled={!selected||loading||blocked} onClick={()=>downloadLibraryText(markdown,title)}><Download size={15}/>{reader.download}</button>{editing?<><button type="button" disabled={busy} onClick={()=>{setEditing(false);setMarkdown(baseline)}}>{reader.cancel}</button><button className={css.save} type="button" disabled={busy||loading||blocked||pending?.kind==='restore'||!pending&&(historical||!dirty||!markdown.trim())} onClick={()=>void submit('revise')}>{busy?t('knowledge.ui.043'):reader.version}</button></>:<button type="button" disabled={!selected||historical||blocked||loading} onClick={()=>{setMarkdown(draft?.markdown??baseline);setEditing(true)}}><Pencil size={15}/>{reader.edit}</button>}<button type="button" ref={infoButton} aria-label={reader.info} aria-expanded={inspectorOpen} onClick={()=>setInspectorOpen(value=>!value)}><Info size={16}/></button></LibraryReaderHeader>
+  <KnowledgeCopyOrigin api={api} knowledgeId={id}/>
+{storageWarning&&<p role="status">{t('library.draftStorage')}</p>}
+  <div className={inspectorOpen?`${css.body} ${css.bodyWithInspector}`:css.body}><div className={css.canvas}>{historical&&<div className={css.historicalNotice} role="status"><div><strong>{t('knowledge.ui.046')}{selected?.version}{t('knowledge.ui.047')}</strong><span>{t('knowledge.ui.048')}</span></div><button type="button" disabled={busy||loading||blocked||!!pending&&pending.kind!=='restore'} onClick={()=>void submit('restore')}><RotateCcw size={15}/>{busy?t('knowledge.ui.049'):t('knowledge.ui.050')}</button></div>}{loading&&!selected?<p role="status">{t('knowledge.ui.051')}</p>:selected?editing?<LibrarySourceEditor key={`${id}:${selected.version}`} value={markdown} onChange={change} readOnly={historical||busy||loading||blocked||!!pending}/>:<article className={css.readerContent}><MarkdownPreview markdown={markdown} images={false}/></article>:<p role="alert">{t('knowledge.manager.bodyUnavailable')}</p>}</div>
    {inspectorOpen&&<aside className={css.history} aria-label={t('knowledge.ui.052')}><header><Info size={17}/><div><strong>{t('knowledge.ui.025')}</strong><small>{t('library.standaloneBoundary')}</small></div></header><dl className={css.pageFacts}><div><dt>{t('knowledge.ui.027')}</dt><dd>{source.title}</dd></div><div><dt>{t('knowledge.ui.030')}</dt><dd>{source.knowledge!.scopeIds.map(scopeLabel).join(' · ')}</dd></div><div><dt>{t('knowledge.ui.015')}</dt><dd>{selected?.contentHash.slice(0,12)}</dd></div></dl><div className={css.versionHeader}><History size={16}/><strong>{t('knowledge.ui.035')}</strong></div><div className={css.versionList}>{[...versions].sort((a,b)=>b.version-a.version).map(version=><button key={version.version} type="button" aria-label={t('knowledge.versionAria',{version:version.version})} aria-current={selected?.version===version.version?'true':undefined} disabled={busy||dirty||!!pending} onClick={()=>void read(version.version)}><span>{version.version===head?.version?<Check size={15}/>:<Clock3 size={15}/>}<strong>v{version.version}</strong>{version.version===head?.version&&<em>{t('knowledge.ui.056')}</em>}</span><small>{new Intl.DateTimeFormat(locale,{dateStyle:'short',timeStyle:'short'}).format(new Date(version.createdAt))}</small></button>)}</div>{dirty&&<p className={css.historyHint}>{t('knowledge.ui.058')}</p>}</aside>}
   </div>
  </section>

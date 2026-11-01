@@ -4,11 +4,16 @@ import {mkdtemp,mkdir,writeFile,rm} from 'node:fs/promises'
 import {tmpdir} from 'node:os'
 import {join} from 'node:path'
 import {WorkError,type WorkControl} from '@teloa/contract'
+import {plannedRestartResumeRequestId} from '@teloa/contract'
+import {createHash} from 'node:crypto'
 import {plannedRestartResume,plannedRestartWaitMs,readPlannedRestartReceipt} from '../src/planned-restart-resume.ts'
 
 const owner='local:teloa-owner',restartId='8f0c2a52-5b8e-4f0e-9c1d-2a3b4c5d6e7f',controlId='6a1b2c3d-4e5f-4a6b-8c7d-8e9f0a1b2c3d'
 const control=():WorkControl=>({id:controlId,ownerId:owner,generation:2,version:3,state:'paused',scope:'round',pendingRunIds:[],unknownOperationIds:[]})
 const candidate=(safeRecovery:boolean)=>({controlId,expectedGeneration:2,runId:'r',nativeRequestId:'n',goal:null,reason:'accepted' as const,safeRecovery,resumable:true})
+test('共享计划重启恢复ID与既有历史字节相同',()=>{
+ assert.equal(plannedRestartResumeRequestId(restartId,controlId,text=>createHash('sha256').update(text).digest('hex')),'5517dabc-6734-5ff6-a41c-27fa6ffbf179')
+})
 function ports(options:{state?:()=>string,candidates?:ReturnType<typeof candidate>[],resume?:()=>Promise<WorkControl>,now?:()=>number}={}){
  const calls:{resumes:number,records:string[],reports:string[]}={resumes:0,records:[],reports:[]}
  return {calls,ports:{controls:{plannedRestartState:async()=>options.state?.()??'ready',get:async()=>control(),recordPlannedRestart:async(_:string,input:{outcome:string})=>{calls.records.push(input.outcome)}} as never,

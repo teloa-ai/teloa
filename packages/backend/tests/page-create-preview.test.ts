@@ -6,6 +6,8 @@ import {join} from 'node:path'
 import {Pool} from './postgres-test-lifecycle.ts'
 import {PostgreSqlContainer,type StartedPostgreSqlContainer} from '@testcontainers/postgresql'
 import {initializePageCreateDrafts,PageCreateDraftService,PageCreatePreviewService,type PageCreateActor} from '../src/index.ts'
+import {ResourceService} from '../src/capabilities/resources.ts'
+import {initializeResources} from '../src/capabilities/schema.ts'
 
 let container:StartedPostgreSqlContainer,pool:Pool
 before(async()=>{
@@ -35,6 +37,30 @@ test('岗位草案预览给出三块并且不写入草案',async()=>{
  assert.deepEqual(result.next,{endpoint:'roles/create',consentKeys:[]})
  const after=(await drafts.directory(owner,{entity:'role'})).drafts.find(item=>item.id===draft.id)
  assert.equal(after?.updatedAt,draft.updatedAt)
+})
+
+test('员工预览只投影当前本人及岗位范围内的资料名，撤权撤回不复用旧名且不读正文',async()=>{
+ await initializeResources(pool)
+ let bodyReads=0
+ const resources=new ResourceService(pool,{list:async()=>{throw Error('不得读取来源目录')},read:async()=>{bodyReads++;return {text:'仅用于建立隔离资料'} as never}},identity)
+ const owner=actor(),human={...owner,kind:'human' as const,scopeIds:['general','SOC','HR']}
+ const make=async(ownerId:string,title:string,scope:string)=>{const draft=await resources.create({...human,ownerId},{requestId:randomUUID(),title,sourceId:'test-source',sourceVersion:'a'.repeat(64),scopeIds:[scope]});return resources.apply({...human,ownerId},{draftId:draft.id,expectedVersion:draft.version})}
+ const allowed=await make(owner.ownerId,'订单核对规范','SOC'),otherScope=await make(owner.ownerId,'不可显示的人事名称','HR'),foreign=await make('local:'+randomUUID(),'不可显示的他人名称','SOC')
+ const {drafts}=service(),body={...role(),skills:['订单核验','未核验技能标识'],knowledge:[allowed.id,otherScope.id,foreign.id,randomUUID()]}
+ const draft=await drafts.draft(owner,{entity:'role',body,requestId:randomUUID()})
+ const references={knowledge:async(current:PageCreateActor)=>(await resources.list({...current,kind:'human',scopeIds:['general',...current.scopeIds]})).resources,skills:async()=>[{name:'订单核验'}]}
+ const preview=new PageCreatePreviewService(pool,identity,drafts,undefined,undefined,{},references)
+ const reads=bodyReads,first=await preview.preview({...owner,scopeIds:['SOC','HR']},{draftId:draft.id})
+ assert.deepEqual(first.roleReferences,{knowledge:['订单核对规范',null,null,null],skills:['订单核验',null]})
+ assert.equal(first.draft.body,draft.body);assert.equal(first.draft.bodyHash,draft.bodyHash)
+ assert.deepEqual((await preview.preview({...owner,scopeIds:[]},{draftId:draft.id})).roleReferences?.knowledge,[null,null,null,null],'失去本人范围后不能回用先前名称')
+ await resources.withdraw(human,{resourceId:allowed.id,expectedVersion:allowed.version})
+ assert.deepEqual((await preview.preview(owner,{draftId:draft.id})).roleReferences?.knowledge,[null,null,null,null],'撤回后重新预览不能复用名称')
+ assert.equal(bodyReads,reads,'展示名称不得读取资料正文')
+ assert.equal((await drafts.read(owner,{draftId:draft.id})).bodyHash,draft.bodyHash)
+ assert.deepEqual((await new PageCreatePreviewService(pool,identity,drafts).preview(owner,{draftId:draft.id})).roleReferences,{knowledge:[null,null,null,null],skills:[null,null]},'未接入目录不猜测名称')
+ const failed=new PageCreatePreviewService(pool,identity,drafts,undefined,undefined,{}, {...references,knowledge:async()=>{throw Error('目录读取失败')}})
+ await assert.rejects(failed.preview(owner,{draftId:draft.id}),/目录读取失败/,'读取失败保持预览失败，不能伪装成已核验')
 })
 
 test('连接器预览明确提示凭据和外发；落定草案不得再预览',async()=>{

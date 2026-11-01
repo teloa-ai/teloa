@@ -178,3 +178,14 @@ test('概览或健康读取失败原样失败，不返回伪造健康',async()=>
  await assert.rejects(createPlanScheduleHandler(owner,ports({overview:async()=>{throw overviewError}}))('plans/schedule',{planId}),error=>error===overviewError)
  await assert.rejects(createPlanScheduleHandler(owner,ports({getStatus:async()=>{throw healthError}}))('plans/schedule',{planId}),error=>error===healthError)
 })
+
+test('正式跳过历史端口保留正常空日与已有小结，拒绝虚构阻塞关联',async()=>{
+ for(const reason of ['no-work-evidence','digest-exists']){
+  const item={...overview.latestSkip,reason,blockingClaimId:null,taskId:null},page={items:[item]}
+  const handler=createPlanScheduleHandler(owner,ports({skipHistory:async()=>page}))
+  assert.deepEqual(await handler('plans/skips',{planId,limit:20}),page)
+  for(const invalid of [{...item,blockingClaimId:occurrenceId},{...item,taskId}]){
+   await assert.rejects(createPlanScheduleHandler(owner,ports({skipHistory:async()=>({items:[invalid]})}))('plans/skips',{planId,limit:20}),{code:'teloa/invalid-host-response'})
+  }
+ }
+})

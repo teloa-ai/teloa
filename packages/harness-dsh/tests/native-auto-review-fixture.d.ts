@@ -28,6 +28,7 @@ declare module '*native-auto-review-fixture.mjs' {
   'dsh-session-query':{SessionQueryEngine:new(ctx:Context)=>Context['sessionQuery']}
   'dsh-subagent':typeof import('@deepseek-ai/dsh-subagent')
   'dsh-subagent-spawn-in-process':typeof import('@deepseek-ai/dsh-subagent-spawn-in-process')
+  'dsh-tool-subagent/model-selection-settings':{default:Plugin<{enabled?:boolean}>}
   'dsh-experimental-worktree':{default:new(ctx:Context,config:WorktreeConfig)=>WorktreeRuntime}
   'dsh-experimental-tool-worktree':ToolModule
  }

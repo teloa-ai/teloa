@@ -13,10 +13,14 @@ import {SessionProjectionRegistry} from '@deepseek-ai/dsh-session-projection'
 import {SystemPrompt} from '@deepseek-ai/dsh-system-prompt'
 import {patchedCorePackages} from './native-final-session.ts'
 import ProjectWorkingDirectory from '../../src/native-working-directory-guard.ts'
+import {TeloaNativeInput} from '../../src/native-input-provider.ts'
+import {createManagedSubagentRuntime} from '../../src/managed-subagent.ts'
+import {patchedNativePackage} from './native-patched-package.ts'
+import {installStandaloneResidentAdmission} from './native-input-provider.ts'
 import {official,textResponse} from '../../../../tests/native-auto-review-fixture.mjs'
 
 /** 原生完整 Loop/Tools/Session 与官方真实子进程，仅模型 IO 使用逐次脚本。 */
-export async function nativePtcToolPath(t:TestContext){
+export async function nativePtcToolPath(t:TestContext,options:{delegation?:boolean}={}){
  // 宿主平台允许部分系统临时目录写入；沙箱拒写验收必须置于项目测试目录。
  const base=fileURLToPath(new URL('../../../../.runtime/',import.meta.url));await mkdir(base,{recursive:true})
  const root=await realpath(await mkdtemp(join(base,'teloa-u4-tool-path-'))),workspace=join(root,'project')
@@ -24,6 +28,7 @@ export async function nativePtcToolPath(t:TestContext){
  const graph=await patchedCorePackages(t,{toolsCompat:'dsh-tools-0.2.1-rc.2-scoped-ptc'}),ctx=new Context()
  t.after(async()=>{await ctx.fiber.dispose();await rm(root,{recursive:true,force:true})})
  for(const plugin of [graph.llmPackage.LlmRuntime,graph.sessionPackage.SessionStore,SessionProjectionRegistry,SystemPrompt,graph.toolsPackage.ToolRuntime,graph.agentPackage.AgentRegistry])await ctx.plugin(plugin)
+ if(options.delegation){installStandaloneResidentAdmission(ctx);await ctx.plugin(TeloaNativeInput)}
  await ctx.plugin(graph.loopPackage.AgentLoop,{agents:[]})
  await ctx.plugin((await official('dsh-user-approval')).default,{policy:'ask'})
  await ctx.plugin((await official('dsh-sandbox-policy')).default,{mode:'workspace-write',workspaceRoot:workspace})
@@ -32,6 +37,12 @@ export async function nativePtcToolPath(t:TestContext){
  await ctx.plugin((await official('dsh-sandbox-local')).default,{})
  await ctx.plugin((await official('dsh-ptc-runtime-node')).default,{})
  await ctx.plugin(ProjectWorkingDirectory,{defaultDirectory:workspace})
+ if(options.delegation){
+  const subagent=await patchedNativePackage<typeof import('@deepseek-ai/dsh-subagent')>(t,{packageName:'@deepseek-ai/dsh-subagent',compatBasename:'dsh-subagent-0.2.1-rc.2-prompt-admission'})
+  await ctx.plugin(createManagedSubagentRuntime(subagent.namespace.SubagentRuntime),{maxActiveSubagents:8,maxDepth:2})
+  await ctx.plugin(await official('dsh-subagent-spawn-in-process'),{providerName:'spawn'})
+  await ctx.plugin((await official('dsh-tool-subagent/model-selection-settings')).default,{})
+ }
  ctx.provide('shell',{sandboxMode:'workspace-write'} as never)
  await ctx.plugin((await official('dsh-permission-presets')).default,{presets:{'read-only':{sandbox:'read-only',approval:'ask'},'workspace-write':{sandbox:'workspace-write',approval:'ask'}}})
  class Scripted extends LlmAdapter{
@@ -57,7 +68,10 @@ export async function nativePtcToolPath(t:TestContext){
   const parsed=parse(await readFile(new URL('../../../bundle/agent-presets/'+id+'.patch.yml',import.meta.url),'utf8'),{customTags:[{tag:'tag:yaml.org,2002:js',resolve:(value:string)=>({__jsExpr:value})}]})
   const declaration=id==='ptc'?{id:'preset-ptc',name:'@deepseek-ai/dsh-agent-preset',config:parsed[0].config}:parsed[0].insert[0]
   // 本定向图逐字消费选定 provider/binding/presentation 和原 agent-instructions；其他工具按测试明确装配。
-  declaration.config.plugins=declaration.config.plugins.filter((row:{id:string})=>['selected-code-runtime','tool-presentation','agent-instructions'].includes(row.id))
+  declaration.config.plugins=declaration.config.plugins.filter((row:{id:string;config?:Array<{id:string}>})=>{
+   if(options.delegation&&row.id==='delegation'){row.config=row.config!.filter(child=>child.id==='tool-subagent');return true}
+   return ['selected-code-runtime','tool-presentation','agent-instructions'].includes(row.id)
+  })
   rows.push(declaration)
  }
  await ctx.loader.root.update([{id:'registry',name:'@deepseek-ai/dsh-agent-preset-registry',config:{default:'ptc'}},...rows]);await ctx.loader.await()
@@ -65,7 +79,7 @@ export async function nativePtcToolPath(t:TestContext){
  let calls=0
  const handles=new WeakMap<Agent,{dispose:()=>Promise<void>}>()
  const create=async(preset:string,id=preset+'-'+Math.random().toString(36).slice(2))=>{
-  const handle=await ctx.agents.create({sessionId:SessionId(id),meta:{cwd:workspace},agentOptions:{provider:'u4-scripted',model:'tools'},setup:async scope=>{await ctx.agentPresets.mount(scope,preset)}})
+  const handle=await ctx.agents.create({sessionId:SessionId(id),meta:{cwd:workspace,agentPreset:preset},agentOptions:{provider:'u4-scripted',model:'tools'},setup:async scope=>{await ctx.agentPresets.mount(scope,preset)}})
   handles.set(handle.agent,handle);return handle.agent
  }
  const invoke=async(agent:Agent,name:string,args:Record<string,unknown>,signal=AbortSignal.timeout(15000))=>{

@@ -44,7 +44,7 @@ async function patchedConversationSource(){
 before(async()=>{
  temp=await mkdtemp(join(tmpdir(),'teloa-native-header-'))
  if(evidence)await mkdir(evidence,{recursive:true})
- const conversation=expose(await patchedConversationSource(),'\t\texports.headerFixture={ConversationHeader,ConversationSessionHeader,HeroShell,UserText,UserTextRegistry};')
+ const conversation=expose(await patchedConversationSource(),'\t\texports.headerFixture={ConversationHeader,ConversationSessionHeader,HeroShell,UserText,UserTextRegistry,InputBar};')
  assert.equal(JSON.parse(await readFile(join(sidebarRoot,'package.json'),'utf8')).version,DSH_VERSION)
  const sidebar=expose(await readFile(join(sidebarRoot,'lib/client.js'),'utf8'),'\t\texports.headerFixture={ExpandButton};')
  const officialRequire=createRequire(createRequire(join(root,'package.json')).resolve('@deepseek-ai/dsh/package.json'))
@@ -61,6 +61,7 @@ before(async()=>{
 import {staticSeeds as seeds} from 'official-static-seeds';
 import {TaskRunUserMessageView,TaskRunConversationTitle,AssistantConversationTitleContext} from '${client}TaskRunChatPresentation.tsx';
 import {TaskRunChatPresentationDirectory,taskRunSessionTitle} from '${client}task-run-chat-presentation.ts';
+import {PromptRejectionToast} from '${client}PromptRejectionToast.tsx';
 import {HomeComposerContext} from '${client}HomeComposerContext.tsx';
 import {ConversationBrand} from '${client}ConversationBrand.tsx';
 import {ConversationOverviewEntry} from '${client}ConversationOverviewTab.tsx';
@@ -72,7 +73,7 @@ const React=seeds.react.default??seeds.react,{createElement:h}=React,{createRoot
 window.__ModuleLoader__={load:row=>factories.set(row.id,row.factory)};
 new Function(${JSON.stringify(conversation)})();new Function(${JSON.stringify(sidebar)})();new Function(${JSON.stringify(chat)})();new Function(${JSON.stringify(rendererSource)})();
 const resolve=id=>{if(!(id in seeds))throw Error('未授权的官方fixture依赖 '+id);return seeds[id]};
-const {ConversationHeader,ConversationSessionHeader,HeroShell,UserText,UserTextRegistry}=factories.get('@deepseek-ai/dsh-client-ui-conversation')(resolve).headerFixture;
+const {ConversationHeader,ConversationSessionHeader,HeroShell,UserText,UserTextRegistry,InputBar}=factories.get('@deepseek-ai/dsh-client-ui-conversation')(resolve).headerFixture;
 const {UserMessageNodeView,UserContent}=factories.get('@deepseek-ai/dsh-client-ui-chat')(resolve).chatFixture;
 const {ExpandButton}=factories.get('@deepseek-ai/dsh-client-ui-sidebar-right')(resolve).headerFixture;
 const view=createRoot(document.getElementById('root')),calls=[];
@@ -90,7 +91,7 @@ const registry=new SlotRegistry(slotContext);
 registry.register({name:'root',children:{'conversation.chat.node':{kind:'keyed',scope:'session'}}},()=>null);
 const disposeUser=registry.register({name:'conversation.chat.node',key:'user',locale:'chat'},UserMessageNodeView);
 registry.register({name:'conversation.chat.node',key:'user',priority:-100,locale:'chat'},TaskRunUserMessageView);
-const taskChat=new TaskRunChatPresentationDirectory(async()=>current.ordinary?null:presentation);
+const taskChat=new TaskRunChatPresentationDirectory(async()=>current.ordinary?null:current.laterRun?{...presentation,nativeRequestId:'request-later',goal:'最新一轮的复核',userMessages:[{nativeRequestId:'request-one',goal:'首轮核对告警 A。\\n\\n告警 A：生产终端连接异常。'},{nativeRequestId:'request-later',goal:'最新一轮的复核'}]}:presentation);
 const titleChat=new TaskRunChatPresentationDirectory(async()=>current.taskTitle?{...presentation,title:current.taskTitle}:null);
 const renderer={subscribe:listener=>registry.subscribe('conversation.chat.node',listener),getSnapshot:()=>registry.entries('conversation.chat.node'),isLive:entry=>registry.entries('conversation.chat.node').includes(entry)};
 const contextCalls=[];
@@ -103,20 +104,31 @@ const renderUser=()=>h(TaskRunUserMessageView,{sessionId:current.sessionId,node:
 const renderSlot=(name,owner)=>{
  if(name==='conversation.session.header.title')return h(AssistantConversationTitleContext.Provider,{value:current.assistant},h(TaskRunConversationTitle,{...owner,directory:titleChat}));
  if(name==='conversation.hero.brand.mark')return h('span',{'data-slot':name},h(ConversationBrand,{size:34,theme:{getSnapshot:()=>'light',subscribe:()=>()=>{}}}));
- if(name==='conversation.session.header')return h('span',{'data-slot':name,style:{display:'contents'}},h(ConversationSessionHeader,{sessionId:current.sessionId,...owner,useSessions:selector=>selector({byId:{owned:{id:'owned',displayTitle:current.nativeTitle,origin:'user'}}}),useConversationViews:selector=>selector([]),useStore:selector=>selector({view:null}),renderSlot,open:()=>{},selectView:()=>{},t}));
+ if(name==='conversation.session.header')return h('span',{'data-slot':name,style:{display:'contents'}},h(ConversationSessionHeader,{sessionId:current.sessionId,...owner,useSessions:selector=>selector({byId:{[current.sessionId]:{id:current.sessionId,displayTitle:current.nativeTitle,origin:'user'}}}),useConversationViews:selector=>selector([]),useStore:selector=>selector({view:null}),renderSlot,open:()=>{},selectView:()=>{},t}));
  if(name==='conversation.session.header.utilities')return h('span',{'data-slot':name,style:{display:'contents'}},h(ConversationOverviewEntry,{sessionId:current.sessionId,open:id=>calls.push(['overview',id])}),utilityCount>1&&h(ResourceHistory,{sessionId:current.sessionId,api,work}),...Array.from({length:Math.max(0,utilityCount-2)},(_,i)=>h('button',{key:i,type:'button','aria-label':'本人会话工具'+(i+1),style:{width:28,height:28,flex:'none'}},'工')));
  if(name==='conversation.session.header.corner')return h('span',{'data-slot':name,style:{display:'contents'}},h(ExpandButton,{sessionId:current.sessionId,useStore:selector=>selector({bySession:{[current.sessionId]:{layout:{expanded:current.expanded}}}}),actions:{setExpanded:(id,value)=>{calls.push(['expand',id,value]);current.expanded=value;render()}},useShortcuts:selector=>selector([]),t}));
  if(name==='conversation.session.header.actions')return h('span',{'data-slot':name},h('button',{type:'button'},'已有会话操作'));
  return null;
 };
 function render(){document.title=taskRunSessionTitle(current.nativeTitle,current.sessionId,current.taskTitle?{...presentation,title:current.taskTitle}:null)+' · Teloa';flushSync(()=>view.render(h(I18nProvider,{runtime},h('div',{className:workbenchCss.nativeConversation},current.hero?h(HeroShell,{t,renderSlot,children:h('button',{type:'button'},'原生工作区选择')}):h(ConversationHeader,{sessionId:current.sessionId,useSession:selector=>selector({blank:current.blank,awaitingFirstTurn:false,running:false,promptAttempted:false}),useConversation:selector=>selector({activeTargets:new Set(),input:{queue:[],prompt:''},view:'chat'}),renderSlot}),current.runContext&&h('section',{'aria-label':'运行业务上下文'},renderContext()),current.message&&h('section',{'aria-label':'原生任务用户消息'},renderUser()),h('textarea',{'aria-label':'未提交草稿',defaultValue:'保留的原任务草稿'})))))}
-window.headerFixture={calls,contextCalls,rawTaskText,userNode,entriesStable:()=>registry.entries('conversation.chat.node')===registry.entries('conversation.chat.node'),nativeLocale:()=>registry.entries('conversation.chat.node').find(entry=>(entry.options.priority??0)===0)?.locale,disposeUser,mount:value=>{current={...current,...value};taskChat.invalidate();titleChat.invalidate();utilityCount=value.utilityCount??1;render()},settle:()=>new Promise(done=>requestAnimationFrame(()=>requestAnimationFrame(done)))};
+let rejectionSerial=0;
+function rejection({error,locale='zh-CN',registered=true,notice=null}){
+ const snapshot={locale,dshLocale:locale,revision:1},localized={t:(key,params)=>translateMessage(locale,key,params),subscribe:()=>()=>{},getSnapshot:()=>snapshot};
+ const session={promptError:{op:'send',error},running:false,removed:false,subagent:null};
+ flushSync(()=>view.render(h(I18nProvider,{runtime:localized},h(InputBar,{key:++rejectionSerial,sessionId:'owned',disabled:true,variant:'active',
+  useSession:select=>select(session),useInput:()=>undefined,useNotices:select=>select(notice),useBusyEnter:()=>false,useFileUploads:select=>select({}),
+  useLexicon:select=>select([]),useMenuLauncher:()=>null,useStopShortcut:select=>select([]),useProjection:(_key,select)=>select?select(undefined):undefined,t,
+  renderSlot:(name,owner,options)=>name==='conversation.input.rejection'&&registered?h(PromptRejectionToast,owner):options?.fallback??null
+ }))));
+}
+window.headerFixture={calls,contextCalls,rawTaskText,userNode,rejection,entriesStable:()=>registry.entries('conversation.chat.node')===registry.entries('conversation.chat.node'),nativeLocale:()=>registry.entries('conversation.chat.node').find(entry=>(entry.options.priority??0)===0)?.locale,disposeUser,mount:value=>{current={...current,...value};taskChat.invalidate();titleChat.invalidate();utilityCount=value.utilityCount??1;render()},settle:()=>new Promise(done=>requestAnimationFrame(()=>requestAnimationFrame(done)))};
 `
  await writeFile(join(temp,'fixture.mjs'),entry)
- const seedId='\0official-static-seeds',reactId='\0official-react',jsxId='\0official-jsx-runtime'
+ const seedId='\0official-static-seeds',reactId='\0official-react',jsxId='\0official-jsx-runtime',primitivesId='\0official-primitives'
  const reactSource="import {staticSeeds} from 'official-static-seeds';const value=staticSeeds.react;export default value.default??value;export const {Children,cloneElement,createContext,createElement,createRef,forwardRef,Fragment,isValidElement,memo,startTransition,useCallback,useContext,useEffect,useId,useImperativeHandle,useLayoutEffect,useMemo,useReducer,useRef,useState,useSyncExternalStore,useTransition}=value;"
  const jsxSource="import {staticSeeds} from 'official-static-seeds';export const {Fragment,jsx,jsxs}=staticSeeds['react/jsx-runtime'];"
- const built=await build({configFile:false,root,logLevel:'error',plugins:[{name:'official-header-seeds',enforce:'pre',resolveId:(id,importer)=>id==='official-static-seeds'?seedId:id==='react'?reactId:id==='react/jsx-runtime'?jsxId:importer===seedId&&id.startsWith('.')?resolve(frontend,id):null,load:id=>id===seedId?seedSource:id===reactId?reactSource:id===jsxId?jsxSource:null}],build:{write:false,minify:false,rollupOptions:{external:(id:string)=>id.startsWith('node:'),treeshake:{moduleSideEffects:false}},lib:{entry:join(temp,'fixture.mjs'),name:'NativeHeaderFixture',formats:['iife']}}})
+ const primitivesSource="import {staticSeeds} from 'official-static-seeds';export const {Toast,IconWarningOutlineRegular}=staticSeeds['@deepseek-ai/dsh-client-ui-primitives'];"
+ const built=await build({configFile:false,root,logLevel:'error',plugins:[{name:'official-header-seeds',enforce:'pre',resolveId:(id,importer)=>id==='official-static-seeds'?seedId:id==='react'?reactId:id==='react/jsx-runtime'?jsxId:id==='@deepseek-ai/dsh-client-ui-primitives'?primitivesId:importer===seedId&&id.startsWith('.')?resolve(frontend,id):null,load:id=>id===seedId?seedSource:id===reactId?reactSource:id===jsxId?jsxSource:id===primitivesId?primitivesSource:null}],build:{write:false,minify:false,rollupOptions:{external:(id:string)=>id.startsWith('node:'),treeshake:{moduleSideEffects:false}},lib:{entry:join(temp,'fixture.mjs'),name:'NativeHeaderFixture',formats:['iife']}}})
  const bundle=Array.isArray(built)?built[0]:built;assert.ok(bundle&&'output'in bundle)
  script=bundle.output.find(row=>row.type==='chunk')!.code
  styles=bundle.output.flatMap(row=>row.type==='asset'&&row.fileName.endsWith('.css')?[String(row.source)]:[]).join('\n')
@@ -133,6 +145,31 @@ async function pageFor(t:any,width=1100){
  await page.addScriptTag({content:script});assert.deepEqual(errors,[]);await page.evaluate(()=>(window as any).headerFixture.mount({blank:true}))
  return page
 }
+
+test('真实官方输入拒绝区分上下文变化与普通故障，三语可恢复且后续 notice 不被旧错误覆盖',async t=>{
+ const page=await pageFor(t),error={code:'teloa/invalid-input',message:'private diagnostic must stay hidden',details:{reason:'employee-context-goal-required'}}
+ for(const [locale,message] of [
+  ['zh-CN','经验或工作范围已变化，请重新说明需要继续的具体任务。'],
+  ['zh-TW','經驗或工作範圍已變更，請重新說明要繼續的具體任務。'],
+  ['en','The employee’s experience or work scope has changed. Restate the specific task you want to continue.'],
+ ]){
+  await page.evaluate((value:unknown)=>(window as any).headerFixture.rejection(value),{error,locale})
+  await page.getByRole('alert').filter({hasText:message}).waitFor()
+  assert.equal(await page.getByRole('alert').innerText(),message)
+  assert.doesNotMatch(await page.locator('body').innerText(),/private diagnostic|teloa\/invalid-input/)
+  if(evidence)await page.screenshot({path:join(evidence,`prompt-rejection-${locale}.png`)})
+ }
+ await page.evaluate((value:unknown)=>(window as any).headerFixture.rejection(value),{error:{...error,details:{reason:'detached-project-goal-required'}}})
+ await page.getByRole('alert').filter({hasText:'会话已移出项目，请重新说明需要继续的具体任务。'}).waitFor()
+ for(const [code,reason,registered] of [['session/agent-busy','employee-context-goal-required',true],['teloa/invalid-input','unknown-reason',true],['teloa/invalid-input','employee-context-goal-required',false]] as const){
+  await page.evaluate((value:unknown)=>(window as any).headerFixture.rejection(value),{error:{code,message:'original native error',details:{reason}},registered})
+  await page.getByRole('alert').filter({hasText:`original native error (${code})`}).waitFor()
+  assert.equal(await page.getByRole('alert').innerText(),`original native error (${code})`)
+ }
+ await page.evaluate((value:unknown)=>(window as any).headerFixture.rejection(value),{error,notice:{level:'error',text:'当前附件无法读取'}})
+ await page.getByRole('alert').filter({hasText:'当前附件无法读取'}).waitFor()
+ assert.equal(await page.getByRole('alert').innerText(),'当前附件无法读取')
+})
 
 test('真实原生欢迎槽采用已选员工优先；不重复品牌行且保留原生工作区和输入',async t=>{
  const page=await pageFor(t)
@@ -167,7 +204,8 @@ test('真实官方运行标题可呈现已核验任务名称，未注册呈现�
  const title=page.getByRole('navigation',{name:'会话层级'})
  assert.equal(await title.innerText(),'原模板邮件改写')
  assert.equal(await page.getByRole('button',{name:'已有会话操作',exact:true}).isVisible(),true)
- await page.evaluate(()=>(window as any).headerFixture.mount({nativeTitle:'本人普通 JSON 讨论',taskTitle:undefined}))
+ await page.evaluate(()=>(window as any).headerFixture.mount({sessionId:'task-run-looking-ordinary',nativeTitle:'本人普通 JSON 讨论',taskTitle:undefined}))
+ await title.getByText('本人普通 JSON 讨论',{exact:true}).waitFor({state:'visible'})
  assert.equal(await title.innerText(),'本人普通 JSON 讨论')
 })
 
@@ -220,6 +258,11 @@ test('真实官方任务用户气泡只呈现目标，锁定配置按需读取',
  await page.evaluate(()=>Object.defineProperty(navigator,'clipboard',{value:{writeText:async(text:string)=>{(window as any).__copied=text}},configurable:true}))
  await message.getByRole('button',{name:'copy',exact:true}).click()
  assert.equal(await page.evaluate(()=>(window as any).__copied),'请改写这封邮件。')
+ await page.evaluate(()=>(window as any).headerFixture.mount({laterRun:true}))
+ await message.getByText('首轮核对告警 A。',{exact:false}).waitFor({state:'visible'})
+ assert.equal((await message.innerText()).includes('告警 A：生产终端连接异常。'),true)
+ assert.equal((await message.innerText()).includes('最新一轮的复核'),false,'历史气泡保留原轮说明，不借用最新目标')
+ assert.equal((await message.innerText()).includes('teloa.task-run-input/v2'),false)
  await message.getByText('查看本次运行配置',{exact:true}).click()
  await message.getByText('固定技能配置原件',{exact:false}).last().waitFor({state:'visible'})
  assert.equal((await message.innerText()).includes('固定技能配置原件'),true)

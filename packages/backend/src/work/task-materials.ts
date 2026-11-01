@@ -118,7 +118,7 @@ export class TaskMaterialService{
    const task=readStoredTask(taskRow)
    if(task.version!==value.expectedTaskVersion)throw new WorkError('teloa/version-conflict','任务版本已变化，请刷新后重新选择知识。')
    if(!editableStates.some(state=>state===task.state))throw new WorkError('teloa/conflict','当前任务状态不能添加任务知识。')
-   if((await db.query("select id from teloa_task_runs where owner_id=$1 and task_id=$2 and state not in ('ended','withdrawn','configuration_failed') limit 1",[owner,task.id])).rows[0])throw new WorkError('teloa/conflict','任务仍有未结束的执行，不能修改任务知识。')
+   if((await db.query("select id from teloa_task_runs where owner_id=$1 and task_id=$2 and state not in ('ended','withdrawn','configuration_failed','submission_unknown') limit 1",[owner,task.id])).rows[0])throw new WorkError('teloa/conflict','任务仍有未结束的执行，不能修改任务知识。')
    const resourceRow=(await db.query('select * from teloa_resources where id=$1 for share',[value.resourceId])).rows[0]
    if(!resourceRow||resourceRow.owner_id!==owner)throw new WorkError('teloa/forbidden','工作资料不存在或不属于本人。')
    const selected=resource(resourceRow)

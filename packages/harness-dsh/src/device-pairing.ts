@@ -2,7 +2,7 @@ import {createHash,createHmac,randomUUID} from 'node:crypto'
 import {WorkError,hardwareOperationId,hardwareRecord} from '@teloa/contract'
 
 export type DevicePairingJob=Readonly<{id:string;state:'awaiting-device'|'ready'|'paired'|'cancelled';createdAt:number;expiresAt:number;allowApprovals:boolean;assistantSessionId:string;contextVersion:number;nonce?:string;digest?:string}>
-type Ports=Readonly<{secret:Uint8Array;host:string;port:number;serverName:string;ca:string;now?:()=>number;latest?:()=>Promise<DevicePairingJob|undefined>;target:()=>Promise<{assistantSessionId:string;contextVersion:number}>;save:(job:DevicePairingJob)=>Promise<void>;load:(id:string)=>Promise<DevicePairingJob|undefined>;finish:(job:DevicePairingJob,input:{id:string;assistantSessionId:string;contextVersion:number;credentialDigest:string;allowApprovals:boolean})=>Promise<unknown>}>
+type Ports=Readonly<{secret:Uint8Array;host:string;port:number;serverName:string;ca:string;now?:()=>number;latest?:()=>Promise<DevicePairingJob|undefined>;target:()=>Promise<{assistantSessionId:string;contextVersion:number}>;save:(job:DevicePairingJob)=>Promise<void>;load:(id:string)=>Promise<DevicePairingJob|undefined>;finish:(job:DevicePairingJob,input:{id:string;assistantSessionId:string;contextVersion:number;credentialDigest:string;allowApprovals:boolean},assertCurrent:()=>void)=>Promise<unknown>}>
 const denied=()=>new WorkError('teloa/forbidden','配对意图已过期、取消或不属于当前设备。')
 export const deriveDeviceCredential=(secret:Uint8Array,id:string)=>createHmac('sha256',secret).update('teloa-device-credential/v1\0'+id).digest('base64url')
 const hash=(text:string)=>createHash('sha256').update(text).digest('hex')
@@ -12,13 +12,14 @@ export function createDevicePairing(ports:Ports){
  const now=ports.now??Date.now
  let chain:Promise<unknown>=Promise.resolve()
  let currentId:string|undefined
+ const cancelling=new Map<string,number>()
  const serial=<T>(operation:()=>Promise<T>)=>{const next=chain.then(operation,operation);chain=next.catch(()=>{});return next}
  const validate=(job:DevicePairingJob|undefined)=>{
   if(!job||!hardwareOperationId(job.id)||!['awaiting-device','ready','paired','cancelled'].includes(job.state)||typeof job.allowApprovals!=='boolean'||!hardwareOperationId(job.assistantSessionId)||!Number.isSafeInteger(job.contextVersion)||job.contextVersion<1||!Number.isSafeInteger(job.createdAt)||job.expiresAt!==job.createdAt+300000||job.nonce!==undefined&&!hardwareOperationId(job.nonce)||job.digest!==undefined&&!/^[a-f0-9]{64}$/.test(job.digest)||['ready','paired'].includes(job.state)&&(!job.nonce||!job.digest))throw denied()
   return job
  }
  const load=async(id:string)=>{if(!hardwareOperationId(id))throw denied();const job=validate(await ports.load(id));if(job.id!==id)throw denied();return job}
- const live=(job:DevicePairingJob)=>{if(job.state==='cancelled'||job.expiresAt<=now())throw denied()}
+ const live=(job:DevicePairingJob)=>{if(cancelling.has(job.id)||job.state==='cancelled'||job.expiresAt<=now())throw denied()}
  const configuration=(job:DevicePairingJob)=>JSON.stringify({schema:1,device_id:job.id,host:ports.host,port:ports.port,server_name:ports.serverName,ca:ports.ca,credential:deriveDeviceCredential(ports.secret,job.id),unix_time:Math.floor(job.createdAt/1000)})
  const publicJob=(job:DevicePairingJob)=>({id:job.id,state:job.state,expiresAt:job.expiresAt,allowApprovals:job.allowApprovals,host:ports.host,serverName:ports.serverName})
  const latest=async()=>{const stored=currentId?await ports.load(currentId):await ports.latest?.();const current=stored?validate(stored):undefined;return current&&['awaiting-device','ready'].includes(current.state)&&current.expiresAt>now()?current:undefined}
@@ -36,7 +37,7 @@ export function createDevicePairing(ports:Ports){
    await targetCurrent(job);live(job)
    if(job.state==='paired'||input.confirmed!==true||!hardwareOperationId(input.nonce)||job.nonce&&job.nonce!==input.nonce)throw denied()
    const config=configuration(job),digest=hash(config)
-   job={...job,state:'ready',nonce:input.nonce,digest};await ports.save(job)
+   job={...job,state:'ready',nonce:input.nonce,digest};await ports.save(job);live(job)
    return {configuration:config,digest}
   }),
   complete:(id:string,digest:string)=>serial(async()=>{
@@ -44,9 +45,14 @@ export function createDevicePairing(ports:Ports){
    live(job);if(job.state!=='ready'||job.digest!==digest)throw denied()
    await targetCurrent(job);live(job)
    const completed={...job,state:'paired' as const}
-   await ports.finish(completed,{id:job.id,assistantSessionId:job.assistantSessionId,contextVersion:job.contextVersion,credentialDigest:hash(deriveDeviceCredential(ports.secret,job.id)),allowApprovals:job.allowApprovals})
+   await ports.finish(completed,{id:job.id,assistantSessionId:job.assistantSessionId,contextVersion:job.contextVersion,credentialDigest:hash(deriveDeviceCredential(ports.secret,job.id)),allowApprovals:job.allowApprovals},()=>live(job))
    return publicJob(completed)
   }),
-  cancel:(id:string)=>serial(async()=>{const job=await load(id);if(job.state==='paired')throw denied();const cancelled={...job,state:'cancelled' as const};await ports.save(cancelled);return publicJob(cancelled)}),
+  cancel:(id:string)=>{
+   if(!hardwareOperationId(id))return Promise.reject(denied())
+   // 先关闭在途准入，再排队保存取消；完成事务在 COMMIT 前复核此屏障。
+   cancelling.set(id,(cancelling.get(id)??0)+1)
+   return serial(async()=>{const job=await load(id);if(job.state==='paired')throw denied();const cancelled={...job,state:'cancelled' as const};await ports.save(cancelled);return publicJob(cancelled)}).finally(()=>{const remaining=cancelling.get(id)!-1;if(remaining)cancelling.set(id,remaining);else cancelling.delete(id)})
+  },
  })
 }

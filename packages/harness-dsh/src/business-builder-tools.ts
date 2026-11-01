@@ -11,6 +11,7 @@ import type {TaskToolPolicyReader} from './task-tool-guard.ts'
 export const businessBuilderToolNames=['teloa_business_builder_read','teloa_business_builder_revise','teloa_business_builder_upgrade','teloa_business_builder_plan_revise'] as const
 export type BusinessBuilderToolsPorts={
  owner:string
+ previewOnly?:(sessionId:string)=>Promise<boolean>
  setupPlan?:{read:(draftId:string)=>Promise<unknown>;revise:(input:{requestId:string;draftId:string;expectedRevision:number;package:unknown;roleEdits:unknown[]})=>Promise<unknown>}
  conversation:(sessionId:string)=>Promise<{ownerId:string;sessionId:string;status:'pending'|'ready'}>
  readTaskPolicy:TaskToolPolicyReader
@@ -29,7 +30,8 @@ const names=new Set<string>(businessBuilderToolNames),uuid=/^[a-f0-9]{8}-[a-f0-9
 const invalid=()=>new WorkError('teloa/invalid-input','草案工具参数格式不正确，请按目录中的当前协议生成。')
 function encoded(value:unknown,max=262144):string{const text=JSON.stringify(value);if(Buffer.byteLength(text,'utf8')>max)throw new WorkError('teloa/invalid-input','草案读取结果超过大小上限，请分条读取。');return text}
 function query(value:unknown){
- const row=taskInput(value,['cursor','definition','pageId'])
+ const row=taskInput(value,['cursor','definition','pageId','protocol'])
+ if('protocol' in row){if(Object.keys(row).length!==1||row.protocol!=='source-mapping')throw invalid();return {protocol:'source-mapping' as const}}
  if('definition' in row){if('cursor' in row||'pageId' in row)throw invalid();const ref=taskInput(row.definition,['kind','localId']);if(!(businessConfigurationDefinitionKinds as readonly unknown[]).includes(ref.kind)||typeof ref.localId!=='string'||!localId.test(ref.localId))throw invalid();return {definition:{kind:ref.kind,localId:ref.localId}}}
  if('pageId' in row){if('cursor' in row||typeof row.pageId!=='string'||!localId.test(row.pageId))throw invalid();return {pageId:row.pageId}}
  if(row.cursor!==undefined&&(!Number.isSafeInteger(row.cursor)||Number(row.cursor)<0))throw invalid()
@@ -67,24 +69,31 @@ function upgradeInput(value:unknown,draft:BusinessConfigurationDraft){
 }
 function upgradeState(draft:BusinessConfigurationDraft){return JSON.stringify([draft.revision,draft.baseVersion,draft.hash,draft.status])}
 function invalidReceipt(operation:'升级'|'保存'){return new WorkError('teloa/invalid-host-response','草案'+operation+'回执与原请求不一致，请先读取当前草案核对。')}
-function mutationReceipt(value:unknown,draft:BusinessConfigurationDraft,revision:number,operation:'升级'|'保存'):BusinessConfigurationDraft{
+export function businessBuilderMutationReceipt(value:unknown,draft:BusinessConfigurationDraft,revision:number,operation:'升级'|'保存'):BusinessConfigurationDraft{
  let result:BusinessConfigurationDraft
  try{result=readBusinessConfigurationDraftResponseVersioned(value)}catch{throw invalidReceipt(operation)}
  if(result.ownerId!==draft.ownerId||result.id!==draft.id||result.scope!==draft.scope||result.baseVersion!==draft.baseVersion||JSON.stringify(result.candidate.sources)!==JSON.stringify(draft.candidate.sources)||result.revision!==revision+1||result.status!=='draft'||result.hash!==businessConfigurationHash(result.candidate))throw invalidReceipt(operation)
  return result
 }
-function upgradeReceipt(value:unknown,draft:BusinessConfigurationDraft,revision:number):BusinessConfigurationDraft{const result=mutationReceipt(value,draft,revision,'升级');if(result.candidate.format!==businessConfigurationFormatV2)throw invalidReceipt('升级');return result}
+function upgradeReceipt(value:unknown,draft:BusinessConfigurationDraft,revision:number):BusinessConfigurationDraft{const result=businessBuilderMutationReceipt(value,draft,revision,'升级');if(result.candidate.format!==businessConfigurationFormatV2)throw invalidReceipt('升级');return result}
 const referenceRules='reference 支持同业务本地记录单选关联，referenceType 必须指向完整候选中的真实本地对象类型，来源须为原 local-records；合法关联的 records 页面可开启 allowCreate/allowEdit。字段值保存目标原始 ID，名称与状态须读真实目标，必填遵循 required。关系多选、唯一约束和跨业务关联尚未支持。'
 const relationRulesV2='reference 为单选关联，值保存目标原始 ID；multi-reference 为多选关联，使用 teloa.business-rich-field/v2 并声明 referenceType，值为按 ID 字典序排列、无重复的 1–32 个真实目标 ID 的规范 JSON 数组字符串，编码总长不超过2000字符，不保存标题、不截断。referenceType 必须指向完整候选中同业务的真实本地对象类型，来源须为原 local-records；合法关联的 records 页面可开启 allowCreate/allowEdit。实际记录须先用记录 list/get 读取每个真实目标标题与状态，所有非空目标都须属于当前本人、当前业务已采用的本地类型，且有效未归档，编辑时失效旧值须清空或改绑；可选空值为空字符串，required 不得省略或清空。object-type/v2 可声明 constraints:{uniqueFields:[字段name]}，1–50个不重复的真实字段，每个字段独立唯一，不是组合唯一；multi-enum 不支持唯一声明。文本、枚举、单关联精确匹配，数字按数值，布尔、时长按既有解析，money 按币种及精确金额；可选空值不占用。单关联唯一为一对一；多关联唯一时每个成员不能被另一活跃源记录占用，形成一对多；不声明唯一的多关联为多对多。归档源释放占用，后端事务按全部操作后态重新核验并允许合法交换；list 预查不能保证唯一，新增唯一约束须在预览和采用时重新检查现存活跃记录，冲突先处理数据。multi-reference 仅支持 v2 contains/overlaps 筛选与 count 条件，不作原 ID 分布维度或数值/文本聚合。跨业务关联、组合唯一与外部来源写入尚未支持。'
-const capabilities={objectResultProtocol:{tool:'teloa_business_object_result_record',sourceKind:'role-result',identityPath:'$.object.id',resultPathPrefix:'$.result.',rules:'成果使用独立对象类型，以宿主提供的 object.id 为唯一主键；员工只能在已关联业务对象的当前任务轮次、已授权工具及映射中回写，一轮每映射一份最终成果；看板统计成果对象，自动更新须本人启用。'},format:businessConfigurationFormat,definitionKinds:businessConfigurationDefinitionKinds,fieldTypes:businessFieldTypes,fieldCapabilities:businessFieldCapabilities,viewKinds:businessViewKinds,aggregations:businessAggregations,timeBuckets:businessTimeBuckets,chartTypes:businessChartTypes,filterOperators:businessFilterOperators,viewWindows:businessViewWindows,viewCharts:businessViewCharts,limits:{...businessConfigurationLimits,...businessLedgerLimits,definitionBytes:131072,responseBytes:262144,directoryPage:32},rules:'保留目录分配的 scope 与 sources；definition.domain 必须等于 scope，object-type.sourceId 必须引用原 local-records 来源。'+referenceRules+'整组 patch 复用 teloa.business-configuration/v1，支持 object-type/view/source-mapping/widget/dashboard；source-mapping 沿用 teloa.business-source-mapping/v1，启用持续运行须本人另行操作；页面为 records/dashboard。字段用 name 标识，enum 声明 values，reference 声明 referenceType；当前版本不支持金额和多选，需要时先经 teloa_business_builder_upgrade 升级这份草案，再用 teloa_business_builder_read 读取新版能力后修订。附件尚不支持。'}
-/** 形状示例必须由当前版本的同一契约读取器校验；仅说明格式，不生成业务数据或扩大能力。 */
-function patchProtocol(draft:BusinessConfigurationDraft){
+const numberFieldConstraints={integer:{const:true},minimum:{type:'number',minimum:-1e15,maximum:1e15},example:{type:'number',integer:true,minimum:0}}
+const numericRules='number 字段可选声明 integer:true（仅整数）和 minimum（有限数，绝对值不超过1e15）；非负整数用 type:number、integer:true、minimum:0。未声明时保留普通数字，不用 integer 类型或 min 别名。约束随原草案保存，记录创建、编辑、批次和导入均须通过同一校验。'
+const capabilities={numberFieldConstraints,objectResultProtocol:{tool:'teloa_business_object_result_record',sourceKind:'role-result',identityPath:'$.object.id',resultPathPrefix:'$.result.',rules:'成果使用独立对象类型，以宿主提供的 object.id 为唯一主键；员工只能在已关联业务对象的当前任务轮次、已授权工具及映射中回写，一轮每映射一份最终成果；看板统计成果对象，自动更新须本人启用。'},format:businessConfigurationFormat,definitionKinds:businessConfigurationDefinitionKinds,fieldTypes:businessFieldTypes,fieldCapabilities:businessFieldCapabilities,viewKinds:businessViewKinds,aggregations:businessAggregations,timeBuckets:businessTimeBuckets,chartTypes:businessChartTypes,filterOperators:businessFilterOperators,viewWindows:businessViewWindows,viewCharts:businessViewCharts,limits:{...businessConfigurationLimits,...businessLedgerLimits,definitionBytes:131072,responseBytes:262144,directoryPage:32},rules:'保留目录分配的 scope 与 sources；definition.domain 必须等于 scope，object-type.sourceId 必须引用原 local-records 来源。'+referenceRules+'整组 patch 复用 teloa.business-configuration/v1，支持 object-type/view/source-mapping/widget/dashboard；source-mapping 沿用 teloa.business-source-mapping/v1，启用持续运行须本人另行操作；页面为 records/dashboard。字段用 name 标识，enum 声明 values，reference 声明 referenceType；'+numericRules+'当前版本不支持金额和多选，需要时先经 teloa_business_builder_upgrade 升级这份草案，再用 teloa_business_builder_read 读取新版能力后修订。附件尚不支持。'}
+/** 示例沿用真实草案身份，并避开已有定义和页面；不会登记新来源。 */
+function exampleContext(draft:BusinessConfigurationDraft){
  const sourceId=draft.candidate.sources[0]?.sourceId
  if(!sourceId)throw new WorkError('teloa/invalid-host-response','业务草案缺少真实记录来源，请恢复原草案。')
  const used=new Set([...draft.candidate.definitions.map(item=>item.definition.id),...draft.candidate.pages.map(item=>item.id)])
  const fresh=(base:string)=>{let id=base,index=1;while(used.has(id))id=base+'-'+ ++index;used.add(id);return id}
- const head={version:'1.0.0',domain:draft.scope},objectType=fresh('example-record'),viewId=fresh('example-status'),widgetId=fresh('example-widget'),dashboardId=fresh('example-dashboard'),homePageId=fresh('example-home'),recordsPageId=fresh('example-records')
  const capacity={definitionsRemaining:businessConfigurationLimits.definitions-draft.candidate.definitions.length,pagesRemaining:businessConfigurationLimits.pages-draft.candidate.pages.length}
+ return {sourceId,fresh,head:{version:'1.0.0',domain:draft.scope},capacity}
+}
+/** 形状示例必须由当前版本的同一契约读取器校验；仅说明格式，不生成业务数据或扩大能力。 */
+function patchProtocol(draft:BusinessConfigurationDraft){
+ const {sourceId,fresh,head,capacity}=exampleContext(draft)
+ const objectType=fresh('example-record'),viewId=fresh('example-status'),widgetId=fresh('example-widget'),dashboardId=fresh('example-dashboard'),homePageId=fresh('example-home'),recordsPageId=fresh('example-records')
  const canAdd=capacity.definitionsRemaining>=4&&capacity.pagesRemaining>=2
  const existingPage=draft.candidate.pages[0]
  const patch=readBusinessConfigurationPatchVersioned(canAdd?{
@@ -103,16 +112,44 @@ function patchProtocol(draft:BusinessConfigurationDraft){
  }:existingPage?{upsertPages:[existingPage]}:{title:draft.candidate.title},draft.candidate.format)
  return {input:'patchJson',legacyInput:'patch',exactlyOne:true,maxUtf8Bytes:businessConfigurationLimits.canonicalBytes,exampleOnly:true,exampleMode:canAdd?'add-complete':'modify-existing',capacity,exampleJson:JSON.stringify(patch),rules:(canAdd?'当前容量允许完整新增形状示例；按目标调整内容，使用新标识以免覆盖原定义。':'当前剩余容量不足完整新增示例，只展示现有页面或标题的合法修改形状；没有新增或移除定义、页面，不改原页面顺序。')+'示例未保存或执行，须保留已有页面及配置。patchJson 是 JSON.stringify(patch) 得到的一个字符串，不是嵌套对象或 Markdown。数组使用 []，布尔为 true/false；字段标签为 label，from 必填；lead 是说明字符串，sourceId 与它同级；定义 version 使用三段字符串如 1.0.0；对象、页面与定义 id 使用字母数字和连字符，字段 name 可用下划线。baseVersion=0 是新业务草案，可以新增定义和页面；数量上限包括现有配置，不通过升级绕过容量或输入格式错误。'}
 }
+/** 同步与成果协议按需读取，避免空草案只能用失败写请求逐字段试探。 */
+function sourceMappingProtocol(draft:BusinessConfigurationDraft){
+ const {sourceId,fresh,head,capacity}=exampleContext(draft)
+ const canAdd=capacity.definitionsRemaining>=2&&capacity.pagesRemaining>=1
+ const examples=(['mcp-incremental','object-result'] as const).map(kind=>{
+  const external=kind==='mcp-incremental',objectType=fresh(external?'example-source-record':'example-object-result'),mappingId=fresh(external?'example-source-sync':'example-result-mapping'),pageId=fresh(external?'example-source-page':'example-result-page')
+  const fields=external?[
+   {name:'id',label:'来源编号',from:'来源编号',type:'text',required:true},
+   {name:'title',label:'名称',from:'名称',type:'text',required:true},
+   {name:'sequence',label:'事件序号',from:'事件序号',type:'number',required:true},
+  ]:[
+   {name:'object_id',label:'原对象',from:'原对象',type:'text',required:true},
+   {name:'conclusion',label:'处理结论',from:'处理结论',type:'text',required:true},
+  ]
+  const patch=readBusinessConfigurationPatchVersioned({upsertDefinitions:[
+   {kind:'object-type',definition:{...head,format:draft.candidate.format===businessConfigurationFormat?'teloa.business-object-type/v1':'teloa.business-object-type/v2',id:objectType,title:external?'来源记录':'处理成果',unit:'条',lead:external?'授权来源的只读快照。':'员工对固定业务对象的最终处理成果。',sourceId,fields}},
+   {kind:'source-mapping',definition:{...head,format:'teloa.business-source-mapping/v1',id:mappingId,title:external?'增量同步':'对象处理成果',objectType,
+    ...(external?{source:{kind:'mcp-tool',serverName:'example_readonly',tool:'list_items',arguments:{},itemsPath:'$.items'},mapping:[{path:'$.id',field:'id'},{path:'$.title',field:'title'},{path:'$.sequence',field:'sequence'}],primaryKey:['id'],incrementalCursor:{path:'$.sequence',kind:'sequence'},deletionSemantics:'tombstone',deletedAtPath:'$.deleted_at'}:{source:{kind:'role-result'},mapping:[{path:'$.object.id',field:'object_id'},{path:'$.result.conclusion',field:'conclusion'}],primaryKey:['object_id'],deletionSemantics:'compare'}),
+    schedule:{kind:'every',seconds:3600},acknowledgeShortInterval:false,
+   }},
+  ],...(canAdd?{upsertPages:[{id:pageId,title:external?'来源记录':'处理成果',kind:'records',objectType,fields:fields.map(field=>field.name),allowCreate:false,allowEdit:false,allowArchive:false}],homePageId:draft.candidate.homePageId??pageId,pageOrder:[...draft.candidate.pages.map(page=>page.id),pageId]}:{})},draft.candidate.format)
+  return canAdd?{kind,patchJson:JSON.stringify(patch)}:{kind,definitions:patch.upsertDefinitions}
+ })
+ return {kind:'source-mapping',exampleOnly:true,exampleMode:canAdd?'add-complete':'definition-only',capacity,requiredCapacity:{definitions:2,pages:1},canAdd,examples,rules:'示例仅解释合法形状，未保存或执行。按目标修改字段和映射，保留原 scope、sources、已有定义与页面；容量不足时仅返回定义形状，不提供可直接提交的 patchJson。请读取并修改现有定义，不删除旧数据绕过上限。MCP 示例的 example_readonly/list_items 是占位名称，必须替换为本人实际受管连接和已发现且确认只读的工具；连接及认证由本人完成，不从本机配置或环境读取密钥。itemsPath 从工具结果取数组，mapping 的 path 相对每条 item，field 对应目标字段 name；primaryKey 是1–3个目标字段名数组。增量水位固定传入工具参数 cursor，sequence 为安全整数或用 timestamp 时间戳；工具不支持增量时移除 incrementalCursor，使用全量 compare。tombstone 以 deletedAtPath 表示删除，空值或缺失表示未删除；compare 不带 deletedAtPath。声明分页时 source.pagination={cursorArgument:"pageToken",nextCursorPath:"$.nextCursor"}，续页不能覆盖增量 cursor，pageSize≤100。schedule 为 every/hourly/daily/cron，acknowledgeShortInterval 在顶层。固定对象成果映射使用独立类型，以 $.object.id 为主键；业务结果从 $.result.<字段> 取值，由已关联原业务对象且获授权的任务调用 teloa_business_object_result_record，不由模型填写对象、员工或执行身份。保存草案不采用、连接、授权、启动同步或派发任务；采用和持续运行仍由本人明确操作。'}
+}
 function draftCapabilities(draft:BusinessConfigurationDraft){
  if(draft.candidate.format===businessConfigurationFormat)return capabilities
- return {...capabilities,format:businessConfigurationFormatV2,fieldTypes:[...businessFieldTypes,'money','multi-enum','multi-reference'],richFieldFormat:businessRichFieldFormat,viewFormats:['teloa.business-view/v1',businessViewFormatV2],richViewFieldCapabilities:businessRichViewFieldCapabilities,rules:'保留目录分配的 scope 与 sources；definition.domain 必须等于 scope，object-type.sourceId 必须引用原 local-records 来源。object-type 使用 teloa.business-object-type/v2；富字段使用 teloa.business-rich-field/v2，基础字段沿现有协议。money 声明 currencies（允许的三字母大写币种），multi-enum 声明 values（选项及固定顺序）；每个字段仍含 name/label/from/type/required。金额记录值为规范 JSON 字符串 {"currency":"CNY","decimal":"123.45"}，不转浮点数；多选为按 values 顺序的非空 JSON 数组字符串。金额、多选统计使用 teloa.business-view/v2，引用真实对象字段并按 richViewFieldCapabilities 生成；金额 sum/avg/min/max 的每项 measure 必须显式 currency，不合并或换算不同币种，avg 使用四位小数 half-even。multi-enum 可作为 distribution 维度，单条记录可能包含多个标签，各标签成员数不能相加作为互斥总量；筛选 contains 为一个声明成员、overlaps 为多个声明成员。看板复用 teloa.business-widget/v1 的 view-ref 和 teloa.business-dashboard/v1，v2 看板目前只支持 view-ref，旧 SQL 不支持 rich；保留现有页面和定义，无法支持的旧 SQL 页面应解释限制，不得为绕过校验删除。'+relationRulesV2+'附件尚未支持。草案格式固定，不能用 patch 改为另一格式。'}
+ return {...capabilities,format:businessConfigurationFormatV2,fieldTypes:[...businessFieldTypes,'money','multi-enum','multi-reference'],richFieldFormat:businessRichFieldFormat,viewFormats:['teloa.business-view/v1',businessViewFormatV2],richViewFieldCapabilities:businessRichViewFieldCapabilities,rules:'保留目录分配的 scope 与 sources；definition.domain 必须等于 scope，object-type.sourceId 必须引用原 local-records 来源。object-type 使用 teloa.business-object-type/v2；富字段使用 teloa.business-rich-field/v2，基础字段沿现有协议。money 声明 currencies（允许的三字母大写币种），multi-enum 声明 values（选项及固定顺序）；每个字段仍含 name/label/from/type/required。金额记录值为规范 JSON 字符串 {"currency":"CNY","decimal":"123.45"}，不转浮点数；多选为按 values 顺序的非空 JSON 数组字符串。金额、多选统计使用 teloa.business-view/v2，引用真实对象字段并按 richViewFieldCapabilities 生成；金额 sum/avg/min/max 的每项 measure 必须显式 currency，不合并或换算不同币种，avg 使用四位小数 half-even。multi-enum 可作为 distribution 维度，单条记录可能包含多个标签，各标签成员数不能相加作为互斥总量；筛选 contains 为一个声明成员、overlaps 为多个声明成员。看板复用 teloa.business-widget/v1 的 view-ref 和 teloa.business-dashboard/v1，v2 看板目前只支持 view-ref，旧 SQL 不支持 rich；保留现有页面和定义，无法支持的旧 SQL 页面应解释限制，不得为绕过校验删除。'+relationRulesV2+numericRules+'附件尚未支持。草案格式固定，不能用 patch 改为另一格式。'}
 }
+/** 仅当前本人草案的版本化生成协议；不读取记录、员工、连接或本机文件。 */
+export function businessBuilderGenerationSchema(draft:BusinessConfigurationDraft){return {candidate:draft.candidate,capabilities:{...draftCapabilities(draft),patchProtocol:patchProtocol(draft)}}}
 function read(draft:BusinessConfigurationDraft,input:ReturnType<typeof query>){
  const base={draftId:draft.id,revision:draft.revision,baseVersion:draft.baseVersion,hash:draft.hash,status:draft.status,title:draft.candidate.title,scope:draft.scope,sources:draft.candidate.sources}
+ if('protocol' in input)return encoded({...base,protocol:sourceMappingProtocol(draft)})
  if(input.definition){const ref=input.definition,found=draft.candidate.definitions.find(item=>item.kind===ref.kind&&item.definition.id===ref.localId);if(!found)throw new WorkError('teloa/not-found','草案中不存在该定义。');encoded(found.definition,131072);return encoded({...base,definition:found})}
  if('pageId' in input){const page=draft.candidate.pages.find(item=>item.id===input.pageId);if(!page)throw new WorkError('teloa/not-found','草案中不存在该页面。');return encoded({...base,page})}
  const end=input.cursor+32
- return encoded({...base,capabilities:{...draftCapabilities(draft),patchProtocol:patchProtocol(draft)},pages:draft.candidate.pages.map(({id,title,kind})=>({id,title,kind})),homePageId:draft.candidate.homePageId,definitions:draft.candidate.definitions.slice(input.cursor,end).map(({kind,definition})=>({kind,localId:definition.id,title:definition.title,version:definition.version})),...(end<draft.candidate.definitions.length?{nextCursor:end}:{})})
+ return encoded({...base,capabilities:{...draftCapabilities(draft),patchProtocol:patchProtocol(draft),protocols:{'source-mapping':{read:{protocol:'source-mapping'},covers:['mcp-incremental','object-result']}}},pages:draft.candidate.pages.map(({id,title,kind})=>({id,title,kind})),homePageId:draft.candidate.homePageId,definitions:draft.candidate.definitions.slice(input.cursor,end).map(({kind,definition})=>({kind,localId:definition.id,title:definition.title,version:definition.version})),...(end<draft.candidate.definitions.length?{nextCursor:end}:{})})
 }
 /** 原生引擎冻结同一个 exec.arguments；WeakMap 只固定审批前身份，不复制执行或审批引擎。 */
 export function registerBusinessBuilderTools(ctx:Context,ports:BusinessBuilderToolsPorts){
@@ -138,7 +175,7 @@ export function registerBusinessBuilderTools(ctx:Context,ports:BusinessBuilderTo
   return {draftId:r.draftId,expectedRevision:Number(r.expectedRevision),package:patch.package,roleEdits:patch.roleEdits}
  }
  const definitions:ReadonlyArray<{name:typeof businessBuilderToolNames[number];description:string;parameters:ParameterSchemaSpec}>=[
-  {name:businessBuilderToolNames[0],description:'仅在已绑定的本人业务搭建会话读取当前草案与能力规则。普通会话没有搭建草案时，请引导本人在“业务”页点击“新建业务”，进入搭建会话继续描述；已有草案则打开原搭建会话，不猜范围或草案格式，不以 teloa_create_draft 替代。{} 或 cursor 按32条读取定义目录；definition:{kind,localId} 读一条定义；pageId 读一页配置，三类互斥。不返回业务记录或凭据。修订或结果未知时先读取当前 revision/hash。',parameters:{cursor:{type:'integer'},definition:{type:'object',additionalProperties:false,properties:{kind:{type:'string',enum:[...businessConfigurationDefinitionKinds],required:true},localId:{type:'string',required:true}}},pageId:{type:'string'}}},
+  {name:businessBuilderToolNames[0],description:'仅在已绑定的本人业务搭建会话读取当前草案与能力规则。普通会话没有搭建草案时，请引导本人在“业务”页点击“新建业务”，进入搭建会话继续描述；已有草案则打开原搭建会话，不猜范围或草案格式，不以 teloa_create_draft 替代。{} 或 cursor 按32条读取定义目录；definition:{kind,localId} 读一条定义；pageId 读一页配置，protocol:"source-mapping" 按需读取 MCP 增量同步和固定对象成果的完整合法例；与 cursor/definition/pageId 互斥。不返回业务记录或凭据。修订或结果未知时先读取当前 revision/hash。',parameters:{protocol:{type:'string',enum:['source-mapping']},cursor:{type:'integer'},definition:{type:'object',additionalProperties:false,properties:{kind:{type:'string',enum:[...businessConfigurationDefinitionKinds],required:true},localId:{type:'string',required:true}}},pageId:{type:'string'}}},
   {name:businessBuilderToolNames[1],description:'经本人一次原生确认，整组修订当前业务草案；不采用、启用或交办。先 read 核对原 scope/sources/revision 与 capabilities.patchProtocol 合法完整示例。优先 patchJson：JSON.stringify(patch) 生成的字符串；与旧对象 patch 恰一，不用 item 包装、不猜字段、不转换布尔字符串。整组支持 title/homePageId/upsertDefinitions/removeDefinitions/upsertPages/removePageIds/pageOrder，不能更换范围或来源。返回 revision/hash 才是保存成功；未知先 read，沿原指令回执核对。',parameters:{draftId:{type:'string',required:true},expectedRevision:{type:'integer',required:true},patchJson:{type:'string',description:'完整 JSON 对象的字符串，UTF-8 不超过 2097152 字节；按 read 的 patchProtocol.exampleJson 构造实际 patch，保留原范围/来源和已有配置。与 patch 恰一。'},patch:{type:'object',additionalProperties:true,description:'兼容旧调用的对象 patch；不能与 patchJson 同时提供，数组/布尔必须是原生 JSON 类型。'}}},
   {name:businessBuilderToolNames[2],description:'经本人一次原生确认，为当前旧版搭建草案增加金额、多选支持。先 read 核对 draftId/revision，再升级，成功后再次 read 读取新版能力再 revise。只升级同一份草案，不改现有记录，不保存或运行业务。不能选择其他范围、会话、身份或目标格式；已经支持时无需升级。回包未知先 read，同原指令与旧 revision 只能核对原请求回执。',parameters:{draftId:{type:'string',required:true},expectedRevision:{type:'integer',required:true}}},
   {name:businessBuilderToolNames[3],description:'在原业务搭建草案上保存完整方案候选，不采用、不授权、不创建运行实例。先用read核对setupPlan和原草案scope、sources及configuration format；旧版先upgrade再修订配置。patchJson包含package:{manifestPath,files:[{path,text}]}及roleEdits数组。包清单使用teloa.business-package/v4，scope必须为原草案scope；员工用teloa.role/v1，分工用现有work-template及role-work，连接必须用真实声明，计划用teloa.plan/v1并指向唯一员工和真实workTemplate。宿主自动附加原草案的记录/看板配置，无需复制configuration资源。所有正文仅静态保存；不要填凭据、账号或样例员工。现有员工职责仅可用真实目录roleId、expectedVersion、duty和完整responsibility，不改scope、技能或权限。expectedRevision使用setupPlan当前版本；没有方案时为0。',parameters:{draftId:{type:'string',required:true},expectedRevision:{type:'integer',required:true},patchJson:{type:'string',required:true}}},
@@ -165,7 +202,7 @@ export function registerBusinessBuilderTools(ctx:Context,ports:BusinessBuilderTo
    }
    const format=fixed.reviseRetry?.format??current.draft.candidate.format,input=mutation(args,format)
    if(input.draftId!==current.draft.id)throw new WorkError('teloa/forbidden','不能从当前搭建会话修改另一份草案。')
-   const saved=await ports.revise({...input,requestId:requestId(ports.owner,fixed.instruction,input.draftId,input.expectedRevision)}),result=fixed.reviseRetry?mutationReceipt(saved,current.draft,input.expectedRevision,'保存'):saved
+   const saved=await ports.revise({...input,requestId:requestId(ports.owner,fixed.instruction,input.draftId,input.expectedRevision)}),result=fixed.reviseRetry?businessBuilderMutationReceipt(saved,current.draft,input.expectedRevision,'保存'):saved
    if(result.ownerId!==ports.owner||result.id!==input.draftId||result.scope!==current.draft.scope||result.candidate.format!==format||result.revision!==input.expectedRevision+1||fixed.reviseRetry&&result.hash!==fixed.reviseRetry.hash)throw new WorkError('teloa/invalid-host-response','草案保存回执与原请求不一致。')
    return encoded({draftId:result.id,revision:result.revision,baseVersion:result.baseVersion,hash:result.hash,title:result.candidate.title,pageCount:result.candidate.pages.length,status:result.status})
   }catch(error){if(error instanceof WorkError||exec.signal.aborted)throw error;throw new WorkError('teloa/host-unavailable','草案服务回执暂不可用，请先读取当前草案核对，不要另建或重复发送。')}
@@ -184,7 +221,7 @@ export function registerBusinessBuilderTools(ctx:Context,ports:BusinessBuilderTo
     if(raw.expectedRevision<current.draft.revision){
      const prior=await ports.reviseReceipt({...raw,requestId:requestId(ports.owner,current.instruction,raw.draftId,raw.expectedRevision)})
      exec.signal.throwIfAborted()
-     if(prior){const receipt=mutationReceipt(prior,current.draft,raw.expectedRevision,'保存');reviseRetry={format:receipt.candidate.format,hash:receipt.hash}}
+     if(prior){const receipt=businessBuilderMutationReceipt(prior,current.draft,raw.expectedRevision,'保存');reviseRetry={format:receipt.candidate.format,hash:receipt.hash}}
     }
     input=mutation(raw,reviseRetry?.format??current.draft.candidate.format)
    }
@@ -200,9 +237,10 @@ export function registerBusinessBuilderTools(ctx:Context,ports:BusinessBuilderTo
  })
  const removeContext=ctx.on('agent/pre-step',async({agent,signal},next)=>{
   const decision=await next();if(decision.kind==='reject'||!decision.messages.some(message=>message.source.kind==='user'))return decision
+  if(await ports.previewOnly?.(agent.id))return decision
   let current:Awaited<ReturnType<typeof authorizeContext>>
   try{current=await authorizeContext({agent,signal})}catch(error){if(error instanceof WorkError&&['teloa/not-bound','teloa/not-found','teloa/forbidden'].includes(error.code))return decision;throw error}
-  const notice=createUserMessage({source:{kind:source,form:'notice',summary:'当前业务搭建草案'},content:[{type:'text',text:'当前是本人已绑定的业务搭建会话，正在搭建业务“'+current.draft.candidate.title+'”。宿主已生成草案及业务标识，用户只需中文描述目标和字段；不要要求用户填写或选择范围键、UUID、版本或来源ID，也不要另建业务。capabilities中的general与draft-only仅描述会话许可和保存状态，不改变当前搭建身份。先用 teloa_business_builder_read 取得当前草案的scope、sources、revision、能力及patchProtocol合法示例，沿用它们，再用 teloa_business_builder_revise 的patchJson字符串整组保存可预览草案；此处不使用业务definitions独立草案或teloa_create_draft替代原草案。旧版需要金额、多选关联或唯一约束时先用 teloa_business_builder_upgrade 升级，升级后再次用 teloa_business_builder_read 读取新版能力，再 revise。v2的multi-reference保存真实目标ID数组，uniqueFields逐字段独立唯一；目标标题与状态从记录list/get读取，预查不能保证事务唯一。v2 类型化统计须依能力表生成，旧 SQL 不支持富字段；现有看板必须完整保留，不删页绕限制。保存草案不采用、启用或交办；自然语言回答不等于已保存，采用仍由本人在预览页执行。完整方案还需用 teloa_business_builder_plan_revise 保存员工、work-template分工、真实连接及暂停计划，先读setupPlan的当前版本和真实员工目录；原配置v2由宿主附加，不另建scope。不要把静态步骤称为自动执行流水线。最终只展示业务名称、可理解状态和下一步，技术身份仅供工具内部。当前草案：'+JSON.stringify({draftId:current.draft.id,revision:current.draft.revision})}]})
+  const notice=createUserMessage({source:{kind:source,form:'notice',summary:'当前业务搭建草案'},content:[{type:'text',text:'当前是本人已绑定的业务搭建会话，正在搭建业务“'+current.draft.candidate.title+'”。宿主已生成草案及业务标识，用户只需中文描述目标和字段；不要要求用户填写或选择范围键、UUID、版本或来源ID，也不要另建业务。capabilities中的general与draft-only仅描述会话许可和保存状态，不改变当前搭建身份。先用 teloa_business_builder_read 取得当前草案的scope、sources、revision、能力及patchProtocol合法示例；需要同步或员工成果时以{protocol:"source-mapping"}读取完整协议，不用失败写请求猜字段，不读取本机源码或配置寻找协议。沿用它们，再用 teloa_business_builder_revise 的patchJson字符串整组保存可预览草案；此处不使用业务definitions独立草案或teloa_create_draft替代原草案。旧版需要金额、多选关联或唯一约束时先用 teloa_business_builder_upgrade 升级，升级后再次用 teloa_business_builder_read 读取新版能力，再 revise。v2的multi-reference保存真实目标ID数组，uniqueFields逐字段独立唯一；目标标题与状态从记录list/get读取，预查不能保证事务唯一。v2 类型化统计须依能力表生成，旧 SQL 不支持富字段；现有看板必须完整保留，不删页绕限制。保存草案不采用、启用或交办；自然语言回答不等于已保存，采用仍由本人在预览页执行。完整方案还需用 teloa_business_builder_plan_revise 保存员工、work-template分工、真实连接及暂停计划，先读setupPlan的当前版本和真实员工目录；原配置v2由宿主附加，不另建scope。不要把静态步骤称为自动执行流水线。最终只展示业务名称、可理解状态和下一步，技术身份仅供工具内部。当前草案：'+JSON.stringify({draftId:current.draft.id,revision:current.draft.revision})}]})
   return {...decision,messages:[...decision.messages,notice]}
  })
  return ()=>{removeGuard();removeContext()}

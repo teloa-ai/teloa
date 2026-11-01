@@ -13,7 +13,7 @@ function read(value:unknown,owner:string):TaskAttentionPage{
   const page=exact(value,['items']);if(!Array.isArray(page.items))throw invalid()
   const ids=new Set<string>()
   for(const value of page.items){
-   const row=exact(value,['task','attention','completedGroupReply']),task=exact(row.task,['id','ownerId','version','state','createdAt','updatedAt','title','goal','scope','assigneeRoleId','assigneeRoleVersion'].concat(['groupId','skills','contentVersion','completionPolicy','executor']))
+   const row=exact(value,['task','attention','completedGroupReply','nativeApproval','nativeApprovalUnknown']),task=exact(row.task,['id','ownerId','version','state','createdAt','updatedAt','title','goal','scope','assigneeRoleId','assigneeRoleVersion'].concat(['groupId','skills','contentVersion','completionPolicy','executor']))
    const executor=task.executor===undefined?undefined:readWorkExecutor(task.executor)
    if(executor?.kind==='owner'&&(task.assigneeRoleId!==null||task.scope!=='general'))throw invalid()
    if(!uuid(task.id)||ids.has(task.id.toLowerCase())||task.ownerId!==owner||!positive(task.version)||(task.contentVersion!==undefined&&!positive(task.contentVersion))||!workTaskStates.some(state=>state===task.state)||!timestamp(task.createdAt)||!timestamp(task.updatedAt)||task.updatedAt<task.createdAt)throw invalid()
@@ -27,6 +27,11 @@ function read(value:unknown,owner:string):TaskAttentionPage{
     if(task.state==='blocked'?!configurationFailed&&(attention.kind!=='error'||!['task-blocked','execution-failed'].some(reason=>reason===attention.reason)):task.state==='waiting'?!configurationFailed&&(attention.kind!=='review'||!['task-waiting','execution-completed'].some(reason=>reason===attention.reason)):!configurationFailed)throw invalid()
     if(['execution-failed','execution-completed','execution-configuration-failed'].some(reason=>reason===attention.reason)&&task.assigneeRoleId===null&&executor?.kind!=='owner')throw invalid()
    }else if(row.attention!==null)throw invalid()
+   if(row.nativeApproval!==undefined){
+    const native=exact(row.nativeApproval,['runId','sessionId'])
+    if(task.state!=='running'||row.attention!==null||replied||!uuid(native.runId)||typeof native.sessionId!=='string'||!native.sessionId.trim()||native.sessionId.length>256||/[\x00-\x1f\x7f]/.test(native.sessionId)||task.assigneeRoleId===null&&executor?.kind!=='owner')throw invalid()
+   }
+   if(row.nativeApprovalUnknown!==undefined&&(row.nativeApprovalUnknown!==true||row.nativeApproval!==undefined||task.state!=='running'||row.attention!==null||replied||task.assigneeRoleId===null&&executor?.kind!=='owner'))throw invalid()
   }
   return page as unknown as TaskAttentionPage
  }catch{throw invalid()}

@@ -1,6 +1,6 @@
 import type { Pool,PoolClient } from 'pg'
 import {isDeepStrictEqual} from 'node:util'
-import { WorkError,roleInput,roleDefinition,roleWriteDefinition,readRoleProfile,type DigitalRole } from '@teloa/contract'
+import { WorkError,roleInput,roleDefinition,roleWriteDefinition,readRoleProfile,roleModelsCanSave,type DigitalRole,type ModelOptionsDirectory,type RoleRuntimeConfig } from '@teloa/contract'
 import { ensureAutoDreamPlan,type AutoDreamPorts } from './auto-dream-plans.ts'
 import { renewRoleGrants } from './collaboration.ts'
 import {workAccess} from './work-access.ts'
@@ -65,7 +65,8 @@ async function assertEmployeeWorkIdle(client:PoolClient,owner:string,role:Digita
  const tables=['teloa_tasks','teloa_task_runs','teloa_plans','teloa_plan_occurrences','teloa_role_work_delegations']
  const present=new Set((await client.query('select name from unnest($1::text[]) name where to_regclass(name) is not null',[tables])).rows.map(row=>row.name as string))
  const busy=()=>new WorkError('teloa/conflict','请先完成或取消关联任务，等待运行及子工作收口；如有活动计划或执行委托，请先暂停后再保存员工资料。',{reason:'role-work-outstanding'})
- if(present.has('teloa_tasks')&&(await client.query("select 1 from teloa_tasks where owner_id=$1 and assignee_role_id=$2 and state not in ('completed','cancelled') limit 1",[owner,role.id])).rowCount)throw busy()
+ // 暂停任务保留原岗位版本；保存下一版定义后，仍须本人显式交接才能新执行。
+ if(present.has('teloa_tasks')&&(await client.query("select 1 from teloa_tasks where owner_id=$1 and assignee_role_id=$2 and state not in ('completed','cancelled') and not ($3::boolean and state='paused') limit 1",[owner,role.id,role.state==='paused'])).rowCount)throw busy()
  if(present.has('teloa_task_runs')&&await roleWorkOutstanding(client,owner,role.id))throw busy()
  if(present.has('teloa_role_work_delegations')&&(await client.query("select 1 from teloa_role_work_delegations where owner_id=$1 and role_id=$2 and state in ('active','pausing','ending') limit 1",[owner,role.id])).rowCount)throw busy()
  if(present.has('teloa_plans')){
@@ -82,7 +83,14 @@ export class RoleService{
  readonly identity:{id:()=>string;now:()=>string}
  /** Auto Dream 的系统计划端口：装配期接上才建计划，未接线的装配（行业模板、旧测试）照旧只写岗位。 */
  readonly autoDream:AutoDreamPorts|undefined
- constructor(pool:Pool,identity:{id:()=>string;now:()=>string},autoDream?:AutoDreamPorts){this.pool=pool;this.identity=identity;this.autoDream=autoDream}
+ readonly readModels:(()=>Promise<ModelOptionsDirectory>)|undefined
+ constructor(pool:Pool,identity:{id:()=>string;now:()=>string},autoDream?:AutoDreamPorts,readModels?:()=>Promise<ModelOptionsDirectory>){this.pool=pool;this.identity=identity;this.autoDream=autoDream;this.readModels=readModels}
+ /** 只在新写入时核对明确改选；已保存回执与未改模型不依赖后来目录的可用性。 */
+ private async assertModels(initial:RoleRuntimeConfig|undefined,runtime:RoleRuntimeConfig|undefined):Promise<void>{
+  if(roleModelsCanSave(initial,runtime,undefined))return
+  if(!this.readModels)throw new WorkError('teloa/source-unavailable','暂时无法核对岗位模型，请读取模型目录后重试。')
+  if(!roleModelsCanSave(initial,runtime,await this.readModels()))throw new WorkError('teloa/model-unavailable','所选岗位模型或推理档位当前不可用，请按模型目录重新选择。')
+ }
  async findByRequest(owner:string,input:unknown):Promise<DigitalRole|null>{
   ownerId(owner);const row=roleInput(input,['requestId','expectedFields']);if(!uuid(row.requestId))throw new WorkError('teloa/invalid-input','需要有效的创建请求 ID。');const expected=roleDefinition(row.expectedFields)
   const found=(await this.pool.query('select *,request_spec=$3::jsonb as same_request from teloa_roles where owner_id=$1 and request_id=$2',[owner,row.requestId,JSON.stringify(expected)])).rows[0]
@@ -131,6 +139,7 @@ export class RoleService{
    const definition=roleWriteDefinition(row.fields),now=this.identity.now()
    // 资料范围先核对本人资源存在：写出引用不到资料的岗位会让之后每次任务准备都固定失败。
    await assertRoleKnowledgeReferences(client,owner,definition.knowledge)
+   await this.assertModels(undefined,definition.runtimeConfig)
    // 唯一默认分身初始化不授予使用权；人类招聘、模板建岗均按 people 核对。
    const admission=systemTwin?undefined:await workAccess.authorize({kind:'capability',capability:'people',ownerId:owner,sessionId:null,objectId:row.requestId as string,operation:'create'})
    admission?.assertCurrent()
@@ -208,6 +217,7 @@ export class RoleService{
   if(role.kind==='employee')await assertEmployeeWorkIdle(client,owner,role)
   // 与创建同一核对：不能把引用不到资料的资料范围保存进岗位。
   await assertRoleKnowledgeReferences(client,owner,definition.knowledge)
+  await this.assertModels(role.runtimeConfig,definition.runtimeConfig)
   // 旧调用方若没有资料基线，只允许保留当前姓名头像；不能以不变的执行版本覆盖并发身份修改。
   const currentProfile=readRoleProfile({name:role.name,...(role.avatarKey?{avatarKey:role.avatarKey}:{})})
   const profileBaseline=expectedProfile??readRoleProfile({name:definition.name,...(definition.avatarKey?{avatarKey:definition.avatarKey}:{})})

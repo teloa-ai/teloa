@@ -3,6 +3,21 @@ import assert from 'node:assert/strict'
 import {readFile} from 'node:fs/promises'
 import {defaultPersonalDisplayName,normalizePersonalDisplayName,personalAvatarInitials,personalDisplayName} from '../src/client/personal-profile.ts'
 
+test('个人姓名校验给出稳定原因与可纠正提示，不建议稍后重试或展示原始异常',()=>{
+ const cases=[
+  {value:'   ',reason:'profile-name-empty',message:'用户名不能为空。'},
+  {value:'f23@example.invalid',reason:'profile-name-email',message:'显示名称不能使用邮箱。'},
+  {value:'我'.repeat(41),reason:'profile-name-too-long',message:'用户名不能超过 40 个字符。'},
+ ]
+ for(const c of cases){
+  let captured:unknown;try{normalizePersonalDisplayName(c.value)}catch(error){captured=error}
+  assert.ok(captured instanceof Error)
+  assert.equal(captured.message,c.message,'保留原错误message供既有验证和日志使用')
+  assert.equal(Reflect.get(captured,'code'),'teloa/invalid-input')
+  assert.deepEqual(Reflect.get(captured,'details'),{reason:c.reason})
+ }
+})
+
 test('个人资料不编造默认姓名，用户填写的姓名规范化',()=>{
   assert.equal(defaultPersonalDisplayName,'')
   assert.equal(normalizePersonalDisplayName('  Max   Luo  '),'Max Luo')

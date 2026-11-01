@@ -1,7 +1,7 @@
 import type {SavedObjectLink} from './object-conversation-api.js'
 
 type IdentityPort={
-  links:(sessionId:string)=>Promise<readonly Pick<SavedObjectLink,'kind'|'sessionId'|'objectId'|'active'>[]>
+  links:(sessionId:string)=>Promise<readonly Pick<SavedObjectLink,'kind'|'sessionId'|'objectId'|'active'|'readOnly'|'displayTitle'>[]>
   roles:()=>Promise<readonly {id:string;name:string}[]>
 }
 
@@ -15,12 +15,13 @@ export async function readSessionRoleIdentity(sessionId:string,port:IdentityPort
 
 
 /** 目录只使用本人可见原会话的正式关联，失败或歧义保持未知，不从当前主会话继承。 */
-export async function readDirectoryRoleIdentities<T extends {id:string;name:string}>(sessionIds:readonly string[],links:IdentityPort['links'],roles:readonly T[]):Promise<Record<string,T>>{
+export async function readDirectoryRoleIdentities<T extends {id:string;name:string}>(sessionIds:readonly string[],links:IdentityPort['links'],roles:readonly T[]):Promise<Record<string,T&{conversationTitle?:string}>>{
  const results=await Promise.allSettled(sessionIds.map(async sessionId=>{
   const matches=(await links(sessionId)).filter(link=>link.kind==='role'&&link.active&&link.sessionId===sessionId)
   if(matches.length!==1)return undefined
   const role=roles.find(role=>role.id===matches[0]!.objectId)
-  return role?[sessionId,role] as const:undefined
+  const title=matches[0]!.readOnly===true?matches[0]!.displayTitle:undefined
+  return role?[sessionId,title?{...role,conversationTitle:title}:role] as const:undefined
  }))
  return Object.fromEntries(results.flatMap(result=>result.status==='fulfilled'&&result.value?[result.value]:[]))
 }

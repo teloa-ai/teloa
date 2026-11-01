@@ -8,6 +8,9 @@ export type BusinessObjectReference={
  snapshotHash:string
 }
 
+export type BusinessFieldValue=string|number|boolean
+/** 仅用于展示或既有文本解析，不改写正式快照的原始类型。 */
+export function businessFieldValueText(value:BusinessFieldValue|undefined):string{return value===undefined?'':String(value)}
 export type BusinessObjectSnapshot=BusinessObjectReference&{
  title:string
  source:string
@@ -15,7 +18,7 @@ export type BusinessObjectSnapshot=BusinessObjectReference&{
  receivedAt:string
  quality:'complete'|'missing'
  summary:string
- fields:Array<{label:string;value:string}>
+ fields:Array<{label:string;value:BusinessFieldValue}>
  /** 仅 tombstone 版本带：源侧删除时刻（ISO）；fields 沿用上一版本。旧快照没有这个键。 */
  deletedAt?:string
 }

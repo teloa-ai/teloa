@@ -1,7 +1,7 @@
 import {createHash} from 'node:crypto'
 import type {Pool,PoolClient} from 'pg'
 import {
- WorkError,businessCustomizationLimits,businessDefinitionCanonicalBody,businessDefinitionPaths,readBusinessDefinitionBody,taskInput,
+ WorkError,businessFieldValueText,type BusinessFieldValue,businessCustomizationLimits,businessDefinitionCanonicalBody,businessDefinitionPaths,readBusinessDefinitionBody,taskInput,
  type BusinessActionDefinition,type BusinessDefinitionDiffRow,type BusinessDefinitionKind,
  type BusinessDefinitionPreview,type BusinessDefinitionSource,
  type BusinessObjectTypeDefinition,type BusinessViewDefinition,
@@ -256,11 +256,11 @@ export class BusinessDefinitionPreviewService{
   const objects:NonNullable<BusinessDefinitionPreview['mappingTrial']>['objects']=[]
   for(const item of page.items){
    if(objects.length>=mappingTrialObjects)break
-   let snapshot:{id:string;fields:Array<{label:string;value:string}>}|undefined
+   let snapshot:{id:string;fields:Array<{label:string;value:BusinessFieldValue}>}|undefined
    if(definition.mapping.length===0){try{snapshot=readBusinessObjectSnapshot(item,scope)}catch{snapshot=undefined}}
    else{const mapped=mapSourceItem(definition,objectType,item,page.capturedAt);snapshot='snapshot' in mapped?mapped.snapshot:undefined}
    if(!snapshot)continue
-   objects.push({objectId:snapshot.id,fields:snapshot.fields.flatMap(field=>{const name=nameOf.get(field.label);return name===undefined?[]:[{field:name,value:field.value}]})})
+   objects.push({objectId:snapshot.id,fields:snapshot.fields.flatMap(field=>{const name=nameOf.get(field.label);return name===undefined?[]:[{field:name,value:businessFieldValueText(field.value)}]})})
   }
   return {impact,mappingTrial:{fetched:page.items.length,objects}}
  }

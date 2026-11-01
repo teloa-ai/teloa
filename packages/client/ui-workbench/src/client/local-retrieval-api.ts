@@ -1,8 +1,8 @@
-import {isRecord,resourceTitle,embeddingProviderIds,readEmbeddingPreparationState,readRetrievalPreparationDetails,readRetrievalPrepareInput,WorkError,type EmbeddingProviderId,type EmbeddingDownloadSource,type EmbeddingPreparationState,type RetrievalPreparationDetails,type RetrievalPreparationExpected} from '@teloa/contract'
+import {isRecord,resourceTitle,embeddingProviderIds,readEmbeddingPreparationState,readRetrievalPreparationDetails,readRetrievalPrepareInput,readRetrievalEnrollmentReceipt,WorkError,type RetrievalEnrollmentOutcome,type EmbeddingProviderId,type EmbeddingDownloadSource,type EmbeddingPreparationState,type RetrievalPreparationDetails,type RetrievalPreparationExpected,type RetrievalCoverage} from '@teloa/contract'
 
 export type RetrievalProvider={id:string;location:'host-local';catalogId:string;catalogVersion:string;profileHash:string;variant:'fp32'|'int8'|'ollama';totalMemoryBytes:number;memoryRisk:boolean;preparation:EmbeddingPreparationState;preparationDetails?:RetrievalPreparationDetails}
 export type RetrievalModelStatus={enabled:boolean;provider:RetrievalProvider|null;building:boolean;guidance:string|null;selectedProviderId?:EmbeddingProviderId}
-export type RetrievalItem={sourceId:string;resourceId:string|null;title:string|null;version:number|null;state:'building'|'ready'|'failed'|'stale'|'unavailable';chunkCount:number|null}
+export type RetrievalItem={sourceId:string;resourceId:string|null;title:string|null;version:number|null;state:'building'|'ready'|'failed'|'stale'|'unavailable';chunkCount:number|null;sourceChanged?:true;sourceState?:NonNullable<RetrievalCoverage['pending'][number]['sourceState']>}
 export type RetrievalStatus={items:RetrievalItem[];enrolled:number;chunks:number;building:boolean}
 const invalid=()=>new WorkError('teloa/invalid-host-response','本地检索服务返回的内容格式不正确。')
 const text=(v:unknown):v is string=>typeof v==='string'&&v.length>0&&!/[\p{Cc}\p{Cf}]/u.test(v)
@@ -25,8 +25,10 @@ export function readRetrievalStatus(value:unknown):RetrievalStatus{
  if(!Array.isArray(row.items)||!count(row.enrolled)||!count(row.chunks)||typeof row.building!=='boolean')throw invalid()
  const seen=new Set<string>()
  const items=row.items.map(value=>{
-  const item=exact(value,['sourceId','resourceId','title','version','state','chunkCount'])
+  const item=exact(value,['sourceId','resourceId','title','version','state','chunkCount'],['sourceChanged','sourceState'])
   if(!text(item.sourceId)||!['building','ready','failed','stale','unavailable'].includes(item.state as string))throw invalid()
+  if(item.sourceChanged!==undefined&&(item.sourceChanged!==true||item.state!=='stale'||item.chunkCount!==null))throw invalid()
+  if(item.sourceState!==undefined&&(item.sourceChanged!==true||(item.sourceState!=='historical'&&item.sourceState!=='changed')))throw invalid()
 
   if(item.state==='unavailable'){if([item.resourceId,item.title,item.version,item.chunkCount].some(v=>v!==null))throw invalid()}
   else if(!text(item.resourceId)||!resourceTitle(item.title)||!count(item.version)||item.version===0||!(item.chunkCount===null||count(item.chunkCount)))throw invalid()
@@ -39,6 +41,9 @@ export function readRetrievalStatus(value:unknown):RetrievalStatus{
  return {items,enrolled:row.enrolled,chunks:row.chunks,building:row.building}
 }
 export type LocalRetrievalApi=ReturnType<typeof createLocalRetrievalApi>
+// 只标记正常服务回包中已校验、且与原 sourceId 一致的事务结果；普通错误码或自贴 flag 不进入这里。
+const enrollmentOutcomes=new WeakMap<object,RetrievalEnrollmentOutcome>()
+export const retrievalEnrollmentOutcome=(error:unknown)=>error!==null&&typeof error==='object'?enrollmentOutcomes.get(error):undefined
 export function createLocalRetrievalApi(call:(endpoint:string,payload:unknown,signal?:AbortSignal)=>Promise<unknown>){
  const model=async(endpoint:string,signal?:AbortSignal,providerId?:EmbeddingProviderId)=>readRetrievalModelStatus(await call(endpoint,providerId?{providerId}:{},signal))
  const index=async(endpoint:string,payload:unknown,signal?:AbortSignal)=>readRetrievalStatus(await call(endpoint,payload,signal))
@@ -49,7 +54,25 @@ export function createLocalRetrievalApi(call:(endpoint:string,payload:unknown,si
   cancelPreparation:(signal?:AbortSignal,providerId?:EmbeddingProviderId)=>model('retrieval-model/cancel',signal,providerId),
   select:async(providerId:EmbeddingProviderId,profileHash:string,signal?:AbortSignal)=>readRetrievalModelStatus(await call('retrieval-model/select',{providerId,profileHash},signal)),
   status:(signal?:AbortSignal)=>index('retrieval/status',{},signal),
-  enroll:(sourceId:string,signal?:AbortSignal)=>index('retrieval/enroll',{sourceIds:[sourceId]},signal),
+  enroll:async(sourceId:string,signal?:AbortSignal)=>{
+   const value=await call('retrieval/enroll',{sourceIds:[sourceId]},signal)
+   // 旧宿主仅返回状态：保留旧读口，错误仍为未知，绝不推断未提交。
+   if(!isRecord(value)||!Object.hasOwn(value,'enrollment'))return readRetrievalStatus(value)
+   const row=exact(value,['enrollment'],['items','enrolled','chunks','building']),receipt=readRetrievalEnrollmentReceipt(row.enrollment)
+   if(receipt.sourceIds.length!==1||receipt.sourceIds[0]!==sourceId||receipt.outcome!=='committed'&&Object.keys(row).length!==1)throw invalid()
+   const failed=()=>new WorkError(receipt.errorCode??'teloa/execution-pending','本地检索加入操作未正常完成。')
+   if(receipt.outcome!=='committed'){
+    const error=failed();enrollmentOutcomes.set(error,receipt.outcome);throw error
+   }
+   try{
+    const {enrollment,...current}=row,status=readRetrievalStatus(current)
+    if(!status.items.some(item=>item.sourceId===sourceId))throw invalid()
+    return status
+   }catch{
+    // 提交已确认；随后状态缺失、读取或格式错误不能将其变成可重试失败。
+    const error=failed();enrollmentOutcomes.set(error,'committed');throw error
+   }
+  },
   remove:(sourceId:string,signal?:AbortSignal)=>index('retrieval/remove',{sourceIds:[sourceId]},signal),
   reindex:(signal?:AbortSignal)=>index('retrieval/reindex',{},signal),
   cancel:(signal?:AbortSignal)=>index('retrieval/cancel',{},signal),

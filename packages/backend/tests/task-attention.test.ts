@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import {randomUUID} from 'node:crypto'
 import {homedir} from 'node:os'
 import {join} from 'node:path'
+import {readFileSync} from 'node:fs'
 import {Pool} from './postgres-test-lifecycle.ts'
 import {PostgreSqlContainer,type StartedPostgreSqlContainer} from '@testcontainers/postgresql'
 import {initializeRoles,RoleService} from '../src/work/roles.ts'
@@ -15,7 +16,7 @@ import {testRoleResponsibility} from './role-test-fixture.ts'
 
 let container:StartedPostgreSqlContainer,pool:Pool
 const identity={id:randomUUID,now:()=>new Date().toISOString()}
-before(async()=>{process.env.DOCKER_HOST='unix://'+join(homedir(),'.orbstack/run/docker.sock');process.env.TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE='/var/run/docker.sock';container=await new PostgreSqlContainer('postgres:17-alpine').start();pool=new Pool({connectionString:container.getConnectionUri()});await initializeRoles(pool);await initializeTasks(pool);await initializeObjectConversations(pool);await initializeTaskRuns(pool);await initializeTaskTransitions(pool)})
+before(async()=>{const fd=process.env.TELOA_TASK_ATTENTION_TEST_PG_FD;let connectionString:string;if(fd){if(!/^\d+$/.test(fd))throw Error('测试数据库文件描述符无效。');connectionString=readFileSync(Number(fd),'utf8').trim()}else{process.env.DOCKER_HOST='unix://'+join(homedir(),'.orbstack/run/docker.sock');process.env.TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE='/var/run/docker.sock';container=await new PostgreSqlContainer('postgres:17-alpine').start();connectionString=container.getConnectionUri()}pool=new Pool({connectionString});await initializeRoles(pool);await initializeTasks(pool);await initializeObjectConversations(pool);await initializeTaskRuns(pool);await initializeTaskTransitions(pool)})
 after(async()=>{await pool?.end();await container?.stop()})
 
 async function fixture(){
@@ -26,6 +27,46 @@ async function fixture(){
  return {owner,role,task,runs,command}
 }
 async function end(reason:string){const f=await fixture(),run=await f.runs.prepare(f.owner,f.command);await f.runs.claim(f.owner,{runId:run.id});await f.runs.record(f.owner,{runId:run.id,sessionId:run.sessionId,nativeRequestId:run.nativeRequestId,evidence:{state:'ended',turn:0,messageSeq:1,endSeq:2,reason}});return {...f,run}}
+async function activeRun(){const f=await fixture(),run=await f.runs.prepare(f.owner,f.command);await f.runs.claim(f.owner,{runId:run.id});const active=await f.runs.record(f.owner,{runId:run.id,sessionId:run.sessionId,nativeRequestId:run.nativeRequestId,evidence:{state:'active',turn:0,messageSeq:1}});return {...f,run:active}}
+
+test('进行中任务只发现本人当前活动 Run 的原生审批，不改变执行状态',async()=>{
+ const f=await activeRun(),foreign=await activeRun(),reads:string[]=[]
+ const service=new TaskAttentionService(pool,async run=>{reads.push(run.id);assert.equal(run.sessionId,f.run.sessionId);assert.equal(run.nativeRequestId,f.run.nativeRequestId);return true})
+ const page=await service.list(f.owner,{})
+ assert.deepEqual(reads,[f.run.id]);assert.equal(page.items[0]!.task.state,'running');assert.equal(page.items[0]!.attention,null)
+ assert.deepEqual(page.items[0]!.nativeApproval,{runId:f.run.id,sessionId:f.run.sessionId})
+ assert.notEqual(foreign.owner,f.owner)
+ assert.equal((await new TaskAttentionService(pool,async()=>false).list(f.owner,{})).items[0]!.nativeApproval,undefined)
+ await f.runs.requestStop(f.owner,{runId:f.run.id})
+ assert.equal((await service.list(f.owner,{})).items[0]!.nativeApproval,undefined)
+ assert.deepEqual(reads,[f.run.id],'停止申请后不再读取遗留的未决审批')
+})
+
+test('旧 Run、结束、取消和改派任务不留下原生审批；原生读取在 SQL 提交后并重核当前归属',async()=>{
+ for(const change of ['ended','cancelled','reassigned','revised']){
+  const f=await activeRun()
+  const page=await new TaskAttentionService(pool,async()=>{
+   // 此写入用独立连接，若目录仍占用事务锁会阻塞；返回后必须撤下旧入口。
+   if(change==='ended')await f.runs.record(f.owner,{runId:f.run.id,sessionId:f.run.sessionId,nativeRequestId:f.run.nativeRequestId,evidence:{state:'ended',turn:0,messageSeq:1,endSeq:2,reason:'completed'}})
+   else if(change==='cancelled')await pool.query("update teloa_tasks set state='cancelled',version=version+1 where id=$1",[f.task.id])
+   else if(change==='reassigned')await pool.query('update teloa_tasks set assignee_role_id=null,assignee_role_version=null where id=$1',[f.task.id])
+   else await pool.query('update teloa_tasks set version=version+1 where id=$1',[f.task.id])
+   return true
+  }).list(f.owner,{})
+  assert.equal(page.items[0]!.nativeApproval,undefined,change)
+ }
+ const old=await end('completed'),reads:string[]=[]
+ await new TaskAttentionService(pool,async run=>{reads.push(run.id);return true}).list(old.owner,{})
+ assert.deepEqual(reads,[])
+})
+
+test('单个原生会话读取失败保留任务目录并标记该任务待核对',async()=>{
+ const f=await activeRun(),manual=await new TaskService(pool,identity).create(f.owner,{requestId:randomUUID(),fields:{title:'另一任务',goal:'保留目录',scope:'general'}})
+ const page=await new TaskAttentionService(pool,async()=>{throw Error('session unavailable')}).list(f.owner,{})
+ assert.equal(page.items.length,2)
+ assert.equal(page.items.find(item=>item.task.id===f.task.id)!.nativeApprovalUnknown,true)
+ assert.equal(page.items.find(item=>item.task.id===manual.id)!.nativeApprovalUnknown,undefined)
+})
 
 test('正常结束只表示结果待核对，主动暂停和已结项任务不告警',async()=>{
  const completed=await end('completed'),manualOwner=randomUUID(),tasks=new TaskService(pool,identity),manual=await tasks.create(manualOwner,{requestId:randomUUID(),fields:{title:'本人任务',goal:'整理',scope:'general'}}),transitions=new TaskTransitions(pool,identity)

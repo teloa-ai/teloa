@@ -4,7 +4,7 @@ import {readFile} from 'node:fs/promises'
 import {Context} from '@deepseek-ai/cordis'
 import {ToolRuntime,defineTool} from '@deepseek-ai/dsh-tools'
 import {SystemPrompt} from '@deepseek-ai/dsh-system-prompt'
-import {LlmRuntime,ToolCallId,createUserMessage} from '@deepseek-ai/dsh-llm'
+import {LlmAdapter,LlmRuntime,ToolCallId,createUserMessage,type GenerateOptions,type StreamChunk} from '@deepseek-ai/dsh-llm'
 import {brandString} from '@deepseek-ai/dsh-brand'
 import type {SessionRequestId} from '@deepseek-ai/dsh-api-session-controller'
 import {SessionStore,SessionId} from '@deepseek-ai/dsh-session'
@@ -80,6 +80,7 @@ async function setupTool(overrides:Partial<RoleDailyDigestToolPorts>={}){
   run:async sessionId=>({id:runId,sessionId,state:'active'}),
   digestRun:async id=>{calls.push(['digestRun',id]);return digestIdentity},
   evidence:async value=>{calls.push(['evidence',value]);return dayEvidence},
+  bindSourceInput:async()=>{},
   submit:async(value,requestId,input)=>{calls.push(['submit',value,requestId,input]);return {log:savedLog,candidates:[]}},
   ...overrides,
  }
@@ -127,6 +128,35 @@ test('当日证据工具不接受任何参数',async t=>{
  assert.equal(result.isError,true)
  assert.match(JSON.stringify(result),/当日证据工具不接受任何参数/)
  assert.equal(env.calls.filter(row=>row[0]==='evidence').length,0)
+})
+
+test('QLT002：真实提示组装和adapter工具说明区分版本正文、基准差异与历史产出',async t=>{
+ const env=await setupTool();t.after(()=>env.ctx.fiber.dispose())
+ class CaptureAdapter extends LlmAdapter{
+  requests:GenerateOptions[]=[]
+  override async resolveModel(provider:string,model:string){return {provider,id:model,name:model,inputModalities:['text'] as const}}
+  async *stream(options:GenerateOptions):AsyncGenerator<StreamChunk>{
+   this.requests.push(options)
+   yield {type:'block-start',index:0,blockType:'text'}
+   yield {type:'text-delta',index:0,text:'只核对当前版本正文。'}
+   yield {type:'block-end',index:0,block:{type:'text',text:'只核对当前版本正文。'}}
+   yield {type:'finish',reason:{kind:'stop'}}
+  }
+ }
+ const adapter=new CaptureAdapter();env.ctx.llm.registerAdapter(['test'],adapter)
+ const assembly=await env.ctx.systemPrompt.assemble({agent:env.agent,scope:env.agent})
+ const description=assembly.tools.find(tool=>tool.name===roleDayEvidenceToolName)!.description
+ assert.match(description,/sections.*该版本.*正文/)
+ assert.match(description,/historicalMessages.*历史产出溯源/)
+ assert.match(description,/comparison.*服务端.*确定性/)
+ assert.match(description,/bodyChanged.*noteChanged/)
+ assert.match(description,/不能.*无差异/)
+ assert.match(description,/v1.*修订/)
+ env.agent.followup(createUserMessage({source:{kind:'user',rpcId:brandString<SessionRequestId>('digest-projection-description')},content:[{type:'text',text:'读取当天证据并区分当前修订与历史来源。'}]}))
+ await env.agent.whenIdle()
+ assert.equal(adapter.requests.length,1)
+ assert.equal(adapter.requests[0]!.tools?.find(tool=>tool.name===roleDayEvidenceToolName)?.description,description,'最终adapter接收同一可信工具说明，不以源码字符串代替组装证据')
+ assert.equal(env.calls.filter(row=>row[0]==='submit'||row[0]==='evidence').length,0,'提示检查不真实读业务或提交日志')
 })
 
 test('提交参数缺 pruneHints 时给出中文可定位错误，不把英文校验错误抛给模型',async t=>{
@@ -305,6 +335,7 @@ test('派发后才取消的调用对任何工具都拒：取消时连 Run 都没
   run:async sessionId=>{calls.push('run');return {id:runId,sessionId,state:'active'}},
   digestRun:async()=>{calls.push('digestRun');return digestIdentity},
   evidence:async()=>{calls.push('evidence');return dayEvidence},
+  bindSourceInput:async()=>{},
   submit:async()=>{calls.push('submit');return {log:savedLog,candidates:[]}},
  })
  // 两个小结工具与其余工具一律拒同一句：判不出来时退回岗位授权清单，等于在真实小结运行里静默放开整份授权。
@@ -345,4 +376,15 @@ test('判定按谱系根会话记忆：同一运行的两次工具调用只跑�
  assert.equal((await env.call(roleDayEvidenceToolName,{},'second-call')).isError,false)
  assert.equal(env.calls.filter(row=>row[0]==='digestRun').length,1)
  assert.equal(env.calls.filter(row=>row[0]==='evidence').length,2)
+})
+
+test('小结工具先绑定真实运行会话的成果来源，再暴露正文；撤回准入拒绝不能返回原文',async t=>{
+ const bound:unknown[]=[],env=await setupTool({bindSourceInput:async(sessionId,value)=>{bound.push({sessionId,value})}})
+ t.after(()=>env.ctx.fiber.dispose())
+ assert.equal((await env.call(roleDayEvidenceToolName)).isError,false)
+ assert.deepEqual(bound,[{sessionId:env.agent.session.id,value:dayEvidence}])
+ const refused=await setupTool({bindSourceInput:async()=>{throw new WorkError('teloa/source-unavailable','成果已撤回')}})
+ t.after(()=>refused.ctx.fiber.dispose())
+ const result=await refused.call(roleDayEvidenceToolName)
+ assert.equal(result.isError,true);assert.equal(JSON.stringify(result).includes(dayEvidence.day),false)
 })

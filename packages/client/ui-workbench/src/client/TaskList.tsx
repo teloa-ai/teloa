@@ -7,7 +7,7 @@ import {groupTaskRows,nextListIndex,pinRank,sortTaskRows,taskObjectLabel,type Ta
 import {useI18n} from './i18n/provider.js'
 import css from './TaskPage.module.css'
 
-export type TaskListRow={task:PreviewTask;attention:TaskRowAttention;ownerName:string;scopeLabel:string;unverified:boolean}
+export type TaskListRow={task:PreviewTask;attention:TaskRowAttention;ownerName:string;scopeLabel:string;unverified:boolean;openAttention?:()=>void}
 
 export function TaskList({rows,filter,selected,select,stateLabel,attentionLabel,stamp}:{rows:readonly TaskListRow[];filter:'all'|'formal';selected:string|null;select:(id:string|null)=>void;stateLabel:(state:PreviewTask['state'])=>string;attentionLabel:(kind:AttentionKind)=>string;stamp:(at:string)=>string}):JSX.Element{
   const {t}=useI18n()
@@ -17,6 +17,7 @@ export function TaskList({rows,filter,selected,select,stateLabel,attentionLabel,
   // 漫游只在可见行之间走：群内回应组收起时，↑↓ 不会落进看不见的行。
   const visibleRows=routedOpen?[...formal,...routed]:formal
   const navigateRows=(event:KeyboardEvent<HTMLDivElement>)=>{
+    if(event.target instanceof Element&&event.target.closest('button,a,input,textarea,select'))return
     const entry=event.target instanceof Element?event.target.closest<HTMLElement>('tr[role="option"]'):null
     if(!entry)return
     const current=visibleRows.findIndex(row=>row.task.id===entry.dataset.teloaEntry)
@@ -30,12 +31,12 @@ export function TaskList({rows,filter,selected,select,stateLabel,attentionLabel,
   }
   const renderRow=(item:TaskListRow,index:number)=>{
     const {task,attention}=item,pinned=pinRank(attention,task.state)<4
-    const attentionText=attention.kinds.map(attentionLabel).join(' · ')||(item.task.storage==='persistent'&&item.unverified?t('task.attention.unverified'):'')
+    const attentionText=[...attention.kinds.map(attentionLabel),...(item.task.storage==='persistent'&&item.unverified?[t('task.attention.unverified')]:[])].join(' · ')
     return <tr key={task.id} className={clsx(css.listRow,pinned&&css.listPinned)} role="option" aria-selected={task.id===selected} tabIndex={task.id===selected||(!selected&&index===0)?0:-1} data-teloa-entry={task.id}>
       <td><button type="button" className={css.tableLink} title={task.title} tabIndex={-1} onClick={()=>select(task.id)}>{task.title}</button><small>{item.scopeLabel} · {taskObjectLabel(task,t)}</small>{selected&&<span className={css.rowOwner} title={item.ownerName}>{item.ownerName}</span>}</td>
       {!selected&&<td title={item.ownerName}>{item.ownerName}</td>}
-      <td><StatusLabel label={stateLabel(task.state)} mark={taskStatusMark(task.state)} tone={attention.kinds.length?'warn':task.state==='completed'?'good':task.state==='cancelled'?'muted':'info'}/>{selected&&attentionText&&<small>{attentionText}</small>}</td>
-      {!selected&&<><td>{attentionText||'—'}</td><td>{stamp(task.updatedAt)}</td></>}
+      <td><StatusLabel label={stateLabel(task.state)} mark={taskStatusMark(task.state)} tone={attention.kinds.length?'warn':task.state==='completed'?'good':task.state==='cancelled'?'muted':'info'}/>{selected&&attentionText&&<small>{item.openAttention?<button type="button" className={css.tableLink} onClick={item.openAttention}>{attentionText}</button>:attentionText}</small>}</td>
+      {!selected&&<><td>{item.openAttention?<button type="button" className={css.tableLink} onClick={item.openAttention}>{attentionText}</button>:attentionText||'—'}</td><td>{stamp(task.updatedAt)}</td></>}
     </tr>
   }
   return <div ref={list} className={css.tableWrap} role="listbox" aria-label={t('task.list.aria')} onKeyDown={navigateRows}>

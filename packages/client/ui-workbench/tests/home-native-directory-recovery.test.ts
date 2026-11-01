@@ -21,7 +21,7 @@ function wired<T>(find:(node:ts.Node)=>ts.Expression|undefined,ports:Record<stri
  const input={...ports,homeNativeAdoptionRequestId:(homeNative as any).homeNativeAdoptionRequestId}
  return new Function(...Object.keys(input),js)(...Object.values(input)) as T
 }
-const homePort=(name:'create'|'adopt',ports:Record<string,unknown>)=>wired<(id:string)=>Promise<any>>(node=>{
+const homePort=(name:'create'|'adopt'|'canClaimPrepared',ports:Record<string,unknown>)=>wired<(id:string,explicit?:boolean)=>Promise<any>>(node=>{
  if(!ts.isNewExpression(node)||node.expression.getText(ast)!=='HomeNativeController')return
  const options=node.arguments?.[0]
  if(options&&ts.isObjectLiteralExpression(options))for(const property of options.properties)if(ts.isPropertyAssignment(property)&&property.name.getText(ast)===name)return property.initializer
@@ -52,7 +52,7 @@ function homeEntry(f:ReturnType<typeof fixture>,sessionId:string,provider?:Initi
  const lifetime=new AbortController(),unexpected=()=>{throw Error('不应另建待用会话')}
  const initialSession=createInitialNativeSessionCoordinator(async()=>({current:{getSnapshot:()=>sessionId as any,subscribe:()=>()=>{}},sessions:()=>sessions as any,isBlank:async()=>true}),lifetime.signal)
  if(provider)initialSession.register(provider)
- const homeSession=new homeNative.HomeNativeController({storage:f.storage,identity:unexpected,isBlank:()=>true,create:homePort('create',f.ports),adopt:homePort('adopt',f.ports)})
+ const homeSession=new homeNative.HomeNativeController({storage:f.storage,identity:unexpected,isBlank:()=>true,canClaimPrepared:homePort('canClaimPrepared',f.ports),create:homePort('create',f.ports),adopt:homePort('adopt',f.ports)})
  const enter=prepareHomeSession({initialSessionLifetime:lifetime,initialSession,homeSession,requireWorkContext:unexpected,requireActions:unexpected,brandString:(value:string)=>value})
  return {homeSession,enter:()=>enter(new AbortController().signal)}
 }
@@ -137,4 +137,24 @@ test('显式初始提供方的原稿已领养时，认领仍走同一幂等领�
  const home=homeEntry(f,id,async request=>{const proof=await request.waitForCurrent();await f.service.adopt(owner,{sessionId:proof.sessionId,requestId:draftRequest,title:'已有原稿'});return proof.sessionId})
  assert.equal(await home.enter(),id);assert.equal(home.homeSession.owns(id),true)
  assert.equal(f.requests.length,1);assert.equal(f.rows().length,1);assert.equal(f.rows()[0]?.requestId,draftRequest)
+})
+
+test('实际 Home 接线不自动接纳已有冷对象，显式原稿保持可接入且不改写原绑定',async()=>{
+ const id='session-a2345678-1234-4234-8234-123456789012',f=fixture(id),requestId='b2345678-1234-4234-8234-123456789012'
+ await f.service.adopt(owner,{sessionId:id,requestId,title:'原 A 的独立工作'})
+ const before=structuredClone(f.rows()),canClaim=homePort('canClaimPrepared',f.ports)
+ assert.equal(await canClaim(id,false),false)
+ assert.equal(await canClaim(id,true),true)
+ assert.deepEqual(f.rows(),before);assert.deepEqual(f.requests,[])
+})
+
+test('实际 Home 接线允许丢失回包的 UUID 领养按原请求恢复，无法核对目录时不接纳',async()=>{
+ const id='c2345678-1234-4234-8234-123456789012',f=fixture(id,'lost'),home=homeEntry(f,id)
+ await assert.rejects(home.enter(),/network response lost/)
+ assert.equal(f.storage.getItem('teloa.home-native-adoption/'+id),id)
+ assert.equal(await home.enter(),id)
+ assert.equal(f.requests.length,2);assert.equal(f.requests[0].requestId,f.requests[1].requestId)
+ assert.equal(f.rows().length,1)
+ const unavailable=homePort('canClaimPrepared',{...f.ports,work:{refreshDirectory:async()=>undefined}})
+ await assert.rejects(unavailable(id,false),/尚未核对/)
 })

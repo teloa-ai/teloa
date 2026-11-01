@@ -1,4 +1,5 @@
 export const TASK_DETAIL_MESSAGE_ROWS = [
+  ['task.attention.reason.nativeApproval','本次执行有工具申请等待你决定。打开执行会话核对。','本次執行有工具申請等待你決定。開啟執行對話核對。','A tool request in this run needs your decision. Open its conversation to review it.'],
   ['error.deliveryReviewRequired','尚无完整可核对成果。请打开原执行记录核对后重新交办。','尚無完整可核對成果。請開啟原執行記錄核對後重新交辦。','A fully reviewed result is not available. Open the original execution record to review it, then submit the task again.'],
   ['task.form.createExample','例如：整理已有资料，列出待确认事项，给我一份 Markdown 摘要。','例如：整理已有資料，列出待確認事項，提供一份 Markdown 摘要。','Example: Review the available materials, list open questions, and prepare a Markdown summary.'],
   ['task.form.options','更多选项','更多選項','More options'],
@@ -9,7 +10,7 @@ export const TASK_DETAIL_MESSAGE_ROWS = [
   ["task.detail.summary", "任务概要", "任務概要", "Task summary", "タスク概要", "작업 개요", "Tóm tắt nhiệm vụ", "Resumen de la tarea", "Résumé de la tâche", "Aufgabenübersicht", "Resumo da tarefa"],
   ["task.detail.activity", "活动记录", "活動記錄", "Activity", "アクティビティ", "활동 기록", "Hoạt động", "Actividad", "Activité", "Aktivität", "Atividade"],
   ["task.detail.context", "资料与关联会话", "資料與關聯會話", "Resources and conversations", "資料と関連会話", "자료 및 연결된 대화", "Tài liệu và hội thoại", "Recursos y conversaciones", "Ressources et conversations", "Materialien und Gespräche", "Recursos e conversas"],
-  ["task.detail.configuration", "执行配置与任务信息", "執行配置與任務資訊", "Configuration and task details", "実行設定とタスク情報", "실행 설정 및 작업 정보", "Cấu hình và thông tin nhiệm vụ", "Configuración y detalles", "Configuration et détails", "Konfiguration und Aufgabendetails", "Configuração e detalhes"],
+  ["task.detail.configuration", "任务信息", "任務資訊", "Task details", "実行設定とタスク情報", "실행 설정 및 작업 정보", "Cấu hình và thông tin nhiệm vụ", "Configuración y detalles", "Configuration et détails", "Konfiguration und Aufgabendetails", "Configuração e detalhes"],
   ["task.detail.creator", "创建者", "建立者", "Created by", "作成者", "작성자", "Người tạo", "Creado por", "Créé par", "Erstellt von", "Criado por"],
   ["task.detail.createdTime", "创建时间", "建立時間", "Created", "作成日時", "생성 시간", "Thời gian tạo", "Fecha de creación", "Date de création", "Erstellt am", "Criado em"],
   ["task.detail.updatedTime", "更新时间", "更新時間", "Updated", "更新日時", "업데이트 시간", "Thời gian cập nhật", "Última actualización", "Dernière mise à jour", "Aktualisiert am", "Atualizado em"],

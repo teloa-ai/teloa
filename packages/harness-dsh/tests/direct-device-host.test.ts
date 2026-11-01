@@ -88,3 +88,42 @@ test('原审批等待只提示一次；决定后继续查询并播报最终结�
  state='completed';await new Promise(resolve=>setTimeout(resolve,280));assert.equal(f.plays.length,2);assert.equal(f.prompts.length,1)
  await f.media.close();await f.host.close()
 })
+
+test('E06：正式直连状态 RPC 仅向本人浏览器投影本安装安全字段，停用不丢历史',{timeout:180000},async t=>{
+ const {mkdir,mkdtemp,rm,writeFile}=await import('node:fs/promises'),{join}=await import('node:path')
+ const {PostgreSqlContainer}=await import('@testcontainers/postgresql')
+ const {openResourceDatabase,createDirectDeviceStore}=await import('@teloa/backend')
+ const {host}=await import('./fixtures/production-host.ts'),{apply}=await import('../src/index.ts')
+ const {readAssistantChannelInstallation}=await import('../src/assistant-channel-host.ts')
+ const root=await mkdtemp(join(process.cwd(),'.tmp-direct-status-')),runtime=host({agents:true}),previousRoot=process.env.TELOA_PROJECT_ROOT
+ let container:Awaited<ReturnType<InstanceType<typeof PostgreSqlContainer>['start']>>|undefined,database:Awaited<ReturnType<typeof openResourceDatabase>>|undefined
+ t.after(async()=>{await runtime.ctx.fiber.dispose();await database?.close();await container?.stop();if(previousRoot===undefined)delete process.env.TELOA_PROJECT_ROOT;else process.env.TELOA_PROJECT_ROOT=previousRoot;await rm(root,{recursive:true,force:true})})
+ container=await new PostgreSqlContainer('postgres:17-alpine').withDatabase('teloa').start()
+ const runtimeRoot=join(root,'.runtime/teloa'),config=join(runtimeRoot,'database.json'),owner='local:teloa-owner'
+ await mkdir(join(runtimeRoot,'skills'),{recursive:true});await writeFile(config,JSON.stringify({connectionString:container.getConnectionUri()}),{mode:0o600})
+ await mkdir(join(root,'.runtime/dsh/profiles/teloa'),{recursive:true});await writeFile(join(root,'.runtime/dsh/profiles/teloa/package.json'),JSON.stringify({dsh:{profile:{bundles:[],patchReload:'startup'}}}))
+ database=await openResourceDatabase(config,{id:randomUUID,now:()=>new Date().toISOString()})
+ const installationId=await readAssistantChannelInstallation(database.pool,owner,runtimeRoot);assert.ok(installationId)
+ const store=createDirectDeviceStore(database.pool,{ownerId:owner,installationId});await store.initialize()
+ const active=await store.register({id:randomUUID(),assistantSessionId:randomUUID(),contextVersion:3,credentialDigest:hash('synthetic-direct-active-secret'),allowApprovals:true})
+ const revoked=await store.register({id:randomUUID(),assistantSessionId:randomUUID(),contextVersion:2,credentialDigest:hash('synthetic-direct-revoked-secret')});await store.revoke(revoked.id)
+ for(const identity of [{ownerId:'other-owner',installationId},{ownerId:owner,installationId:randomUUID()}])await createDirectDeviceStore(database.pool,identity).register({id:randomUUID(),assistantSessionId:randomUUID(),contextVersion:1,credentialDigest:hash(randomUUID())})
+ await runtime.ready(join(root,'.runtime/dsh'));await apply(runtime.ctx,{projectRoot:root})
+ const browserPeer={id:'synthetic-browser-peer'};Reflect.set(runtime.ctx.connection,'browserPeer',browserPeer)
+ const rpc=runtime.rpc as (endpoint:string,payload:unknown,signal:AbortSignal,peer?:unknown)=>ReturnType<typeof runtime.rpc>
+ const read=(payload:unknown={},peer:unknown=browserPeer,signal=new AbortController().signal)=>rpc('devices/direct/status',payload,signal,peer)
+ const before=await store.list(),reply=await read()
+ assert.equal(reply.ok,true,JSON.stringify(reply))
+ const value=reply.value as {enabled:boolean;devices:Array<Record<string,unknown>>;helper:unknown}
+ assert.equal(value.enabled,false);assert.equal(value.helper,null)
+ assert.deepEqual(value.devices.sort((a,b)=>String(a.id).localeCompare(String(b.id))),[
+  {id:active.id,status:'active',grantVersion:1,assistantSessionId:active.assistantSessionId,allowApprovals:true},
+  {id:revoked.id,status:'revoked',grantVersion:2,assistantSessionId:revoked.assistantSessionId,allowApprovals:false},
+ ].sort((a,b)=>a.id.localeCompare(b.id)))
+ for(const secret of [installationId,active.credentialDigest,revoked.credentialDigest])assert.equal(JSON.stringify(reply).includes(secret),false)
+ assert.doesNotMatch(JSON.stringify(reply),/credentialDigest|ownerId|installationId|contextVersion/)
+ for(const payload of [{ownerId:owner},{bindingId:active.id},{secret:'synthetic-extra'}])assert.equal((await read(payload)).error?.code,'teloa/invalid-input')
+ assert.equal((await read({},{})).error?.code,'teloa/forbidden')
+ assert.equal((await read({},browserPeer,AbortSignal.abort())).ok,false)
+ assert.deepEqual(await store.list(),before);assert.deepEqual(runtime.modelCalls,[])
+})

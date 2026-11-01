@@ -1,9 +1,21 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
+import {readFileSync} from 'node:fs'
 import {readBusinessRecordSnapshot,readRunRoleSnapshot} from '@teloa/contract'
 import {createTaskRunApi} from '../src/client/task-run-api.ts'
 const id='11111111-1111-4111-8111-111111111111',taskId='22222222-2222-4222-8222-222222222222',roleId='33333333-3333-4333-8333-333333333333'
 const row={id,taskId,roleId,taskVersion:1,roleVersion:2,linkVersion:1,sessionId:'session',nativeRequestId:id,state:'ended',evidence:{state:'ended',turn:0,messageSeq:1,endSeq:2,reason:'completed'},allowedTools:[],memory:[],inputText:JSON.stringify({task:{id:taskId,version:1,title:'调查',goal:'核对证据',scope:'general'},role:{id:roleId,version:2,name:'调查岗',duty:'调查',dataScope:'只读',executionScope:'代拟'}}),createdAt:'2026-09-11T10:00:00.000Z'}
+test('未知处置读取独立状态和原身份，明确请求幂等且不能伪造完成证据',async()=>{
+ const disposition={schema:'teloa.task-run-submission-disposition/v1',requestId:id,runId:id,sessionId:row.sessionId,nativeRequestId:id,inputSha256:'a'.repeat(64),runtimeId:roleId,logCut:0,logSha256:'b'.repeat(64),acknowledgedUnknown:true,closedAt:row.createdAt}
+ const unknown={...row,state:'submitting',evidence:null,stopRequestedAt:row.createdAt,submissionRecovery:'unknown'},closed={...row,state:'submission_unknown',evidence:null,stopRequestedAt:row.createdAt,submissionDisposition:disposition},calls:unknown[]=[]
+ const api=createTaskRunApi(async(method,input)=>{calls.push([method,input]);return method==='task-runs/list'?[unknown]:closed})
+ const run=(await api.list(taskId))[0]!,saved=await api.disposeUnknown(run)
+ assert.equal(saved.state,'submission_unknown');assert.equal(saved.id,id);assert.equal(saved.reason,undefined);assert.deepEqual(saved.submissionDisposition,disposition)
+ assert.deepEqual(calls.at(-1),['task-runs/dispose-unknown',{runId:id,requestId:id,acknowledgeUnknown:true}])
+ for(const changed of [{...closed,evidence:row.evidence},{...closed,stopRequestedAt:null},{...closed,submissionDisposition:{...disposition,runId:taskId}},{...closed,submissionDisposition:{...disposition,acknowledgedUnknown:false}}])await assert.rejects(createTaskRunApi(async()=>[changed]).list(taskId))
+})
+const sessionRead=(conversation:unknown,anchor:unknown,run:unknown=anchor,currentRunId=(run as {id:string}).id)=>({schema:'teloa.task-run-session/v1',conversation,anchor,currentRunId,run})
+
 const planContext={occurrenceId:'44444444-4444-4444-8444-444444444444',goal:'核对证据',dataScope:'计划固定资料范围',delivery:'交付核对记录',notice:'资料范围是工作说明，不授予读取或执行权限；实际权限以岗位授权为准。'}
 const plannedRow={...row,inputText:JSON.stringify({task:{id:taskId,version:1,title:'调查',goal:'核对证据',scope:'general'},planContext,role:{id:roleId,version:2,name:'调查岗',duty:'调查',dataScope:'只读',executionScope:'代拟'}})}
 test('业务事件计划的真实终态可列出并打开，固定事件须属于本轮owner范围与谱系',async t=>{
@@ -14,19 +26,19 @@ test('业务事件计划的真实终态可列出并打开，固定事件须属�
  const input={schema:'teloa.task-run-input/v2',task:{id:taskId,version:1,title:'调查',goal:'核对证据',scope},role:roleSnapshot,lineage,planContext:{...planContext,event}}
  const sessionId='task-run-'+id,fixed={...row,roleSnapshot,lineage,sessionId,agentPresetId:'standard',inputText:JSON.stringify(input)}
  const conversation={id,ownerId,title:'调查',scopeIds:['general'],version:1,status:'ready',requestedSessionId:sessionId,sessionId,createdAt:row.createdAt,requestId:id,purpose:'task-run',run:{taskId,taskVersion:1,roleId,roleVersion:2,agentPresetId:'standard'}}
- const api=createTaskRunApi(async method=>method==='conversations/read'?conversation:[fixed])
+ const api=createTaskRunApi(async method=>method==='conversations/read'?conversation:method==='task-runs/session'?sessionRead(conversation,fixed):[fixed])
  const saved=(await api.list(taskId))[0]!
  assert.deepEqual(saved.planContext?.event,event);assert.equal(saved.state,'ended');assert.equal(saved.reason,'completed')
  assert.equal((await api.chatPresentation(sessionId))?.runId,id)
  await t.test('恢复后的definition世代3与新Task的round世代1独立读回',async()=>{
   const resumedEvent={...event,controlGeneration:3},resumed={...fixed,inputText:JSON.stringify({...input,planContext:{...planContext,event:resumedEvent}})}
   const calls:unknown[]=[]
-  const resumedApi=createTaskRunApi(async(method,payload)=>{calls.push([method,payload]);return method==='conversations/read'?conversation:[resumed]})
+  const resumedApi=createTaskRunApi(async(method,payload)=>{calls.push([method,payload]);return method==='conversations/read'?conversation:method==='task-runs/session'?sessionRead(conversation,resumed):[resumed]})
   const restored=(await resumedApi.list(taskId))[0]!
   assert.equal(restored.planContext?.event?.controlGeneration,3);assert.equal(restored.lineage?.controlGeneration,1)
   assert.deepEqual(restored.planContext?.event,resumedEvent)
   assert.equal((await resumedApi.chatPresentation(sessionId))?.runId,id)
-  assert.deepEqual(calls,[['task-runs/list',{taskId}],['conversations/read',{sessionId}],['task-runs/list',{taskId}]])
+  assert.deepEqual(calls,[['task-runs/list',{taskId}],['conversations/read',{sessionId}],['task-runs/session',{sessionId}]])
  })
  for(const invalid of [
   {...event,event:{...event.event,ownerId:'another-owner'}},
@@ -64,6 +76,20 @@ test('群续办与冻结结果映射可读取运行目录，损坏或跨业务�
  await assert.rejects(read({...input,businessContext:{...businessContext,resultMappings:[resultMapping,resultMapping]}}))
 })
 const configurationFailedRow={...row,linkVersion:0,state:'configuration_failed',evidence:null,agentPresetId:'standard',configurationError:{code:'teloa/preset-unavailable',stage:'preset-resolve',message:'标准模式暂不可用'},inputText:JSON.stringify({task:{id:taskId,version:1,title:'调查',goal:'核对证据',scope:'general'},role:{id:roleId,version:2,name:'调查岗',duty:'调查',dataScope:'只读',executionScope:'代拟',runtimeConfig:{agentPresetId:'standard'}}})}
+test('权限解析阶段：合法失败回包保留错误详情，不阻断同任务的其他运行',async()=>{
+ const configurationError={code:'teloa/permission-mode-unavailable',stage:'permission-resolve',message:'宿主没有配置请求的权限模式预设。'}
+ const failed={...configurationFailedRow,id:roleId,configurationError},calls:unknown[]=[]
+ const runs=await createTaskRunApi(async(method,payload)=>{calls.push([method,payload]);return [row,failed]}).list(taskId)
+ assert.equal(runs.length,2);assert.equal(runs[0]?.state,'ended');assert.equal(runs[1]?.state,'configuration_failed')
+ assert.deepEqual(runs[1]?.configurationError,configurationError)
+ assert.deepEqual(calls,[['task-runs/list',{taskId}]])
+})
+test('权限解析阶段：未知配置失败阶段仍按损坏宿主回包拒绝',async()=>{
+ for(const stage of ['permission-unknown','',null,42,{stage:'permission-resolve'}]){
+  const failed={...configurationFailedRow,configurationError:{...configurationFailedRow.configurationError,stage}}
+  await assert.rejects(createTaskRunApi(async()=>[failed]).list(taskId),{code:'teloa/invalid-host-response',message:'运行配置失败信息不正确。'})
+ }
+})
 test('本地业务的空摘要与可选空字段保留原固定快照，恢复原准备不重建或启动',async()=>{
  const object={...businessContext.object,summary:'',fields:[{label:'备注',value:''}]}
  assert.deepEqual(readBusinessRecordSnapshot(object,object.scope),object,'本地业务的正式回包契约允许这些空值')
@@ -93,6 +119,32 @@ test('运行模型读取固定快照，拒绝与回包模型不一致；兼容�
  const failed={...configurationFailedRow,configurationError:{...configurationFailedRow.configurationError,stage:'model-resolve'}}
  assert.equal((await createTaskRunApi(async()=>[failed]).list(taskId))[0]?.configurationError?.stage,'model-resolve')
 })
+test('SDK 执行读取固定权限与请求级模型，列表和原运行会话沿同一身份核对',async()=>{
+ const ownerId='local:teloa-owner',sessionId='task-run-'+id,modelPolicy={primary:{provider:'custom-provider',model:'example-model'}}
+ const roleSnapshot=readRunRoleSnapshot({schema:'teloa.run-role/v2',id:roleId,version:2,kind:'employee',name:'调查岗',scopes:['general'],duty:'调查',dataScope:'只读',executionScope:'代拟',skills:[],knowledge:[],responsibility:{triggers:[],autonomousActions:[],confirmationPoints:[],escalationRules:[],deliveryChecks:[]},runtimeConfig:{agentPresetId:'standard',model:{provider:'ollama',model:'qwen3:8b'}},authorization:{kind:'task',taskId,taskContentVersion:1},twinConsent:null})
+ const lineage={schema:'teloa.work-lineage/v1',ownerId,rootTaskId:taskId,definition:null,parentRunId:null,definitionControlId:null,roundControlId:id,controlGeneration:1,budgetAccountId:id}
+ const input={schema:'teloa.task-run-input/v2',task:JSON.parse(row.inputText).task,role:roleSnapshot,lineage,modelPolicy,permissionMode:'read-only',modelPolicyOverride:true}
+ const fixed={...row,roleSnapshot,lineage,sessionId,agentPresetId:'standard',modelPolicy,permissionMode:'read-only',modelPolicyOverride:true,inputText:JSON.stringify(input)}
+ const conversation={id,ownerId,title:'调查',scopeIds:['general'],version:1,status:'ready',requestedSessionId:sessionId,sessionId,createdAt:row.createdAt,requestId:id,purpose:'task-run',run:{taskId,taskVersion:1,roleId,roleVersion:2,agentPresetId:'standard'}}
+ const api=createTaskRunApi(async method=>method==='conversations/read'?conversation:method==='task-runs/session'?sessionRead(conversation,fixed):[fixed]),saved=(await api.list(taskId))[0]!
+ assert.equal(saved.permissionMode,'read-only');assert.equal(saved.modelPolicyOverride,true);assert.deepEqual(saved.modelPolicy,modelPolicy)
+ assert.equal((await api.chatPresentation(sessionId))?.runId,id)
+ for(const permissionMode of ['workspace-write','danger-full-access'])assert.equal((await createTaskRunApi(async()=>[{...fixed,permissionMode,inputText:JSON.stringify({...input,permissionMode})}]).list(taskId))[0]?.permissionMode,permissionMode)
+ const changedInput=(patch:Record<string,unknown>)=>({...fixed,inputText:JSON.stringify({...input,...patch})})
+ for(const invalid of [
+  {...fixed,permissionMode:'invalid'}, {...fixed,permissionMode:null}, {...fixed,permissionMode:'workspace-write'}, {...fixed,permissionMode:undefined},
+  changedInput({permissionMode:undefined}), changedInput({permissionMode:'invalid'}),
+  {...fixed,modelPolicyOverride:false}, {...fixed,modelPolicyOverride:'true'}, {...fixed,modelPolicyOverride:undefined}, changedInput({modelPolicyOverride:false}), changedInput({modelPolicyOverride:undefined}),
+  {...fixed,modelPolicy:undefined,inputText:JSON.stringify({...input,modelPolicy:undefined})},
+  {...fixed,modelPolicyOverride:undefined,inputText:JSON.stringify({...input,modelPolicyOverride:undefined})},
+  {...fixed,unrecognized:true},changedInput({unrecognized:true}),
+ ])await assert.rejects(createTaskRunApi(async()=>[invalid]).list(taskId),{code:'teloa/invalid-host-response'})
+ assert.equal((await createTaskRunApi(async()=>fixed).reconcile(saved)).permissionMode,'read-only')
+ await assert.rejects(createTaskRunApi(async()=>({...fixed,permissionMode:'workspace-write',inputText:JSON.stringify({...input,permissionMode:'workspace-write'})})).reconcile(saved),/执行目标快照发生变化/)
+ const defaultPolicy={primary:roleSnapshot.runtimeConfig!.model!},defaultInput={...input,modelPolicy:defaultPolicy},defaultFixed={...fixed,modelPolicy:defaultPolicy,inputText:JSON.stringify(defaultInput)}
+ const defaultSaved=(await createTaskRunApi(async()=>[defaultFixed]).list(taskId))[0]!
+ await assert.rejects(createTaskRunApi(async()=>({...defaultFixed,modelPolicyOverride:undefined,inputText:JSON.stringify({...defaultInput,modelPolicyOverride:undefined})})).reconcile(defaultSaved),/执行目标快照发生变化/)
+})
 test('执行目录拒绝跨任务、重复身份与伪造终态，保留实际终止原因',async()=>{
  const api=createTaskRunApi(async()=>[row]),saved=(await api.list(taskId))[0]!
  assert.equal(saved.reason,'completed');assert.equal(saved.goal,'核对证据');assert.equal(saved.roleName,'调查岗')
@@ -107,14 +159,46 @@ test('运行会话展示先核对本人专用预约与原 Run，只返回标题�
  const conversation={id,ownerId:'local:teloa-owner',title:'调查',scopeIds:['general'],version:1,status:'ready',requestedSessionId:sessionId,sessionId,createdAt:row.createdAt,requestId:id,purpose:'task-run',run:{taskId,taskVersion:1,roleId,roleVersion:2,agentPresetId:'standard'}}
  const fixed={...row,sessionId,agentPresetId:'standard',inputText:JSON.stringify({...JSON.parse(row.inputText),role:{...JSON.parse(row.inputText).role,runtimeConfig:{agentPresetId:'standard'}}})}
  const calls:string[]=[]
- const api=createTaskRunApi(async(method,payload)=>{calls.push(method);if(method==='conversations/read'){assert.deepEqual(payload,{sessionId});return conversation}assert.deepEqual(payload,{taskId});return [fixed]})
+ const api=createTaskRunApi(async(method,payload)=>{calls.push(method);if(method==='conversations/read'){assert.deepEqual(payload,{sessionId});return conversation}assert.equal(method,'task-runs/session');assert.deepEqual(payload,{sessionId});return sessionRead(conversation,fixed)})
  const result=await api.chatPresentation(sessionId)
  assert.deepEqual(result,{sessionId,runId:id,taskId,taskVersion:1,roleId,roleVersion:2,nativeRequestId:id,title:'调查',goal:'核对证据',scope:'general',conversation})
- assert.deepEqual(calls,['conversations/read','task-runs/list'])
+ assert.deepEqual(calls,['conversations/read','task-runs/session'])
+})
+test('自动工作展示优先固定业务名称和可读资料，保留原预约标题与运行输入',async()=>{
+ const sessionId='task-run-'+id,conversation={id,ownerId:'local:teloa-owner',title:'调查',scopeIds:['general'],version:1,status:'ready',requestedSessionId:sessionId,sessionId,createdAt:row.createdAt,requestId:id,purpose:'task-run',run:{taskId,taskVersion:1,roleId,roleVersion:2,agentPresetId:'standard'}},input=JSON.parse(businessRow.inputText)
+ input.role.runtimeConfig={agentPresetId:'standard'}
+ const fixed={...businessRow,sessionId,agentPresetId:'standard',inputText:JSON.stringify(input)},before=JSON.stringify([conversation,fixed])
+ const api=createTaskRunApi(async method=>method==='conversations/read'?conversation:sessionRead(conversation,fixed)),view=await api.chatPresentation(sessionId)
+ assert.equal(view?.title,'PowerShell 下载执行')
+ assert.ok(view?.goal.includes('核对证据'));assert.ok(view?.goal.includes('生产终端连接恶意域名'));assert.ok(view?.goal.includes('资产: prod-03'))
+ assert.equal(JSON.stringify([conversation,fixed]),before)
 })
 test('未绑定普通会话可继续原绑定；其他只读故障不能降级普通写入',async()=>{
  assert.equal(await createTaskRunApi(async()=>{throw {code:'teloa/not-bound'}}).chatPresentation('ordinary'),null)
  for(const code of ['teloa/forbidden','teloa/conflict','network-error'])await assert.rejects(createTaskRunApi(async()=>{throw {code}}).chatPresentation('ordinary'),error=>(error as {code:string}).code===code)
+})
+test('同Session三轮默认读取服务端规范Run，指定历史来源沿原预约anchor且不改绑',async()=>{
+ const sessionId='task-run-'+id,binding={id,ownerId:'local:teloa-owner',title:'调查',scopeIds:['general'],version:1,status:'ready',requestedSessionId:sessionId,sessionId,createdAt:row.createdAt,requestId:id,purpose:'task-run',run:{taskId,taskVersion:1,roleId,roleVersion:2,agentPresetId:'standard'}}
+ const ids=[id,'44444444-4444-4444-8444-444444444444','55555555-5555-4555-8555-555555555555'],runs=ids.map((runId,index)=>{const version=[1,4,6][index]!,input=JSON.parse(row.inputText);input.task.version=version;input.role.runtimeConfig={agentPresetId:'standard'};return {...row,id:runId,taskVersion:version,sessionId,nativeRequestId:runId,agentPresetId:'standard',evidence:{state:'ended',turn:index+1,messageSeq:index*20+1,endSeq:index*20+10,reason:'completed'},inputText:JSON.stringify(input)}}),calls:unknown[]=[]
+ const api=createTaskRunApi(async(method,payload)=>{calls.push([method,payload]);if(method==='conversations/read')return binding;if(method==='task-runs/list'){assert.deepEqual(payload,{taskId});return runs}assert.equal(method,'task-runs/session');const requested=(payload as {runId?:string}).runId;return sessionRead(binding,runs[0],runs.find(run=>run.id===requested)??runs[2],ids[2])})
+ const latest=await api.chatPresentation(sessionId);assert.equal(latest?.runId,ids[2]);assert.deepEqual(latest?.userMessages?.map(item=>item.nativeRequestId),ids);for(const runId of ids)assert.equal((await api.chatPresentation(sessionId,runId))?.runId,runId)
+ assert.equal(binding.run.taskVersion,1);assert.deepEqual(calls[1],['task-runs/session',{sessionId}]);assert.deepEqual(calls.filter(row=>(row as unknown[])[0]==='task-runs/session').at(-1),['task-runs/session',{sessionId,runId:ids[2]}])
+ const historyApi=(history:unknown)=>createTaskRunApi(async method=>method==='conversations/read'?binding:method==='task-runs/list'?history:sessionRead(binding,runs[0],runs[2],ids[2]))
+ const sibling={...runs[0]!,id:'66666666-6666-4666-8666-666666666666',sessionId:'task-run-sibling',nativeRequestId:'66666666-6666-4666-8666-666666666666'}
+ assert.equal((await historyApi([...runs,sibling]).chatPresentation(sessionId))?.userMessages?.length,3,'同Task其它Session不能成为当前会话用户气泡来源')
+ for(const history of [runs.slice(1),[...runs,runs[0]],[{...runs[0]!,nativeRequestId:sibling.nativeRequestId},...runs.slice(1)]])await assert.rejects(historyApi(history).chatPresentation(sessionId),'原anchor/current的固定输入及请求身份不能由目录改写')
+ for(const patch of [
+  {anchor:{...runs[0],taskVersion:4,inputText:runs[1]!.inputText}},
+  {run:{...runs[2],roleId:id,inputText:JSON.stringify({...JSON.parse(runs[2]!.inputText),role:{...JSON.parse(runs[2]!.inputText).role,id}})}},
+  {currentRunId:ids[0]},
+  {conversation:{...binding,ownerId:'another-owner'}},
+ ])await assert.rejects(createTaskRunApi(async method=>method==='conversations/read'?binding:{...sessionRead(binding,runs[0],runs[2],ids[2]),...patch}).chatPresentation(sessionId))
+})
+test('本人单Run会话继续沿原授权anchor读取，不依赖JSON对象键顺序',async()=>{
+ const sessionId='task-run-'+id,executor={kind:'owner',grantId:id,grantVersion:1},input={schema:'teloa.task-run-input/v3',executor,agentPresetId:'standard',allowedTools:[],task:{id:taskId,version:1,title:'调查',goal:'核对证据',scope:'general'}},fixed={...row,sessionId,agentPresetId:'standard',executor,roleId:null,roleVersion:null,inputText:JSON.stringify(input)},binding={id,ownerId:'local:teloa-owner',title:'调查',scopeIds:['general'],version:1,status:'ready',requestedSessionId:sessionId,sessionId,createdAt:row.createdAt,requestId:id,purpose:'task-run',run:{taskId,taskVersion:1,roleId:null,roleVersion:null,agentPresetId:'standard',executor:{grantVersion:1,grantId:id,kind:'owner'}}}
+ const api=createTaskRunApi(async method=>method==='conversations/read'?binding:sessionRead(binding,fixed))
+ assert.equal((await api.chatPresentation(sessionId))?.runId,id)
+ await assert.rejects(createTaskRunApi(async method=>method==='conversations/read'?{...binding,run:{...binding.run,executor:{...binding.run.executor,grantVersion:2}}}:sessionRead(binding,fixed)).chatPresentation(sessionId))
 })
 test('普通 JSON 会话没有任务投影；专用会话拒绝归属、固定版本、标题和唯一运行漂移',async()=>{
  const sessionId='task-run-'+id
@@ -125,7 +209,7 @@ test('普通 JSON 会话没有任务投影；专用会话拒绝归属、固定�
  assert.equal(await createTaskRunApi(async()=>{calls++;return ordinary}).chatPresentation(sessionId),null);assert.equal(calls,1)
  assert.equal(await createTaskRunApi(async()=>({...ordinary,status:'pending'})).chatPresentation(sessionId),null,'普通旧创建预约仍走原恢复路径')
  for(const changed of [{...binding,ownerId:'other-owner'},{...binding,sessionId:'other'},{...binding,title:'后来改名'},{...binding,run:{...binding.run,taskVersion:2}},{...binding,run:{...binding.run,roleId:id}},{...binding,run:{...binding.run,roleVersion:3}},{...binding,run:{...binding.run,agentPresetId:'other'}}]){
-  await assert.rejects(createTaskRunApi(async method=>method==='conversations/read'?changed:[fixed]).chatPresentation(sessionId))
+  await assert.rejects(createTaskRunApi(async method=>method==='conversations/read'?changed:sessionRead(binding,fixed)).chatPresentation(sessionId))
  }
  for(const runs of [[],[fixed,fixed],[fixed,{...fixed,id:roleId}],[{...fixed,sessionId:'ordinary'}]])await assert.rejects(createTaskRunApi(async method=>method==='conversations/read'?binding:runs).chatPresentation(sessionId))
 })
@@ -304,6 +388,7 @@ test('owner交付检查严格保留只读状态，旧宿主缺省兼容，不接
  const executor={kind:'owner',grantId:id,grantVersion:1},owner={...row,executor,roleId:null,roleVersion:null,stopRequestedAt:null,inputText:JSON.stringify({schema:'teloa.task-run-input/v3',executor,allowedTools:[],task:{id:taskId,version:1,title:'调查',goal:'核对证据',scope:'general'}})}
  for(const state of ['saved','review-required','unknown'] as const)assert.deepEqual((await createTaskRunApi(async()=>[{...owner,deliveryCheck:{state}}]).list(taskId))[0]?.deliveryCheck,{state})
  assert.equal((await createTaskRunApi(async()=>[owner]).list(taskId))[0]?.deliveryCheck,undefined)
+ for(const employeeChoice of [{permissionMode:'read-only'},{modelPolicyOverride:true,modelPolicy:{primary:{provider:'custom-provider',model:'example-model'}}}])await assert.rejects(createTaskRunApi(async()=>[{...owner,...employeeChoice,inputText:JSON.stringify({...JSON.parse(owner.inputText),...employeeChoice})}]).list(taskId),/本人执行不接受员工请求级选择/)
  for(const invalid of [{...owner,deliveryCheck:{state:'success'}},{...owner,deliveryCheck:{state:'review-required',message:'不可信正文'}},{...row,deliveryCheck:{state:'review-required'}},{...owner,state:'active',evidence:{state:'active',turn:0,messageSeq:1},deliveryCheck:{state:'unknown'}},{...owner,stopRequestedAt:row.createdAt,deliveryCheck:{state:'saved'}}])await assert.rejects(createTaskRunApi(async()=>[invalid]).list(taskId))
 })
 
@@ -329,4 +414,44 @@ test('planContext.occurrenceId 保持宿主领取 uuid 契约（v1–v8）；eve
  const build=(occurrenceId:string)=>({...plannedRow,inputText:JSON.stringify({...JSON.parse(plannedRow.inputText),planContext:{...planContext,occurrenceId}})})
  assert.equal((await createTaskRunApi(async()=>[build('030dda22-6472-8d74-964f-a2b4bd16b15d')]).list(taskId))[0]!.planContext?.occurrenceId,'030dda22-6472-8d74-964f-a2b4bd16b15d')
  await assert.rejects(createTaskRunApi(async()=>[build('event:44537d38-522d-8777-abea-7cedaf366259')]).list(taskId),{code:'teloa/invalid-host-response'})
+})
+
+// 来自实际安装97隔离宿主的两条原始回包；均为合成日结，未调用真实模型。
+const installed97DigestRuns=JSON.parse(readFileSync(new URL('./fixtures/task-run-delivery-installed97.json',import.meta.url),'utf8'))
+test('实际安装97员工日结交付回包保留unknown和saved，原生completed事实不改写',async t=>{
+ for(const raw of installed97DigestRuns)await t.test(raw.deliveryCheck.state,async()=>{
+  const calls:unknown[]=[]
+  const [saved]=await createTaskRunApi(async(method,payload)=>{calls.push([method,payload]);return [raw]}).list(raw.taskId)
+  assert.equal(saved!.id,raw.id);assert.equal(saved!.roleId,raw.roleId)
+  assert.equal(saved!.state,'ended');assert.equal(saved!.reason,'completed')
+  assert.deepEqual(saved!.deliveryCheck,raw.deliveryCheck)
+  assert.deepEqual(calls,[['task-runs/list',{taskId:raw.taskId}]])
+ })
+})
+test('员工交付检查仍拒绝owner专属复核态、非法形状、不适用执行身份和终态',async()=>{
+ const raw=installed97DigestRuns[0]
+ for(const changed of [
+  {...raw,deliveryCheck:{state:'review-required'}},
+  {...raw,deliveryCheck:{state:'completed'}},
+  {...raw,deliveryCheck:{state:'saved',message:'不可信说明'}},
+  {...raw,deliveryCheck:null},
+  {...raw,deliveryCheck:[]},
+  {...raw,state:'active',evidence:{state:'active',turn:1,messageSeq:5}},
+  {...raw,evidence:{...raw.evidence,reason:'error'}},
+  {...raw,stopRequestedAt:raw.createdAt},
+  {...raw,roleId:null,roleVersion:null},
+  {...raw,executor:{kind:'employee',roleId:raw.roleId,roleVersion:raw.roleVersion}},
+ ])await assert.rejects(createTaskRunApi(async()=>[changed]).list(raw.taskId),{code:'teloa/invalid-host-response'})
+})
+test('现代员工交付状态可经目录与会话往返，分身不能携带员工日结交付检查',async()=>{
+ const snapshot=readRunRoleSnapshot({schema:'teloa.run-role/v2',id:roleId,version:2,kind:'employee',name:'调查岗',scopes:['general'],duty:'调查',dataScope:'只读',executionScope:'代拟',skills:[],knowledge:[],responsibility:{triggers:[],autonomousActions:[],confirmationPoints:[],escalationRules:[],deliveryChecks:[]},runtimeConfig:{agentPresetId:'standard'},authorization:{kind:'task',taskId,taskContentVersion:1},twinConsent:null})
+ const fixed={...row,stopRequestedAt:null,roleSnapshot:snapshot,agentPresetId:'standard',inputText:JSON.stringify({schema:'teloa.task-run-input/v2',task:JSON.parse(row.inputText).task,role:snapshot}),deliveryCheck:{state:'unknown'}}
+ const conversation={id,ownerId:'local:teloa-owner',title:'调查',scopeIds:['general'],version:1,status:'ready',requestedSessionId:fixed.sessionId,sessionId:fixed.sessionId,createdAt:row.createdAt,requestId:id,purpose:'task-run',run:{taskId,taskVersion:1,roleId,roleVersion:2,agentPresetId:'standard'}}
+ const api=createTaskRunApi(async method=>method==='conversations/read'?conversation:method==='task-runs/session'?sessionRead(conversation,fixed):[fixed])
+ assert.deepEqual((await api.list(taskId))[0]?.deliveryCheck,{state:'unknown'})
+ assert.equal((await api.chatPresentation(fixed.sessionId))?.runId,id)
+ const twin=readRunRoleSnapshot({...snapshot,kind:'twin',twinConsent:{id,version:1}}),twinRow={...fixed,roleSnapshot:twin,inputText:JSON.stringify({schema:'teloa.task-run-input/v2',task:JSON.parse(row.inputText).task,role:twin})}
+ const {deliveryCheck:_,...withoutCheck}=twinRow
+ assert.equal((await createTaskRunApi(async()=>[withoutCheck]).list(taskId))[0]?.roleSnapshot?.kind,'twin')
+ await assert.rejects(createTaskRunApi(async()=>[twinRow]).list(taskId),{code:'teloa/invalid-host-response',message:'交付检查与原执行身份不一致。'})
 })

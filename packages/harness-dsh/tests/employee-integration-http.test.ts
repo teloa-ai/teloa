@@ -8,8 +8,9 @@ import {Context} from '@deepseek-ai/cordis'
 import {PostgreSqlContainer} from '@testcontainers/postgresql'
 import {Client} from '@modelcontextprotocol/sdk/client/index.js'
 import {StreamableHTTPClientTransport} from '@modelcontextprotocol/sdk/client/streamableHttp.js'
-import {initializeTeloaDatabase,RoleService} from '@teloa/backend'
-import type {EmployeeApiRuntime} from '@teloa/backend'
+import {initializeTeloaDatabase,RoleService,EmployeeIntegrationService} from '@teloa/backend'
+import type {EmployeeApiRuntime,EmployeeIntegration} from '@teloa/backend'
+import type {DigitalRole} from '@teloa/contract'
 import {Pool} from '../../backend/tests/postgres-test-lifecycle.ts'
 import {testRoleResponsibility} from '../../backend/tests/role-test-fixture.ts'
 import {TeloaClient} from '../../sdk/index.mjs'
@@ -23,14 +24,18 @@ test('独立员工HTTP/MCP鉴权、SDK和跨协议幂等、权限隔离、密钥
  const pool=new Pool({connectionString:container.getConnectionUri()});let host:ReturnType<typeof createEmployeeIntegrationHost>|undefined,server:ReturnType<typeof createServer>|undefined,mcp:Client|undefined,readMcp:Client|undefined
  t.after(async()=>{await readMcp?.close();await mcp?.close();await host?.close();if(server?.listening)await new Promise<void>(done=>server!.close(()=>done()));await pool.end();await container.stop()})
  await initializeTeloaDatabase(pool)
- const owner='local:'+randomUUID(),role=await new RoleService(pool,{id:randomUUID,now:()=>new Date().toISOString()}).create(owner,{requestId:randomUUID(),fields:{name:'HTTP协议验收岗',kind:'employee',scopes:['general'],duty:'核对本人资料',dataScope:'已授权资料',executionScope:'只读',skills:[],knowledge:[],responsibility:testRoleResponsibility}})
+ const owner='local:'+randomUUID(),roles=new RoleService(pool,{id:randomUUID,now:()=>new Date().toISOString()}),fields={name:'HTTP协议验收岗',kind:'employee',scopes:['general'],duty:'核对本人资料',dataScope:'已授权资料',executionScope:'只读',skills:[],knowledge:[],responsibility:testRoleResponsibility},role=await roles.create(owner,{requestId:randomUUID(),fields})
  await pool.query("update teloa_roles set state='active' where id=$1",[role.id]);role.state='active'
  const routes:any[]=[],ctx=new Context(),credentials=memoryCredentialPort()
+ let credentialReads=0,credentialWrites=0,runtimeCalls=0
+ const readCredential=credentials.readRecord,writeCredential=credentials.modifyRecord
+ credentials.readRecord=async(...args)=>{credentialReads++;return readCredential(...args)}
+ credentials.modifyRecord=async(...args)=>{credentialWrites++;return writeCredential(...args)}
  Reflect.set(ctx,'credentials',credentials);Reflect.set(ctx,'webServer',{register:(route:any)=>{routes.push(route);return()=>{routes.splice(routes.indexOf(route),1)}}})
  // 这里检验HTTP/协议和持久来源；真实原生执行另在隔离工作台验收，不以此替身冒充。
- const unused=async():Promise<never>=>{throw new EmployeeApiError('service_unavailable','Local protocol fixture does not execute models.',503)}
+ const unused=async():Promise<never>=>{runtimeCalls++;throw new EmployeeApiError('service_unavailable','Local protocol fixture does not execute models.',503)}
  const runtime:EmployeeApiRuntime={prepare:unused,start:unused,read:unused,stop:unused,withdraw:unused,result:async()=>undefined}
- host=createEmployeeIntegrationHost(ctx,{owner,pool:async()=>pool,employees:async()=>[role],scopes:async()=>['general'],runtime,admit:run=>Promise.resolve().then(run),report:()=>{}})
+ host=createEmployeeIntegrationHost(ctx,{owner,pool:async()=>pool,employees:()=>roles.list(owner,{}),scopes:async()=>['general'],runtime,admit:run=>Promise.resolve().then(run),report:()=>{}})
  server=createServer((req,res)=>{const path=new URL(req.url!,'http://127.0.0.1').pathname,route=routes.find(r=>r.kind==='exact'?r.path===path:path===r.path||path.startsWith(r.path+'/'));if(route)void route.handler(req,res);else res.writeHead(404).end()})
  await new Promise<void>(done=>server.listen(0,'127.0.0.1',done))
  const origin='http://127.0.0.1:'+(server.address() as {port:number}).port
@@ -38,6 +43,29 @@ test('独立员工HTTP/MCP鉴权、SDK和跨协议幂等、权限隔离、密钥
  assert.equal((await (await fetch(origin+'/api/v1/openapi.json')).json()).openapi,'3.1.0')
  const create=(name:string,permissions:string[],webhookUrl?:string)=>host.owner('employee-integrations/create',{name,employeeId:role.id,expectedEmployeeVersion:role.version,scope:'general',permissions,maxConcurrent:2,expiresInDays:7,...webhookUrl?{webhookUrl}:{}}) as Promise<{integration:{id:string};apiKey:string;signingSecret?:string}>
  const issued=await create('业务集成',['read','execute','cancel'],'http://127.0.0.1:1/unused-callback'),readonly=await create('只读集成',['read'])
+ await t.test('本人集成列表过滤员工资格与他人记录，拒绝参数且不回显凭据、不创建工作',async()=>{
+  const paused=await roles.create(owner,{requestId:randomUUID(),fields:{...fields,name:'暂停员工'}},{state:'paused'})
+  const retired=await roles.create(owner,{requestId:randomUUID(),fields:{...fields,name:'退役员工'}})
+  const legacy=await roles.create(owner,{requestId:randomUUID(),fields:{...fields,name:'旧版无职责员工'}})
+  await pool.query("update teloa_roles set state='retired' where id=$1",[retired.id])
+  await pool.query("update teloa_roles set definition=definition-'responsibility' where id=$1",[legacy.id])
+  const twin=await roles.ensurePersonalTwin(owner),foreignOwner='local:'+randomUUID()
+  const foreignRole=await roles.create(foreignOwner,{requestId:randomUUID(),fields:{...fields,name:'他人的员工'}})
+  const foreignKeys=new EmployeeIntegrationService(pool,{write:async()=>{throw Error('无回调集成不得写凭据')},read:async()=>undefined,remove:async()=>{}})
+  const foreign=await foreignKeys.create(foreignOwner,{name:'他人的集成',employeeId:foreignRole.id,expectedEmployeeVersion:foreignRole.version,scope:'general',permissions:['read'],maxConcurrent:1,expiresInDays:7})
+  const stored=await pool.query('select * from teloa_employee_integrations order by id'),reads=credentialReads,writes=credentialWrites
+  const listed=await host!.owner('employee-integrations/list',{}) as {items:EmployeeIntegration[];employees:DigitalRole[];scopes:string[]}
+  assert.deepEqual(listed.items.map(item=>item.id).sort(),[issued.integration.id,readonly.integration.id].sort())
+  assert.deepEqual(listed.employees.map(employee=>employee.id),[role.id]);assert.deepEqual(listed.scopes,['general'])
+  assert.ok([paused.id,retired.id,legacy.id,twin.id,foreignRole.id].every(id=>!listed.employees.some(employee=>employee.id===id)))
+  const text=JSON.stringify(listed)
+  for(const secret of [issued.apiKey,issued.signingSecret!,readonly.apiKey,foreign.apiKey,...stored.rows.map((row:{token_hash:string})=>row.token_hash)])assert.equal(text.includes(secret),false,'列表不得回显凭据正文或其摘要')
+  for(const item of listed.items){assert.equal('ownerId' in item,false);assert.equal('tokenHash' in item,false);assert.equal('apiKey' in item,false);assert.equal('signingSecret' in item,false)}
+  for(const payload of [{ownerId:foreignOwner},{employeeId:foreignRole.id},{scope:'other'},{apiKey:issued.apiKey},{limit:1}])await assert.rejects(()=>host!.owner('employee-integrations/list',payload),{code:'teloa/invalid-input'})
+  assert.deepEqual((await pool.query('select * from teloa_employee_integrations order by id')).rows,stored.rows)
+  assert.equal((await pool.query('select count(*)::integer as count from teloa_employee_api_work')).rows[0].count,0)
+  assert.equal(credentialReads,reads);assert.equal(credentialWrites,writes);assert.equal(runtimeCalls,0)
+ })
  assert.equal(issued.signingSecret?.length,43,'按正式CredentialKey规则派生凭据槽，不能直接使用数字开头的UUID')
  assert.equal((await credentials.readRecord(('teloa-employee-api/i'+issued.integration.id.replaceAll('-','')) as never))?.kind,'grant')
  const client=new TeloaClient({baseUrl:origin,apiKey:issued.apiKey}),readClient=new TeloaClient({baseUrl:origin,apiKey:readonly.apiKey})

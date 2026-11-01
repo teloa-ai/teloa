@@ -11,6 +11,7 @@ let browser:any,script:string,styles:string,temp:string
 const entry=`
 import React from 'react';import {createRoot} from 'react-dom/client';
 import {BusinessBuilderDirectory} from '${client}BusinessBuilderDirectory.tsx';
+import {BusinessBuilderPreviewMessage} from '${client}BusinessBuilderPreviewMessage.tsx';
 import {BusinessBuilderPanel} from '${client}BusinessBuilderPanel.tsx';
 import {BusinessBuilderFlow} from '${client}business-builder-flow.ts';
 import {I18nProvider} from '${client}i18n/provider.tsx';import {translateMessage} from '${client}i18n/messages.ts';
@@ -26,6 +27,7 @@ const definition={format:'teloa.business-object-type/v1',domain:'sales',id:'tick
 let draft={ownerId:'owner',id:'12345678-1234-4234-8234-123456789012',scope:'sales',revision:1,baseVersion:0,status:'draft',hash:'a'.repeat(64),createdAt:'2026-09-29T00:00:00.000Z',updatedAt:'2026-09-29T00:00:00.000Z',candidate:{format:'teloa.business-configuration/v1',scope:'sales',title:en?'Customer care':'客户服务',sources:[],definitions:[],pages:[]}};
 let binding={kind:'builder',requestId:'12345678-1234-4234-8234-123456789013',title:'新业务',draftId:draft.id,sessionId:'native-session',createdAt:draft.createdAt,updatedAt:draft.updatedAt};
 const api={byRequest:async input=>{fixture.calls.push('by-request:'+input.requestId);return binding},reserve:async input=>{fixture.calls.push('reserve:'+input.requestId);return binding},bind:async input=>{fixture.calls.push('bind:'+input.requestId);binding={...binding,sessionId:input.sessionId};return binding},bySession:async()=>binding,draft:async()=>{fixture.calls.push('draft');draft={...draft,revision:fixture.revision,hash:(fixture.revision===1?'a':'b').repeat(64)};return draft},preview:async input=>{fixture.calls.push('preview:'+input.expectedRevision);return {draftId:draft.id,revision:input.expectedRevision,candidateHash:draft.hash,baseVersion:0,dependencyHash:draft.hash,receipt:draft.hash,changes:{rows:[],truncated:false},issues:[]}},page:async input=>{fixture.calls.push('page:'+input.pageId+':'+input.expectedRevision);if(fixture.failPage)throw Object.assign(Error('private scope/internal id'),{code:'teloa/invalid-input'});return {mode:'preview',scope:'sales',configurationHash:draft.hash,draftId:draft.id,revision:input.expectedRevision,page:{kind:'records',definition:pages.find(p=>p.id===input.pageId),objectType:definition,emptyState:'no-records'}}},apply:async input=>{fixture.calls.push('apply');if(fixture.holdSave)await new Promise(resolve=>{releaseSave=resolve});receipt={scope:'sales',version:1,configurationHash:draft.hash,requestId:input.requestId};if(fixture.lost)throw Error('internal request secret');return receipt},receipt:async()=>{fixture.calls.push('receipt');return receipt}};
+api.generationMode=async()=>({sessionId:binding.sessionId,draftId:draft.id,revision:draft.revision,mode:fixture.generationMode??'preview'});api.setGenerationMode=async input=>{fixture.generationMode=input.mode;return api.generationMode()};
 let showDirectory=false;fixture.directory=()=>{showDirectory=true;render()};
 api.list=async()=>({items:draft.status==='discarded'?[]:[{binding,draft:{id:draft.id,title:draft.candidate.title,scope:draft.scope,revision:draft.revision,status:draft.status,updatedAt:draft.updatedAt}}]});
 api.discard=async input=>{fixture.calls.push('discard:'+input.expectedRevision);if(fixture.holdDiscard)await new Promise(resolve=>{fixture.releaseDiscard=resolve});if(draft.status!=='discarded')draft={...draft,status:'discarded',revision:draft.revision+1};if(fixture.loseDiscard){fixture.loseDiscard=false;throw Error('private discard details')};return draft};
@@ -44,7 +46,15 @@ fixture.leave=()=>{void flow.requestLeave().then(value=>{fixture.leaveResult=val
 fixture.emptyPlan=async kind=>{await fixture.completePlan();fixture.noSetupChanges=kind!=='rejected';if(kind!=='resources')plan={...plan,resources:[{id:'configuration',kind:'business-configuration',title:'页面',version:'1',description:'页面'}]};await flow.refreshSetupPlan()};
 fixture.corruptSetup=()=>{setupJournal='{broken';render()};
 fixture.snapshot=()=>flow.getSnapshot();fixture.refreshDraft=()=>flow.refreshDraft();
-const app=createRoot(document.getElementById('root'));const render=()=>app.render(<I18nProvider runtime={runtime}><main className={tokens.tokens}>{showDirectory?<BusinessBuilderDirectory flow={flow} open={()=>{fixture.opened.push('builder')}}/>:<BusinessBuilderPanel flow={flow} renderPage={projection=><article data-page={projection.page.definition.id}><h3>{projection.page.definition.title}</h3><p>{en?'No records yet':'还没有记录'}</p></article>} onOpenSaved={result=>fixture.opened.push(result)}/> }</main></I18nProvider>);
+
+fixture.previewFields=async()=>{const fields=[{name:'subject',label:en?'Subject':'主题',type:'text',from:'主题',required:true},{name:'guests',label:en?'Guest count':'来宾人数',type:'number',from:'人数',required:true,integer:true,minimum:0}];draft={...draft,candidate:{...draft.candidate,definitions:[{kind:'object-type',definition:{...definition,fields}}],pages:pages.map(p=>({...p,fields:fields.map(f=>f.name)}))}};await flow.restoreSession('native-session')};
+let messageProps;const nativeEntries=[{options:{key:'assistant-step',priority:0},component:props=><div data-native="true">{props.node.data.blocks.map(b=>b.text).join('')}</div>}];
+fixture.message=(state,raw,ordinary=false)=>{
+ const record=(seq,data)=>({event:{seq,type:'plugin:teloa/business-builder-preview',ignorable:true,data:{owner:'owner',sessionId:'native-session',draftId:draft.id,...data}}});
+ const entries=ordinary?[]:[record(0,{kind:'mode',requestId:'mode-one',revision:1,mode:'preview'}),{event:{type:'turn/start',seq:1,data:{turn:1}}},record(2,{kind:'prepared',requestId:'request-one',messageId:'input-one',modeRequestId:'mode-one',turn:1,step:1,revision:1,draftHash:'a'.repeat(64),fingerprint:'b'.repeat(64)}),{event:{type:'step/start',seq:3,data:{turn:1,step:1}}},{event:{type:'user/message',seq:4,data:{id:'input-one',source:{kind:'user'}}}},{event:{type:'assistant/message',seq:5,data:{turn:1,step:1,message:{id:'answer-one'}}}},...(state==='cancelled'?[]:[record(6,{kind:'settled',requestId:'request-one',state,revision:state==='saved'?2:1,...state==='saved'?{hash:'c'.repeat(64)}:{}})]),{event:{type:'turn/end',seq:7,data:{turn:1,reason:{kind:state==='cancelled'?'aborted':state==='saved'?'completed':'error'}}}}];
+ const snapshot={entries},blocks=[{kind:'text',text:raw}];messageProps={source:{sessionId:'native-session',events:{subscribe:()=>()=>{},getSnapshot:()=>snapshot}},renderer:{subscribe:()=>()=>{},getSnapshot:()=>nativeEntries,isLive:()=>true},node:{kind:'assistant-step',anchorSeq:5,data:{status:'settled',turn:1,step:1,blocks,finalNode:{seq:5,turn:1,step:1,messageId:'answer-one',blocks}}},usePresentation:()=>false,renderSlot:()=>null};render()
+};
+const app=createRoot(document.getElementById('root'));const render=()=>app.render(<I18nProvider runtime={runtime}><main className={tokens.tokens}>{showDirectory?<BusinessBuilderDirectory flow={flow} open={()=>{fixture.opened.push('builder')}}/>:<BusinessBuilderPanel flow={flow} renderPage={projection=><article data-page={projection.page.definition.id}><h3>{projection.page.definition.title}</h3><p>{en?'No records yet':'还没有记录'}</p></article>} onOpenSaved={result=>fixture.opened.push(result)}/> }{messageProps&&<BusinessBuilderPreviewMessage {...messageProps}/>}</main></I18nProvider>);
 render();fixture.load(true);
 `
 before(async()=>{
@@ -202,4 +212,32 @@ test('损坏方案恢复日志显示明确读取错误，保留方案而不发�
  assert.equal(await page.getByRole('heading',{name:'完整业务方案',exact:true}).isVisible(),true);assert.deepEqual(errors,[])
  assert.equal(await page.getByRole('button',{name:'采用已选变更',exact:true}).count(),0)
  assert.equal(await page.evaluate(()=>(window as any).builderFixture.calls.includes('setup-apply')),false)
+})
+
+test('可信预览生成方式从原面板明确切换，重开保持同草案和方式，不触发采用或资源准备',async t=>{
+ const page=await browser.newPage({viewport:{width:600,height:1000}});page.setDefaultTimeout(3000);t.after(()=>page.close());await page.route('**/*',(route:any)=>route.abort())
+ await page.setContent('<html lang="zh-CN"><body><div id="root"></div></body></html>');await page.addStyleTag({content:styles});await page.addScriptTag({content:script})
+ await page.getByText('更多搭建选项',{exact:true}).click();const mode=page.getByRole('combobox',{name:'生成方式',exact:true});await mode.waitFor();assert.equal(await mode.inputValue(),'preview')
+ const before=await page.evaluate(()=>(window as any).builderFixture.snapshot().draft)
+ await mode.selectOption('assisted');await page.waitForFunction(()=>(window as any).builderFixture.snapshot().generationMode==='assisted')
+ await page.evaluate(async()=>{const f=(window as any).builderFixture;f.rebuild();await f.load(true)})
+ await page.waitForFunction(()=>(window as any).builderFixture.snapshot().generationMode==='assisted');await page.getByText('更多搭建选项',{exact:true}).click();assert.equal(await mode.inputValue(),'assisted')
+ await mode.selectOption('preview');await page.waitForFunction(()=>(window as any).builderFixture.snapshot().generationMode==='preview')
+ const after=await page.evaluate(()=>(window as any).builderFixture.snapshot().draft);assert.equal(after.id,before.id);assert.equal(after.revision,before.revision)
+ assert.equal(await page.evaluate(()=>(window as any).builderFixture.calls.some((x:string)=>['apply','setup-apply','setup-prepare-confirmed'].includes(x))),false)
+ await page.screenshot({path:'/tmp/teloa-builder-panel/zh-CN-preview-mode.png',fullPage:true})
+})
+
+test('预览保存状态与字段约束可读，原始结构化回复折叠完整且安全，普通JSON和代码保持原renderer',async t=>{
+ const page=await browser.newPage({viewport:{width:900,height:1000}});page.setDefaultTimeout(3000);t.after(()=>page.close());await page.route('**/*',(route:any)=>route.abort())
+ await page.setContent('<html lang="zh-CN"><body><div id="root"></div></body></html>');await page.addStyleTag({content:styles});await page.addScriptTag({content:script});await page.evaluate(()=>(window as any).builderFixture.previewFields())
+ const raw='{"title":"<img src=x onerror=window.previewInjected=true>"}\n完整原始回复结束'
+ await page.evaluate((raw:string)=>(window as any).builderFixture.message('saved',raw),raw)
+ const card=page.getByRole('region',{name:'草案预览状态'});await card.waitFor();assert.match(await card.innerText(),/草案预览已更新/);assert.equal(await card.locator('pre').isVisible(),false)
+ const fields=page.getByRole('region',{name:'记录与字段'});assert.match(await fields.innerText(),/来宾人数/);assert.match(await fields.innerText(),/仅允许整数/);assert.match(await fields.innerText(),/最小值 0/)
+ assert.equal(await page.getByRole('combobox',{name:'生成方式'}).isVisible(),false,'高级方式不是必选主区配置')
+ await page.screenshot({path:'/tmp/teloa-builder-panel/zh-CN-preview-receipt-and-fields.png',fullPage:true})
+ await card.getByText('查看原始回复',{exact:true}).click();assert.equal(await card.locator('pre').textContent(),raw);assert.equal(await card.locator('img').count(),0);assert.equal(await page.evaluate(()=>(window as any).previewInjected===true),false)
+ for(const state of ['failed','unknown','cancelled']){await page.evaluate(({state,raw}:{state:string;raw:string})=>(window as any).builderFixture.message(state,raw),{state,raw});await page.waitForFunction(()=>!document.querySelector('[aria-label="草案预览状态"]')?.textContent?.includes('草案预览已更新'));assert.doesNotMatch(await card.innerText(),/草案预览已更新/)}
+ for(const raw of ['{"normal":"JSON answer"}','const code = "ordinary";']){await page.evaluate((raw:string)=>(window as any).builderFixture.message('saved',raw,true),raw);await page.locator('[data-native]').waitFor();await page.waitForFunction((raw:string)=>document.querySelector('[data-native]')?.textContent===raw,raw);assert.equal(await page.locator('[data-native]').textContent(),raw);assert.equal(await card.count(),0)}
 })

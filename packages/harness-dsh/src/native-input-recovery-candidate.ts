@@ -25,6 +25,40 @@ function canonical(value:unknown):string{
  return '{'+Object.keys(value).sort().map(key=>JSON.stringify(key)+':'+canonical(Reflect.get(value,key))).join(',')+'}'
 }
 
+export type NativePendingInputOccurrence=Readonly<{
+ message:UserMessage
+ event:SessionEvent & {type:'agent/inbox/spliced'}
+ target:'next-turn'|'next-step'
+}>
+
+/**
+ * 重放真实队列位置，只认可尚未领取项的同位一换一编辑。
+ * 历史已移出 id、跨队列重复或改写来源不能成为新的受理根；不产生许可。
+ */
+export function nativePendingInputOccurrence(events:readonly SessionEvent[],messageId:string):NativePendingInputOccurrence|undefined{
+ try{
+  const queues:{'next-turn':NativePendingInputOccurrence[];'next-step':NativePendingInputOccurrence[]}={'next-turn':[],'next-step':[]}
+  const seen=new Set<string>(),invalid=new Set<string>()
+  for(const event of events){
+   if(event.type!=='agent/inbox/spliced')continue
+   const {target,start,inserted}=event.data,removedCount=event.data.removedCount??0
+   if((target!=='next-turn'&&target!=='next-step')||!Number.isSafeInteger(start)||start<0||start>queues[target].length||!Number.isSafeInteger(removedCount)||removedCount<0||removedCount>queues[target].length-start)return
+   const queue=queues[target],removed=queue.slice(start,start+removedCount)
+   for(const message of inserted){
+    if(seen.has(message.id)){
+     const previous=removed[0]
+     if(event.data.outcome!=='canceled'||removedCount!==1||inserted.length!==1||!previous||previous.message.id!==message.id||message.source.kind!=='user'||canonical(previous.message.source)!==canonical(message.source))invalid.add(message.id)
+    }
+    seen.add(message.id)
+   }
+   queue.splice(start,removedCount,...inserted.map(message=>({message,event,target})))
+  }
+  if(invalid.has(messageId))return
+  const matches=[...queues['next-turn'],...queues['next-step']].filter(row=>row.message.id===messageId)
+  return matches.length===1?matches[0]:undefined
+ }catch{return undefined}
+}
+
 /**
  * 复用官方完整 Inbox 投影，只筛选可以进一步核验持久受理记录的全部原始根。
  * 不读取账号、许可或账本，不打开 Agent，不重放 Inbox，也不因候选数据授予恢复权限。
@@ -42,13 +76,12 @@ export function nativeInputRecoveryCandidate({snapshot,inbox}:NativeInputRecover
   for(const event of events){
    if(event.type==='turn/start'){activeTurn=true;claimed=false}
    else if(event.type==='turn/end'){activeTurn=false;claimed=false}
-   else if(activeTurn&&event.type==='agent/inbox/spliced'&&(event.data.removedCount??0)>0)claimed=true
+   else if(activeTurn&&event.type==='agent/inbox/spliced'&&event.data.outcome!=='canceled'&&(event.data.removedCount??0)>0)claimed=true
   }
   if(activeTurn&&claimed)return
   for(const message of messages){
-   const matches=events.filter(event=>event.type==='agent/inbox/spliced'&&event.data.inserted.some((inserted:UserMessage)=>inserted.id===message.id))
-   const event=matches[0]
-   if(matches.length!==1||!event||event.type!=='agent/inbox/spliced'||event.seq<inheritedEventCount||event.data.target!=='next-turn'||event.data.inserted.length!==1||message.source.kind==='tool'||canonical(event.data.inserted[0])!==canonical(message))return
+   const occurrence=nativePendingInputOccurrence(events,message.id),event=occurrence?.event
+   if(!occurrence||!event||event.seq<inheritedEventCount||occurrence.target!=='next-turn'||event.data.inserted.length!==1||message.source.kind==='tool'||canonical(occurrence.message)!==canonical(message))return
    const rpcId=Reflect.get(message.source,'rpcId')
    if(rpcId!==undefined&&(typeof rpcId!=='string'||!rpcId))return
    const identity=nativeInputIdentity(message,typeof rpcId==='string'?rpcId:undefined)

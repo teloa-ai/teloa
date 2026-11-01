@@ -7,6 +7,7 @@ import {tmpdir} from 'node:os'
 import {spawnSync} from 'node:child_process'
 import {fileURLToPath,pathToFileURL} from 'node:url'
 import type {Agent} from '@deepseek-ai/dsh-agent'
+import type {Context} from '@deepseek-ai/cordis'
 import type {UserMessage} from '@deepseek-ai/dsh-session'
 import type {SessionController,SessionPromptRequest,SessionUpdateQueueRequest} from '@deepseek-ai/dsh-api-session-controller'
 import {patchedSessionFixture} from './native-final-session.ts'
@@ -49,11 +50,17 @@ export async function patchedControllerPackage(t:Cleanup){
 
 /** 真 Controller 与 AgentLoop/Inbox；maintenance 只阻止模型启动，不替换 Agent 或 send。 */
 export async function controllerAdmissionFixture(t:Cleanup){
- const session=await patchedSessionFixture(t),{ctx,agent,other}=session,controllerPackage=await patchedControllerPackage(t)
+ const session=await patchedSessionFixture(t),{ctx,agent,other}=session
  const maintain=(target:Agent)=>target.runMaintenance(signal=>new Promise<void>(done=>{
   signal.addEventListener('abort',()=>done(),{once:true})
  }))
  void maintain(agent);void maintain(other)
+ return {...session,...await attachAdmissionController(t,ctx)}
+}
+
+/** 让同一真实 Controller 也可接入公开 Loop/Adapter 的完整因果用例。 */
+export async function attachAdmissionController(t:Cleanup,ctx:Context){
+ const controllerPackage=await patchedControllerPackage(t)
  const state={attachmentCalls:0,bindCalls:0,commits:0,rollbacks:0,retired:[] as string[]}
  const intake={admit:async(content:readonly unknown[])=>structuredClone(content) as unknown[],commit:()=>{}}
  const noop=()=>()=>{}
@@ -77,7 +84,7 @@ export async function controllerAdmissionFixture(t:Cleanup){
  const controller=new controllerPackage.SessionController(ctx,{nativeOpen:false}) as AdmittingSessionController
  // Cordis 可返回 scoped Service receiver；受管 holder 与真实命令仍是同一份。
  assert.equal(Reflect.get(Reflect.get(ctx,'sessionController'),'inputAdmission'),Reflect.get(controller,'inputAdmission'))
- return {...session,controller,state,intake}
+ return {controller,state,intake}
 }
 
 export const promptRequest=(agent:Agent,rpcId='request',text='固定输入',mode:'queue'|'steer'='queue'):SessionPromptRequest=>({

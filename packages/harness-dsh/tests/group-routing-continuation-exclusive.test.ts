@@ -90,6 +90,26 @@ test('引用员工交付的续办：原任务负责人已是续办接收者，�
  assert.equal(recorded.createTask.length,0,'不得再为同一员工另建交流回应任务')
 })
 
+test('本人只补持续约束仍沿引用的原工作登记；致谢不执行，无可核目标不创建替代工作',async()=>{
+ const owner=randomUUID(),groupId=randomUUID(),rootId=randomUUID(),a=randomUUID(),taskId=randomUUID(),runId=randomUUID()
+ const work={taskId,runId,title:'原金额核对',state:'waiting',version:3,quoted:true as const,assigneeRoleId:a}
+ const constraint='本任务持续仅分析，禁止代码/文件/检索/外发，不因交接而失效。'
+ const next=randomUUID(),continued=harness({trigger:{...selfMessage(groupId,rootId,constraint,a),mentions:[a]},candidates:[{roleId:a,name:'甲员工'}],work:[work]})
+ await dispatchGroupRouting(modelStub(v2({intent:'continue',respond:[a],workTarget:{taskId,runId}})).ctx,owner,next,continued.ports,AbortSignal.timeout(20000))
+ assert.deepEqual(continued.recorded.reserved,[{taskId,operation:'continue'}])
+ assert.deepEqual([continued.decision(next)?.intent,continued.decision(next)?.respond,continued.decision(next)?.workTarget],['continue',[],{taskId,runId}])
+ assert.equal(continued.recorded.createTask.length,0,'只通过原ledger接线受理追加，不另开work或交流Task')
+ const thanks=randomUUID(),noted=harness({trigger:selfMessage(groupId,rootId,'谢谢，已知悉，无需回复。',a),candidates:[{roleId:a,name:'甲员工'}],work:[work]})
+ await dispatchGroupRouting(modelStub(v2({intent:'none'})).ctx,owner,thanks,noted.ports,AbortSignal.timeout(20000))
+ assert.deepEqual([noted.decision(thanks)?.intent,noted.recorded.reserved,noted.recorded.createTask],['none',[],[]],'引用原交付也不能把致谢强制续办')
+ const unbound=randomUUID(),missing=harness({trigger:selfMessage(groupId,rootId,constraint,a),candidates:[{roleId:a,name:'甲员工'}],work:[]})
+ await dispatchGroupRouting(modelStub(v2({intent:'continue',workTarget:{taskId,runId}})).ctx,owner,unbound,missing.ports,AbortSignal.timeout(20000))
+ assert.deepEqual([missing.decision(unbound)?.kind,missing.recorded.reserved,missing.recorded.createTask],['parse-failed',[],[]],'无宿主原工作候选时拒绝伪造target，不能扩大为新work')
+ const employeeId=randomUUID(),employee=harness({trigger:{...selfMessage(groupId,rootId,constraint,null),authorKind:'role',authorId:a,authorName:'甲员工'},candidates:[{roleId:randomUUID(),name:'乙员工'}],work:[work]})
+ await dispatchGroupRouting(modelStub(v2({intent:'continue',workTarget:{taskId,runId}})).ctx,owner,employeeId,employee.ports,AbortSignal.timeout(20000))
+ assert.deepEqual([employee.decision(employeeId)?.kind,employee.recorded.reserved,employee.recorded.createTask],['parse-failed',[],[]],'员工文本不取得本人原工作控制目标，不升级为owner追加')
+})
+
 test('续办登记被持久记为拒绝时同样不降级成新任务：保留拒绝回执，不改派',async()=>{
  const owner=randomUUID(),groupId=randomUUID(),rootId=randomUUID(),messageId=randomUUID(),a=randomUUID(),taskId=randomUUID(),runId=randomUUID()
  const {ports,recorded}=harness({trigger:selfMessage(groupId,rootId,'再继续一次原任务。',a),candidates:[{roleId:a,name:'售后'}],work:[{taskId,runId,title:'原工作',state:'waiting',version:9,quoted:true,assigneeRoleId:a}],outcome:'rejected'})

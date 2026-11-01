@@ -177,6 +177,7 @@ export const deniedPatchRowIds=new Set([
  'web','web-search-deepseek','web-fetch-http','web-deepseek-api',
  'credentials','attachment-local','llm','llm-retry','api-remotes','deepseek-llm-api-extensions',
  'system-prompt','agent-instructions','webserver','web-runtime','mcp-resources',
+ 'session-title-llm',
  'session-persistence-jsonl','session-log-download','tool-subagent-list-agents',
  'shell-env','session-log-deepseek','llm-pi-ai','open-in-app',
  'tool-skill','skill-filesystem','tool-jobs','tool-fs-search','web-startup',

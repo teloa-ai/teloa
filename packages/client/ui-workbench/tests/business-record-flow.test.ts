@@ -6,6 +6,55 @@ const source=new URL('../src/client/business-record-flow.ts',import.meta.url)
 const definition:BusinessObjectTypeDefinition={format:'teloa.business-object-type/v1',domain:'SOC',id:'ticket',version:'1.0.0',sourceId:'records',title:'工单',unit:'条',lead:'跟进事项',fields:[{name:'state',label:'状态',from:'original state',type:'enum',required:true,values:['open','done']}]}
 const snapshot=(version=1):BusinessObjectSnapshot=>({scope:'SOC',type:'ticket',id:'record-one',version,snapshotHash:'a'.repeat(64),title:'工单一',summary:'说明',source:'本地记录',observedAt:'2026-09-29T00:00:00.000Z',receivedAt:'2026-09-29T00:00:00.000Z',quality:'complete',fields:[{label:'original state',value:'open'}]})
 const rights={create:true,edit:true,archive:true}
+const typedDefinition:BusinessObjectTypeDefinition={...definition,fields:[{name:'num',label:'数量',from:'number',type:'number',required:true,integer:true},{name:'bool',label:'验收',from:'boolean',type:'boolean',required:true}]}
+test('编辑其它字段保留真实 false/0；旧字符串不因打开或保存而迁移',async()=>{
+ for(const values of [[0,false],['0','false']] as const){
+  const f=await fixture();f.session.configure(typedDefinition,rights)
+  f.session.edit({...snapshot(),fields:[{label:'number',value:values[0]},{label:'boolean',value:values[1]}]})
+  assert.deepEqual(f.session.getSnapshot().form?.values,{num:'0',bool:'false'})
+  f.session.change('title','只改标题');await f.session.save()
+  assert.deepEqual(f.calls[0]!.input.fields,[{name:'num',value:values[0]},{name:'bool',value:values[1]}])
+ }
+})
+test('本次新输入按明确声明编码，未知请求的恢复仍保留原始 scalar',async()=>{
+ const f=await fixture(),{BusinessRecordFlow}=await import('../src/client/business-record-flow.ts')
+ let raw:string|null=null
+ const journal=()=>({read:()=>raw,write:(v:string)=>{raw=v},clear:()=>{raw=null}})
+ const make=()=>new BusinessRecordFlow(f.api,()=> '11111111-1111-4111-8111-111111111111',journal).forTarget('SOC','ticket')
+ const session=make();session.configure(typedDefinition,rights);session.create();session.change('title','合成记录');session.changeField('num','0');session.changeField('bool','false')
+ f.setFail('lost');await session.save()
+ assert.equal(session.getSnapshot().phase,'unknown')
+ const restored=make();restored.configure(typedDefinition,rights)
+ assert.equal(restored.getSnapshot().phase,'unknown')
+ const pending=restored.getSnapshot().pending!
+ assert.equal(pending.kind,'create')
+ if(pending.kind!=='create')throw Error('expected create')
+ assert.deepEqual(pending.input.fields,[{name:'bool',value:false},{name:'num',value:0}],'恢复沿既有契约按字段名归一，原 scalar 不变')
+ await restored.recover();assert.equal(restored.getSnapshot().phase,'saved');assert.equal(f.calls.filter(c=>c.op==='create').length,1)
+})
+test('显式小数位声明变更冻结旧表单，不把未知请求换成新规则',async()=>{
+ const f=await fixture(),plain={...definition,fields:[{name:'price',label:'单价',from:'单价',type:'number' as const,required:true}]}
+ f.session.configure(plain,rights);f.session.create();f.session.change('title','采购');f.session.changeField('price','12.345')
+ f.session.configure({...plain,fields:[{...plain.fields[0]!,decimalScale:2}]},rights)
+ await f.session.save();assert.equal(f.session.getSnapshot().phase,'schema-changed');assert.equal(f.calls.length,0)
+})
+test('原记录表单按非负整数声明校验，普通number仍可输入负数和小数',async()=>{
+ const {businessRecordErrors}=await import('../src/client/business-record-flow.ts')
+ const quantity={name:'quantity',label:'数量',from:'数量',type:'number' as const,required:true,integer:true as const,minimum:0}
+ const inventory={...definition,fields:[quantity]},form={kind:'create' as const,title:'QM-A7',summary:'',schema:'test',definition:inventory,values:{quantity:'0'}}
+ for(const value of ['0','4'])assert.deepEqual(businessRecordErrors(inventory,{...form,values:{quantity:value}}),{})
+ for(const value of ['-1','1.5','4.0000000000000001'])assert.deepEqual(businessRecordErrors(inventory,{...form,values:{quantity:value}}),{quantity:'invalid'})
+ const {integer:_,minimum:__,...plain}=quantity
+ for(const value of ['-1','1.5'])assert.deepEqual(businessRecordErrors({...inventory,fields:[plain]},{...form,values:{quantity:value}}),{})
+})
+test('数字约束改变时原表单进入schema-changed，不能继续用旧规则提交',async()=>{
+ const f=await fixture(),quantity={name:'quantity',label:'数量',from:'数量',type:'number' as const,required:true},plain={...definition,fields:[quantity]}
+ f.session.configure(plain,rights);f.session.create();f.session.change('title','库存');f.session.changeField('quantity','-1')
+ f.session.configure({...plain,fields:[{...quantity,integer:true,minimum:0}]},rights)
+ await f.session.save()
+ assert.equal(f.session.getSnapshot().phase,'schema-changed')
+ assert.equal(f.calls.length,0)
+})
 async function fixture(){
  assert.ok(existsSync(source),'缺少固定请求和编辑恢复实现')
  const {BusinessRecordFlow}=await import('../src/client/business-record-flow.ts')

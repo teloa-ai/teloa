@@ -1,9 +1,17 @@
+import {isKnowledgeCopyOrigin,isKnowledgeCopyPreview,isKnowledgeCopyResult,type KnowledgeCopyRef,type KnowledgeCopyInput,type KnowledgeCopyOrigin,type KnowledgeCopyPreview,type KnowledgeCopyResult} from '@teloa/contract'
+import {isLocalKnowledgeCopyOrigin,isLocalKnowledgeCopyPreview,isLocalKnowledgeCopyResult,type LocalKnowledgeCopyRef,type LocalKnowledgeCopyInput,type LocalKnowledgeCopyOrigin,type LocalKnowledgeCopyPreview,type LocalKnowledgeCopyResult} from '@teloa/contract'
 import {isResourceUsagePage,type ResourceUsagePage} from '@teloa/contract'
 import { isKnowledgeResourceRevision,isKnowledgeTree,isKnowledgeTreeMutation,isKnowledgeVersion,isKnowledgeVersionSummary,isResourceDirectory,isResourceDraft,isWorkResource,isSourceReference,isResourceHistoryPage,type KnowledgeResourceRestoreInput,type KnowledgeResourceReviseInput,type KnowledgeResourceRevision,type KnowledgeTree,type KnowledgeTreeMutation,type KnowledgeVersion,type KnowledgeVersionSummary,type ResourceHistoryPage,type ResourceSpec,type ResourceDirectory,type ResourceDraft,type WorkResource,type SourceReference } from '@teloa/contract'
 import { isResourceRecoveryPage,type ResourceRecoveryPage } from '@teloa/contract'
 import {createLocalMaterialRegistration,readLocalMaterialInput,isLocalMaterialReference,isIndustryMaterialSourceId,isLocalMaterialSourceId,type LocalMaterialRegistrationInput,type LocalMaterialRegistration} from './local-material-registration.ts'
 import {isPasteKnowledge,verifyKnowledgeVersionContent,type KnowledgeReviseInput,type KnowledgeRestoreInput,type PasteKnowledge} from '@teloa/contract'
 export type ResourceApi={
+  previewKnowledgeCopy?:(input:KnowledgeCopyRef)=>Promise<KnowledgeCopyPreview>;
+  createKnowledgeCopy?:(input:KnowledgeCopyInput)=>Promise<KnowledgeCopyResult>;
+  knowledgeCopyOrigin?:(knowledgeId:string)=>Promise<KnowledgeCopyOrigin|null>;
+  previewLocalKnowledgeCopy?:(input:LocalKnowledgeCopyRef)=>Promise<LocalKnowledgeCopyPreview>;
+  createLocalKnowledgeCopy?:(input:LocalKnowledgeCopyInput)=>Promise<LocalKnowledgeCopyResult>;
+  localKnowledgeCopyOrigin?:(knowledgeId:string)=>Promise<LocalKnowledgeCopyOrigin|null>;
   registerLocalMaterial?:(input:LocalMaterialRegistrationInput)=>Promise<SourceReference>;
   localMaterialRequests?:LocalMaterialRegistration;
   readContent?:(resource:WorkResource,signal:AbortSignal)=>Promise<{resource:WorkResource;text:string}>;
@@ -27,9 +35,20 @@ export type ResourceApi={
   moveKnowledgeNode(input:{requestId:string;nodeId:string;parentId:string;expectedDirectoryRevision:number;position?:number}):Promise<KnowledgeTreeMutation>;
 }
 type Call=(endpoint:string,payload:unknown,signal?:AbortSignal)=>Promise<unknown>
+type RpcReply={ok:true;value:unknown}|{ok:false;error:{code:string;message:string;details?:unknown}}
+/** 正式工作台资源入口：领域拒绝保留回执语义，供登记恢复器和本地化提示共用。 */
+export function createResourceApiFromRpc(call:(endpoint:string,payload:unknown,signal?:AbortSignal)=>Promise<RpcReply>,journal?:Parameters<typeof createResourceApi>[1]):ResourceApi{
+  return createResourceApi(async(endpoint,payload,signal)=>{const result=await call(endpoint,payload,signal);if(!result.ok)throw Object.assign(Error(result.error.message),{rejected:true,code:result.error.code,details:result.error.details});return result.value},journal)
+}
 export function createResourceApi(call:Call,journal?:{read:()=>string|null;write:(value:string)=>void;clear:()=>void}):ResourceApi {
   const invalid=()=>Error('工作资料服务返回的内容格式不正确。')
   const api:ResourceApi={
+    async previewKnowledgeCopy(input){const value=await call('knowledge/copy-preview',input);if(!isKnowledgeCopyPreview(value)||value.origin.resourceId!==input.resourceId||value.origin.resourceVersion!==input.expectedResourceVersion||value.origin.sourceVersion!==input.sourceVersion)throw invalid();const digest=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(value.markdown));if(Array.from(new Uint8Array(digest),byte=>byte.toString(16).padStart(2,'0')).join('')!==input.sourceVersion)throw invalid();return value},
+    async createKnowledgeCopy(input){const value=await call('knowledge/copy',input);if(!isKnowledgeCopyResult(value)||value.origin.resourceId!==input.resourceId||value.origin.resourceVersion!==input.expectedResourceVersion||value.origin.sourceVersion!==input.sourceVersion||value.knowledge.item.title!==input.title.trim()||value.knowledge.version.markdown!==input.markdown.replace(/^\uFEFF/,'').replace(/\r\n?/g,'\n')||!await verifyKnowledgeVersionContent(value.knowledge.version))throw invalid();return value},
+    async knowledgeCopyOrigin(knowledgeId){const value=await call('knowledge/copy-origin',{knowledgeId});if(value!==null&&!isKnowledgeCopyOrigin(value))throw invalid();return value},
+    async previewLocalKnowledgeCopy(input){const value=await call('knowledge/local-copy-preview',input);if(!isLocalKnowledgeCopyPreview(value)||value.origin.resourceId!==input.resourceId||value.origin.resourceVersion!==input.expectedResourceVersion||value.origin.sourceVersion!==input.sourceVersion)throw invalid();const digest=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(value.markdown));if(Array.from(new Uint8Array(digest),byte=>byte.toString(16).padStart(2,'0')).join('')!==input.sourceVersion)throw invalid();return value},
+    async createLocalKnowledgeCopy(input){const value=await call('knowledge/local-copy',input);if(!isLocalKnowledgeCopyResult(value)||value.origin.resourceId!==input.resourceId||value.origin.resourceVersion!==input.expectedResourceVersion||value.origin.sourceVersion!==input.sourceVersion||value.knowledge.item.title!==input.title.trim()||value.knowledge.version.markdown!==input.markdown.replace(/^\uFEFF/,'').replace(/\r\n?/g,'\n')||!await verifyKnowledgeVersionContent(value.knowledge.version))throw invalid();return value},
+    async localKnowledgeCopyOrigin(knowledgeId){const value=await call('knowledge/local-copy-origin',{knowledgeId});if(value!==null&&!isLocalKnowledgeCopyOrigin(value))throw invalid();return value},
     async registerLocalMaterial(input){const request=readLocalMaterialInput(input),value=await call('resources/register-local-material',request);if(!isLocalMaterialReference(value,request))throw invalid();return value},
     async readContent(resource,signal){
       signal.throwIfAborted()

@@ -26,9 +26,11 @@ function workspaceFileArguments(name:string,args:unknown):boolean{
  if(!fields(args)||typeof args.file_path!=='string'||!args.file_path.trim()||args.file_path.length>1024||/[\x00-\x1f\x7f]/.test(args.file_path)||/^[A-Za-z][A-Za-z\d+.-]*:/.test(args.file_path)&&!/^[A-Za-z]:[\\/]/.test(args.file_path)||args.file_path.split(/[\\/]/).some(part=>part==='..'))return false
  // 默认工作目录自身可位于宿主 .runtime 内；绝对路径里的受保护祖先由宿主相对根判断。
  if(!/^\/|^[A-Za-z]:[\\/]|^\\\\/.test(args.file_path)&&args.file_path.split(/[\\/]/).some(part=>['.runtime','.git'].includes(part.toLowerCase())))return false
- const keys=name==='read'?['file_path','offset','limit']:name==='write'?['file_path','content']:['file_path','old_string','new_string','replace_all']
+ const keys=name==='read'?['file_path','offset','limit']:name==='write'?['file_path','content','sandbox_permissions','justification']:['file_path','old_string','new_string','replace_all','sandbox_permissions','justification']
  if(Object.keys(args).some(key=>!keys.includes(key)))return false
  if(name==='read')return ['offset','limit'].every(key=>args[key]===undefined||Number.isSafeInteger(args[key])&&(args[key] as number)>0)
+ // 官方写入/编辑仅接受成对的一次性升级请求；是否批准和真实路径范围仍由宿主与官方工具核对。
+ if((args.sandbox_permissions!==undefined||args.justification!==undefined)&&(!['workspace-write','danger-full-access'].includes(String(args.sandbox_permissions))||typeof args.justification!=='string'||!args.justification.trim()))return false
  if(name==='write')return typeof args.content==='string'
  return typeof args.old_string==='string'&&!!args.old_string.length&&typeof args.new_string==='string'&&args.old_string!==args.new_string&&(args.replace_all===undefined||typeof args.replace_all==='boolean')
 }

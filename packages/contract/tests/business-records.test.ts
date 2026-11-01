@@ -6,7 +6,7 @@ test('记录请求只校验结构，拒绝未知键、重复字段和越界',()=
  assert.equal(typeof api.readBusinessRecordCreate,'function')
  const input={scope:'crm',type:'customer',requestId,title:'客户',summary:'',fields:[{name:'state',value:'待联系'}]}
  assert.deepEqual(api.readBusinessRecordCreate(input),input)
- for(const value of [{...input,extra:true},{...input,title:''},{...input,fields:[...input.fields,...input.fields]},{...input,fields:[{name:'state',value:1}]},{...input,requestId:'bad'}])assert.throws(()=>api.readBusinessRecordCreate(value),{code:'teloa/invalid-input'})
+ for(const value of [{...input,extra:true},{...input,title:''},{...input,fields:[...input.fields,...input.fields]},{...input,fields:[{name:'state',value:NaN}]},{...input,requestId:'bad'}])assert.throws(()=>api.readBusinessRecordCreate(value),{code:'teloa/invalid-input'})
  assert.throws(()=>api.readBusinessRecordEdit({...input,id:'one',expectedVersion:0}),{code:'teloa/invalid-input'})
  assert.throws(()=>api.readBusinessRecordList({scope:'crm',type:'customer',limit:101}),{code:'teloa/invalid-input'})
  assert.throws(()=>api.readBusinessRecordGet({scope:'crm',type:'customer',id:'one',version:2147483648}),{code:'teloa/invalid-input'})

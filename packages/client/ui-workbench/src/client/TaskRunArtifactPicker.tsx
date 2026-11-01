@@ -9,7 +9,20 @@ import {localizeWorkError} from './i18n/errors.js'
 import css from './TaskPage.module.css'
 
 type Props={preservePreview:boolean;taskId:string;api:Pick<TaskRunApi,'list'|'chatPresentation'>;port:TaskArtifactPort;native:NativeArtifactApi;selected:ArtifactMessage[];select:(message:ArtifactMessage|undefined)=>void}
-const sameRun=(a:RunView,b:RunView)=>a.id===b.id&&a.taskId===b.taskId&&a.sessionId===b.sessionId&&a.nativeRequestId===b.nativeRequestId&&a.taskVersion===b.taskVersion&&a.roleVersion===b.roleVersion&&a.state===b.state&&a.reason===b.reason
+const sameRun=(a:RunView,b:RunView)=>a.id===b.id&&a.taskId===b.taskId&&a.sessionId===b.sessionId&&a.nativeRequestId===b.nativeRequestId&&a.taskVersion===b.taskVersion&&a.roleVersion===b.roleVersion&&a.state===b.state&&a.reason===b.reason&&JSON.stringify(a.evidence)===JSON.stringify(b.evidence)
+/** 同一会话可以有多轮；成果候选只取所选原生请求的正式终态区间，分页也不越界。 */
+export async function readTaskRunArtifactPage(native:NativeArtifactApi,run:RunView,beforeSeq?:number){
+ const evidence=run.evidence
+ if(run.state!=='ended'||!run.nativeRequestId||evidence?.state!=='ended'||evidence.reason!==run.reason||!Number.isSafeInteger(evidence.messageSeq)||!Number.isSafeInteger(evidence.endSeq)||evidence.messageSeq<0||evidence.endSeq<=evidence.messageSeq)throw Error('原执行缺少可核对的回复范围。')
+ const before=beforeSeq===undefined?evidence.endSeq+1:Math.min(beforeSeq,evidence.endSeq+1)
+ if(!Number.isSafeInteger(before)||before<0)throw Error('原执行历史分页位置不正确。')
+ if(before<=evidence.messageSeq+1)return {sessionId:run.sessionId,items:[],nextBeforeSeq:null}
+ const page=await native.read(run.sessionId,before),next=page.nextBeforeSeq
+ if(page.sessionId!==run.sessionId||page.items.some(item=>item.sessionId!==run.sessionId)||next!==null&&(!Number.isSafeInteger(next)||next<0||next>before))throw Error('原执行历史与所选会话不一致。')
+ const items=page.items.filter(message=>message.role==='assistant'&&!!message.text.trim()&&Number.isSafeInteger(message.seq)&&message.seq>evidence.messageSeq&&message.seq<=evidence.endSeq&&message.seq<before)
+ if(items.length&&next===before)throw Error('原执行历史分页没有推进。')
+ return {sessionId:run.sessionId,items,nextBeforeSeq:next!==null&&next>evidence.messageSeq+1?next:null}
+}
 /** 仅预览本人已确认关联的具体执行；不同轮次和不同消息不自动合稿。 */
 export function TaskRunArtifactPicker(props:Props){
  const origin=useRef({taskId:props.taskId,api:props.api,port:props.port,native:props.native,epoch:0})
@@ -32,12 +45,12 @@ function TaskRunArtifactPickerPanel({preservePreview,taskId,api,port,native,sele
    if(!valid(token))return
    const fresh=runs.find(row=>sameRun(row,run))
    if(!fresh||!linked.some(row=>row.id===run.sessionId))throw Error(t('artifact.panel.text.002'))
-   const reservation=await api.chatPresentation(fresh.sessionId)
+   const reservation=await api.chatPresentation(fresh.sessionId,fresh.id)
    if(!valid(token))return
    if(!reservation||reservation.sessionId!==fresh.sessionId||reservation.runId!==fresh.id||reservation.taskId!==taskId||reservation.taskVersion!==fresh.taskVersion||reservation.roleVersion!==fresh.roleVersion||reservation.nativeRequestId!==fresh.nativeRequestId)throw Error(t('artifact.panel.text.002'))
    await port.open(fresh.sessionId,controller.signal,()=>valid(token))
    if(!valid(token)||controller.signal.aborted)return
-   const page=await native.read(fresh.sessionId)
+   const page=await readTaskRunArtifactPage(native,fresh)
    if(!valid(token)||controller.signal.aborted)return
    if(page.sessionId!==fresh.sessionId||page.items.some(message=>message.sessionId!==fresh.sessionId))throw Error(t('nativeArtifact.wrongSession'))
    const replies=page.items.filter(message=>message.role==='assistant'&&!!message.text.trim())
@@ -51,10 +64,10 @@ function TaskRunArtifactPickerPanel({preservePreview,taskId,api,port,native,sele
   async read(sessionId,beforeSeq){
    const token=openedToken.current
    if(!valid(token)||!opened||sessionId!==opened.sessionId)throw Error(t('nativeArtifact.wrongSession'))
-   const page=await native.read(sessionId,beforeSeq)
+   const page=await readTaskRunArtifactPage(native,opened,beforeSeq)
    if(!valid(token))throw Error(t('artifact.panel.text.002'))
    if(page.sessionId!==sessionId||page.items.some(message=>message.sessionId!==sessionId))throw Error(t('nativeArtifact.wrongSession'))
-   return {...page,items:page.items.filter(message=>message.role==='assistant'&&!!message.text.trim())}
+   return page
   },
  }),[native,opened,taskId,t])
  return <section className={css.block} aria-label={t('artifact.task.aria')}>

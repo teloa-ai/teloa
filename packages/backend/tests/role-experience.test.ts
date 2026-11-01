@@ -9,6 +9,8 @@ import {PostgreSqlContainer,type StartedPostgreSqlContainer} from '@testcontaine
 import type {RunRoleMemory} from '../src/work/role-memory.ts'
 import type {MemoryProvider,ExperienceDocument,ExperienceFact,MemoryOperationState} from '../src/work/hindsight-memory.ts'
 import {initializeRoleExperience,RoleExperienceService} from '../src/work/role-experience.ts'
+import {ArtifactService,initializeArtifacts} from '../src/work/artifacts.ts'
+import {initializeArtifactSnapshots} from '../src/work/artifact-snapshots.ts'
 
 let container:StartedPostgreSqlContainer,pool:Pool
 before(async()=>{
@@ -24,7 +26,7 @@ after(async()=>{await pool?.end();await container?.stop()})
 function memory(text:string):RunRoleMemory{return {id:randomUUID(),version:1,title:'经验',markdown:text,contentHash:createHash('sha256').update(text).digest('hex'),source:{kind:'self-feedback',id:randomUUID(),version:1},visibility:{kind:'role',scopeIds:['general']}}}
 class Provider implements MemoryProvider{
  banks=new Map<string,ExperienceDocument[]>();calls:string[]=[];operations:string[]=[];status:MemoryOperationState='completed';fail=false;afterRecall=()=>{};facts?:ExperienceFact[]
- async retain(bank:string,op:string,documents:ExperienceDocument[]){this.calls.push(bank);this.operations.push(op);this.banks.set(bank,documents)}
+ async retain(bank:string,op:string,documents:ExperienceDocument[],_signal:AbortSignal){this.calls.push(bank);this.operations.push(op);this.banks.set(bank,documents)}
  async operation(){return this.status}
  async recall(bank:string){if(this.fail)throw Error('unavailable');this.afterRecall();const doc=this.banks.get(bank)![0]!;return this.facts??[{id:'fact',text:'应先验证来源',type:'experience' as const,documentId:doc.documentId,sourceFactIds:[]}]}
 }
@@ -121,4 +123,61 @@ test('不认识的事实文档不能混入；取消和错误正文摘要被拒�
  await assert.rejects(f.service.read({...f.input,signal:abort.signal}))
  const broken=memory('经验');broken.contentHash='0'.repeat(64);f.set([broken])
  await assert.rejects(f.service.read(f.input))
+})
+
+
+async function artifactExperience(){
+ await initializeArtifactSnapshots(pool);await initializeArtifacts(pool)
+ const f=fixture(),source={kind:'session' as const,id:randomUUID(),scope:'general',version:'original-v1',title:'经验来源合成成果'}
+ const artifacts=new ArtifactService(pool,{id:randomUUID,now:()=>new Date().toISOString()},async()=>({source,sessionIds:[source.id]}))
+ const artifact=await artifacts.create(f.input.ownerId,{requestId:randomUUID(),source,content:{title:'合成经验成果',sections:[{id:'body',title:'正文',text:'本轮仅供本地模拟的合成经验'}],snapshotIds:[],note:'原件'}})
+ const row=memory('本轮仅供本地模拟的合成经验');row.source={kind:'artifact',id:artifact.artifactId,version:1};f.set([row])
+ const withdraw=()=>artifacts.withdraw(f.input.ownerId,{requestId:randomUUID(),artifactId:artifact.artifactId,expectedVersion:1,source})
+ return {...f,withdraw}
+}
+test('来源快照读取后撤回，三个外部retain分支都不得发送旧正文',async()=>{
+ for(const branch of ['initial','not_found','retry_failed']){
+  const f=await artifactExperience(),load=f.input.load
+  if(branch!=='initial')await f.service.read(f.input)
+  const calls=f.provider.calls.length
+  if(branch==='initial'){
+   let first=true;f.input.load=async()=>{const rows=await load();if(first){first=false;await f.withdraw()}return rows}
+  }else{
+   f.provider.status=branch==='not_found'?'not_found':'failed'
+   if(branch==='retry_failed')await pool.query("update teloa_role_experience_indexes set retry_after=now()-interval '1 second' where owner_id=$1",[f.input.ownerId])
+   f.provider.operation=async()=>{await f.withdraw();return f.provider.status}
+  }
+  await assert.rejects(f.service.read(f.input),{code:'teloa/source-unavailable'})
+  assert.equal(f.provider.calls.length,calls,branch+'不得在撤回提交后调用retain')
+ }
+})
+test('外部retain已准入则撤回等回执结束，不能在实际发送期间越过来源锁',async()=>{
+ const f=await artifactExperience();let entered!:()=>void,release!:()=>void
+ const ready=new Promise<void>(resolve=>entered=resolve),hold=new Promise<void>(resolve=>release=resolve)
+ f.provider.retain=async(bank,op,documents)=>{f.provider.calls.push(bank);f.provider.operations.push(op);f.provider.banks.set(bank,documents);entered();await hold}
+ const reading=f.service.read(f.input);await ready
+ let withdrawn=false;const withdrawal=f.withdraw().then(()=>{withdrawn=true})
+ try{await new Promise(resolve=>setTimeout(resolve,60));assert.equal(withdrawn,false,'已准入的外发结束前撤回不能提交')}
+ finally{release();await reading;await withdrawal}
+ assert.equal(withdrawn,true);assert.equal(f.provider.calls.length,1)
+})
+
+test('已索引经验在recall前撤回，同样不调用外部召回',async()=>{
+ const f=await artifactExperience();await f.service.read(f.input);await f.service.read(f.input)
+ let calls=0;const recall=f.provider.recall.bind(f.provider),load=f.input.load
+ f.provider.recall=async bank=>{calls++;return recall(bank)}
+ let first=true;f.input.load=async()=>{const rows=await load();if(first){first=false;await f.withdraw()}return rows}
+ await assert.rejects(f.service.read(f.input),{code:'teloa/source-unavailable'})
+ assert.equal(calls,0)
+})
+test('取消外部retain会释放准入连接，原撤回继续提交',async()=>{
+ const f=await artifactExperience(),abort=new AbortController();let entered!:()=>void
+ const ready=new Promise<void>(resolve=>entered=resolve)
+ f.provider.retain=async(_bank,_op,_documents,signal)=>{entered();await new Promise<void>((_resolve,reject)=>{if(signal.aborted)reject(signal.reason);else signal.addEventListener('abort',()=>reject(signal.reason),{once:true})})}
+ const reading=f.service.read({...f.input,signal:abort.signal});await ready
+ let withdrawn=false;const withdrawal=f.withdraw().then(()=>{withdrawn=true})
+ await new Promise(resolve=>setTimeout(resolve,40));assert.equal(withdrawn,false)
+ abort.abort(new Error('本人取消本轮读取'))
+ await assert.rejects(reading,/本人取消本轮读取/);await withdrawal
+ assert.equal(withdrawn,true)
 })

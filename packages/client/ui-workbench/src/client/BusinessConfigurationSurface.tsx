@@ -22,7 +22,7 @@ import light from './light-actions.module.css'
 import {BusinessPendingChanges} from './BusinessWorkResults.js'
 import type {DashboardShareServices} from './BusinessDashboardShare.js'
 export type BusinessConfigurationServices={dashboardSharing?:DashboardShareServices|undefined;importFlow?:BusinessImportTargetFactory|undefined;dashboardApi?:BusinessDashboardApi|undefined;onDispatch?:((reference:BusinessObjectReference)=>void)|undefined;api:BusinessBuilderApi;records:BusinessRecordFlow;capabilities:BusinessRecordCapabilities;adjust:(scope:string)=>void;talk?:(scope:string,title:string)=>void;newConversation?:(scope:string,title:string)=>void;actionReady?:boolean;conversationStatus?:ReactNode;share?:((scope:string)=>ReactNode)|undefined;reviewSetup?:((scope:string)=>ReactNode)|undefined;manualSetup?:((scope:string)=>void)|undefined;selection?:BusinessConfigurationSelection;setup?:BusinessSetupServices;responsibility?:Pick<BusinessResponsibilityProps,'api'|'roles'>;taskList?:Pick<BusinessTaskListProps,'api'|'roleName'|'openTask'|'openArtifact'|'openSource'>}
-type Props={refreshKey?:number|undefined;chrome?:boolean|undefined;pageKind?:BusinessConfigurationPageKind|undefined;recordReference?:BusinessObjectReference|undefined;scope:string;services:BusinessConfigurationServices;colorScheme:'light'|'dark';legacy:()=>ReactNode;backHome:()=>void;go?:((target:BusinessTarget)=>void)|undefined;embedded?:boolean;openFull?:()=>void}
+type Props={refreshKey?:number|undefined;chrome?:boolean|undefined;pageKind?:BusinessConfigurationPageKind|undefined;recordReference?:BusinessObjectReference|undefined;scope:string;services:BusinessConfigurationServices;colorScheme:'light'|'dark';legacy:()=>ReactNode;backHome:()=>void;go?:((target:BusinessTarget)=>void)|undefined;drilldownIdentity?:object|undefined;renderDrilldown?:((target:BusinessTarget,go:(target:BusinessTarget)=>void,close:()=>void)=>ReactNode)|undefined;embedded?:boolean;openFull?:()=>void}
 const rangeLabels={'24h':'business.dashboards.range.24h','7d':'business.dashboards.range.7d','30d':'business.dashboards.range.30d','90d':'business.dashboards.range.90d',all:'business.dashboards.range.all'} as const
 type ConfigurationCurrent=NonNullable<Awaited<ReturnType<BusinessBuilderApi['current']>>>
 type DetailsRead={identity:object;status:'loading'|'failed'|'ready';current?:ConfigurationCurrent}
@@ -78,18 +78,27 @@ const pageTitleSource=(title:string,metadata:LocalizedMetadata|undefined)=>metad
  * chrome=false 时嵌在业务工作区页签里：开始工作、另建会话、业务设置（含调整与分享）、刷新由工作区页头统一提供，
  * 这里只保留本页签自己的内容；pageKind 让「业务内容」只列记录页、「统计看板」只列看板页。
  */
-export function BusinessConfigurationSurface({refreshKey=0,chrome=true,pageKind,scope,services,colorScheme,legacy,backHome,go,recordReference,embedded=false,openFull}:Props){
+export function BusinessConfigurationSurface({refreshKey=0,chrome=true,pageKind,scope,services,colorScheme,legacy,backHome,go,drilldownIdentity,renderDrilldown,recordReference,embedded=false,openFull}:Props){
  const {t,locale}=useI18n()
  const [sharing,setSharing]=useState(false),[configuring,setConfiguring]=useState(false)
  useEffect(()=>{setConfiguring(false);setSharing(false)},[scope])
  const referenceKey=JSON.stringify(recordReference)
- const controller=useMemo(()=>new BusinessConfigurationSurfaceController(services.api,scope,services.selection,recordReference,pageKind),[services.api,services.records,services.selection,scope,referenceKey,pageKind])
+ const controller=useMemo(()=>new BusinessConfigurationSurfaceController(services.api,scope,services.selection,recordReference,pageKind),[services.api,services.records,services.selection,scope,referenceKey,pageKind,drilldownIdentity])
+ const activeController=useRef(controller);activeController.current=controller
  const state=useSyncExternalStore(controller.subscribe,controller.getSnapshot,controller.getSnapshot)
  useEffect(()=>{void controller.load()},[controller,refreshKey])
  useEffect(()=>()=>controller.dispose(),[controller])
  if(state.status==='legacy')return <>{legacy()}</>
  const current=state.current,page=state.page,ranges=page?.page.kind==='dashboard'?page.page.dashboard.filters?.timeRange.options:undefined
  const pages=current?controller.pages(current):[],recordsVisible=pageKind!=='dashboard'
+ const navigate=(target:BusinessTarget)=>{
+  if(activeController.current!==controller||!controller.isCurrentPage(page))return
+  if(renderDrilldown&&controller.openDrilldown(target,page))return
+  controller.closeDrilldown();go?.(target)
+ }
+ const drilldown=state.drilldown
+ const navigateDrilldown=(target:BusinessTarget)=>{if(controller.getSnapshot().drilldown===drilldown)navigate(target)}
+ const closeDrilldown=()=>{if(activeController.current===controller&&controller.getSnapshot().drilldown===drilldown)controller.closeDrilldown()}
  return <section className={chrome?css.page:css.contentOnly} aria-label={t('business.scope.pageAria')} aria-busy={state.status==='loading'}>
   <div className={css.scroll}><div className={css.container}>
    {chrome&&<header className={css.header}>
@@ -119,11 +128,12 @@ export function BusinessConfigurationSurface({refreshKey=0,chrome=true,pageKind,
      {state.status==='ready'&&!state.selectedId&&pageKind&&<div className={css.notice} role="status"><span>{t(pageKind==='dashboard'?'business.configuration.noDashboardPages':'business.configuration.noRecordPages')}</span><button type="button" disabled={services.actionReady===false} onClick={()=>services.adjust(scope)}>{t('business.configuration.adjust')}</button></div>}
      {page&&state.pageStatus==='ready'&&<>
       {page.page.kind==='dashboard'&&(ranges||!chrome)&&<div className={css.range}>{ranges&&<label>{t('business.dashboards.range.label')}<select value={page.page.timeRange} onChange={event=>{const next=ranges.find(value=>value===event.target.value);if(next&&state.selectedId)void controller.select(state.selectedId,next)}}>{ranges.map(value=><option key={value} value={value}>{t(rangeLabels[value])}</option>)}</select></label>}{!chrome&&<ToolbarIconButton label={t('business.dashboards.refresh')} icon={RefreshCw} onClick={()=>void controller.load()}/>}</div>}
-      <BusinessConfigurationPage projection={page} recordFlow={services.records} capabilities={services.capabilities} importFlow={services.importFlow} colorScheme={colorScheme} go={go} onDispatch={services.onDispatch} taskList={services.taskList} recordReference={recordReference} recordSource={{api:services.api,current}}/>
+      <BusinessConfigurationPage projection={page} recordFlow={services.records} capabilities={services.capabilities} importFlow={services.importFlow} colorScheme={colorScheme} go={go?navigate:undefined} onDispatch={services.onDispatch} taskList={services.taskList} recordReference={recordReference} recordSource={{api:services.api,current}}/>
      </>}
     </div>
     {recordsVisible&&services.taskList&&<BusinessTaskList scope={scope} {...services.taskList}/>}
    </>}
   </div></div>
+  {drilldown&&renderDrilldown?.(drilldown,navigateDrilldown,closeDrilldown)}
  </section>
 }

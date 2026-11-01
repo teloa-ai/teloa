@@ -36,7 +36,7 @@ export function releaseSource(version:string,cli:{version:string;root:string}):t
 export async function upgradeInstall(state:InstallState,version:string,download=fetchRelease):Promise<InstallState>{
  if(!exactVersion(version))throw Error('升级必须指定确切版本。')
  // 已切换的版本号不能证明升级完成；维护现场必须先核对原恢复点，不能重复迁移。
- if(state.phase==='maintenance')throw Error('上次升级尚未完成；安装保持维护状态。请先核对 '+join(state.layout.instanceRoot,'upgrade.json')+' 中记录的备份，并使用来源版本 CLI 恢复到新目录；原数据与失败现场保留。')
+ if(state.phase==='maintenance')throw Error('安装保持维护状态；请先继续原维护命令并核对备份用途。普通升级备份记录位于 '+join(state.layout.instanceRoot,'upgrade.json')+'；提交维护的专用备份不能用普通restore恢复，也不提供自动回滚。原数据与失败现场保留。')
  if(version===state.version)return state
  assertMaintenanceStopped(await serviceStatus(state),state.phase)
  const current=await verifyRelease(state.layout.releaseRoot)

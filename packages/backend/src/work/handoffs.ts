@@ -31,7 +31,7 @@ export function readStoredTaskHandoffChange(row:Record<string,unknown>):TaskHand
   return change
  }catch{throw new WorkError('teloa/storage-corrupt','主动改派回执损坏，请核对原记录。')}
 }
-async function rejectOpenRuns(client:{query:Pool['query']},owner:string,taskId:string){if((await client.query("select id from teloa_task_runs where owner_id=$1 and task_id=$2 and state not in ('ended','withdrawn','configuration_failed') limit 1",[owner,taskId])).rows[0])throw new WorkError('teloa/conflict','任务仍有未结束的执行，请先完成或停止该执行。')}
+async function rejectOpenRuns(client:{query:Pool['query']},owner:string,taskId:string){if((await client.query("select id from teloa_task_runs where owner_id=$1 and task_id=$2 and state not in ('ended','withdrawn','configuration_failed','submission_unknown') limit 1",[owner,taskId])).rows[0])throw new WorkError('teloa/conflict','任务仍有未结束的执行，请先完成或停止该执行。')}
 export class HandoffService{
  readonly pool:Pool
  readonly identity:{id:()=>string;now:()=>string}

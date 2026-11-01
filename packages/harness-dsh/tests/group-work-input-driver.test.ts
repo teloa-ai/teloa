@@ -93,3 +93,14 @@ test('确定性失败：尚无 Run 身份时拒绝；已有 Run 身份时只记�
  const w=world();w.ports.prepare=async()=>{throw new WorkError('teloa/version-conflict','原任务已变化。')}
  await drain(w.ports);assert.equal(w.read().state,'rejected')
 })
+
+test('本人已处置提交未知：群续办仍投影未知，不重发或写成已受理',async()=>{
+ const w=world();w.faults.add('start-unknown');await drain(w.ports)
+ w.runs.get(RUN)!.state='submission_unknown';w.calls.length=0
+ await drain(w.ports)
+ assert.equal(w.read().state,'unknown')
+ assert.equal(w.read().runId,RUN)
+ assert.equal(w.calls.includes('prepare'),false)
+ assert.equal(w.calls.includes('start'),false)
+ assert.equal(w.calls.includes('reconcile'),false,'本人已处置的Run不再自动核对并覆盖处置')
+})

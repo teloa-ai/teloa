@@ -1,10 +1,11 @@
 import {businessObjectReference,type BusinessObjectReference,WorkError,readBusinessConfigurationPage,type BusinessConfigurationCurrentResponseVersioned as BusinessConfigurationCurrentResponse,type BusinessConfigurationPageProjectionVersioned as BusinessConfigurationPageProjection,type BusinessTimeRange} from '@teloa/contract'
 import type {BusinessBuilderApi} from './business-builder-api.js'
+import type {BusinessTarget} from './business-preview.js'
 export type BusinessConfigurationPageKind=BusinessConfigurationCurrentResponse['manifest']['pages'][number]['kind']
 /** 只保存当前本人/宿主中每个业务的真实页面ID，不保存配置正文或结果；按页面种类分开记忆，切换页签不互相覆盖。 */
 export type BusinessConfigurationSelection={get:(scope:string,kind?:BusinessConfigurationPageKind)=>string|undefined;set:(scope:string,pageId:string,kind?:BusinessConfigurationPageKind)=>void}
-export type BusinessConfigurationSurfaceState={status:'loading'|'legacy'|'ready'|'failed';current:BusinessConfigurationCurrentResponse|null;selectedId:string|null;pageStatus:'idle'|'loading'|'ready'|'failed';page:BusinessConfigurationPageProjection|null;error:unknown|null}
-const initial=():BusinessConfigurationSurfaceState=>({status:'loading',current:null,selectedId:null,pageStatus:'idle',page:null,error:null})
+export type BusinessConfigurationSurfaceState={status:'loading'|'legacy'|'ready'|'failed';current:BusinessConfigurationCurrentResponse|null;selectedId:string|null;pageStatus:'idle'|'loading'|'ready'|'failed';page:BusinessConfigurationPageProjection|null;error:unknown|null;drilldown:BusinessTarget|null}
+const initial=():BusinessConfigurationSurfaceState=>({status:'loading',current:null,selectedId:null,pageStatus:'idle',page:null,error:null,drilldown:null})
 const invalid=()=>new WorkError('teloa/invalid-host-response','正式业务页面与当前配置不一致。')
 const referenceUnavailable=()=>new WorkError('teloa/source-unavailable','关联记录没有正式记录页。',{kind:'record-page-unavailable'})
 export const businessReferencePageUnavailable=(error:unknown)=>error instanceof WorkError&&error.details?.kind==='record-page-unavailable'
@@ -21,6 +22,7 @@ export class BusinessConfigurationSurfaceController{
  private readonly listeners=new Set<()=>void>()
  private pending:AbortController|undefined
  private preferredId:string|undefined
+ private readonly preferredRanges=new Map<string,{value:BusinessTimeRange;configurationHash:string}>()
  private readonly api:Pick<BusinessBuilderApi,'current'|'page'>
  readonly scope:string
  private readonly reference:BusinessObjectReference|undefined
@@ -31,9 +33,18 @@ export class BusinessConfigurationSurfaceController{
  /** 当前容器可列出的页面：按 kind 过滤正式配置页面，保持配置声明顺序。 */
  pages(current:BusinessConfigurationCurrentResponse){return current.manifest.pages.filter(page=>this.kind===undefined||page.kind===this.kind)}
  getSnapshot=()=>this.state
+ /** 事件只接受产生它的当前页面；刷新、换页和卸载后的旧回调不再导航。 */
+ isCurrentPage(page:BusinessConfigurationPageProjection|null):boolean{return !this.pending?.signal.aborted&&this.state.status==='ready'&&this.state.pageStatus==='ready'&&page!==null&&this.state.page===page}
+ /** 下钻只占当前看板的临时详情层；保留原投影、所选范围和挂载的滚动容器。 */
+ openDrilldown(target:BusinessTarget,page=this.state.page):boolean{
+  if(!this.isCurrentPage(page)||page?.page.kind!=='dashboard'||target.scope!==this.scope||target.section!=='data'||!target.objectType||target.recordReference)return false
+  this.publish({drilldown:{scope:target.scope,section:'data',objectType:target.objectType,...(target.id?{id:target.id}:{}),...(target.match?{match:{...target.match}}:{})}})
+  return true
+ }
+ closeDrilldown(){if(this.state.drilldown)this.publish({drilldown:null})}
  subscribe=(listener:()=>void)=>{this.listeners.add(listener);return()=>{this.listeners.delete(listener)}}
  private publish(patch:Partial<BusinessConfigurationSurfaceState>){this.state={...this.state,...patch};for(const listener of this.listeners)listener()}
- dispose(){this.pending?.abort()}
+ dispose(){this.pending?.abort();this.preferredRanges.clear();this.state={...this.state,drilldown:null}}
  private begin(){this.pending?.abort();const request=new AbortController();this.pending=request;return request.signal}
  async load():Promise<void>{
   const signal=this.begin();this.publish(initial())
@@ -60,13 +71,22 @@ export class BusinessConfigurationSurfaceController{
   const current=this.state.current
   if(this.state.status!=='ready'||!current||!this.pages(current).some(page=>page.id===pageId))throw new WorkError('teloa/invalid-input','此页面不属于当前业务配置。')
   this.preferredId=pageId
-  const signal=this.begin();this.publish({selectedId:pageId,page:null,pageStatus:'loading',error:null})
+  if(timeRange!==undefined&&current.manifest.pages.find(page=>page.id===pageId)?.kind==='dashboard')this.preferredRanges.set(pageId,{value:timeRange,configurationHash:current.hash})
+  const signal=this.begin();this.publish({selectedId:pageId,page:null,pageStatus:'loading',error:null,drilldown:null})
   await this.readPage(current,pageId,signal,timeRange)
  }
  private async readPage(current:BusinessConfigurationCurrentResponse,pageId:string,signal:AbortSignal,timeRange?:BusinessTimeRange):Promise<void>{
   try{
-   const page=await readBusinessConfigurationSavedPage(this.api,this.scope,current,pageId,signal,timeRange)
+   const preferred=current.manifest.pages.find(page=>page.id===pageId)?.kind==='dashboard'?this.preferredRanges.get(pageId):undefined
+   let page=await readBusinessConfigurationSavedPage(this.api,this.scope,current,pageId,signal,timeRange??(preferred?.configurationHash===current.hash?preferred.value:undefined))
    if(signal.aborted)return
+   // 新配置可能移除了旧范围；先核对新默认投影，仍支持才恢复，不能以通用读取失败触发降级。
+   if(timeRange===undefined&&preferred&&preferred.configurationHash!==current.hash&&page.page.kind==='dashboard'&&page.page.timeRange!==preferred.value&&page.page.dashboard.filters?.timeRange.options.includes(preferred.value)){
+    page=await readBusinessConfigurationSavedPage(this.api,this.scope,current,pageId,signal,preferred.value)
+    if(signal.aborted)return
+   }
+   if(page.page.kind==='dashboard'&&preferred&&page.page.timeRange===preferred.value&&page.page.dashboard.filters?.timeRange.options.includes(preferred.value))this.preferredRanges.set(pageId,{value:preferred.value,configurationHash:current.hash})
+   else this.preferredRanges.delete(pageId)
    try{this.selection?.set(this.scope,pageId,this.kind)}catch{/* 页面偏好保存失败不影响已核验的正式页面。 */}
    this.publish({page,pageStatus:'ready',error:null})
   }catch(error){if(!signal.aborted)this.publish({page:null,pageStatus:'failed',error})}

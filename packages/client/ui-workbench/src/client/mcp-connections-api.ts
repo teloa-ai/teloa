@@ -98,12 +98,14 @@ export type CustomMcpAppApi=Pick<ManagedMcpConnectionApi,'getCustom'|'previewCus
 export function hasCustomMcpAppApi(api:Partial<ManagedMcpConnectionApi>):api is CustomMcpAppApi{
  return (['getCustom','previewCustom','saveCustom','updateCustom','authorizeCustom','connect','disconnect','delete'] as const).every(key=>typeof api[key]==='function')
 }
-export type CustomMcpPreview={definition:CustomMcpDefinition;definitionHash:string;authorizationConfigured:boolean;connection?:ManagedMcpConnectionRecord}
+export type CustomMcpPreview={definition:CustomMcpDefinition;definitionHash:string;authorizationConfigured:boolean;authorizedReadOnlyTools?:string[];connection?:ManagedMcpConnectionRecord}
 function readCustomPreview(value:unknown):CustomMcpPreview{
- const row=exact(value,['schema','definition','definitionHash','connection','authorizationConfigured','readiness','next'])
+ const row=exact(value,['schema','definition','definitionHash','connection','authorizationConfigured','authorizedReadOnlyTools','readiness','next'])
  if(row.schema!=='teloa.mcp-preview/v1'||typeof row.definitionHash!=='string'||!/^[a-f0-9]{64}$/.test(row.definitionHash))throw Error('自定义应用预览格式不正确。')
  if(typeof row.authorizationConfigured!=='boolean')throw Error('自定义应用认证状态不正确。')
- return {definition:readCustomMcpDefinition(row.definition),definitionHash:row.definitionHash,authorizationConfigured:row.authorizationConfigured,...row.connection===undefined?{}:{connection:readRecord(row.connection)}}
+ const tools=row.authorizedReadOnlyTools
+ if(tools!==undefined&&(!row.authorizationConfigured||row.connection===undefined||!Array.isArray(tools)||tools.length>32||new Set(tools).size!==tools.length||tools.some(name=>typeof name!=='string'||!/^[A-Za-z0-9_-]{1,128}$/.test(name))))throw Error('自定义应用原只读授权清单不正确。')
+ return {definition:readCustomMcpDefinition(row.definition),definitionHash:row.definitionHash,authorizationConfigured:row.authorizationConfigured,...(tools===undefined?{}:{authorizedReadOnlyTools:[...tools as string[]]}),...row.connection===undefined?{}:{connection:readRecord(row.connection)}}
 }
 export function createManagedMcpConnectionApi(call:Call){
  const listeners=new Set<()=>void>()

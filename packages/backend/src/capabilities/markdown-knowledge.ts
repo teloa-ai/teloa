@@ -262,6 +262,10 @@ export class MarkdownKnowledgeService{
   return undefined
  }
  async createPaste(actor:ResourceActor,input:unknown):Promise<PasteKnowledge>{
+  return (await this.createPasteWithTransaction(actor,input,async()=>undefined)).knowledge
+ }
+ /** 创建知识、目录页及调用方投影/来源回执共同提交；失败不留下半个副本。 */
+ async createPasteWithTransaction<T>(actor:ResourceActor,input:unknown,within:(client:PoolClient,value:PasteKnowledge,replayed:boolean)=>Promise<T>):Promise<{knowledge:PasteKnowledge;value:T}>{
   const row=exact(input,['requestId','title','category','topics','scopeIds','markdown','parentId','expectedDirectoryRevision','position'])
   if(!resourceId(row.requestId)||typeof row.title!=='string'||!row.title.trim()||row.title.length>200||!knowledgeCategories.includes(row.category as KnowledgeCategory)||!resourceScopes(row.scopeIds))throw bad()
   const hasDirectory=row.parentId!==undefined||row.expectedDirectoryRevision!==undefined||row.position!==undefined
@@ -280,7 +284,8 @@ export class MarkdownKnowledgeService{
     const item=itemRow(existing),summary=versionRow(existing),path=existing.markdown_path
     if(item.workspaceId!==this.workspaceId||summary.sourceId!==item.sourceId||typeof path!=='string'||path!==this.relative(item.id,summary.contentHash))throw corrupt()
     const saved=stored(existing,await this.readContent(path,summary.contentHash,summary.bytes))
-    commitStarted=true;await client.query('commit');return {item:saved.item,version:saved.version}
+    const knowledge={item:saved.item,version:saved.version},value=await within(client,knowledge,true)
+    commitStarted=true;await client.query('commit');return {knowledge,value}
    }
    const knowledgeId=this.identity.id(),sourceId=this.identity.id(),now=this.identity.now(),relative=this.relative(knowledgeId,contentHash)
    if(!resourceId(knowledgeId)||!resourceId(sourceId)||!Number.isFinite(Date.parse(now)))throw corrupt()
@@ -290,7 +295,8 @@ export class MarkdownKnowledgeService{
    await client.query('insert into teloa_knowledge_versions values($1,$2,$3,1,$4,$5,$6,$7)',[actor.ownerId,knowledgeId,sourceId,contentHash,bytes.length,relative,now])
    await attachKnowledgePage(client,{ownerId:actor.ownerId,workspaceId:this.workspaceId,knowledgeId,title,now,...(directory?{expectedDirectoryRevision:directory.expectedDirectoryRevision,...(directory.parentId?{parentId:directory.parentId}:{}),...(directory.position===null?{}:{position:directory.position})}:{})})
    const result=stored((await this.byRequest(client,actor.ownerId,row.requestId))!,markdown)
-   commitStarted=true;await client.query('commit');return {item:result.item,version:result.version}
+   const knowledge={item:result.item,version:result.version},value=await within(client,knowledge,false)
+   commitStarted=true;await client.query('commit');return {knowledge,value}
   }catch(error){await client.query('rollback').catch(()=>{});if(published&&!commitStarted)await this.cleanupPublished(published);if(error instanceof WorkError)throw error;throw unavailable()}finally{if(published)await this.closeAnchors(published.anchors);client.release()}
  }
  private sameItemIdentity(left:KnowledgeItem,right:KnowledgeItem):boolean{

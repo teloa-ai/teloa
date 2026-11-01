@@ -13,10 +13,13 @@ import {collectEnvironment,type DiagnosticCheck} from './environment.ts'
 import {command} from './process.ts'
 import {assertMaintenanceStopped,createBackup,dshEnvBackupNotice,dshEnvRestoreNotice,restoreBackup} from './maintenance.ts'
 import {upgradeInstall,unregisterInstall,releaseSource} from './upgrade.ts'
+import {resumeUpgradeInstall,upgradeResumePending} from './upgrade-resume.ts'
 import type {InstallState} from './contracts.ts'
+import {resolveSubmissionMaintenance,finishSubmissionMaintenance,submissionMaintenanceNotice,unpublishedMaintenanceNotice} from './maintenance-submission.ts'
+import {maintainPreparedRun,preparedMaintenanceNotice} from './maintenance-prepared.ts'
 
-const optionsByCommand:Record<string,string[]>={up:['workspace','port','no-open','database-config'],status:['json'],open:['print-url'],stop:[],restart:['no-open'],logs:['follow'],doctor:['json'],backup:['output'],restore:['from','database-config'],upgrade:['to'],uninstall:[],credentials:['action','confirm']}
-const booleanOptions=new Set(['no-open','json','print-url','follow','help','confirm'])
+const optionsByCommand:Record<string,string[]>={up:['workspace','port','no-open','database-config'],status:['json'],open:['print-url'],stop:[],restart:['no-open'],logs:['follow'],doctor:['json'],backup:['output'],restore:['from','database-config'],upgrade:['to','resume','source-release'],'resolve-submission':['run','acknowledge-unknown','cancel-not-published','to','finish','source-release'],'maintain-prepared':['run','to','finish','confirm','source-release'],uninstall:[],credentials:['action','confirm']}
+const booleanOptions=new Set(['no-open','json','print-url','follow','help','confirm','acknowledge-unknown','cancel-not-published','finish','resume'])
 const argumentError=(message:string)=>Object.assign(Error(message),{exitCode:2})
 export function parseArguments(args:string[]):{command:string;options:Record<string,string|true>}{
  if(!args.length||args.length===1&&args[0]==='--help')return {command:'help',options:{}}
@@ -38,6 +41,9 @@ export function parseArguments(args:string[]):{command:string;options:Record<str
   if(command==='backup'&&!options.output)throw argumentError('备份需要 --output 新目录参数。')
   if(command==='restore'&&(!options.from||!options.home))throw argumentError('恢复需要 --from 备份目录与 --home 新目标参数。')
   if(command==='upgrade'&&(!options.to||!exactVersion(String(options.to))))throw argumentError('升级必须通过 --to 指定确切版本。')
+  if(command==='upgrade'&&options['source-release']&&!options.resume)throw argumentError('--source-release 仅用于 --resume 核对原失败升级的冻结目标。')
+  if(command==='resolve-submission'&&(!/^[a-f0-9]{8}-[a-f0-9]{4}-[1-5][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i.test(String(options.run))||!((options['acknowledge-unknown']===true&&options['cancel-not-published']===undefined)||(options['cancel-not-published']===true&&options['acknowledge-unknown']===undefined))||!exactVersion(String(options.to))))throw argumentError('提交维护需要精确 --run、--to 版本以及互斥的 --acknowledge-unknown 或 --cancel-not-published；'+submissionMaintenanceNotice)
+  if(command==='maintain-prepared'&&(!/^[a-f0-9]{8}-[a-f0-9]{4}-[1-8][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i.test(String(options.run))||options.confirm!==true||!exactVersion(String(options.to))))throw argumentError('准备执行维护需要精确 --run、--to 和 --confirm；'+preparedMaintenanceNotice)
   // 对外只开放回滚与重置；轮换按用户裁定不对外提供（仅保留为内部维护能力）。
   if(command==='credentials'&&!['export-plaintext','reset'].includes(String(options.action)))throw argumentError('--action 只接受 export-plaintext、reset。')
   if(command==='credentials'&&options.confirm!==true)throw argumentError('该操作需要 --confirm。')
@@ -60,7 +66,7 @@ export async function collectDiagnostics(state:InstallState|null){
  }catch{add('运行依赖',false,'发行文件或依赖核对失败；请核对已安装版本。','使用完整且经过核对的发行包，不要手动替换运行依赖。')}
  if(state.database.kind==='docker')try{await assertLocalDocker();add('Docker',true,'本机 Docker 可连接','')}catch(error){add('Docker',false,(error as Error).message,'启动本机 Docker 引擎并检查当前 context；不要切换为远程 Docker。')}
  add('数据库',status.database==='ready',status.database,'检查本机专用数据库及受保护的连接配置，不要删除数据卷或重建原库。')
- add('应用',status.app==='ready',status.app,state.phase==='maintenance'?'安装处于维护状态，请按升级恢复点恢复到新目录。':'确认无需恢复后运行 teloa up；启动失败时查看脱敏日志 teloa logs。')
+ add('应用',status.app==='ready',status.app,state.phase==='maintenance'?'安装处于维护状态，请继续原维护命令；提交维护备份不能普通restore或自动回滚。':'确认无需恢复后运行 teloa up；启动失败时查看脱敏日志 teloa logs。')
  if(status.app==='ready')add('运行中工作检查',status.activeWork>=0,status.activeWork<0?'无法读取；停止、升级和备份会拒绝执行':String(status.activeWork)+' 项','先排查服务日志并确认活动任务状态，不要绕过停止保护。')
  for(const tool of ['git','sh'])try{const result=await command(tool,tool==='sh'?['-c','exit 0']:['--version']);add(tool,result.code===0,result.code===0?'PATH 中可用':'不可运行','安装或修复 '+tool+' 并检查 PATH 后重试。')}catch{add(tool,false,'PATH 中缺少此工具','安装或修复 '+tool+' 并检查 PATH 后重试。')}
  return {status,checks}
@@ -70,7 +76,7 @@ export async function main(args=process.argv.slice(2)):Promise<void>{
  const pkg=JSON.parse(await readFile(new URL('../package.json',import.meta.url),'utf8').catch(()=>readFile(join(programRoot,'packages/cli/package.json'),'utf8')))
  if(parsed.command==='version'){console.log(pkg.version);return}
  if(parsed.command==='help'){
-  console.log('Teloa — 本机 AI 员工团队\n\n用法：teloa <命令> [--home <目录>]\n\n  up       启动 Web；可指定 --workspace、--port、--database-config、--no-open\n  status   查看状态；--json 输出结构化结果\n  open     打开浏览器；--print-url 显式输出本机登录链接\n  stop     空闲时停止本安装，保留数据\n  restart  重启；有运行中工作时拒绝\n  logs     查看脱敏日志；--follow 持续读取\n  doctor   只读诊断；--json 输出结构化结果\n  backup   停止后备份；--output <新的备份目录>\n  restore  恢复到新安装；--from <备份目录> --home <新目录>\n  upgrade  停止后显式升级；--to <确切版本>\n  uninstall 停止并注销服务，保留全部数据\n  credentials 停止后凭据维护；--action export-plaintext（回滚到上一版前导出明文）或 reset（主密钥丢失时重置），须加 --confirm\n\n默认使用 ~/.teloa 与独立 Docker PostgreSQL。已有数据库通过 0600 权限的 JSON 配置文件提供 connectionString；模型密钥在 Web 中配置。\n\n  --help / --version')
+  console.log('Teloa — 本机 AI 员工团队\n\n用法：teloa <命令> [--home <目录>]\n\n  up       启动 Web；可指定 --workspace、--port、--database-config、--no-open\n  status   查看状态；--json 输出结构化结果\n  open     打开浏览器；--print-url 显式输出本机登录链接\n  stop     空闲时停止本安装，保留数据\n  restart  重启；有运行中工作时拒绝\n  logs     查看脱敏日志；--follow 持续读取\n  doctor   只读诊断；--json 输出结构化结果\n  backup   停止后备份；--output <新的备份目录>\n  restore  恢复到新安装；--from <备份目录> --home <新目录>\n  upgrade  停止后显式升级；--to <确切版本>；原失败升级用 --resume，较新CLI续办旧目标须加 --source-release <原冻结发行目录>，不重新下载或备份\n  resolve-submission 同安装处理提交；--run <原Run> (--acknowledge-unknown | --cancel-not-published) --to <本包版本>；完成后另加 --finish，保持应用停止。已有维护可用 --source-release <原目标发行目录> 继续冻结目标，不能创建新维护或更换目标。专用备份不能普通restore或自动回滚\n  maintain-prepared 保全具名未提交执行并升级；--run <原Run> --to <本包版本> --confirm；完成后另加 --finish，保持原Run与应用暂停\n  uninstall 停止并注销服务，保留全部数据\n  credentials 停止后凭据维护；--action export-plaintext（回滚到上一版前导出明文）或 reset（主密钥丢失时重置），须加 --confirm\n\n默认使用 ~/.teloa 与独立 Docker PostgreSQL。已有数据库通过 0600 权限的 JSON 配置文件提供 connectionString；模型密钥在 Web 中配置。\n\n  --help / --version')
   return
  }
  if(parsed.command!=='doctor'&&!((process.versions.node.startsWith('22.')&&Number(process.versions.node.split('.')[1])>=19)||process.versions.node.startsWith('24.')))throw argumentError('需要 Node 22.19+ 或 Node 24。')
@@ -79,7 +85,7 @@ export async function main(args=process.argv.slice(2)):Promise<void>{
   console.log('已恢复至 '+restored.layout.home+'；应用已停止，自动化已暂停。\n工作文件未包含在备份中；会话保留原工作目录：'+restored.layout.workspaceRoot+'\n核对目录与数据后再运行 teloa up。\n'+(restored.credentials.imported.length?'旧备份中的明文凭据已导入加密存储，未放回原路径：'+restored.credentials.imported.join('、')+'。':'凭据未随备份迁移；启动后请在设置中重新录入模型密钥与连接授权。')+(restored.credentials.failed.length?'\n以下旧凭据未导入（格式无法识别，或是写入中断留下的残留，已丢弃），请在设置中重新录入：'+restored.credentials.failed.join('、')+'。':'')+'\n'+dshEnvRestoreNotice(restored.layout.dshHome));return
  }
  const initial=await resolveLayout({home:String(options.home??join(homedir(),'.teloa')),version:pkg.version,...(options.workspace?{workspace:String(options.workspace)}:{})})
- const mutable=['up','stop','restart','backup','upgrade','uninstall','credentials'].includes(parsed.command)
+ const mutable=['up','stop','restart','backup','upgrade','resolve-submission','maintain-prepared','uninstall','credentials'].includes(parsed.command)
  const act=async()=>{
   let state=await readInstall(initial)
   if(parsed.command==='doctor'){
@@ -90,7 +96,8 @@ export async function main(args=process.argv.slice(2)):Promise<void>{
   }
   if(parsed.command==='up'){
    if(state){
-    if(state.phase==='maintenance')throw Error('安装处于未完成的维护状态，拒绝启动；请使用原备份恢复到新目录。')
+    if(await upgradeResumePending(state))throw Error('原升级启动尚待核对，请以原目标 upgrade --resume 继续；不能另行启动。')
+    if(state.phase==='maintenance')throw Error('安装处于未完成的维护状态，拒绝启动；请继续原维护命令。提交维护备份不能用普通restore恢复。')
     // 新命令包不会隐式替换原安装；在 stderr 提示保留原数据的显式切换方式，不影响输出解析。
     if(state.version!==pkg.version)console.error('此安装为 '+state.version+'，当前命令包为 '+pkg.version+'。如需在保留原数据的前提下切换到 '+pkg.version+'，先运行 teloa stop，再运行 teloa upgrade --to '+pkg.version+'。')
     if(options.workspace&&await canonical(String(options.workspace))!==state.layout.workspaceRoot||options.port&&Number(options.port)!==state.port||options['database-config']&&(state.database.kind!=='existing'||await canonical(String(options['database-config']))!==state.database.configFile))throw Error('参数与已有安装配置冲突；不会改变正在使用的目录、端口或数据库。')
@@ -112,6 +119,20 @@ export async function main(args=process.argv.slice(2)):Promise<void>{
    return
   }
   if(!state){if(parsed.command==='status'){console.log(options.json?JSON.stringify({app:'not-installed'}):'尚未初始化；运行 teloa up。');return}throw Error('尚未初始化；请先运行 teloa up。')}
+  if(parsed.command==='maintain-prepared'){
+   if(!options['source-release']&&String(options.to)!==pkg.version)throw argumentError('请使用目标版本的完整 CLI，并明确 --to 该版本。')
+   console.log(preparedMaintenanceNotice)
+   const result=await maintainPreparedRun(state,{runId:String(options.run),targetVersion:String(options.to),confirm:true,...(options.finish?{finish:true as const}:{}),...(options['source-release']?{existingTargetOnly:true as const}:{})},options['source-release']?await canonical(String(options['source-release'])):programRoot)
+   console.log('原准备执行已保全；专用保护点：'+result.backup+'。'+(options.finish?'应用仍停止。本人启动后，请在原工作的恢复入口核对当前资料并明确继续。':'应用保持维护停止。以相同参数添加 --finish 完成维护；不会自动执行。'));return
+  }
+  if(parsed.command==='resolve-submission'){
+   if(!options['source-release']&&String(options.to)!==pkg.version)throw argumentError('请先安装目标版本的完整命令包，并通过 --to 指定该包的确切版本。')
+   const sourceRelease=options['source-release']?await canonical(String(options['source-release'])):undefined
+   console.log(options['cancel-not-published']?unpublishedMaintenanceNotice:submissionMaintenanceNotice)
+   if(options.finish){await finishSubmissionMaintenance(state,{runId:String(options.run),targetVersion:String(options.to),...(options['cancel-not-published']?{cancelNotPublished:true as const}:{})},sourceRelease);console.log(options['cancel-not-published']?'确定未发布的原提交已取消，维护完成；应用仍停止。核对后可运行 teloa up。':'原提交已保留为未知，维护已完成；应用仍停止。本人核对后可运行 teloa up；原任务保持暂停。');return}
+   const result=await resolveSubmissionMaintenance(state,{runId:String(options.run),targetVersion:String(options.to),...(options['cancel-not-published']?{cancelNotPublished:true as const}:{acknowledgeUnknown:true as const}),...(sourceRelease?{existingTargetOnly:true as const}:{})},sourceRelease??programRoot)
+   console.log((options['cancel-not-published']?'确定未发布的原提交已取消；应用保持维护停止。':'原提交已保留为未知，原任务暂停；应用保持维护停止。')+'\n专用保护点：'+result.backup+'\n本人核对后，以相同参数添加 --finish 完成本次维护，再自行运行 teloa up。');return
+  }
   if(parsed.command==='credentials'){
    assertMaintenanceStopped(await serviceStatus(state),state.phase)
    const tools=await import(pathToFileURL(join(state.layout.releaseRoot,'packages/harness-dsh/lib/credentials/maintenance.js')).href)
@@ -122,6 +143,12 @@ export async function main(args=process.argv.slice(2)):Promise<void>{
    console.log('备份已保存：'+await canonical(String(options.output))+'\n含数据库、会话与资料；凭据不随备份，恢复后需重新录入。备份未加密，请存放在受保护的位置。工作文件不包含在内。\n'+dshEnvBackupNotice);return
   }
   if(parsed.command==='upgrade'){
+   if(options.resume){
+    if(!options['source-release']&&String(options.to)!==pkg.version)throw argumentError('续办旧目标时需要 --source-release 原冻结发行目录；不会下载或切换到当前命令包版本。')
+    const next=await resumeUpgradeInstall(state,String(options.to),options['source-release']?await canonical(String(options['source-release'])):programRoot)
+    console.log('原升级已续办完成，当前版本：'+next.version+'；原失败与备份保留，未重新下载或创建备份。');return
+   }
+   if(await upgradeResumePending(state))throw Error('原升级启动尚待核对，请以原目标 upgrade --resume 继续；不能另建升级。')
    const next=await upgradeInstall(state,String(options.to),releaseSource(String(options.to),{version:pkg.version,root:programRoot}));console.log('当前版本：'+next.version+'；原数据备份路径记录在实例的 upgrade.json。');return
   }
   if(parsed.command==='uninstall'){
@@ -130,7 +157,8 @@ export async function main(args=process.argv.slice(2)):Promise<void>{
   if(parsed.command==='status'){const result=await serviceStatus(state);console.log(options.json?JSON.stringify(result):'应用 '+result.app+' · 数据库 '+result.database+' · 版本 '+result.version+' · 端口 '+result.port);return}
   if(parsed.command==='open')return openService(state,{printUrl:options['print-url']===true})
   if(parsed.command==='stop'||parsed.command==='restart'){
-   if(parsed.command==='restart'&&state.phase==='maintenance')throw Error('安装处于维护状态，拒绝重启；请用备份恢复到新目录。')
+   if(parsed.command==='restart'&&await upgradeResumePending(state))throw Error('原升级启动尚待核对，请以原目标 upgrade --resume 继续；不能另行重启。')
+   if(parsed.command==='restart'&&state.phase==='maintenance')throw Error('安装处于维护状态，拒绝重启；请继续原维护命令。提交维护备份不能用普通restore恢复。')
    await stopService(state)
    if(parsed.command==='restart'){await prepareDatabase(state);await startService(state);if(!options['no-open'])await openService(state,{printUrl:false})}
    console.log(parsed.command==='stop'?'本安装已停止，数据保留。':'Teloa 已重启。');return

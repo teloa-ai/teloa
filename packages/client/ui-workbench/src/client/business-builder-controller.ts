@@ -15,7 +15,7 @@ export function watchBusinessBuilderRevisions(source:SessionEventSource,changed:
   const window=source.getSnapshot(),before=cursor;cursor=Math.max(cursor,high())
   if(window.change.kind!=='append')return
   const calls=new Set(window.entries.flatMap(({event})=>event.type==='tool/call'&&['teloa_business_builder_revise','teloa_business_builder_upgrade','teloa_business_builder_plan_revise'].includes(event.data.name)?[event.data.callId]:[]))
-  if(window.change.entries.some(({event})=>event.seq>before&&event.type==='tool/result'&&event.surfaceOp==='append'&&calls.has(event.data.message.toolCallId)&&!event.data.message.isError))changed()
+  if(window.change.entries.some(({event})=>event.seq>before&&(event.type==='turn/end'||event.type==='tool/result'&&event.surfaceOp==='append'&&calls.has(event.data.message.toolCallId)&&!event.data.message.isError)))changed()
  })
 }
 type NativeFacts=BusinessBuilderSwitchSnapshot&{connected:boolean;generationReady:boolean;selectionReady:boolean}

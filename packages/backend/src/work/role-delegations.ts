@@ -1,5 +1,7 @@
+import {taskRunTerminalStates} from '@teloa/contract'
 import {readActiveGroupWorkResource} from './group-work-resources.ts'
 import type {Pool,PoolClient} from 'pg'
+import {assertArtifactAvailable} from './artifact-availability.ts'
 import {createHash} from 'node:crypto'
 import {isDeepStrictEqual} from 'node:util'
 import {WorkError,taskInput,roleSupportsScope,groupDefinition,isResourceSpec,readTaskRunFlow,groupRunResultManifest,type DigitalRole,type RoleWorkDelegation,type TwinExecutionConsent} from '@teloa/contract'
@@ -101,7 +103,7 @@ export async function roleWorkOutstanding(db:PoolClient,owner:string,roleId:stri
  const share=scope?'':' for share'
  const runs=(await db.query(scope?'select id,state,evidence from teloa_task_runs where owner_id=$1 and task_id=$2':'select id,state,evidence from teloa_task_runs where owner_id=$1 and role_id=$2 for share',[owner,scope?scope.taskId:roleId])).rows
  for(const run of runs){
-  if(!['ended','withdrawn','configuration_failed'].includes(run.state))return true
+  if(!taskRunTerminalStates.includes(run.state))return true
   if(run.state==='ended'){try{if(runEvidence(run.evidence).state!=='ended')return true}catch{return true}}
  }
  const ids=runs.map(run=>run.id);if(!ids.length)return false
@@ -201,7 +203,7 @@ export async function readRoleWorkGroupGrant(db:PoolClient,owner:string,role:Dig
    where v.owner_id=$1 and v.group_id=$2 and v.resource_id=$3 and v.version=$4 and r.withdrawn_at is null for share of v,r`,[owner,groupId,reference.id,reference.version])).rowCount)
   else if(reference.kind==='work-resource'){await readActiveGroupWorkResource(db,owner,groupId,reference);present=true}
   else if(reference.kind==='attachment')present=Boolean(await readActiveAttachment(db,owner,reference.id))
-  else present=roleWorkUuid(reference.id)&&Boolean((await db.query('select 1 from teloa_artifact_versions where owner_id=$1 and artifact_id=$2 and number=$3 for share',[owner,reference.id,reference.version])).rowCount)
+  else{present=roleWorkUuid(reference.id)&&Boolean((await db.query('select 1 from teloa_artifact_versions where owner_id=$1 and artifact_id=$2 and number=$3 for share',[owner,reference.id,reference.version])).rowCount);if(present)await assertArtifactAvailable(db,owner,reference.id,reference.version)}
   if(!present)throw new WorkError('teloa/forbidden','群执行授权的原件已撤回或不再可见。')
  }
  return grant

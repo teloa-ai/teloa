@@ -1,0 +1,2 @@
+.primary.primary{color:var(--teloa-on-primary);background:var(--teloa-primary);border-color:var(--teloa-primary)}
+.primary.primary:hover{background:var(--teloa-text);color:var(--teloa-surface)}

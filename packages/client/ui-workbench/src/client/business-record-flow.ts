@@ -1,18 +1,19 @@
-import {readBusinessObjectTypeDefinition,readBusinessObjectTypeDefinitionV2,readBusinessRichFieldValue,readBusinessRecordCreate,readBusinessRecordEdit,readBusinessRecordArchive,readBusinessRecordGet,taskInput,parseBooleanValue,parseDurationSeconds,type BusinessRichFieldDefinition,type BusinessRichMoneyFieldDefinition,type BusinessObjectSnapshot,type BusinessObjectTypeDefinition as BusinessObjectTypeV1,type BusinessObjectTypeDefinitionV2,type BusinessRecordCreate,type BusinessRecordEdit,type BusinessRecordArchive} from '@teloa/contract'
+import {businessFieldValueText,type BusinessFieldValue,readBusinessObjectTypeDefinition,readBusinessObjectTypeDefinitionV2,readBusinessRichFieldValue,readBusinessRecordCreate,readBusinessRecordEdit,readBusinessRecordArchive,readBusinessRecordGet,taskInput,parseBooleanValue,parseDurationSeconds,parseBusinessNumberValue,type BusinessRichFieldDefinition,type BusinessRichMoneyFieldDefinition,type BusinessObjectSnapshot,type BusinessObjectTypeDefinition as BusinessObjectTypeV1,type BusinessObjectTypeDefinitionV2,type BusinessRecordCreate,type BusinessRecordEdit,type BusinessRecordArchive} from '@teloa/contract'
 import type {BusinessRecordApi} from './business-record-api.js'
 type BusinessObjectTypeDefinition=BusinessObjectTypeV1|BusinessObjectTypeDefinitionV2
 export type BusinessRecordJournal={read:()=>string|null;write:(value:string)=>void;clear:()=>void}
 export type BusinessRecordCapabilities={create:boolean;edit:boolean;archive:boolean}
-export type BusinessRecordForm={kind:'create'|'edit'|'archive';title:string;summary:string;values:Record<string,string>;schema:string;definition:BusinessObjectTypeDefinition;base?:Pick<BusinessObjectSnapshot,'id'|'version'>}
+export type BusinessRecordForm={kind:'create'|'edit'|'archive';title:string;summary:string;values:Record<string,string>;originalValues?:Record<string,BusinessFieldValue>;schema:string;definition:BusinessObjectTypeDefinition;base?:Pick<BusinessObjectSnapshot,'id'|'version'>}
 type Mutation={kind:'create';input:BusinessRecordCreate}|{kind:'edit';input:BusinessRecordEdit}|{kind:'archive';input:BusinessRecordArchive}
 export type BusinessRecordPhase='idle'|'saving'|'unknown'|'retryable'|'conflict'|'schema-changed'|'error'|'saved'|'recovery-error'
 export type BusinessRecordState={phase:BusinessRecordPhase;form?:BusinessRecordForm|undefined;pending?:Mutation|undefined;errors:Record<string,string>;errorCode?:string|undefined;comparison?:BusinessObjectSnapshot|undefined;comparing:boolean;result?:BusinessObjectSnapshot|undefined}
 const code=(error:unknown)=>error&&typeof error==='object'&&'code' in error?String(error.code):'teloa/transport-unknown'
-const schema=(d:BusinessObjectTypeDefinition)=>d.format==='teloa.business-object-type/v1'?JSON.stringify([d.domain,d.id,d.sourceId,d.fields.map(f=>[f.name,f.from,f.type,f.required,f.values??null,f.referenceType??null])]):JSON.stringify([d.format,d.domain,d.id,d.sourceId,d.fields.map(f=>'format'in f?[f.format,f.name,f.from,f.type,f.required,f.type==='money'?f.currencies:f.type==='multi-reference'?f.referenceType:f.values]:[f.name,f.from,f.type,f.required,f.values??null,f.referenceType??null]),...(d.constraints?[d.constraints.uniqueFields]:[])])
+const numericSchema=(field:BusinessObjectTypeDefinition['fields'][number])=>!('format'in field)&&(field.integer||field.minimum!==undefined||field.decimalScale!==undefined)?[field.integer??null,field.minimum??null,...(field.decimalScale===undefined?[]:[field.decimalScale])]:[]
+const schema=(d:BusinessObjectTypeDefinition)=>d.format==='teloa.business-object-type/v1'?JSON.stringify([d.domain,d.id,d.sourceId,d.fields.map(f=>[f.name,f.from,f.type,f.required,f.values??null,f.referenceType??null,...numericSchema(f)])]):JSON.stringify([d.format,d.domain,d.id,d.sourceId,d.fields.map(f=>'format'in f?[f.format,f.name,f.from,f.type,f.required,f.type==='money'?f.currencies:f.type==='multi-reference'?f.referenceType:f.values]:[f.name,f.from,f.type,f.required,f.values??null,f.referenceType??null,...numericSchema(f)]),...(d.constraints?[d.constraints.uniqueFields]:[])])
 const journalFormat=(d:BusinessObjectTypeDefinition)=>d.format==='teloa.business-object-type/v1'?'teloa.business-record-request/v1':'teloa.business-record-request/v2'
 const locked=(s:BusinessRecordState)=>s.phase==='saving'||s.phase==='unknown'||s.phase==='retryable'||s.phase==='recovery-error'
 export function businessRecordValues(definition:BusinessObjectTypeDefinition,snapshot:BusinessObjectSnapshot):Record<string,string>{
- return Object.fromEntries(definition.fields.map(field=>[field.name,snapshot.fields.find(item=>item.label===field.from)?.value??'']))
+ return Object.fromEntries(definition.fields.map(field=>[field.name,businessFieldValueText(snapshot.fields.find(item=>item.label===field.from)?.value)]))
 }
 export function businessRecordErrors(definition:BusinessObjectTypeDefinition,form:BusinessRecordForm):Record<string,string>{
  const errors:Record<string,string>={}
@@ -33,7 +34,7 @@ export function businessRecordErrors(definition:BusinessObjectTypeDefinition,for
    case 'enum':if(!field.values?.includes(value))errors[field.name]='invalid';break
    case 'boolean':if(parseBooleanValue(value)===undefined)errors[field.name]='invalid';break
    case 'duration':if(parseDurationSeconds(value)===undefined)errors[field.name]='invalid';break
-   case 'number':if(!/^[+-]?(?:\d+(?:\.\d+)?|\.\d+)(?:[eE][+-]?\d+)?$/.test(value)||!Number.isFinite(Number(value))||Math.abs(Number(value))>1e15)errors[field.name]='invalid';break
+   case 'number':if(parseBusinessNumberValue(value,field)===undefined)errors[field.name]='invalid';break
    case 'datetime':if(!Number.isFinite(Date.parse(value))||new Date(value).toISOString()!==value)errors[field.name]='invalid';break
   }
  }
@@ -73,7 +74,7 @@ export class BusinessRecordSession{
    const value=taskInput(row.mutation,['kind','input'])
    const pending:Mutation=value.kind==='create'?{kind:'create',input:readBusinessRecordCreate(value.input)}:value.kind==='edit'?{kind:'edit',input:readBusinessRecordEdit(value.input)}:value.kind==='archive'?{kind:'archive',input:readBusinessRecordArchive(value.input)}:(()=>{throw Error()})()
    if(pending.input.scope!==scope||pending.input.type!==type)throw Error()
-   const form:BusinessRecordForm={kind:pending.kind,title:'title'in pending.input?pending.input.title??'':'',summary:'summary'in pending.input?pending.input.summary??'':'',definition,values:'fields'in pending.input?Object.fromEntries(pending.input.fields.map(f=>[f.name,f.value])):{},schema:row.schema,...(pending.kind==='create'?{}:{base:{id:pending.input.id,version:pending.input.expectedVersion}})}
+   const form:BusinessRecordForm={kind:pending.kind,title:'title'in pending.input?pending.input.title??'':'',summary:'summary'in pending.input?pending.input.summary??'':'',definition,values:'fields'in pending.input?Object.fromEntries(pending.input.fields.map(f=>[f.name,businessFieldValueText(f.value)])):{},schema:row.schema,...('fields'in pending.input?{originalValues:Object.fromEntries(pending.input.fields.map(f=>[f.name,f.value]))}:{}),...(pending.kind==='create'?{}:{base:{id:pending.input.id,version:pending.input.expectedVersion}})}
    this.state={...this.state,phase:'unknown',pending,form}
   }catch{this.state={...this.state,phase:'recovery-error',errorCode:'teloa/recovery-storage-unavailable'}}
  }
@@ -94,7 +95,7 @@ export class BusinessRecordSession{
   if(locked(this.state))throw Error('操作在途或结果未知，请先核对。')
   const d=this.allowed(kind)
   if(base&&(base.scope!==this.scope||base.type!==this.type||base.deletedAt))throw Error('该记录不允许修改。')
-  this.update({form:{kind,title:base?.title??'',summary:base?.summary??'',values:base?businessRecordValues(d,base):{},schema:schema(d),definition:d,...(base?{base}:{})},phase:'idle',errors:{},errorCode:undefined,pending:undefined,comparison:undefined,result:undefined})
+  this.update({form:{kind,title:base?.title??'',summary:base?.summary??'',values:base?businessRecordValues(d,base):{},schema:schema(d),definition:d,...(base?{base,originalValues:Object.fromEntries(d.fields.flatMap(f=>{const value=base.fields.find(row=>row.label===f.from)?.value;return value===undefined?[]:[[f.name,value]]}))}:{})},phase:'idle',errors:{},errorCode:undefined,pending:undefined,comparison:undefined,result:undefined})
  }
  create(){this.start('create')}
  edit(base:BusinessObjectSnapshot){this.start('edit',base)}
@@ -121,7 +122,12 @@ export class BusinessRecordSession{
   const errors=form.kind==='archive'?{}:businessRecordErrors(d,form)
   if(Object.keys(errors).length){this.update({errors});return}
   const requestId=this.id(),target={scope:this.scope,type:this.type,requestId}
-  const fields=d.fields.map(f=>({name:f.name,value:'format'in f?(form.values[f.name]??''):(form.values[f.name]??'').trim()}))
+  const fields=d.fields.map(f=>{
+   const raw='format'in f?(form.values[f.name]??''):(form.values[f.name]??'').trim(),original=form.originalValues?.[f.name]
+   // 未改字段保持原标量与历史字符串；只把本次明确输入按当前声明编码。
+   const value:BusinessFieldValue=original!==undefined&&raw===businessFieldValueText(original)?original:'format'in f||raw===''?raw:f.type==='boolean'?(parseBooleanValue(raw)??raw):f.type==='number'?(parseBusinessNumberValue(raw,f)??raw):raw
+   return {name:f.name,value}
+  })
   const mutation:Mutation=form.kind==='create'?{kind:'create',input:{...target,title:form.title.trim(),summary:form.summary.trim(),fields}}:form.kind==='edit'?{kind:'edit',input:{...target,id:form.base!.id,expectedVersion:form.base!.version,title:form.title.trim(),summary:form.summary.trim(),fields}}:{kind:'archive',input:{...target,id:form.base!.id,expectedVersion:form.base!.version}}
   await this.send(mutation)
  }

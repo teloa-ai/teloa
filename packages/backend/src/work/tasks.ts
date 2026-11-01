@@ -83,7 +83,9 @@ export function readStoredTask(row:Record<string,unknown>):WorkTask{
   const executor=row.owner_executor==null?undefined:readWorkExecutor(row.owner_executor)
   if(executor&&(executor.kind!=='owner'||row.assignee_role_id!==null||definition.scope!=='general'||definition.groupId!==null))throw Error()
   const stamp=(v:unknown)=>{if(!(v instanceof Date)||!Number.isFinite(v.getTime()))throw Error();return v.toISOString()}
-  return {...definition,...(executor?{executor}:{}),id:row.id,ownerId:row.owner_id,version:row.version as number,contentVersion:row.content_version===undefined?1:row.content_version as number,state:row.state as WorkTask['state'],assigneeRoleId:row.assignee_role_id as string|null,assigneeRoleVersion:row.assignee_role_version as number|null,createdAt:stamp(row.created_at),updatedAt:stamp(row.updated_at)}
+  const createdAt=stamp(row.created_at),updatedAt=stamp(row.updated_at)
+  if(updatedAt<createdAt)throw Error()
+  return {...definition,...(executor?{executor}:{}),id:row.id,ownerId:row.owner_id,version:row.version as number,contentVersion:row.content_version===undefined?1:row.content_version as number,state:row.state as WorkTask['state'],assigneeRoleId:row.assignee_role_id as string|null,assigneeRoleVersion:row.assignee_role_version as number|null,createdAt,updatedAt}
  }catch{throw new WorkError('teloa/storage-corrupt','任务记录损坏，已停止读取，请核对原记录。')}
 }
 export class TaskService{

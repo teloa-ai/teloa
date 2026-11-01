@@ -9,6 +9,12 @@ export type RecoveryCandidate={controlId:string;expectedGeneration:number;runId:
  */
 export type RecoveryInspection=RecoveryCandidate&{resumable?:boolean}
 export type WorkControlChange={requestId:string;controlId:string;expectedVersion:number;action:'pause'|'resume'|'stop';scope:'round'|'definition';roundControlId:string|null}
+/** 固定历史字节；摘要由宿主注入，契约包不引入服务端加密依赖。 */
+export function plannedRestartResumeRequestId(restartId:string,controlId:string,sha256:(text:string)=>string):string{
+ const s=sha256(JSON.stringify(['teloa/planned-restart-resume',restartId,controlId]))
+ if(!/^[a-f0-9]{64}$/.test(s))throw new WorkError('teloa/invalid-input','计划重启恢复摘要不正确。')
+ return s.slice(0,8)+'-'+s.slice(8,12)+'-5'+s.slice(13,16)+'-a'+s.slice(17,20)+'-'+s.slice(20,32)
+}
 const uuid=(v:unknown):v is string=>typeof v==='string'&&/^[a-f0-9]{8}-[a-f0-9]{4}-[1-8][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i.test(v)
 const positive=(v:unknown):v is number=>Number.isSafeInteger(v)&&Number(v)>0
 const text=(v:unknown):v is string=>typeof v==='string'&&!!v.trim()&&v===v.trim()&&v.length<=512&&!/[\x00-\x1f]/.test(v)

@@ -4,7 +4,7 @@ import type { FileSystem } from '@deepseek-ai/dsh-fs'
 import { artifactFileMaxBytes,artifactFilePath,isRecord,WorkError,type ArtifactFile,type ArtifactFileDirectory } from '@teloa/contract'
 import { sessionInput } from '@teloa/backend'
 export const artifactFileEndpoints=['artifacts/files/list','artifacts/files/read','artifacts/files/write']
-export type ArtifactFileAccess={sessionId:string;cwd:string;fs:Pick<FileSystem,'resolve'|'contains'|'stat'|'readBytes'|'processPath'>&Partial<Pick<FileSystem,'writeText'>>;list:(query:string,signal:AbortSignal)=>Promise<ArtifactFileDirectory['items']>}
+export type ArtifactFileAccess={sessionId:string;cwd:string;fs:Pick<FileSystem,'resolve'|'contains'|'stat'|'readBytes'|'processPath'>&Partial<Pick<FileSystem,'writeText'|'sandboxMode'>>;writePolicy?:()=>Parameters<FileSystem['writeText']>[4];list:(query:string,signal:AbortSignal)=>Promise<ArtifactFileDirectory['items']>}
 export function createArtifactFileReader(access:(sessionId:string)=>Promise<ArtifactFileAccess>,now:()=>string){
   return async function handle(endpoint:string,payload:unknown,signal:AbortSignal):Promise<ArtifactFile|ArtifactFileDirectory>{
     const writing=endpoint==='artifacts/files/write',listing=endpoint==='artifacts/files/list',field=listing?'query':'path'
@@ -14,7 +14,7 @@ export function createArtifactFileReader(access:(sessionId:string)=>Promise<Arti
     const scoped=await access(sessionId)
     if(scoped.sessionId!==sessionId)throw new WorkError('teloa/not-bound','文件来源与会话绑定不一致。')
     signal.throwIfAborted()
-    if(listing){const items=await scoped.list(path,signal);return {sessionId,query:path,items:items.filter(item=>artifactFilePath(item.path)).slice(0,100)}}
+    if(listing){const items=await scoped.list(path,signal);signal.throwIfAborted();return {sessionId,query:path,items:items.filter(item=>artifactFilePath(item.path)).slice(0,100)}}
     const {fs,cwd}=scoped,opts={cwd,signal}
     const root=await fs.resolve('.',opts),target=await fs.resolve(path,opts)
     const runtime=await fs.resolve('.runtime',opts),git=await fs.resolve('.git',opts)
@@ -40,7 +40,17 @@ export function createArtifactFileReader(access:(sessionId:string)=>Promise<Arti
       if(snapshot.sha256===createHash('sha256').update(text).digest('hex'))return snapshot
       if(payload.expectedSha256!==snapshot.sha256)throw new WorkError('teloa/file-changed','原文件内容已变化，未覆盖；请保留草稿并重新读取核对。')
       if(!fs.writeText)throw new WorkError('teloa/file-unavailable','当前文件系统不支持网页编辑。')
-      await fs.writeText(target,text,{kind:'replaceIfVersion',version:after.version},signal)
+      // 写前按当前会话解析模式和工作目录，不把部署默认目录当作本会话的授权范围。
+      const policy=scoped.writePolicy?.()
+      if(policy?.mode==='read-only')throw new WorkError('teloa/forbidden','当前会话为只读模式，不能保存文件。')
+      if(fs.sandboxMode!==undefined&&!policy)throw new WorkError('teloa/file-unavailable','当前会话的文件写入范围尚未就绪，请稍后重新读取核对。')
+      try{await fs.writeText(target,text,{kind:'replaceIfVersion',version:after.version},signal,policy)}catch(cause){
+        if(cause&&typeof cause==='object'&&'code'in cause){
+          if(cause.code==='FS_SANDBOX_DENIED')throw new WorkError('teloa/forbidden','当前会话为只读模式，或文件不在获准写入范围内；未扩大文件权限。')
+          if(cause.code==='FS_STALE_VERSION')throw new WorkError('teloa/file-changed','原文件内容已变化，未覆盖；请保留草稿并重新读取核对。')
+        }
+        throw cause
+      }
       const saved=await handle('artifacts/files/read',{sessionId,path},signal)
       if(!('sha256' in saved)||saved.sha256!==createHash('sha256').update(text).digest('hex'))throw new WorkError('teloa/file-changed','写入后文件再次变化，请重新读取核对；旧成果快照保持不变。')
       return saved

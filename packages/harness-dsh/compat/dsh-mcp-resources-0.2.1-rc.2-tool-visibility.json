@@ -1,0 +1,21 @@
+{
+  "schema": "teloa.dsh-compat-patch/v1",
+  "package": "@deepseek-ai/dsh-mcp-resources",
+  "version": "0.2.1-rc.2",
+  "upstreamCommit": "687f282e8625c6b8d11ff58211a90524be2e4317",
+  "patchSha256": "7dd3ea050a34d4b51c2231d01aa1ce64ad379889b06ef1fda1be65dd73011070",
+  "files": [
+    {
+      "path": "lib/index.js",
+      "beforeSha256": "7fa2e6049494b502ae756bf557c1f744a07835b850e6e0e0ddb555a488f3a094",
+      "afterSha256": "65293154764985b6f4c1cd92ec24b8ceba42ef5f9cd7ffb4d0e20edf77a21843"
+    }
+  ],
+  "api": [
+    "mcpResources.scopeToolAdvertisement"
+  ],
+  "scope": {
+    "presentation": "Render configured MCP resource servers only when this scope has visible resource operations; advertise only those operations using public ToolRuntime.schemas(scope).",
+    "boundary": "Preserve tool registration, scoped providers, argument authorization, sandbox, approval and execution. No tools or permissions are added. Native schemas and PTC SDK/runtime retain their shared registry source."
+  }
+}

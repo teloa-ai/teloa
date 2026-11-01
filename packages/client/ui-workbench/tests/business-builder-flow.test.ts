@@ -11,12 +11,13 @@ function deferred<T>(){let resolve!:(v:T)=>void,reject!:(e:Error)=>void;const pr
 function fixture(){
  let saved:string|null=null,setupSaved:string|null=null;const editorRows=new Map<string,string>()
  const storage:Pick<Storage,'getItem'|'setItem'|'removeItem'>={getItem:key=>key.includes('/setup-editor/')?editorRows.get(key)??null:key.endsWith('/setup-apply')?setupSaved:saved,setItem:(key:string,v:string)=>{if(key.includes('/setup-editor/'))editorRows.set(key,v);else if(key.endsWith('/setup-apply'))setupSaved=v;else saved=v},removeItem:key=>{if(key.includes('/setup-editor/'))editorRows.delete(key);else if(key.endsWith('/setup-apply'))setupSaved=null;else saved=null}}
- const bindings=new Map<string,BusinessConversationBinding>(),conversations=new Map<string,Conversation>(),drafts=new Map<string,BusinessConfigurationDraftResponse>(),receipts=new Map<string,BusinessConfigurationApplyResult>()
+ const modes=new Map<string,'preview'|'assisted'>(),bindings=new Map<string,BusinessConversationBinding>(),conversations=new Map<string,Conversation>(),drafts=new Map<string,BusinessConfigurationDraftResponse>(),receipts=new Map<string,BusinessConfigurationApplyResult>()
  const calls:string[]=[],writes:unknown[]=[],opened:string[]=[],input:InputState={draft:'',draftRev:0,phase:'plain',attachmentIds:[],occurrences:[],queue:[]}
  let main:string|undefined,scopes=0,fail:string|undefined
  const call=async(endpoint:string,value:unknown,_signal?:AbortSignal):Promise<unknown>=>{
   const r=value as Record<string,any>;calls.push(endpoint)
   if(endpoint==='business-setup-plan/read')return null
+  if(endpoint==='business-configuration/generation-mode'){if(r.action==='set')modes.set(r.sessionId,r.mode);return {sessionId:r.sessionId,draftId:r.draftId,revision:drafts.get(r.draftId)!.revision,mode:modes.get(r.sessionId)??'assisted'}}
   if(fail===endpoint){fail=undefined;throw Error('lost')}
   if(endpoint==='business-conversations/reserve'){
    writes.push(value)
@@ -545,4 +546,22 @@ test('保存成功后刷新搭建目录并从「继续搭建」移除已应用�
  assert.equal(flow.getSnapshot().phase,'saved')
  assert.equal(flow.getSnapshot().directory!.items.some(item=>item.draft?.status==='applied'),false,'保存成功后目录必须刷新并移除已应用草案')
  assert.ok(listCalls()>=2,'保存成功后应重新读取搭建目录')
+})
+
+test('新业务在唯一native打开前固定零工具预览意图，失败保留原creation请求且恢复不重复创建',async()=>{
+ const f=fixture();let attempts=0
+ f.setRoute(async(e,r)=>{if(e==='business-configuration/generation-mode'&&++attempts===1)throw Error('mode reply unavailable');return f.baseCall(e,r)})
+ const flow=f.make();await assert.rejects(flow.start({}),/mode reply unavailable/)
+ assert.equal(f.conversations.size,1);assert.equal(f.opened.length,0);const request=JSON.parse(f.journal()!).creation.requestId
+ await f.make().recoverCreation(request);assert.equal(f.conversations.size,1);assert.deepEqual(f.opened,['session-0']);assert.equal(f.journal(),null)
+ assert.equal(f.calls.filter(e=>e==='business-configuration/apply').length,0)
+})
+test('可信预览方式保持同会话草案；明确切换旧搭建模式与保留离开重开只读恢复不发模型或采用',async()=>{
+ const f=fixture(),flow=f.make();await flow.start({})
+ const draft=flow.getSnapshot().draft!,session=flow.getSnapshot().binding!.sessionId!
+ assert.equal(flow.getSnapshot().generationMode,'preview');await flow.setGenerationMode('assisted');assert.equal(flow.getSnapshot().generationMode,'assisted')
+ const pending=flow.requestLeave();flow.decideLeave('keep');assert.equal(await pending,true)
+ const restored=f.make();const before=f.calls.length;await restored.restoreSession(session)
+ assert.equal(restored.getSnapshot().generationMode,'assisted');assert.equal(restored.getSnapshot().draft!.id,draft.id);assert.equal(restored.getSnapshot().draft!.revision,draft.revision)
+ assert.ok(f.calls.slice(before).every(e=>!['native/create','business-configuration/apply'].includes(e)));assert.equal(f.calls.filter(e=>e==='native/create').length,1)
 })

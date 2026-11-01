@@ -62,3 +62,22 @@ test('无会话、无 link 的 configuration_failed Run 不读执行日志即收
  await assert.rejects(driver.inspectRun('owner',input),{code:'teloa/forbidden'});assert.equal(events,1)
  readable=true;assert.equal((await driver.inspectRun('owner',input)).settled,false);assert.equal(events,2)
 })
+
+test('正式处置的unknown只用冷静止证明收口暂停，不warm旧请求或改成completed；证明失败仍待核对',async()=>{
+ const run={id:'unknown',state:'submission_unknown',submissionDisposition:{requestId:'disposition'},evidence:null},control={id:'definition',ownerId:'owner',state:'pausing',scope:'definition',generation:8}
+ let cold=true,proofs=0,warm=0
+ const driver=new WorkControlDriver({controls:{get:async()=>control,reconcile:async()=>control},runs:{get:async()=>run},lineage:{descendants:async()=>({runIds:[run.id]})},driver:{stop:async()=>{throw Error('不重发旧请求')}},runtimeLinks:{list:async()=>[]},quiescentSettled:async()=>{proofs++;return cold},ports:{stop:async()=>{warm++;throw Error('不warm旧Agent')},goalObservation:async()=>{warm++;throw Error('不warm旧Goal')},events:async()=>[]}} as never)
+ await driver.apply('owner',control as never,AbortSignal.timeout(5000))
+ assert.deepEqual(await driver.inspectRun('owner',{runId:run.id,action:'pause',generation:8}),{settled:true,unknownOperationIds:[]});assert.ok(proofs>=2);assert.equal(warm,0);assert.equal(run.state,'submission_unknown');assert.equal(run.evidence,null)
+ cold=false;await driver.apply('owner',control as never,AbortSignal.timeout(5000))
+ assert.equal((await driver.inspectRun('owner',{runId:run.id,action:'pause',generation:8})).settled,false);assert.equal(warm,0)
+})
+
+ test('确定未发布取消的withdrawn通过可信证明收敛且不恢复旧会话',async()=>{
+ const run:any={id:randomUUID(),sessionId:randomUUID(),nativeRequestId:randomUUID(),state:'withdrawn',evidence:null,stopRequestedAt:new Date().toISOString()};let proof=true,native=0
+ const make=(enabled=true)=>new WorkControlDriver({runs:{get:async()=>run},runtimeLinks:{list:async()=>[{kind:'job',payload:{record:'owner'}}]},ports:{events:async()=>{native++;throw Error('不恢复旧会话')}},...(enabled?{unpublishedCancellationSettled:async()=>proof}:{})} as never)
+ const input={runId:run.id,action:'pause' as const,generation:2}
+ assert.deepEqual(await make().inspectRun('owner',input),{settled:true,unknownOperationIds:[]})
+ proof=false;assert.equal((await make().inspectRun('owner',input)).settled,false)
+ assert.equal((await make(false).inspectRun('owner',input)).settled,false);assert.equal(native,0)
+ })

@@ -1,4 +1,5 @@
 import {isDeepStrictEqual} from 'node:util'
+import {assertArtifactAvailable} from './artifact-availability.ts'
 import {createHash} from 'node:crypto'
 import type {Pool,PoolClient} from 'pg'
 import {WorkError,artifactInput,artifactContent,savedArtifactSource,taskDefinition,type SavedArtifactVersion} from '@teloa/contract'
@@ -50,6 +51,7 @@ export class ArtifactRevisionRequestService{
   if(matches.length!==1||!uuid(matches[0]?.[1]))throw new WorkError('teloa/invalid-input','成果续改必须使用唯一固定请求。')
   const row=(await this.pool.query('select r.*,a.current_version,v.content,f.body as feedback from teloa_artifact_revision_requests r join teloa_artifacts a on a.owner_id=r.owner_id and a.id=r.artifact_id join teloa_artifact_versions v on v.owner_id=r.owner_id and v.artifact_id=r.artifact_id and v.number=r.base_version join teloa_artifact_feedback f on f.owner_id=r.owner_id and f.id=r.feedback_id and f.artifact_id=r.artifact_id and f.version=r.base_version and f.section_id=r.section_id where r.owner_id=$1 and r.id=$2',[owner,matches[0]![1]])).rows[0]
   if(!row||row.session_id!==input.sessionId)throw new WorkError('teloa/forbidden','修订请求不属于本人的原会话。')
+  await assertArtifactAvailable(this.pool,owner,row.artifact_id,row.base_version)
   if(row.current_version!==row.base_version||!['requested','bound'].includes(row.state))throw new WorkError('teloa/version-conflict','原成果版本或修订状态已变化，请核对原工作。')
   const section=row.content.sections.find((section:{id:string})=>section.id===row.section_id)
   if(!section)throw new WorkError('teloa/storage-corrupt','修订原段落缺失。')
@@ -62,6 +64,7 @@ export class ArtifactRevisionRequestService{
   try{await db.query('begin');await db.query('select pg_advisory_xact_lock(hashtextextended($1,0))',[JSON.stringify(['artifact-revision',owner,value.feedbackId])])
    const prior=(await db.query('select * from teloa_artifact_revision_requests where owner_id=$1 and (id=$2 or feedback_id=$3)',[owner,value.requestId,value.feedbackId])).rows
    if(prior.length){if(prior.length!==1||!isDeepStrictEqual(prior[0].request_spec,value))throw new WorkError('teloa/conflict','原反馈已有修订请求，请核对原工作。');await db.query('commit');return view(prior[0])}
+   await assertArtifactAvailable(db,owner,value.artifactId as string,value.baseVersion as number)
    const row=(await db.query('select v.*,a.current_version,f.section_id,f.body as feedback from teloa_artifact_versions v join teloa_artifacts a on a.owner_id=v.owner_id and a.id=v.artifact_id join teloa_artifact_feedback f on f.owner_id=v.owner_id and f.artifact_id=v.artifact_id and f.version=v.number where v.owner_id=$1 and v.artifact_id=$2 and v.number=$3 and f.id=$4 for share of a,v,f',[owner,value.artifactId,value.baseVersion,value.feedbackId])).rows[0]
    if(!row||row.current_version!==value.baseVersion||row.source.scope!=='general'||!row.content.sections.some((section:{id:string})=>section.id===row.section_id))throw new WorkError('teloa/version-conflict','反馈不属于当前通用成果版本，请先核对新版本。')
    const saved=(await db.query("insert into teloa_artifact_revision_requests(owner_id,id,request_spec,artifact_id,base_version,feedback_id,section_id,session_id,state,created_at) values($1,$2,$3,$4,$5,$6,$7,$8,'requested',$9) returning *",[owner,value.requestId,spec,value.artifactId,value.baseVersion,value.feedbackId,row.section_id,value.sessionId,this.now()])).rows[0]
@@ -76,6 +79,7 @@ export class ArtifactRevisionRequestService{
   const fixed={sessionId:source.sessionId,messageId:source.messageId,messageSeq:source.messageSeq,requestId:source.requestId},db=await this.pool.connect()
   try{await db.query('begin');const row=(await db.query('select * from teloa_artifact_revision_requests where owner_id=$1 and id=$2 for update',[owner,matches[0]![1]])).rows[0]
    if(!row||row.session_id!==source.sessionId)throw new WorkError('teloa/forbidden','修订请求不属于当前本人原会话。')
+   await assertArtifactAvailable(db,owner,row.artifact_id,row.base_version)
    if(row.accepted_source&&!isDeepStrictEqual(row.accepted_source,fixed))throw new WorkError('teloa/conflict','原修订已交办，请核对原工作，不能重复执行。')
    await db.query('update teloa_artifact_revision_requests set accepted_source=$3,source_request_id=$4 where owner_id=$1 and id=$2',[owner,row.id,JSON.stringify(fixed),source.requestId]);await db.query('commit')
   }catch(error){await db.query('rollback');throw error}finally{db.release()}
@@ -87,6 +91,7 @@ export async function bindArtifactRevisionTask(db:PoolClient,owner:string,source
  const row=(await db.query('select * from teloa_artifact_revision_requests where owner_id=$1 and source_request_id=$2 for update',[owner,sourceRequestId])).rows[0]
  if(!row)return
  if(row.task_id&&row.task_id!==taskId)throw new WorkError('teloa/conflict','原修订已绑定另一工作。')
+ await assertArtifactAvailable(db,owner,row.artifact_id,row.base_version)
  await db.query("update teloa_artifact_revision_requests set task_id=$3,state='bound' where owner_id=$1 and source_request_id=$2 and state='requested'",[owner,sourceRequestId,taskId])
 }
 /** 只沿精确生产回执取原用户事实；旧AI正文、模型概述和旧执行权限都不继承。 */
@@ -131,6 +136,7 @@ export async function artifactRevisionContext(db:PoolClient,owner:string,taskId:
  const row=(await db.query('select r.*,v.content,f.body as feedback from teloa_artifact_revision_requests r join teloa_artifact_versions v on v.owner_id=r.owner_id and v.artifact_id=r.artifact_id and v.number=r.base_version join teloa_artifact_feedback f on f.owner_id=r.owner_id and f.id=r.feedback_id where r.owner_id=$1 and r.task_id=$2 for share of r,v,f',[owner,taskId])).rows[0]
  if(!row)return
  const section=row.content.sections.find((item:{id:string})=>item.id===row.section_id)
+ await assertArtifactAvailable(db,owner,row.artifact_id,row.base_version)
  if(!section||row.state!=='bound')throw new WorkError('teloa/conflict','原修订已经结束或来源不完整。')
  let basis:ArtifactRevisionBasis|undefined
  if(basisOptions){

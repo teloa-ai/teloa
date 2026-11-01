@@ -15,6 +15,14 @@ const mapping=readBusinessImportMapping({delimiter:',',headerRow:1,primaryKey:[{
 function table(cells:string[][]):BusinessImportTable{return {format:'teloa.business-import-table/v1',parserVersion:'csv-v1',columns:cells[0]!.length,rows:cells.map((cells,index)=>({rowNumber:index+1,cells}))}}
 const source=table([['编号','标题','金额','币种','标签'],[' 001 ','第一条','123456789012345678.1234','USD','["乙","甲"]'],['002','第二条','-0.0000','CNY','']])
 const base={draftId:id,scope:'sales',type:'expense',fileHash:sha,revision:2,sourceIdentity,configurationVersion:1,definition,mapping,table:source}
+test('库存导入按非负整数规则拒绝负数和小数，原表格不变且无可应用操作',async()=>{
+ const inventory={...definition,fields:[{name:'quantity',label:'数量',from:'数量',type:'number' as const,required:true,integer:true as const,minimum:0}]},mapped=readBusinessImportMapping({delimiter:',',headerRow:1,primaryKey:[{column:0,trim:false}],title:{column:0,trim:false},fields:[{field:'quantity',value:{column:1,trim:false}}]})
+ for(const value of ['0','4','-1','1.5']){
+  const input=table([['SKU','数量'],['IMPORT-ONE',value]]),before=structuredClone(input),result=await preview({...base,definition:inventory,mapping:mapped,table:input})
+  assert.equal(result.canApply,value==='0'||value==='4');assert.deepEqual(input,before)
+  if(value==='-1'||value==='1.5'){assert.equal(result.rows.length,0);assert.ok(result.issues.some(issue=>issue.rowNumber===2))}
+ }
+})
 
 test('money_is_exact_and_multi_values_are_canonical',async()=>{
  const result=await preview(base)

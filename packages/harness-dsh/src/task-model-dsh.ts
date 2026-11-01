@@ -101,7 +101,7 @@ export async function recordTaskModelRecovery(ctx:Context,agent:Agent,runId:stri
 /** send 与宿主恢复后的 pre-step 共用同一登记；重装不能把已切备用的任务重新切回首选。 */
 export function createTaskModelRouting(ctx:Context,prepareRequest?:TaskModelRoutingPorts['prepareRequest']){
  const installed=new WeakMap<Agent,{runId:string;policy:string;routing:ReturnType<typeof installTaskModelRouting>;imagesAdmitted:boolean;dispose:()=>void}>()
- return (agent:Agent,run:Pick<TaskRun,'id'|'sessionId'|'modelPolicy'>)=>{
+ const ensure=(agent:Agent,run:Pick<TaskRun,'id'|'sessionId'|'modelPolicy'>)=>{
   // Skill 守卫按根 Run 授权子 Agent；模型选择则必须尊重子 Agent 自己的原生配置。
   if(!run.modelPolicy||agent.session.id!==run.sessionId)return undefined
   const policy=readTaskRunModelPolicy(run.modelPolicy),fingerprint=JSON.stringify(policy),previous=installed.get(agent)
@@ -122,4 +122,9 @@ export function createTaskModelRouting(ctx:Context,prepareRequest?:TaskModelRout
   agent.ctx.effect(()=>state.dispose)
   return state
  }
+ return Object.assign(ensure,{release:(agent:Agent,runId:string)=>{
+  const state=installed.get(agent)
+  if(state&&state.runId!==runId)throw new WorkError('teloa/conflict','不能释放其他执行的模型策略。')
+  state?.dispose()
+ }})
 }

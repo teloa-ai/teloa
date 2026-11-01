@@ -355,8 +355,15 @@ export class PlanService{
    */
   let assignment:WorkAccessLease|undefined
   if(action==='enable'){await this.verifyIndustryLoad(client,ownerId,locked.id);assignment=await validateRole(client,this.pool,ownerId,role,locked,locked.source.kind==='system-digest'?Number(role.version):locked.roleVersion,locked.source);await this.verifySource(ownerId,locked.source,client)}
-  // 修改分身计划不能扩大或恢复旧委托；暂停、归档及旧回执读取不依赖新授权。
-  if(action==='update')assignment=await validateRole(client,this.pool,ownerId,role,{...locked,...fields},locked.roleVersion,locked.source)
+  // 系统小结这里只改时刻/时区，不取得执行许可，也不恢复暂停或退役的员工。
+  // 实际启用与领取仍核对当前岗位；普通计划编辑仍受冻结岗位版本和委托约束。
+  if(action==='update'){
+   if(locked.source.kind==='system-digest'){
+    const currentRole=readStoredRole(role)
+    if(locked.source.roleId!==currentRole.id)throw corrupt()
+    if(currentRole.kind!=='employee')throw new WorkError('teloa/conflict','Auto Dream 系统小结由员工负责。')
+   }else assignment=await validateRole(client,this.pool,ownerId,role,{...locked,...fields},locked.roleVersion,locked.source)
+  }
   const admission=action==='enable'||action==='update'?combineWorkAccessLeases([...(assignment?[assignment]:[]),await workAccess.authorize({kind:'capability',capability:'automation',ownerId,sessionId:null,objectId:locked.id,operation:action==='enable'?'resume':'edit'})]):undefined
   admission?.assertCurrent()
   const state=action==='enable'?'active':action==='pause'?'paused':action==='archive'?'archived':locked.state,now=this.identity.now(),definition=action==='update'?{...locked,...fields}:locked

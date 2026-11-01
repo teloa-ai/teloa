@@ -1,5 +1,6 @@
+import {type TaskRunState} from '@teloa/contract'
 import {readOwnerPlanFields,readWorkExecutor,readMethodReuseSource,readMethodReuseAcceptedSource,type MethodReuseSource,type MethodReuseAcceptedSource,type OwnerPlanFields,type WorkExecutor,readPlanWorkConfiguration,readPlanWorkDefinition,type PlanWorkDefinition,type PlanWorkConfiguration} from '@teloa/contract'
-import {isRecord,readScheduleTrigger,readTaskCompletionPolicy,taskDefinition,type ScheduleTrigger,type TaskCompletionPolicy} from '@teloa/contract'
+import {isScheduledOccurrenceId,isRecord,readScheduleTrigger,readTaskCompletionPolicy,taskDefinition,type ScheduleTrigger,type TaskCompletionPolicy} from '@teloa/contract'
 import type {ContinuousPlan} from './continuous-preview.ts'
 import type {CollaborationScope} from './collaboration-preview.ts'
 import {readPlanScheduleSummary} from './plan-schedule-summary.ts'
@@ -19,7 +20,7 @@ export type SavedPlan=SavedPlanRecord&((PlanFields&{roleVersion:number;executor?
 export type PlanAction='enable'|'pause'|'archive'
 export type PlanUpdateFields=Pick<PlanFields,'title'|'goal'|'dataScope'|'delivery'|'trigger'|'notificationPolicy'|'completionPolicy'|'groupId'>
 export type PlanWorkEditFields=Pick<PlanFields,'title'|'goal'|'dataScope'|'delivery'|'groupId'>
-export type PlanExecutionRunState='prepared'|'submitting'|'accepted'|'active'|'ended'|'withdrawn'|'configuration_failed'|'not-started'
+export type PlanExecutionRunState=TaskRunState|'not-started'
 export type PlanExecutionDirectoryInput={limit:number;cursor?:PlanExecutionHistoryCursor;scope?:string;roleId?:string;query?:string;runState?:PlanExecutionRunState}
 export type PlanTriggerResult={planId:string;claimId:string;taskId:string;runId:string}
 export type PlanCommand=({kind:'create';requestId:string;fields:PlanCreateFields;source:PlanSource}|{kind:'change';planId:string;requestId:string;expectedVersion:number;action:PlanAction;note?:string}|{kind:'update';planId:string;requestId:string;expectedVersion:number;expectedConfigVersion:number;expectedState:SavedPlan['state'];fields:PlanUpdateFields})&{confirmed?:true}|{kind:'configure-work';planId:string;requestId:string;expectedVersion:number;expectedConfigVersion:number;configuration:PlanWorkConfiguration;fields?:PlanWorkEditFields;confirmed:true}|{kind:'trigger';planId:string;requestId:string;expectedVersion:number;expectedConfigVersion:number;now:string}
@@ -110,7 +111,7 @@ const canonical=(value:unknown):unknown=>Array.isArray(value)?value.map(canonica
 const same=(a:unknown,b:unknown)=>JSON.stringify(canonical(a))===JSON.stringify(canonical(b))
 const fixed=(plan:SavedPlan)=>JSON.stringify({title:plan.title,goal:plan.goal,scope:plan.scope,dataScope:plan.dataScope,delivery:plan.delivery,roleId:plan.roleId,roleVersion:plan.roleVersion,...(plan.executor?{executor:plan.executor}:{}),trigger:plan.trigger,...(plan.notificationPolicy===undefined?{}:{notificationPolicy:plan.notificationPolicy}),...(plan.completionPolicy===undefined?{}:{completionPolicy:plan.completionPolicy}),...groupFields(plan),source:plan.source,...(plan.workDefinition?{workDefinition:plan.workDefinition}:{}),configVersion:plan.configVersion,createdAt:plan.createdAt})
 const fixedCreation=(fields:PlanCreateFields,source:PlanSource,createdAt:string)=>JSON.stringify({title:fields.title,goal:fields.goal,scope:fields.scope,dataScope:fields.dataScope,delivery:fields.delivery,roleId:fields.roleId,roleVersion:fields.expectedRoleVersion,trigger:fields.trigger,notificationPolicy:fields.notificationPolicy,...(fields.completionPolicy===undefined?{}:{completionPolicy:fields.completionPolicy}),...groupFields(fields),source,configVersion:1,createdAt})
-const clearable=(error:unknown)=>!!error&&typeof error==='object'&&'rejected' in error&&error.rejected===true&&'code' in error&&['teloa/invalid-input','teloa/forbidden','teloa/conflict','teloa/version-conflict','teloa/source-unavailable'].includes(String(error.code))
+const clearable=(error:unknown)=>!!error&&typeof error==='object'&&'rejected' in error&&error.rejected===true&&'code' in error&&['teloa/invalid-input','teloa/forbidden','teloa/conflict','teloa/version-conflict','teloa/source-unavailable','teloa/no-work-evidence'].includes(String(error.code))
 
 export type PlanApi=ReturnType<typeof createPlanApi>
 export function createPlanApi(call:Call,journal?:PlanRequestJournal,newId=()=>crypto.randomUUID()){
@@ -196,14 +197,14 @@ export function createPlanApi(call:Call,journal?:PlanRequestJournal,newId=()=>cr
    const query=input.query?.trim()
    if(!Number.isSafeInteger(input.limit)||input.limit<1||input.limit>50)throw Error('持续计划执行历史分页参数不正确。')
    if(input.cursor&&(!date(input.cursor.claimedAt)||!uuid(input.cursor.claimId)))throw Error('持续计划执行历史分页参数不正确。')
-   if(input.scope!==undefined&&!/^[a-zA-Z0-9_-]{1,128}$/.test(input.scope)||input.roleId!==undefined&&!uuid(input.roleId)||query!==undefined&&query.length>240||input.runState!==undefined&&!['prepared','submitting','accepted','active','ended','withdrawn','configuration_failed','not-started'].includes(input.runState))throw Error('持续计划执行目录筛选参数不正确。')
+   if(input.scope!==undefined&&!/^[a-zA-Z0-9_-]{1,128}$/.test(input.scope)||input.roleId!==undefined&&!uuid(input.roleId)||query!==undefined&&query.length>240||input.runState!==undefined&&!['prepared','submitting','accepted','active','ended','withdrawn','configuration_failed','submission_unknown','not-started'].includes(input.runState))throw Error('持续计划执行目录筛选参数不正确。')
    const payload={limit:input.limit,...(input.cursor?{cursor:input.cursor}:{}),...(input.scope?{scope:input.scope}:{}),...(input.roleId?{roleId:input.roleId}:{}),...(query?{query}:{}),...(input.runState?{runState:input.runState}:{})}
    return readPlanExecutionDirectoryPage(await call('plans/executions',payload),{limit:input.limit,...(input.cursor?{cursor:input.cursor}:{}),...(input.runState?{runState:input.runState}:{})})
   },
   async skips(planId:string,limit=20,cursor?:PlanSkipHistoryCursor){
    if(!uuid(planId))throw Error('持续计划身份格式不正确。')
    if(!Number.isSafeInteger(limit)||limit<1||limit>50)throw Error('持续计划跳过记录分页参数不正确。')
-   if(cursor&&(!date(cursor.skippedAt)||!positive(cursor.configVersion)||cursor.configVersion>2147483647||typeof cursor.occurrenceId!=='string'||cursor.occurrenceId.length>100||!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}\[(?:Asia\/Singapore|Asia\/Shanghai|UTC)\]$/.test(cursor.occurrenceId)))throw Error('持续计划跳过记录分页参数不正确。')
+   if(cursor&&(!date(cursor.skippedAt)||!positive(cursor.configVersion)||cursor.configVersion>2147483647||typeof cursor.occurrenceId!=='string'||cursor.occurrenceId.length>100||!isScheduledOccurrenceId(cursor.occurrenceId)))throw Error('持续计划跳过记录分页参数不正确。')
    return readPlanSkipHistoryPage(await call('plans/skips',{planId,limit,...(cursor?{cursor}:{})}),planId,{limit,...(cursor?{cursor}:{})})
   },
   async configureWorkConfirmed(plan:SavedPlan,configuration:PlanWorkConfiguration,fields?:PlanWorkEditFields):Promise<SavedPlan>{

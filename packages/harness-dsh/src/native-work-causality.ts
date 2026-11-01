@@ -12,7 +12,7 @@ import {WorkError} from '@teloa/contract'
 import {assertNativeInputAcceptanceCurrent,nativeInputIdentity,type NativeInputAcceptance,type NativeInputIdentity} from './native-input-access.ts'
 import {admitNativeResourceCleanup,enterNativeResourceCleanup,isNativeResourceCleanupScope} from './native-resource-cleanup.ts'
 import type {NativeInputCheckpoint,NativeInputCheckpointInput,NativeInputRoot,NativeProgressCheckpoint,NativeProgressCheckpointInput,NativeInputRestore} from './native-input-checkpoint.ts'
-import {nativeInputRecoveryCandidate} from './native-input-recovery-candidate.ts'
+import {nativeInputRecoveryCandidate,nativePendingInputOccurrence} from './native-input-recovery-candidate.ts'
 import {readSessionEvents} from './session-events.ts'
 import {projectRuntimeInputHooks} from './project-runtime-context.ts'
 import {parseHarnessDirective} from './harness-routing.ts'
@@ -75,10 +75,23 @@ export function createNativeWorkCausality(ctx:Context,publishContinuation:Publis
  const received=new WeakSet<NativeInputAcceptance>(),acceptedIds=new WeakMap<Session,Set<string>>()
  // 保留同一份真实受理证明，claim 只消费待办，不抹掉后续只读核对所需的根归属。
  const acceptedInputs=new WeakMap<Session,Map<string,PendingInput>>()
- const remember=(message:UserMessage,input:PendingInput)=>{
-  const rows=acceptedInputs.get(input.receipt.session)??new Map<string,PendingInput>()
-  if(rows.has(message.id))throw denied()
-  rows.set(message.id,input);acceptedInputs.set(input.receipt.session,rows)
+ const prepareRemember=(message:UserMessage,input:PendingInput)=>{
+  const {session,event}=input.receipt,previous=acceptedInputs.get(session)?.get(message.id)
+  const events=readSessionEvents(session),after=nativePendingInputOccurrence(events.slice(0,event.seq+1),message.id)
+  if(!after||after.event.seq!==event.seq||canonical(after.message)!==canonical(message))throw denied()
+  let replaced:UserMessage|undefined
+  if(previous){
+   previous.receipt.assertCurrent()
+   const before=nativePendingInputOccurrence(events.slice(0,event.seq),message.id)
+   if(!before||before.event.seq!==previous.receipt.event.seq||pending.get(before.message)!==previous)throw denied()
+   replaced=before.message
+  }
+  // 先完成重复/替换核验及项目 accepted 回调，再同步提交全部内存受理状态。
+  return ()=>{
+   const rows=acceptedInputs.get(session)??new Map<string,PendingInput>()
+   if(replaced)pending.delete(replaced)
+   pending.set(message,input);rows.set(message.id,input);acceptedInputs.set(session,rows)
+  }
  }
  const models=new WeakMap<GenerateOptions,Model>(),planned=new WeakMap<ToolExecutionInput,{turn:Turn;step:Step}>()
  const auxiliaryModels=new WeakMap<object,{entered:boolean;active:boolean;assertCurrent:()=>void}>(),usedAuxiliary=new WeakSet<object>()
@@ -416,16 +429,19 @@ export function createNativeWorkCausality(ctx:Context,publishContinuation:Publis
      const actualMessages=agent.inbox.nextTurn
      if(agent.inbox.nextStep.length||canonical(actualMessages)!==canonical(messages))throw denied()
      assertCurrent();publishSignal?.throwIfAborted()
-     bound=agent;published=true
-     const ids=new Set<string>()
+     const ids=new Set<string>(),commits:Array<()=>void>=[]
      for(let index=0;index<actualMessages.length;index++){
       const message=actualMessages[index]!,event=readSessionEvents(agent.session).find(event=>event.seq===events[index]!.seq)
       if(!event||canonical(event)!==canonical(events[index]))throw denied()
       const receipt:InputCause=Object.freeze({session:agent.session,event,assertCurrent})
+      const input={receipt,roots:[receipt]},commit=prepareRemember(message,input)
       projectRuntimeInputHooks(ctx)?.accepted(agent,message)
-      const input={receipt,roots:[receipt]};pending.set(message,input);remember(message,input);ids.add(message.id)
+      commits.push(commit);ids.add(message.id)
      }
-     acceptedIds.set(agent.session,ids);assertCurrent()
+     assertCurrent();publishSignal?.throwIfAborted()
+     bound=agent;published=true
+     for(const commit of commits)commit()
+     acceptedIds.set(agent.session,ids)
     }}
     recovering.set(request.sessionId,proof)
     request.signal.addEventListener('abort',()=>{if(recovering.get(request.sessionId)===proof)recovering.delete(request.sessionId)},{once:true})
@@ -563,15 +579,15 @@ export function createNativeWorkCausality(ctx:Context,publishContinuation:Publis
    if(publication){
     const identity=nativeInputIdentity(message)
     if(publication.accepted||publication.session!==session||publication.identity.messageId!==identity.messageId||publication.identity.payloadSha256!==identity.payloadSha256)throw denied()
-    publication.accepted=true
    }
-   received.add(receipt)
-   const ids=acceptedIds.get(session)??new Set<string>();ids.add(message.id);acceptedIds.set(session,ids)
    // child 首次输入跨 Session，保留它自己的不可伪造回执；不按 source/lineage 授权。
    const cause:InputCause=Object.freeze({session,event,assertCurrent:()=>assertNativeInputAcceptanceCurrent(receipt)})
    const input={receipt:cause,roots:publication?.roots??[cause]}
-   pending.set(message,input);remember(message,input)
+   const commit=prepareRemember(message,input)
    projectRuntimeInputHooks(ctx)?.accepted(agent,message,publication!==undefined)
+   commit();received.add(receipt)
+   const ids=acceptedIds.get(session)??new Set<string>();ids.add(message.id);acceptedIds.set(session,ids)
+   if(publication)publication.accepted=true
   },
   /** 捕获真实工具的原受理根；后台通知仍属于原工作，不能成为新的根。 */
   captureToolCompletion(sender:Agent){

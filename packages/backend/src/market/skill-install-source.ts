@@ -1,5 +1,5 @@
 import {createHash} from 'node:crypto'
-import {WorkError,isRecord,assertIndustryModelsReady,type IndustryModelProbe} from '@teloa/contract'
+import {WorkError,isRecord,industryResourceModelDependencies,assertIndustryModelsReady,type IndustryModelProbe} from '@teloa/contract'
 import {validateManifest,marketTrustHash,type MarketContent,type MarketContentStore,type MarketSourceTrust} from './content-store.ts'
 import type {IndustryLoadService} from '../work/industry-loads.ts'
 
@@ -42,11 +42,16 @@ export class SkillInstallSource{
  private readonly models:IndustryModelProbe|undefined
  constructor(market:Pick<MarketContentStore,'get'>,loads:Pick<IndustryLoadService,'get'>,models?:IndustryModelProbe){this.market=market;this.loads=loads;this.models=models}
  /**
-  * 包内 Skill 的普通调用按固定清单检查模型；公共引用只共享原子正文，不能把首个安装方案的入口条件加给其他使用方。
+  * 原子 Skill 检查自身声明，包内 Skill 按固定清单检查模型；公共引用不继承首个安装方案的入口条件。
   * 公共引用所在方案的执行条件由当前加载的 resolveIndustryRunSkillBindings 核对。
   */
  async assertModelsReady(ownerId:string,source:SkillInstallSourceIdentity):Promise<void>{
-  if(source.kind!=='industry-local')return
+  if(source.kind!=='industry-local'){
+   const content=await this.market.get({ownerId,kind:'human'},{contentId:source.kind==='atomic'?source.contentId:source.sourceContentId})
+   if(content.kind!=='atomic-skill'||content.hash!==(source.kind==='atomic'?source.contentHash:source.sourceContentHash)||content.logicalId!==(source.kind==='atomic'?source.resourceId:source.sourceResourceId)||content.version!==(source.kind==='atomic'?source.resourceVersion:source.sourceResourceVersion))throw corrupt()
+   await assertIndustryModelsReady(industryResourceModelDependencies('skill',content.metadata.modelDependencies).modelDependencies,this.models)
+   return
+  }
   const content=await this.market.get({ownerId,kind:'human'},{contentId:source.contentId})
   if(content.kind!=='industry-template'||content.hash!==source.contentHash)throw corrupt()
   const resource=validateManifest(content.metadata).resources.find(row=>row.id===source.resourceId)

@@ -1,3 +1,4 @@
+import {closeArtifactReaderDrawer,openArtifactReaderDrawer} from './fixtures/artifact-reader-navigation.ts'
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import {mkdtemp,readFile,writeFile,rm,mkdir} from 'node:fs/promises'
@@ -26,7 +27,7 @@ test('真实 Frame 的会话、任务、项目共用成果右栏，C 列表与�
  f.reads=[];f.writes=[];props.artifactApi=new Proxy(generic,{get:(target,key)=>key==='pendingFor'?()=>[]:key==='list'?async(id,kind)=>{f.reads.push([kind,id]);return f.artifacts.filter(a=>a.source.id===id&&a.source.kind===kind)}:key==='get'?async id=>f.artifacts.find(a=>a.id===id):['create','change','save','feedback'].includes(key)?async(...args)=>{f.writes.push([key,args]);throw Error('不应写入成果')}:target[key]});
  props.taskApi=new Proxy(generic,{get:(target,key)=>key==='attention'?async()=>({items:[{task:sourceTask,attention:null}]}):key==='list'?async()=>[sourceTask]:key==='get'?async()=>sourceTask:key==='completion'?async()=>null:target[key]});
  props.industryTaskApi=new Proxy(generic,{get:(target,key)=>key==='source'?async()=>null:target[key]});
- props.resourceApi={directory:async()=>({resources:[]}),sources:async()=>[]};
+ props.taskRunApi=new Proxy(generic,{get:(target,key)=>key==='sourceFollowup'?undefined:target[key]});\n props.resourceApi={directory:async()=>({resources:[]}),sources:async()=>[]};
  f.projectItems=[{kind:'artifact',id:'task-artifact',version:1,title:'项目固定成果',available:true,origin:'direct'}];
   `+boundary).replace('conversationSearch={generic}','conversationSearch={verifiedConversationSearch}')
  await writeFile(join(temp,'fixture.tsx'),source)
@@ -66,25 +67,25 @@ test('真实 Frame 的会话、任务、项目共用成果右栏，C 列表与�
  await page.evaluate(()=>(window as any).frameFixture.actions.openRightbar());await page.waitForFunction(()=>(window as any).frameFixture.state().rightbar.shown)
  await page.evaluate(()=>(window as any).frameFixture.actions.closeRightbar());await panel.waitFor({state:'detached'})
  await page.evaluate(()=>{const f=(window as any).frameFixture;f.actions.openTask('10000000-0000-4000-8000-000000000001')})
- await page.getByRole('button',{name:'查看工作成果',exact:true}).click().catch(async(e:unknown)=>{t.diagnostic(JSON.stringify({errors,body:await page.locator('body').innerText(),state:await page.evaluate(()=>(window as any).frameFixture.state())}));throw e});await panel.getByRole('button',{name:/任务第二份成果/}).waitFor();await checkRail()
+ await page.getByRole('button',{name:'任务原成果',exact:true}).click().catch(async(e:unknown)=>{t.diagnostic(JSON.stringify({errors,body:await page.locator('body').innerText(),state:await page.evaluate(()=>(window as any).frameFixture.state())}));throw e});await panel.getByText('保留原成果 task-artifact 版本 2',{exact:true}).waitFor();await panel.getByRole('button',{name:'全部成果',exact:true}).click();await panel.getByRole('button',{name:/任务第二份成果/}).waitFor();await checkRail()
  assert.equal(await page.evaluate(()=>(window as any).frameFixture.state().view),'tasks')
  await panel.getByRole('button',{name:/任务原成果/}).click();await panel.getByText('保留原成果 task-artifact 版本 2',{exact:true}).waitFor()
- await panel.getByRole('button',{name:'版本与反馈',exact:true}).click();const feedback=panel.getByRole('textbox').last();await feedback.fill('尚未提交的反馈')
- await panel.getByRole('button',{name:'全部成果',exact:true}).click();assert.equal(await panel.getByRole('textbox').count(),0)
- await panel.getByRole('button',{name:/任务原成果/}).click();await panel.getByRole('button',{name:'版本与反馈',exact:true}).click();assert.equal(await feedback.inputValue(),'尚未提交的反馈')
- await panel.getByRole('button',{name:'放大',exact:true}).click();assert.equal(await panel.locator('aside').count(),0);await page.keyboard.press('Escape');assert.equal(await feedback.inputValue(),'尚未提交的反馈')
- await panel.getByRole('button',{name:'关闭产物面板',exact:true}).click()
+ await openArtifactReaderDrawer(page,'advanced');const feedback=panel.getByRole('textbox').last();await feedback.fill('尚未提交的反馈')
+ await closeArtifactReaderDrawer(page);await panel.getByRole('button',{name:'全部成果',exact:true}).click();assert.equal(await panel.getByRole('textbox').count(),0)
+ await panel.getByRole('button',{name:/任务原成果/}).click();await openArtifactReaderDrawer(page,'advanced');assert.equal(await feedback.inputValue(),'尚未提交的反馈')
+ await closeArtifactReaderDrawer(page);await panel.getByRole('button',{name:'放大',exact:true}).click();assert.equal(await panel.locator('aside').count(),0);await page.keyboard.press('Escape');await openArtifactReaderDrawer(page,'advanced');assert.equal(await feedback.inputValue(),'尚未提交的反馈')
+ await closeArtifactReaderDrawer(page);await panel.getByRole('button',{name:'关闭产物面板',exact:true}).click()
  await page.evaluate(()=>(window as any).frameFixture.actions.openBusiness({scope:'sales',section:'projects',id:'20000000-0000-4000-8000-000000000001'}))
  await page.getByRole('button',{name:'项目固定成果',exact:true}).first().click();await panel.getByText('保留原成果 task-artifact 版本 1',{exact:true}).waitFor();await checkRail()
  assert.deepEqual(await page.evaluate(()=>{const s=(window as any).frameFixture.state();return [s.view,s.businessTarget.section,s.businessTarget.id]}),['spaces','projects','20000000-0000-4000-8000-000000000001'])
- await panel.getByRole('button',{name:'预览',exact:true}).click();const href=await panel.getByRole('link',{name:'下载',exact:true}).getAttribute('href');assert.match(decodeURIComponent(href!),/保留原成果 task-artifact 版本 1/)
+ await closeArtifactReaderDrawer(page);const href=await panel.getByRole('link',{name:'下载',exact:true}).getAttribute('href');assert.match(decodeURIComponent(href!),/保留原成果 task-artifact 版本 1/)
  const screenshotDir=process.env.TELOA_RIGHTBAR_SCREENSHOTS
  if(screenshotDir){await mkdir(screenshotDir,{recursive:true});await page.screenshot({path:join(screenshotDir,'project-reading-1440.png')})}
  for(const width of [900,1440]){await page.setViewportSize({width,height:900});await checkRail();assert.equal(await panel.evaluate((el:HTMLElement)=>el.scrollWidth<=el.clientWidth),true);assert.equal(await page.locator('body').evaluate((el:HTMLElement)=>el.scrollWidth<=innerWidth),true)}
- await panel.getByRole('button',{name:'版本与反馈',exact:true}).click();await panel.getByRole('textbox').last().fill('历史 v1 未提交反馈')
- await panel.getByRole('button',{name:'全部成果',exact:true}).click();if(screenshotDir)await page.screenshot({path:join(screenshotDir,'project-list-1440.png')})
- await panel.getByRole('button',{name:/任务原成果/}).click();await panel.getByText('保留原成果 task-artifact 版本 1',{exact:true}).waitFor();await panel.getByRole('button',{name:'版本与反馈',exact:true}).click();assert.equal(await panel.getByRole('textbox').last().inputValue(),'历史 v1 未提交反馈')
- await panel.getByRole('button',{name:'关闭产物面板',exact:true}).click();assert.equal(await page.locator('dialog[open]').count(),0)
+ await openArtifactReaderDrawer(page,'advanced');await panel.getByRole('textbox').last().fill('历史 v1 未提交反馈')
+ await closeArtifactReaderDrawer(page);await panel.getByRole('button',{name:'全部成果',exact:true}).click();if(screenshotDir)await page.screenshot({path:join(screenshotDir,'project-list-1440.png')})
+ await panel.getByRole('button',{name:/任务原成果/}).click();await panel.getByText('保留原成果 task-artifact 版本 1',{exact:true}).waitFor();await openArtifactReaderDrawer(page,'advanced');assert.equal(await panel.getByRole('textbox').last().inputValue(),'历史 v1 未提交反馈')
+ await closeArtifactReaderDrawer(page);await panel.getByRole('button',{name:'关闭产物面板',exact:true}).click();assert.equal(await page.locator('dialog[open]').count(),0)
  assert.deepEqual(await page.evaluate(()=>(window as any).frameFixture.writes),[]);assert.deepEqual(requests,[]);assert.deepEqual(errors,[])
 })
 
@@ -101,6 +102,6 @@ test('群关联任务临时让出模态抽屉给同一成果右栏，关闭后�
  await page.getByRole('button',{name:'群内关联任务',exact:true}).click();const drawer=page.getByRole('dialog',{name:'关联任务',exact:true});await drawer.waitFor();assert.equal(await drawer.evaluate((el:HTMLElement)=>el.matches(':modal')),true)
  await drawer.getByRole('textbox').fill('群任务尚未提交的草稿');await drawer.getByRole('button',{name:'打开关联任务成果',exact:true}).click()
  const panel=page.getByRole('dialog',{name:'工作成果',exact:true});await panel.getByText('按原群权限进入的任务成果',{exact:true}).waitFor();assert.equal(await page.locator('dialog:modal').count(),0,'原抽屉暂时关闭，不阻止成果交互')
- await panel.getByRole('button',{name:'版本与反馈',exact:true}).click();await panel.getByRole('textbox').last().fill('成果反馈草稿');await panel.getByRole('button',{name:'关闭产物面板',exact:true}).click()
+ await openArtifactReaderDrawer(page,'advanced');await panel.getByRole('textbox').last().fill('成果反馈草稿');await closeArtifactReaderDrawer(page);await panel.getByRole('button',{name:'关闭产物面板',exact:true}).click()
  await drawer.waitFor();assert.equal(await drawer.evaluate((el:HTMLElement)=>el.matches(':modal')),true);assert.equal(await drawer.getByRole('textbox').inputValue(),'群任务尚未提交的草稿');assert.deepEqual(errors,[])
 })

@@ -26,7 +26,7 @@ export function EmployeeProfileEditor({role,initial,onDraft,close,save}:{role:Pr
    event.preventDefault();if(busy||!applicationPresentation.can('people')||!name.trim()||!duty.trim())return
    setBusy(true);setError(undefined)
    try{await save({name:name.trim(),duty:duty.trim(),kind:role.kind,scopes:[...role.scopes],dataScope:role.dataScope,executionScope:role.executionScope,skills:[...role.skills],knowledge:[...role.knowledge],...(role.responsibility?{responsibility:role.responsibility}:{}),...(role.runtimeConfig?{runtimeConfig:role.runtimeConfig}:{}),...(avatarKey?{avatarKey}:{})});close()}
-   catch(error){const details=error&&typeof error==='object'&&'details' in error?error.details:undefined;setError(details&&typeof details==='object'&&'reason' in details&&details.reason==='role-work-outstanding'?employeeCopy(locale,'profileBusy'):localizeWorkError(locale,error))}finally{setBusy(false)}
+   catch(error){setError(localizeWorkError(locale,error))}finally{setBusy(false)}
   }}>
    {error&&<p role="alert">{error}</p>}
    <fieldset disabled={busy} className={teamCss.formBody}>

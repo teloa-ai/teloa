@@ -1,4 +1,6 @@
 import assert from 'node:assert/strict'
+import {join} from 'node:path'
+import {pathToFileURL} from 'node:url'
 import {Context} from '@deepseek-ai/cordis'
 import type {Session,SessionEvent,SessionStore} from '@deepseek-ai/dsh-session'
 import {SessionProjectionRegistry} from '@deepseek-ai/dsh-session-projection'
@@ -17,7 +19,7 @@ export async function patchedSessionPackage(t:Cleanup){
  const result=await patchedNativePackage<typeof import('@deepseek-ai/dsh-session')&{
   SessionStore:new(ctx:Context)=>FinalSessionStore
  }>(t,{packageName:'@deepseek-ai/dsh-session',compatBasename:'dsh-session-0.2.1-rc.2-append-admission'})
- return result.namespace
+ return {...result.namespace,moduleUrl:pathToFileURL(join(result.root,'lib/index.js')).href}
 }
 
 /** 同一私有完整官方图；Loop 与 Tools 共用 scheduler Symbol，LLM marker/Adapter 保持原模块。 */

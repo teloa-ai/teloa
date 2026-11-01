@@ -10,7 +10,13 @@ test('仅放行已验收的数据版本，不将兼容读取等同于可逆迁�
  assert.equal(api.canUseData({...release,dataVersion:2,compatibleDataVersions:[2]},2),true)
  assert.equal(api.canUpgradeData({...release,dataVersion:2,compatibleDataVersions:[2]},1),true)
  assert.equal(api.canUpgradeData(release,2),false,'数据 2 不降级为 1，即使旧发行曾声明同版本兼容')
- assert.equal(api.canUpgradeData({...release,dataVersion:3,compatibleDataVersions:[3]},2),false)
+ for(const from of [1,2])assert.equal(api.canUpgradeData({...release,dataVersion:3,compatibleDataVersions:[3]},from),true)
+ assert.equal(api.canUseData({...release,dataVersion:2,compatibleDataVersions:[2,3]},3),false,'旧发行即使声称兼容也不能读取数据 3')
+ assert.equal(api.canUpgradeData({...release,dataVersion:2,compatibleDataVersions:[2]},3),false,'未知提交的数据不能降级给旧读口')
+ for(const from of [1,2,3])assert.equal(api.canUpgradeData({...release,dataVersion:4,compatibleDataVersions:[4]},from),true,'固定迁移表已支持历史数据升级到 4')
+ for(const from of [1,2,3,4,5])assert.equal(api.canUpgradeData({...release,dataVersion:6,compatibleDataVersions:[6]},from),true,'保留历史数据6固定迁移边')
+ for(const from of [1,2,3,4,5,6])assert.equal(api.canUpgradeData({...release,dataVersion:7,compatibleDataVersions:[7]},from),true,'本人分身候选格式须备份迁移到7')
+ for(const from of [1,2,3,4,5,6,7])assert.equal(api.canUpgradeData({...release,dataVersion:8,compatibleDataVersions:[8]},from),false,'未知数据版本不能作为升级候选')
 })
 test('注册表安装记录必须固定包名、版本和完整性',()=>{
  assert.equal(typeof api.verifyRegistryInstall,'function')
@@ -23,7 +29,7 @@ test('注册表安装记录必须固定包名、版本和完整性',()=>{
 test('已切换版本但仍在维护中时，不把再次请求同版本报告为升级完成',async()=>{
  const state={version:'0.2.0-alpha.4',phase:'maintenance',layout:{instanceRoot:'/tmp/teloa-upgrade-test/instances/0.2.0-alpha.4'}}
  let downloads=0
- await assert.rejects(api.upgradeInstall(state,state.version,async()=>{downloads++;throw Error('不能下载')}),/升级尚未完成[\s\S]*upgrade\.json[\s\S]*恢复/)
+ await assert.rejects(api.upgradeInstall(state,state.version,async()=>{downloads++;throw Error('不能下载')}),/维护状态[\s\S]*upgrade\.json[\s\S]*专用备份不能用普通restore/)
  assert.equal(downloads,0)
  assert.equal(state.phase,'maintenance')
 })
@@ -48,7 +54,7 @@ test('本地命令包候选与注册表候选一样经过版本与数据兼容�
   const home=join(root,'home'),current=join(root,'current')
   await mkdir(current,{recursive:true});await writeFile(join(current,'release-manifest.json'),JSON.stringify({...release,version:'0.2.0-beta.2'}))
   const state={version:'0.2.0-beta.2',phase:'stopped',layout:{home,releaseRoot:current,instanceRoot:join(home,'instances/default'),runtimeRoot:join(home,'instances/default/runtime'),workspaceRoot:join(home,'workspaces/default')}}
-  for(const [name,manifest,error] of [['data',{version:'0.2.0-beta.3',dataVersion:3,compatibleDataVersions:[3]},/数据兼容性/],['version',{version:'0.2.0-beta.4'},/数据兼容性/]] as const){
+  for(const [name,manifest,error] of [['data',{version:'0.2.0-beta.3',dataVersion:8,compatibleDataVersions:[8]},/数据兼容性/],['version',{version:'0.2.0-beta.4'},/数据兼容性/]] as const){
    const candidate=join(root,name);await mkdir(candidate,{recursive:true})
    await writeFile(join(candidate,'release-manifest.json'),JSON.stringify({...release,...manifest}))
    await assert.rejects(api.upgradeInstall(state,'0.2.0-beta.3',api.releaseSource('0.2.0-beta.3',{version:'0.2.0-beta.3',root:candidate})),error)

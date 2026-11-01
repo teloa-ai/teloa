@@ -5,7 +5,11 @@ import {taskRunRuntimeId} from './task-run-background.ts'
 
 type Ports={controls:Pick<WorkControlService,'get'|'reconcile'>;runs:Pick<TaskRunService,'get'>;lineage:Pick<WorkLineageService,'descendants'>;driver:Pick<TaskRunDriver,'stop'>;ports:Pick<TaskRunPorts,'stop'|'stopChildren'|'stopState'|'backgroundState'|'subagentState'|'goalObservation'|'events'>;runtimeLinks:Pick<TaskRunRuntimeLinkService,'list'>
  /** 已结束 Run 的持久终态结算证明（宿主提供，复用委托收口同一判据）；缺省时已结束 Run 仍必须经宿主检查器读原生会话。 */
- terminalSettled?:(owner:string,run:TaskRun)=>Promise<boolean>}
+ terminalSettled?:(owner:string,run:TaskRun)=>Promise<boolean>
+ /** 只证明原运行及可信后继均已静止；不签署成功、预算或 owner 结算，也不恢复执行许可。 */
+ quiescentSettled?:(owner:string,run:TaskRun)=>Promise<boolean>
+ /** 仅可信typed取消证明可结清保留的未发布owner历史。 */
+ unpublishedCancellationSettled?:(owner:string,run:TaskRun)=>Promise<boolean>}
 /** 取消回执与收尾证明分开：取消已递交不等于外部动作撤销或孩子停止。 */
 export class WorkControlDriver{
  readonly ports:Ports
@@ -26,6 +30,12 @@ export class WorkControlDriver{
     await this.ports.driver.stop(owner,{runId},signal)
    }else{
     if(['prepared','withdrawn','configuration_failed'].includes(run.state))return
+    if(run.state==='ended'&&run.evidence?.state==='ended'&&this.ports.terminalSettled&&await this.ports.terminalSettled(owner,run))return
+    if((run.state==='ended'||run.state==='submission_unknown')&&this.ports.quiescentSettled){
+     if(await this.ports.quiescentSettled(owner,run))return
+     // 正式处置的未知请求不能为暂停而再次 materialize；冷证明不成立时保持 pausing。
+     if(run.state==='submission_unknown'&&run.submissionDisposition)return
+    }
     // 暂停保留 Run 与原请求：不能使用会写 stop_requested_at 的业务 stop。
     const result=await Promise.allSettled([this.ports.ports.stop(run,signal),this.ports.ports.stopChildren?.(run,signal)])
     const failed=result.find(r=>r.status==='rejected');if(failed?.status==='rejected')throw failed.reason
@@ -46,11 +56,16 @@ export class WorkControlDriver{
    }
   }
   // 未派发或配置失败且无任何 runtime link 的 Run 没有原生会话可读；先收口，避免读取不存在的执行日志而永远停在收尾中。
-  if(['prepared','withdrawn','configuration_failed'].includes(run.state)&&links.length===0)return {settled:true,unknownOperationIds:[]}
+  if(['prepared','configuration_failed'].includes(run.state)&&links.length===0)return {settled:true,unknownOperationIds:[]}
+  if(run.state==='withdrawn')return {settled:!externalOutstanding&&!unknown.length&&!this.pending.has(JSON.stringify([owner,run.id]))&&links.every(link=>link.kind==='job'&&link.payload.record==='owner')&&!!this.ports.unpublishedCancellationSettled&&await this.ports.unpublishedCancellationSettled(owner,run),unknownOperationIds:unknown}
   // 已结束且宿主已记录原生终态证据的 Run：不再为了宣布停妥去 materialize 旧会话或 Goal 足迹，改以持久终态结算为证
   // （子工作、流程、runtime link 回执、宿主结算、群交付、安全效果，与委托收口同一判据）。link 显示在途/未知、本进程仍在取消它、
   // 或结算不成立时仍保持待核对；暂停闸本身已禁止该 Run 接受新输入。
   if(run.state==='ended'&&run.evidence?.state==='ended'&&!externalOutstanding&&!unknown.length&&!this.pending.has(JSON.stringify([owner,run.id]))&&this.ports.terminalSettled&&await this.ports.terminalSettled(owner,run))return {settled:true,unknownOperationIds:[]}
+  if(input.action==='pause'&&(run.state==='ended'||run.state==='submission_unknown')&&this.ports.quiescentSettled){
+   if(!externalOutstanding&&!unknown.length&&!this.pending.has(JSON.stringify([owner,run.id]))&&await this.ports.quiescentSettled(owner,run))return {settled:true,unknownOperationIds:[]}
+   if(run.state==='submission_unknown'&&run.submissionDisposition)return {settled:false,unknownOperationIds:unknown}
+  }
   if(this.ports.ports.goalObservation){const goal=await this.ports.ports.goalObservation(run,await this.ports.ports.events(run));for(const receipt of goal?.continuations??[])if(['reserved','unknown'].includes(receipt.state))unknown.push('goal:'+receipt.nativeRequestId);if(goal&&goal.goalPhase!=='complete'&&(goal.activation!=='disarmed'||goal.goalPhase==='active'))externalOutstanding=true}
   if(this.pending.has(JSON.stringify([owner,run.id])))externalOutstanding=true
   // 冷宿主、丢失检查器或旧 owner footprint 均不能宣布停止。

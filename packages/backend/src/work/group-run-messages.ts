@@ -1,6 +1,6 @@
 import {createHash} from 'node:crypto'
 import type {Pool,PoolClient} from 'pg'
-import {WorkError,artifactContent,artifactFileTotalBytes,groupRunMessageInput,groupRunResultManifest,isGroupMessage,normalizeReferences,type ArtifactFile,type GroupMessage,type GroupRunFileClaim,type MessageReference} from '@teloa/contract'
+import {WorkError,artifactContent,artifactFileTotalBytes,groupReferenceMaxFiles,groupRunMessageInput,groupRunResultManifest,isGroupMessage,normalizeReferences,type ArtifactFile,type GroupMessage,type GroupRunFileClaim,type MessageReference} from '@teloa/contract'
 import {ArtifactSnapshotStore} from './artifact-snapshots.ts'
 import {taskArtifactSessions,taskArtifactSource} from './artifact-task-source.ts'
 import {ArtifactService} from './artifacts.ts'
@@ -121,7 +121,7 @@ export class GroupRunMessageService{
   * 定版与员工消息写在同一个事务里，且排在任务结项之前——任务一进结项态 `taskArtifactSource` 就拒为 teloa/conflict，
   * 那一支与别的定版失败同等降级：只丢文件、正文照发，绝不因此回滚整条 post。
   */
- private async version(client:PoolClient,owner:string,ports:GroupRunArtifactPorts,taskId:string,sessionId:string,runId:string,title:string,claims:readonly GroupRunFileClaim[]):Promise<{reference?:MessageReference;failed:number}>{
+ private async version(client:PoolClient,owner:string,ports:GroupRunArtifactPorts,taskId:string,sessionId:string,runId:string,title:string,claims:readonly GroupRunFileClaim[],options:{maxFiles:number;inputReferences:readonly MessageReference[]}):Promise<{reference?:MessageReference;failed:number}>{
   const requestId=runArtifactRequestId(owner,runId,claims)
   // 同一个运行、同一组声明重放时直接复用已定的那一版：不再现读，两次现读的 capturedAt 不同也不会判冲突。
   const done=(await client.query('select versions.artifact_id,versions.number,versions.content from teloa_artifacts artifacts join teloa_artifact_versions versions on versions.owner_id=artifacts.owner_id and versions.artifact_id=artifacts.id and versions.number=1 where artifacts.owner_id=$1 and artifacts.request_id=$2 for share of artifacts,versions',[owner,requestId])).rows[0]
@@ -129,6 +129,13 @@ export class GroupRunMessageService{
    if(typeof done.artifact_id!=='string'||done.number!==1)throw new WorkError('teloa/storage-corrupt','群内运行自动定版的记录损坏。')
    let saved:number
    try{saved=artifactContent(done.content).snapshotIds.length}catch{throw new WorkError('teloa/storage-corrupt','群内运行自动定版的记录损坏。')}
+   const input=options.inputReferences.find(reference=>reference.kind==='artifact'&&reference.id===done.artifact_id)
+   // 已固定的输入成果不能被同一运行重贴时覆盖为另一版，也不能重复占用引用或文件额度。
+   if(input){
+    if(input.version!==1){ports.report('teloa/conflict');return {failed:claims.length}}
+    return {failed:Math.max(claims.length-saved,0)}
+   }
+   if(saved>options.maxFiles){ports.report('teloa/conflict');return {failed:claims.length}}
    // 复用那一版时失败件数按它实际收了几件反推：第一帖漏掉的文件，第二帖不能谎报成全都贴出了。
    return {reference:{kind:'artifact',id:done.artifact_id,version:1},failed:Math.max(claims.length-saved,0)}
   }
@@ -136,6 +143,7 @@ export class GroupRunMessageService{
   await client.query('savepoint teloa_group_run_artifact')
   const snapshotIds:string[]=[];let failed=0,bytes=0
   for(const claim of claims){
+   if(snapshotIds.length>=options.maxFiles){failed++;ports.report('teloa/conflict');continue}
    let file:ArtifactFile
    try{
     file=await ports.readClaimedFile(sessionId,claim)
@@ -205,28 +213,37 @@ export class GroupRunMessageService{
    const task=readStoredTask(taskRow),role=readStoredRole(roleRow)
    if('planOccurrenceId' in context){
     const occurrence=await new PlanOccurrenceService(this.pool,{id:this.identity.id}).executionContext(client,owner,task.id,undefined,false,'stored')
-    const plan=(await client.query('select p.state,p.version,o.plan_version from teloa_plan_occurrences o join teloa_plans p on p.id=o.plan_id and p.owner_id=o.owner_id where o.id=$1 and o.owner_id=$2 for share of p,o',[context.planOccurrenceId,owner])).rows[0]
-    if(!plan||plan.state!=='active'||plan.version!==plan.plan_version||occurrence?.occurrenceId!==context.planOccurrenceId||!occurrence.reportGroup||JSON.stringify(occurrence.reportGroup)!==JSON.stringify({groupId:context.groupId,groupVersion:context.groupVersion,grantVersion:context.grantVersion})||task.groupId!==context.groupId||task.assigneeRoleId!==role.id||role.version!==context.roleVersion)throw new WorkError('teloa/version-conflict','原计划或汇报权限已变化，结果保留但不发布。')
+    // executionContext 已锁定并复核原计划：业务事件仅接受对应版本的恢复授权，其他计划仍严格核对原版本。
+    if(occurrence?.occurrenceId!==context.planOccurrenceId||!occurrence.reportGroup||JSON.stringify(occurrence.reportGroup)!==JSON.stringify({groupId:context.groupId,groupVersion:context.groupVersion,grantVersion:context.grantVersion})||task.groupId!==context.groupId||task.assigneeRoleId!==role.id||role.version!==context.roleVersion)throw new WorkError('teloa/version-conflict','原计划或汇报权限已变化，结果保留但不发布。')
     const input=JSON.parse(String(runRow.input_text)),authorization=readRoleWorkAuthorization(input.role?.authorization)
     const admission=await new RoleWorkEligibilityService(this.pool).authorize(owner,{roleId:role.id,expectedRoleVersion:role.version,scope:task.scope,inputSchema:'teloa.task-run-input/v2',authorization,groupId:context.groupId},client)
     admission.assertCurrent()
    }else{
-    const current=await readRunGroupContext(client,owner,task,role,this.files,this.pool,JSON.parse(String(runRow.input_text)).groupContinuation?.references)
+    const current=await readRunGroupContext(client,owner,task,role,this.files,this.pool,JSON.parse(String(runRow.input_text)).groupContinuation?.references,{kind:'frozen',taskVersion:Number(runRow.task_version),ownerRequest:context.ownerRequest})
     if(!current||JSON.stringify(current)!==JSON.stringify(context))throw new WorkError('teloa/version-conflict','群任务授权或资料已变化，不能回传群消息。')
    }
    const grantRow=(await client.query('select * from teloa_group_agent_grants where group_id=$1 and role_id=$2 order by grant_version desc limit 1 for share',[context.groupId,context.roleId])).rows[0]
    if(!grantRow)throw new WorkError('teloa/forbidden','员工没有当前群内发言授权。')
    const grant=readGroupAgentGrant(grantRow)
    if(grant.state!=='active'||grant.grantVersion!==context.grantVersion||!grant.canPost)throw new WorkError('teloa/forbidden','员工没有当前群内发言授权。')
-   const now=this.identity.now(),references:MessageReference[]=[...context.materials.map(material=>({kind:'group-resource' as const,id:material.resourceId,version:material.resourceVersion})),...('workResources' in context?context.workResources??[]:[]).map(resource=>({kind:'work-resource' as const,id:resource.id,version:resource.version}))]
+   const inputFiles='files' in context?context.files:[]
+   const fixed:MessageReference[]=[...context.materials.map(material=>({kind:'group-resource' as const,id:material.resourceId,version:material.resourceVersion})),...('workResources' in context?context.workResources??[]:[]).map(resource=>({kind:'work-resource' as const,id:resource.id,version:resource.version})),...inputFiles.map(file=>({kind:file.kind,id:file.id,version:file.version}))]
+   const unique=new Map<string,MessageReference>()
+   for(const reference of fixed){
+    const key=`${reference.kind}:${reference.id}`,prior=unique.get(key)
+    if(prior&&prior.version!==reference.version)throw new WorkError('teloa/version-conflict','群回传的固定来源版本不一致。')
+    unique.set(key,reference)
+   }
+   const now=this.identity.now(),references=[...unique.values()]
+   if(references.length>8)throw new WorkError('teloa/conflict','群回传的固定来源引用超过上限。')
    let failed=0
    if(claims.length){
     const ports=this.artifacts
     if(!ports)throw new WorkError('teloa/dependency-unavailable','员工声明文件的读取端口未接入，不能回传群消息。')
-    // 引用已满 8 条时整段跳过定版：宁可一件都不贴，也不挤掉已授权的资料引用，更不留没人引用的成果。
-    if(references.length>=8){failed=claims.length;ports.report('teloa/conflict')}
+    // 引用或展开文件已满时整段跳过定版：不挤掉输入原件，也不捕获没人引用的输出。
+    if(references.length>=8||inputFiles.length>=groupReferenceMaxFiles){failed=claims.length;ports.report('teloa/conflict')}
     else{
-     const versioned=await this.version(client,owner,ports,context.taskId,runSessionId(runRow.session_id),request.runId,`${task.title} · ${role.name} · ${runCreatedAt(runRow.created_at)}`,claims)
+     const versioned=await this.version(client,owner,ports,context.taskId,runSessionId(runRow.session_id),request.runId,`${task.title} · ${role.name} · ${runCreatedAt(runRow.created_at)}`,claims,{maxFiles:groupReferenceMaxFiles-inputFiles.length,inputReferences:references})
      failed=versioned.failed
      if(versioned.reference)references.push(versioned.reference)
     }

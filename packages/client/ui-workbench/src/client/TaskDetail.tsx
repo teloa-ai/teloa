@@ -1,8 +1,11 @@
+import type {WorkBudgetExhaustion} from '@teloa/contract'
+import {taskRunTerminalStates} from '@teloa/contract'
 import {taskStatusMark} from './status-presentation.js'
 import {canEditTaskGoal,taskGoalText} from './group-task-source-presentation.js'
 import {useCallback,useEffect,useRef,useState,type ReactNode} from 'react'
 import {ArrowUpRight,ChevronRight,FileText,UserRound,X,Maximize2,Minimize2} from 'lucide-react'
 import {ToolbarIconButton} from './ToolbarIconButton.js'
+import {TaskOwnerRework} from './TaskOwnerRework.js'
 import {TaskCompletion,type TaskCompletionPort} from './TaskCompletion.js'
 import {taskInputsStale,assertTaskInputsCurrent,hasTaskInputs,type TaskInputFields,type TaskInputDraft} from './task-inputs.js'
 import {closeDirectoryDetailOnEscape} from './directory-focus.js'
@@ -17,7 +20,7 @@ import {ApprovalCard} from './ApprovalCard.js'
 import {objectRefTarget,type BusinessPreview,type BusinessTarget} from './business-preview.js'
 import {shouldShowHandoffForm} from './task-detail-presentation.js'
 import type {RunView} from './task-run-api.js'
-import {TaskRunPreparationContext,type TaskRunPreparation} from './task-run-preparation-context.js'
+import {TaskRunPreparationContext,TaskOwnerReworkBlockContext,type TaskRunPreparation} from './task-run-preparation-context.js'
 import type {TaskHandoff} from './handoff-api.js'
 import type {Artifact} from './artifact-preview.js'
 import type {TimelineEventKind} from './object-timeline.js'
@@ -46,7 +49,7 @@ const person=(id:string,roles:readonly PreviewRole[]=[],t?:Parameters<typeof rol
 const foldKeys={run:'task.timeline.fold.run',change:'task.timeline.fold.change',artifact:'task.timeline.fold.artifact',knowledge:'task.timeline.fold.knowledge',approval:'task.timeline.fold.approval'} as const
 const foldKey=(kind:TimelineEventKind)=>kind in foldKeys?foldKeys[kind as keyof typeof foldKeys]:'task.timeline.fold.change'
 
-export type TaskDetailProps={workProgress?:((runs:RunView[])=>ReactNode)|undefined;
+export type TaskDetailProps={workProgress?:((runs:RunView[],exhaustion?:Partial<WorkBudgetExhaustion>,verified?:boolean)=>ReactNode)|undefined;
  roleDirectory?:RoleDirectoryState|undefined
  presentation?:{full:boolean;toggle:()=>void}|undefined
  groups?:readonly TaskGroupOption[]|undefined;openGroup?:((id:string)=>void)|undefined
@@ -55,6 +58,7 @@ export type TaskDetailProps={workProgress?:((runs:RunView[])=>ReactNode)|undefin
  securityActions:ReactNode;industrySource:ReactNode
  executions:(onRuns:(rows:RunView[],verified:boolean)=>void)=>ReactNode
  knowledge:ReactNode;handoffs:ReactNode;handoffRows:readonly TaskHandoff[]
+ handoffRecoveryPending?:boolean|undefined;securityRecoveryPending?:boolean|undefined
  completion?:TaskCompletionPort|undefined;editSaved?:((task:PreviewTask,fields:{title:string;goal:string})=>Promise<void>)|undefined
  conversations:(id:string)=>ReactNode
  draft:TaskInputDraft;patch:(fields:Partial<TaskInputFields>)=>void;clear:(fields:readonly (keyof TaskInputFields)[])=>void;review:()=>void
@@ -75,19 +79,22 @@ export function TaskDetail(props:TaskDetailProps):JSX.Element{
   // N13（可选）：编辑窗口外点/Esc 只收起，未保存的标题与目标留到下次打开；保存成功后清空。
   const [editDraft,setEditDraft]=useState<{title:string;goal:string}>()
   const [editBase,setEditBase]=useState<PreviewTask>()
+  const [showHandoff,setShowHandoff]=useState(false),[showSecurity,setShowSecurity]=useState(false)
   const openGoalEditor=()=>{if(!editDraft)setEditBase(task);setEditing(true)}
   const runIdentity=JSON.stringify([task.id,task.version]),currentRunIdentity=useRef(runIdentity);currentRunIdentity.current=runIdentity
   const setError=(message?:string,cause?:unknown)=>{if(currentRunIdentity.current===runIdentity)setErrorSnapshot(message?{identity:runIdentity,message,untilWorkSettled:isTaskWorkOutstandingError(cause),runState}:undefined)}
   const roleDirectory=task.storage==='persistent'?props.roleDirectory:undefined
   const [runSnapshot,setRunSnapshot]=useState<{identity:string;rows:RunView[];loaded:boolean}>({identity:runIdentity,rows:[],loaded:false}),[record,setRecord]=useState<TaskCompletionRecord|null>(null)
   const runs=runSnapshot.identity===runIdentity?runSnapshot.rows:[],runsLoaded=runSnapshot.identity===runIdentity&&runSnapshot.loaded
-  const workSettled=runsLoaded&&runs.every(row=>['ended','withdrawn','configuration_failed'].includes(row.state))
+  const workSettled=runsLoaded&&runs.every(row=>taskRunTerminalStates.includes(row.state))
   const runState=JSON.stringify(runs.map(row=>[row.id,row.state]))
   // 只在失败之后核实运行收口时清旧提示；既有终态不能吞掉新的服务端拒绝。
   const obsoleteError=errorSnapshot?.identity===runIdentity&&errorSnapshot.untilWorkSettled&&workSettled&&errorSnapshot.runState!==runState
   const error=errorSnapshot?.identity===runIdentity&&!obsoleteError?errorSnapshot.message:undefined
   useEffect(()=>{if(obsoleteError)setErrorSnapshot(current=>current===errorSnapshot?undefined:current)},[obsoleteError,errorSnapshot])
   const acceptRuns=useCallback((rows:RunView[],verified:boolean)=>{if(currentRunIdentity.current===runIdentity)setRunSnapshot(previous=>({identity:runIdentity,rows:verified?rows:previous.identity===runIdentity?previous.rows:[],loaded:verified}))},[runIdentity])
+  const [reworkBlock,setReworkBlock]=useState<{identity:string;blocked:boolean}>()
+  const reworkBlocked=!!completion?.rework&&task.state==='ready'&&(reworkBlock?.identity!==runIdentity||reworkBlock.blocked)
   const [preparation,setPreparation]=useState<TaskRunPreparation|null>(null)
   const currentPreparation=preparation?.taskId===task.id&&preparation.taskVersion===task.version?preparation:undefined
   const {source,materialNote,assignee,handoffNote,result}=draft.fields
@@ -109,6 +116,8 @@ export function TaskDetail(props:TaskDetailProps):JSX.Element{
   const needs=attentionNeeds,responsible=roles.find(role=>role.id===task.assigneeId)
   const candidates=roles.filter(role=>canReceiveTask(role,task.scope)&&role.id!==(task.handoff?.fromId||task.assigneeId))
   const pendingHandoff=handoffRows.find(item=>item.status==='pending'&&item.taskId===task.id)
+  const handoffNeedsAttention=!!pendingHandoff||needs.includes('handoff')||!!props.handoffRecoveryPending
+  const securityNeedsAttention=securityItems.length>0||needs.includes('approval')||needs.includes('execution')||!!props.securityRecoveryPending
   const supplementKeys={pending:'task.detail.supplement.pending',accepted:'task.detail.supplement.accepted',rejected:'task.detail.supplement.rejected'} as const
   const operationKeys={pending:'task.detail.operation.pending',approved:'task.detail.operation.approved',rejected:'task.detail.operation.rejected',changes:'task.detail.operation.changes',stale:'task.detail.operation.stale',executing:'task.detail.operation.executing',unknown:'task.detail.operation.unknown',partial:'task.detail.operation.partial',verified:'task.detail.operation.verified'} as const
   const actionKeys={start:'task.detail.action.start',pause:'task.detail.action.pause',resume:'task.detail.action.resume',cancel:'task.detail.action.cancel'} as const
@@ -117,16 +126,16 @@ export function TaskDetail(props:TaskDetailProps):JSX.Element{
   const demo=task.storage==='persistent'?'':t('task.detail.demoSuffix')
   const openTaskArtifact=(ref:Parameters<OpenArtifacts>[1])=>openArtifacts({kind:'task',id:task.id},ref)
   // 菜单选中后页头会把焦点交还给 ··· 触发按钮，锚点定位放到下一帧才不会被抢回。
-  const jump=(anchor:string,focus?:string)=>{requestAnimationFrame(()=>focusObjectAnchor(root.current,anchor,focus))}
+  const jump=(anchor:string,focus?:string)=>{if(anchor==='owner'||anchor==='handoff')setShowHandoff(true);if(anchor==='approval')setShowSecurity(true);requestAnimationFrame(()=>focusObjectAnchor(root.current,anchor,focus))}
   const run=(action:TaskStatusAction)=>{
     if(action.kind==='anchor'){
-      focusObjectAnchor(root.current,action.anchor,action.focus)
+      jump(action.anchor,action.focus)
       if(action.anchor==='run'&&action.focus==='prepare')currentPreparation?.prepare()
     }
     else if(action.kind==='progress')void progress({type:'progress',taskId:task.id,action:action.action,now:new Date().toISOString()})
     else record?openTaskArtifact({id:record.artifactId,version:record.artifactVersion}):openTaskArtifact(task.artifact)
   }
-  const statusAction=(button:TaskStatusButton):StatusBoxAction=>({label:button.label,onSelect:()=>run(button.action),disabled:operating||button.action.kind==='anchor'&&button.action.anchor==='run'&&button.action.focus==='prepare'&&(!currentPreparation||currentPreparation.disabled)})
+  const statusAction=(button:TaskStatusButton):StatusBoxAction=>({label:button.label,onSelect:()=>run(button.action),disabled:operating||button.action.kind==='anchor'&&button.action.anchor==='run'&&button.action.focus==='prepare'&&(!currentPreparation||currentPreparation.disabled||reworkBlocked)})
 
   const menuItems:ObjectMenuItem[]=[
     ...(!closed&&canEditTaskGoal(task)?[{id:'edit',label:t('task.detail.editGoal'),onSelect:openGoalEditor}]:[]),
@@ -134,6 +143,7 @@ export function TaskDetail(props:TaskDetailProps):JSX.Element{
     ...(['start','pause','resume','cancel'] as const).filter(action=>action==='start'?(task.storage!=='persistent'||task.assigneeId==='self'&&task.executor?.kind!=='owner')&&task.state==='ready'&&!needs.length&&!task.approvalRequired:action==='pause'?!runManagedTask&&task.state==='running':action==='resume'?!runManagedTask&&task.state==='paused':!closed).map(action=>({id:action,label:t(actionKeys[action],{demo}),disabled:operating||(action==='start'||action==='resume')&&responsible?.state==='paused',onSelect:()=>void progress({type:'progress',taskId:task.id,action,now:new Date().toISOString()})})),
     ...(props.repeatTask?[{id:'repeat',label:t('task.detail.repeat'),onSelect:()=>props.repeatTask?.(task)}]:[]),
     ...(!closed?[{id:'handoff',label:t('task.detail.expandHandoff'),onSelect:()=>jump(pendingHandoff||task.storage!=='persistent'&&taskNeeds(task).includes('handoff')?'handoff':'owner')}]:[]),
+    ...(securityActions?[{id:'external-actions',label:t('security.title'),onSelect:()=>jump('approval')}]:[]),
     {id:'evidence',label:t('task.menu.evidence'),onSelect:()=>jump('evidence')},
   ]
 
@@ -146,11 +156,13 @@ export function TaskDetail(props:TaskDetailProps):JSX.Element{
   const taskArtifacts=artifacts.filter(artifact=>artifact.source.kind==='task'&&artifact.source.id===task.id||artifact.produced?.some(producer=>producer.taskId===task.id)||artifact.revisions?.some(revision=>revision.taskId===task.id))
   const artifactRef=record?{id:record.artifactId,version:record.artifactVersion}:task.artifact
   const knownArtifact=artifactRef?taskArtifacts.find(artifact=>artifact.id===artifactRef.id&&artifact.versions.some(version=>version.number===artifactRef.version)):undefined
+  const artifactRows=taskArtifacts.flatMap(artifact=>{const version=(artifact.id===artifactRef?.id?artifact.versions.find(row=>row.number===artifactRef.version):undefined)??artifact.versions.at(-1);return version?[{artifact,version}]:[]})
+  const hasArtifactLink=artifactRows.length>0||!!artifactRef&&!knownArtifact
   const modeId=responsible?.runtimeConfig?.agentPresetId
 
   const model=taskStatusBox({state:task.state,...(task.completionPolicy?{completionPolicy:task.completionPolicy}:{}),needs,attention,assigned:task.assigneeId!=='self'||task.executor?.kind==='owner',ownerName,runCount:runs.length,completion:record?{artifactVersion:record.artifactVersion}:null,t})
   // 沙盒没有运行记录面，不能提供指向不存在区域的操作。
-  const runPrepared=runs.some(row=>!['ended','withdrawn','configuration_failed'].includes(row.state))
+  const runPrepared=runs.some(row=>!taskRunTerminalStates.includes(row.state))
   let primary=model.primary
   if(primary?.action.kind==='anchor'&&primary.action.anchor==='run'){
     if(task.storage!=='persistent')primary=undefined
@@ -159,7 +171,7 @@ export function TaskDetail(props:TaskDetailProps):JSX.Element{
   // 交给员工/本人执行的任务，暂停/继续只能走运行控制；compact 状态卡不能把台账级 continue 再暴露成必失败按钮。
   if(runManagedTask&&primary?.action.kind==='progress'&&(primary.action.action==='pause'||primary.action.action==='resume'))primary=runs.length?{label:t('task.status.action.viewRun'),action:{kind:'anchor',anchor:'run'}}:undefined
   const secondary=runManagedTask&&model.secondary?.action.kind==='progress'&&(model.secondary.action.action==='pause'||model.secondary.action.action==='resume')?undefined:model.secondary
-  const executionsNode=<TaskRunPreparationContext.Provider value={setPreparation}>{executions(acceptRuns)}</TaskRunPreparationContext.Provider>
+  const executionsNode=<TaskOwnerReworkBlockContext.Provider value={reworkBlocked}><TaskRunPreparationContext.Provider value={setPreparation}>{executions(acceptRuns)}</TaskRunPreparationContext.Provider></TaskOwnerReworkBlockContext.Provider>
   // 「完成任务」的下拉只列当前任务版本的成果；纯文字交付没有成果版本时下拉为空、按钮永久禁用。
   // 这里先把入口说清楚：先去成果面板把本轮文字结果保存成当前版本的成果，再回到结项面板选择版本。
   const completionArtifactCandidates=completion?artifacts.flatMap(row=>row.versions.filter(v=>(v.source.ref.kind==='task'&&v.source.ref.id===task.id&&v.source.version===`${task.version} · ${task.updatedAt}`)||row.produced?.some(p=>p.taskId===task.id&&p.taskVersion===task.version&&p.version===v.number))):[]
@@ -193,9 +205,10 @@ export function TaskDetail(props:TaskDetailProps):JSX.Element{
   </>:undefined
   // 分层呈现：只改变显示层级，不改变状态、动作或数据。无动作的终态不再重复页头已有的大状态卡；审批、失败、等待输入仍走状态卡。
   const quietStatus=quietTerminalStatus({state:task.state,needs,hasControl:!!currentPreparation?.control,hasAttention:!!attention})
-  const resultEmpty=!task.result&&!taskArtifacts.length&&!artifactRef&&!task.artifactSource&&!task.evidence.length
+  const hasResult=!!task.result||hasArtifactLink||!!task.artifactSource||task.storage==='persistent'&&runsLoaded&&runs.some(row=>row.state==='ended'&&row.reason==='completed')
   const density=(key:Parameters<typeof detailDensityCopy>[1])=>detailDensityCopy(locale,key)
   const statusChildren=<>
+        {completion?.rework&&<TaskOwnerRework task={task} api={completion.rework} blocked={value=>setReworkBlock({identity:runIdentity,blocked:value})}/>}
         {attentionReason&&<p className={css.muted} data-teloa-attention-reason aria-label={t('task.detail.attentionReason')}>{attentionReason}</p>}
         {error&&<div className={css.error} role="alert">{error}<button type="button" onClick={()=>setError(undefined)} aria-label={t('task.detail.closeError')}><X size={15}/></button></div>}
         <TaskInputNotice draft={draft} task={task} roles={roles} roleDirectory={roleDirectory} review={review}/>
@@ -214,43 +227,38 @@ export function TaskDetail(props:TaskDetailProps):JSX.Element{
   return <article data-teloa-pane="detail" tabIndex={-1} ref={root} className={css.detail} aria-label={t('task.detail.aria')} onKeyDown={event=>closeDirectoryDetailOnEscape(event,back)}>
     <div className={detailCss.heading}><ObjectPageHeader compact trailing={props.presentation&&<ToolbarIconButton className={css.presentationToggle} label={t(props.presentation.full?'task.detail.compact':'task.detail.full')} icon={props.presentation.full?Minimize2:Maximize2} aria-pressed={props.presentation.full} onClick={props.presentation.toggle}/>} back={back} backHidden={backHidden} backLabel={t('task.detail.back')} title={task.title} {...(closed||!canEditTaskGoal(task)?{}:{onEditTitle:openGoalEditor})} editTitleLabel={t('task.detail.editGoal')} status={{mark:taskStatusMark(task.state),label:t(taskStates[task.state]),tone:needs.length?'warn':task.state==='completed'?'good':task.state==='cancelled'?'muted':'info'}} menuLabel={t('task.menu.more')} menu={menuItems}/></div>
     <div className={detailCss.layout}><div className={detailCss.columns}>
-    <div className={clsx(css.goalLine,detailCss.slotGoal)}><span className={css.sectionEyebrow}>{t('task.detail.goal')}</span><DetailText markdown text={taskGoalText(task,t)} expandLabel={density('goalExpand')} collapseLabel={density('goalCollapse')}/></div>
+    <div className={clsx(css.goalLine,detailCss.slotGoal)}><DetailText markdown text={taskGoalText(task,t)} expandLabel={density('goalExpand')} collapseLabel={density('goalCollapse')}/></div>
     {quietStatus?<div className={clsx(detailCss.quietStatus,detailCss.slotStatus)}>{statusChildren}</div>:<div className={clsx(detailCss.statusPanel,detailCss.slotStatus)}>
-      <StatusBox ariaLabel={t('task.status.aria')} tone={currentPreparation?.control?.tone??model.tone} sentence={currentPreparation?.control?.sentence??model.sentence} hint={currentPreparation?.control?.hint??model.hint} hintLabel={t('task.status.hint')} {...(currentPreparation?.control?{primary:{label:currentPreparation.control.actionLabel,disabled:currentPreparation.control.disabled,onSelect:()=>{focusObjectAnchor(root.current,'run','resume');currentPreparation.control?.act()}}}:primary?{primary:statusAction(primary)}:{})} {...(secondary?{secondary:statusAction(secondary)}:{})}>
+      <StatusBox ariaLabel={t('task.status.aria')} tone={currentPreparation?.control?.tone??model.tone} sentence={currentPreparation?.control?.sentence??model.sentence} {...(currentPreparation?.control?.hint?{hint:currentPreparation.control.hint}:model.tone==='warn'?{hint:model.hint}:{})} hintLabel={t('task.status.hint')} {...(currentPreparation?.control?{primary:{label:currentPreparation.control.actionLabel,disabled:currentPreparation.control.disabled,onSelect:()=>{focusObjectAnchor(root.current,'run','resume');currentPreparation.control?.act()}}}:primary?{primary:statusAction(primary)}:{})} {...(secondary?{secondary:statusAction(secondary)}:{})}>
         {statusChildren}
       </StatusBox>
     </div>}
-    <dl className={clsx(detailCss.facts,detailCss.slotFacts)} aria-label={t('task.detail.summary')}>
+    <div className={detailCss.slotProgress}>{props.workProgress?.(runs,currentPreparation?.budgetExhaustion,runsLoaded)}</div>
+    <dl className={clsx(detailCss.facts,detailCss.factsSummary,detailCss.slotFacts)} aria-label={t('task.detail.summary')}>
       <TaskFact label={t('task.detail.currentOwnerLabel')}><div className={detailCss.ownerActions}>{responsible?<button type="button" className={detailCss.link} onClick={()=>openRole(responsible.id)}>{ownerAvatar}<span className={detailCss.ownerName} title={ownerName}>{ownerName}</span></button>:<>{ownerAvatar}<span>{ownerName}</span></>}</div></TaskFact>
       <TaskFact label={t('task.rail.scope')}>{collaborationScopes[task.scope]??task.scope}</TaskFact>
       <TaskFact label={t('task.rail.source')} wide>{openSourceRow?<button type="button" className={detailCss.link} onClick={openSourceRow}>{sourceLabel}<ChevronRight size={14} aria-hidden="true"/></button>:sourceLabel}</TaskFact>
       {linkedGroup&&linkedGroup.id!==task.source?.groupId&&<TaskFact label={t('task.detail.group')} wide>{openGroup?<button type="button" className={detailCss.link} onClick={()=>openGroup(linkedGroup.id)}>{linkedGroup.name}<ChevronRight size={14} aria-hidden="true"/></button>:linkedGroup.name}</TaskFact>}
     </dl>
-    <div className={detailCss.slotProgress}>{runsLoaded&&props.workProgress?.(runs)}</div>
-    <section className={clsx(detailCss.resultBlock,resultEmpty&&detailCss.resultCompact,detailCss.slotResult)} aria-label={t('task.detail.artifact')} data-teloa-anchor="artifact">
-      <header><h3>{t('task.detail.artifact')}</h3>{(taskArtifacts.length>0||!!artifactRef||!!task.result||task.storage==='persistent'&&runsLoaded&&runs.some(row=>row.state==='ended'))&&<button type="button" className={detailCss.link} onClick={()=>openTaskArtifact(artifactRef)}>{t('task.detail.viewArtifacts')}<ChevronRight size={14} aria-hidden="true"/></button>}</header>
+    {/* 操作面常驻，但只有真实待办、恢复或本人主动打开时出现，避免把全局目录错误铺到每项任务。 */}
+    <div className={detailCss.actionGroup} data-teloa-anchor="owner" hidden={!handoffNeedsAttention&&!showHandoff}><div data-teloa-anchor="handoff">{handoffs??sandboxHandoff}</div></div>
+    {securityActions&&<div className={detailCss.actionGroup} data-teloa-anchor="approval" hidden={!securityNeedsAttention&&!showSecurity}>{securityActions}</div>}
+    {hasResult&&<section className={clsx(detailCss.resultBlock,detailCss.slotResult)} aria-label={t('task.detail.artifact')} data-teloa-anchor="artifact">
+      <header><h3>{t('task.detail.artifact')}</h3>{!hasArtifactLink&&<button type="button" className={detailCss.link} onClick={()=>openTaskArtifact(artifactRef)}>{t('task.detail.viewArtifacts')}<ChevronRight size={14} aria-hidden="true"/></button>}</header>
       {task.result&&<p>{task.result}</p>}
-      <ul className={detailCss.resultList}>{taskArtifacts.map(artifact=>{
-        const version=(artifact.id===artifactRef?.id?artifact.versions.find(row=>row.number===artifactRef.version):undefined)??artifact.versions.at(-1)
-        return version?<li key={artifact.id}><button type="button" className={detailCss.link} onClick={()=>openTaskArtifact({id:artifact.id,version:version.number})}><FileText size={16} aria-hidden="true"/><span>{version.title}</span></button><small>v{version.number}</small></li>:null
-      })}{artifactRef&&!knownArtifact&&<li><button type="button" className={detailCss.link} onClick={()=>openTaskArtifact(artifactRef)}><FileText size={16} aria-hidden="true"/>{t('task.detail.viewArtifacts')}</button><small>v{artifactRef.version}</small></li>}</ul>
+      <ul className={detailCss.resultList}>{artifactRows.map(({artifact,version})=><li key={artifact.id}><button type="button" className={detailCss.link} onClick={()=>openTaskArtifact({id:artifact.id,version:version.number})}><FileText size={16} aria-hidden="true"/><span>{version.title}</span></button><small>v{version.number}</small></li>)}{artifactRef&&!knownArtifact&&<li><button type="button" className={detailCss.link} onClick={()=>openTaskArtifact(artifactRef)}><FileText size={16} aria-hidden="true"/>{t('task.detail.viewArtifacts')}</button><small>v{artifactRef.version}</small></li>}</ul>
       {task.artifactSource&&<button type="button" className={detailCss.link} onClick={()=>openArtifacts({kind:'task',id:task.sourceTaskId||task.id},task.artifactSource)}>{t('task.detail.openSourceArtifact',{version:task.artifactSource.version})}<ChevronRight size={14} aria-hidden="true"/></button>}
-      {task.evidence.length>0&&<div className={detailCss.evidence}><strong>{t('task.detail.evidenceTitle')}</strong>{task.evidence.map((item,index)=><p key={index}>{item}</p>)}</div>}
-    </section>
-    {/* 活动承载运行面、审批、补充资料与交接表单：有待办或未结束的任务默认展开；无待办的终态默认收起，锚点跳转仍按折叠协议展开。 */}
-    <div className={detailCss.slotActivity}><TaskDetailSection title={t('task.detail.activity')} defaultOpen={!quietStatus}>
+    </section>}
+    {/* 活动保留运行面和补充草稿；需处理的异常默认展开，其余按需查看，锚点跳转仍自动展开。 */}
+    <div className={detailCss.slotActivity}><TaskDetailSection title={t('task.detail.activity')} defaultOpen={needs.some(need=>need!=='review')}>
         <EventTimeline ariaLabel={t('task.timeline.aria')} events={events} emptyText={t('task.timeline.empty')} foldLabel={(kind,count)=>t(foldKey(kind),{count})} expandLabel={t('task.timeline.expand')} collapseLabel={t('task.timeline.collapse')} stamp={stamp}/>
     </TaskDetailSection></div>
-    <div className={detailCss.slotSide}>
-    <div className={detailCss.slotContext}><TaskDetailSection title={t('task.detail.context')}>
+    <div className={detailCss.slotConfig}><TaskDetailSection title={t('task.detail.configuration')} anchor="evidence">
       {knowledge&&<section className={detailCss.section} data-teloa-anchor="knowledge"><h3>{t('taskKnowledge.title')}</h3>{knowledge}</section>}
       <div data-teloa-anchor="conversations">{conversations(task.id)}</div>
       {task.skills&&task.skills.length>0&&<dl className={detailCss.facts}><TaskFact label={t('task.detail.skills')}>{list([...task.skills])}</TaskFact></dl>}
       {sourceDetail}
-    </TaskDetailSection></div>
-    <div className={detailCss.actionGroup} data-teloa-anchor="owner"><div data-teloa-anchor="handoff">{handoffs??sandboxHandoff}</div></div>
-    {securityActions&&<div className={detailCss.actionGroup} data-teloa-anchor="approval">{securityActions}</div>}
-    <div className={detailCss.slotConfig}><TaskDetailSection title={t('task.detail.configuration')} anchor="evidence">
+      {task.evidence.length>0&&<div className={detailCss.evidence}><strong>{t('task.detail.evidenceTitle')}</strong>{task.evidence.map((item,index)=><p key={index}>{item}</p>)}</div>}
       <dl className={detailCss.facts}>
         <TaskFact label={t('task.rail.runtime')}>{responsible?<button type="button" className={detailCss.link} onClick={()=>openRole(responsible.id)}>{modeId==='teloa-standard'?t('task.detail.standardMode'):modeId??t('task.rail.runtimeRole')}<ChevronRight size={14} aria-hidden="true"/></button>:t('task.rail.runtimeRole')}</TaskFact>
         <TaskFact label={t('task.detail.creator')}>{person(task.authorId,roles,t,roleDirectory)}</TaskFact>
@@ -262,9 +270,8 @@ export function TaskDetail(props:TaskDetailProps):JSX.Element{
       </dl>
       {task.storage!=='persistent'&&(task.approvalRequired||operations.length>0)&&<section className={detailCss.section}><h3>{t('task.detail.executionOutcome')}</h3>{operations.length?operations.map(op=><div className={css.record} key={op.id}><strong>{op.title} · {t(operationKeys[op.state])}</strong><p>{t('task.detail.verifiedTargets',{verified:op.targets.filter(target=>target.state==='verified').length,total:op.targets.length})}</p><button type="button" className={light.link} onClick={()=>openBusiness({scope:op.scope,section:'execution',id:op.id})}>{t('task.detail.openOperation')}<ArrowUpRight size={13} aria-hidden/></button></div>):<p>{t('task.detail.noOperation')}</p>}</section>}
     </TaskDetailSection></div>
-    </div>
     </div></div>
-    {editing&&canEditTaskGoal(task)&&<TaskForm persistent={task.storage==='persistent'} task={editDraft?{...(editBase??task),...editDraft}:editBase??task} onDraft={fields=>setEditDraft({title:fields.title,goal:fields.goal})} close={()=>setEditing(false)} save={async value=>{if(task.storage==='persistent'){if(!editSaved)throw Error(t('error.storageUnavailable'));await editSaved(editBase??task,{title:value.title,goal:value.goal})}else change({type:'edit',taskId:task.id,title:value.title,goal:value.goal,now:new Date().toISOString()});setEditDraft(undefined);setEditBase(undefined);setEditing(false)}}/>}
+    {editing&&canEditTaskGoal(task)&&<TaskForm groups={groups} persistent={task.storage==='persistent'} task={editDraft?{...(editBase??task),...editDraft}:editBase??task} onDraft={fields=>setEditDraft({title:fields.title,goal:fields.goal})} close={()=>setEditing(false)} save={async value=>{if(task.storage==='persistent'){if(!editSaved)throw Error(t('error.storageUnavailable'));await editSaved(editBase??task,{title:value.title,goal:value.goal})}else change({type:'edit',taskId:task.id,title:value.title,goal:value.goal,now:new Date().toISOString()});setEditDraft(undefined);setEditBase(undefined);setEditing(false)}}/>}
   </article>
 }
 

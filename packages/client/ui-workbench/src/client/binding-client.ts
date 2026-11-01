@@ -71,11 +71,11 @@ export class BindingClient {
     }
   }
   retry=()=>this.select(this.state.sessionId)
-  async refreshDirectory(signal?:AbortSignal):Promise<void> {
+  async refreshDirectory(signal?:AbortSignal):Promise<Conversation[]|undefined> {
     if(signal?.aborted)return
     const listing=++this.listing
     this.directory={...this.directory,status:'loading',error:undefined};this.publish({})
-    try {const rows=await this.port.list(signal);if(listing===this.listing&&!signal?.aborted){this.directory={status:'ready',rows,error:undefined};this.publish({})}}
+    try {const rows=await this.port.list(signal);if(listing===this.listing&&!signal?.aborted){this.directory={status:'ready',rows,error:undefined};this.publish({})}return signal?.aborted?undefined:rows}
     catch(error){if(listing===this.listing&&!signal?.aborted){this.directory={...this.directory,status:'failed',error};this.publish({})}}
   }
   async openSession(sessionId:string,signal?:AbortSignal,mayOpen?:()=>boolean):Promise<void> {

@@ -31,8 +31,8 @@ test('会话本轮失败的稳定 code 与请求错误 details 得到同一句�
  }
 })
 
-test('耗时超额按 24 小时窗口说明自动释放与真实入口，不再称为累计耗时',()=>{
- const expected={'zh-CN':['最近 24 小时','自动释放','“工作额度”'],'zh-Hant':['最近 24 小時','自動釋放','「工作額度」'],en:['last 24 hours','released automatically','“Work limits”']} as const
+test('耗时超额按 24 小时窗口说明等待与自动释放，不指向日常已移除的入口',()=>{
+ const expected={'zh-CN':['最近 24 小时','自动释放','等待释放后再继续'],'zh-Hant':['最近 24 小時','自動釋放','等待釋放後再繼續'],en:['last 24 hours','released automatically','wait for capacity']} as const
  for(const locale of locales){
   const text=localizeWorkError(locale,{code:'teloa/budget-exhausted/elapsed/owner'})
   for(const part of expected[locale])assert.ok(text.includes(part),locale+'：'+part)

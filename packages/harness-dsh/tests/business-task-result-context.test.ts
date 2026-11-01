@@ -37,3 +37,17 @@ test('单目标自动与显式选择共用冻结目录和参数核验，多个/�
  assert.throws(()=>readRunBusinessContext({...fixed,resultMappings:[{...target,mapping:{...mapping,domain:'Other'}}]}),{code:'teloa/storage-corrupt'})
  assert.throws(()=>readRunBusinessContext({...fixed,resultMappings:[target,target]}),{code:'teloa/storage-corrupt'})
 })
+
+test('续办成果固定到本轮已核验的最后来源版本，原任务版本与旧Run输入保持',()=>{
+ const v2={...object,version:2,summary:'本次更新为130元'},v3={...object,version:3,summary:'本次更新为140元'}
+ const second={...v2,snapshotHash:businessObjectSnapshotHash(v2)},third={...v3,snapshotHash:businessObjectSnapshotHash(v3)}
+ const first=run({...context,resultMappings:[target]}),value=run({...context,updates:[second,third],resultMappings:[target]}),oldText=first.inputText,currentText=value.inputText
+ const selected=fixedBusinessTaskResultMapping(value,undefined,{verdict:'恶意'})
+ assert.deepEqual(selected.reference,{scope:object.scope,type:object.type,id:object.id,version:3,snapshotHash:third.snapshotHash})
+ assert.deepEqual(selected.context.object,context.object,'原Task创建时的固定来源不被新版本覆盖')
+ assert.deepEqual(fixedBusinessTaskResultMapping(first,undefined,{verdict:'恶意'}).reference,{scope:object.scope,type:object.type,id:object.id,version:1,snapshotHash:context.object.snapshotHash})
+ assert.equal(first.inputText,oldText);assert.equal(value.inputText,currentText)
+ assert.throws(()=>fixedBusinessTaskResultMapping(run({...context,updates:[{...second,id:'OTHER'}],resultMappings:[target]}),undefined,{}),{code:'teloa/storage-corrupt'})
+ assert.throws(()=>fixedBusinessTaskResultMapping(run({...context,updates:[third,second],resultMappings:[target]}),undefined,{}),{code:'teloa/storage-corrupt'})
+ assert.throws(()=>fixedBusinessTaskResultMapping(run({...context,updates:[{...second,snapshotHash:'c'.repeat(64)}],resultMappings:[target]}),undefined,{}),{code:'teloa/storage-corrupt'})
+})

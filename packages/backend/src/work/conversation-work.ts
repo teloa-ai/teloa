@@ -1,4 +1,5 @@
 import {revokeOwnerWorkLeases} from './owner-work-epochs.ts'
+import {employeeMentionOverridesPreference} from './conversation-work-employee-mention.ts'
 import {initializeConversationWorkRequests,workRequestChildId,lockConversationTaskChild,assertConversationTaskChildUnoccupied} from './conversation-work-task-protection.ts'
 export {workRequestChildId} from './conversation-work-task-protection.ts'
 import type {Pool,PoolClient} from 'pg'
@@ -110,7 +111,6 @@ export async function reserveConversationWorkInTransaction(db:PoolClient,owner:s
    if(previous){if(!previous.same)throw new WorkError('teloa/conflict','同一用户消息已有不同交办，请先核对原请求。');return readStoredConversationWorkRequest(previous)}
    if(taskChild)await assertConversationTaskChildUnoccupied(db,owner,taskChild)
    const context=(await db.query('select * from teloa_conversation_work_contexts where owner_id=$1 and session_id=$2',[owner,input.sessionId])).rows[0]
-   if(context&&((context.scope_id!==input.scope&&!input.allBusinesses)||context.role_id!==null&&(input.kind==='report'||context.role_id!==input.roleId)))throw new WorkError('teloa/conflict','交办与当前会话选定的业务或负责人不一致。')
    if(input.kind==='report'&&!input.expectedReportTargets)throw new WorkError('teloa/invalid-input','新汇报必须提供本人确认的完整员工名单。')
    // 新交办的业务负责人只在同事务内核对；旧回执已在上方返回，不重新挑选执行人。
    if(input.kind==='task'&&input.scope!=='general'){
@@ -124,6 +124,9 @@ export async function reserveConversationWorkInTransaction(db:PoolClient,owner:s
    }
    await assertBusinessScopeRegistered(db,owner,input.scope)
    const roles=input.executor==='general'?[]:(await db.query('select * from teloa_roles where owner_id=$1 and ($2::uuid is null or id=$2) order by id for share',[owner,input.roleId??null])).rows.map(readStoredRole)
+   const selected=roles[0],available=context?.scope_id==='general'&&selected&&preparedGuard.scopes?{role:selected,scopes:await preparedGuard.scopes(db,owner)}:undefined
+   const mentioned=context?employeeMentionOverridesPreference(input,context.scope_id,available):false
+   if(context&&((context.scope_id!==input.scope&&!input.allBusinesses&&!mentioned)||context.role_id!==null&&(input.kind==='report'||context.role_id!==input.roleId&&!mentioned)))throw new WorkError('teloa/conflict','交办与当前会话选定的业务或负责人不一致。')
    await guard?.(db,{kind:'reserve'})
    const allowed=input.kind==='report'?(preparedGuard.scopes?await preparedGuard.scopes(db,owner):input.allBusinesses?null:[input.scope]):null
    if(input.kind==='report'&&(!allowed||!Array.isArray(allowed)||allowed.some(scope=>!session(scope))||!allowed.includes(input.scope)))throw new WorkError('teloa/forbidden','无法核对汇报当前业务授权范围。')

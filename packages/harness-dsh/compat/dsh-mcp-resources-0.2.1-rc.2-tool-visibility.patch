@@ -1,0 +1,16 @@
+--- a/lib/index.js
++++ b/lib/index.js
+@@ -122,9 +122,11 @@
+ 				interpolate: false,
+ 				text: ({ scope }) => {
+ 					const names = [...this.layers.merge(scope, (layer) => layer.servers).keys()].sort();
+-					return names.length === 0 ? "" : `## MCP resource servers
++					const visible = new Set(inner.tools.schemas(scope).map((tool) => tool.name));
++					const operations = ["list_mcp_resources", "list_mcp_resource_templates", "read_mcp_resource"].filter((name) => visible.has(name));
++					return names.length === 0 || operations.length === 0 ? "" : `## MCP resource servers
+ 
+-Use list_mcp_resources, list_mcp_resource_templates, or read_mcp_resource with one of these names as the server argument: ${JSON.stringify(names)}.`;
++Use ${operations.join(" or ")} with one of these names as the server argument: ${JSON.stringify(names)}.`;
+ 				}
+ 			});
+ 		});

@@ -1,6 +1,6 @@
 import {createHash} from 'node:crypto'
 import type {Pool,PoolClient} from 'pg'
-import {WorkError,isRecord,type BusinessObjectSnapshot,type BusinessDataPage} from '@teloa/contract'
+import {WorkError,isRecord,businessFieldValueText,type BusinessFieldValue,type BusinessObjectSnapshot,type BusinessDataPage} from '@teloa/contract'
 // 与 business-warehouse.ts 互相引用：两边都只在函数体与构造函数里用到对方，模块求值期不触碰，ESM 循环安全。
 import {BusinessWarehouseService} from './business-warehouse.ts'
 
@@ -46,7 +46,7 @@ export function readBusinessObjectSnapshot(value:unknown,scope:string):Omit<Busi
  const row=exact(value,['scope','type','id','version','title','source','observedAt','receivedAt','quality','summary','fields','deletedAt'])
  if(row.deletedAt!==undefined&&!stamp(row.deletedAt))throw invalidSource()
  if(row.scope!==scope||!text(row.type,80)||typeof row.id!=='string'||!safeId.test(row.id)||!positive(row.version)||!text(row.title,240)||!text(row.source,120)||!stamp(row.observedAt)||!stamp(row.receivedAt)||String(row.receivedAt)<String(row.observedAt)||!['complete','missing'].includes(String(row.quality))||typeof row.summary!=='string'||row.summary!==row.summary.trim()||row.summary.length>4000||!Array.isArray(row.fields)||row.fields.length>50)throw invalidSource()
- const fields=row.fields.map(value=>{const field=exact(value,['label','value']);if(!text(field.label,120)||typeof field.value!=='string'||field.value!==field.value.trim()||field.value.length>2000)throw invalidSource();return {label:field.label,value:field.value}})
+ const fields=row.fields.map(value=>{const field=exact(value,['label','value']);if(!text(field.label,120)||!(typeof field.value==='boolean'||typeof field.value==='number'&&Number.isFinite(field.value)||typeof field.value==='string'&&field.value===field.value.trim()&&field.value.length<=2000))throw invalidSource();return {label:field.label,value:field.value as BusinessFieldValue}})
  if(new Set(fields.map(field=>field.label)).size!==fields.length)throw invalidSource()
  // deletedAt 只在 tombstone 版本出现，且放在末尾：旧快照没有这个键，重算出的摘要与入库时逐字相同。
  return {scope,type:row.type as string,id:row.id as string,version:row.version as number,title:row.title as string,source:row.source as string,observedAt:row.observedAt as string,receivedAt:row.receivedAt as string,quality:row.quality as 'complete'|'missing',summary:row.summary as string,fields,...(row.deletedAt===undefined?{}:{deletedAt:row.deletedAt as string})}
@@ -57,7 +57,7 @@ function sourcePage(value:unknown,source:BusinessDataSourcePort,query:BusinessDa
  if(row.schema!=='teloa.data-source-page/v1'||row.sourceId!==source.id||row.scope!==query.scope||!stamp(row.capturedAt)||!Array.isArray(row.items)||row.items.length>query.limit||(row.nextCursor!==undefined&&!cursor(row.nextCursor)))throw invalidSource()
  const capturedAt=row.capturedAt as string,items=row.items.map(value=>readBusinessObjectSnapshot(value,query.scope)),keys=items.map(item=>item.type+'\0'+item.id),needle=query.text?.toLocaleLowerCase()
  // 即时查询这条路径不接收 tombstone：删除只由同步器按映射的删除语义写入，来源页里带 deletedAt 即不符合约定。
- if(new Set(keys).size!==keys.length||items.some(item=>item.deletedAt!==undefined)||row.nextCursor!==undefined&&row.nextCursor===query.cursor||items.some(item=>item.receivedAt>capturedAt||(query.source!==undefined&&item.source!==query.source)||(query.quality!==undefined&&item.quality!==query.quality)||(query.observedAfter!==undefined&&item.observedAt<query.observedAfter)||(needle!==undefined&&![item.title,item.id,item.type,item.summary,...item.fields.flatMap(field=>[field.label,field.value])].some(value=>value.toLocaleLowerCase().includes(needle)))))throw invalidSource()
+ if(new Set(keys).size!==keys.length||items.some(item=>item.deletedAt!==undefined)||row.nextCursor!==undefined&&row.nextCursor===query.cursor||items.some(item=>item.receivedAt>capturedAt||(query.source!==undefined&&item.source!==query.source)||(query.quality!==undefined&&item.quality!==query.quality)||(query.observedAfter!==undefined&&item.observedAt<query.observedAfter)||(needle!==undefined&&![item.title,item.id,item.type,item.summary,...item.fields.flatMap(field=>[field.label,businessFieldValueText(field.value)])].some(value=>value.toLocaleLowerCase().includes(needle)))))throw invalidSource()
  return {capturedAt,items,...(row.nextCursor===undefined?{}:{nextCursor:row.nextCursor as string})}
 }
 
@@ -111,7 +111,8 @@ export class BusinessDataService{
  async query(actor:BusinessDataActor,input:unknown,signal?:AbortSignal):Promise<BusinessDataPage>{
   if(!text(actor.ownerId,128)||!Array.isArray(actor.scopeIds)||!actor.scopeIds.length||new Set(actor.scopeIds).size!==actor.scopeIds.length||actor.scopeIds.some(scope=>!text(scope,120)))throw new WorkError('teloa/forbidden','需要有效的数据读取主体。')
   const query=queryInput(input)
-  if(!actor.scopeIds.includes(query.scope)||!this.source.scopes.includes(query.scope))throw new WorkError('teloa/forbidden','当前主体或数据源未获准读取此业务范围。')
+  if(!actor.scopeIds.includes(query.scope))throw new WorkError('teloa/forbidden','当前主体未获准读取此业务范围。')
+  if(!this.source.scopes.includes(query.scope))throw new WorkError('teloa/source-unavailable','当前业务尚未连接可查询的数据源。')
   signal?.throwIfAborted()
   let raw:unknown
   try{raw=await this.source.query(query,signal)}catch(error){if(signal?.aborted)throw error;if(error instanceof WorkError)throw error;throw new WorkError('teloa/source-unavailable','安全告警来源当前不可读取；未以空结果或旧数据替代。')}

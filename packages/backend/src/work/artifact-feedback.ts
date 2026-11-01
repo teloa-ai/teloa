@@ -1,5 +1,6 @@
 import type {Pool} from 'pg'
 import {artifactInput,artifactContent,savedArtifactSource,savedArtifactFeedback,WorkError,type SavedArtifactFeedback} from '@teloa/contract'
+import {assertArtifactAvailable} from './artifact-availability.ts'
 const uuid=(value:unknown):value is string=>typeof value==='string'&&/^[a-f0-9]{8}-[a-f0-9]{4}-[1-5][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i.test(value)
 const ownerInput=(owner:string)=>{if(typeof owner!=='string'||!owner.trim()||owner.length>128)throw new WorkError('teloa/forbidden','需要有效本人身份。')}
 export async function initializeArtifactFeedback(pool:Pool){await pool.query(`create table if not exists teloa_artifact_feedback (
@@ -22,6 +23,7 @@ export class ArtifactFeedbackService{
   try{await client.query('begin');await client.query('select pg_advisory_xact_lock(hashtextextended($1,0))',[JSON.stringify(['artifact-feedback',owner,row.requestId])])
    const old=await client.query(joined+' where f.owner_id=$1 and f.request_id=$2',[owner,row.requestId])
    if(old.rows[0]){const same=await client.query('select request_spec=$3::jsonb as same from teloa_artifact_feedback where owner_id=$1 and request_id=$2',[owner,row.requestId,spec]);if(!same.rows[0].same)throw new WorkError('teloa/conflict','该请求已保存不同反馈。');const result=read(old.rows[0]);await client.query('commit');return result}
+   await assertArtifactAvailable(client,owner,row.artifactId,row.version as number)
    const version=await client.query('select * from teloa_artifact_versions where owner_id=$1 and artifact_id=$2 and number=$3',[owner,row.artifactId,row.version])
    if(!version.rows[0])throw new WorkError('teloa/forbidden','反馈目标不存在或不属于本人。')
    if(JSON.stringify(savedArtifactSource(version.rows[0].source))!==JSON.stringify(source))throw new WorkError('teloa/invalid-input','反馈来源与指定成果版本不一致。')

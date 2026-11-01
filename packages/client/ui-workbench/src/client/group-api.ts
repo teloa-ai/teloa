@@ -1,8 +1,10 @@
+import {createGroupDeliveryRecoveryApi,type GroupDeliveryRecoveryJournal} from './group-delivery-recovery-api.js'
 import {groupAgentGrantChangeInput,groupAgentGrantGetInput,groupTaskCreateInput,groupChangeInput,groupCreateInput,groupListInput,groupMessageListInput,groupResourceGetInput,groupResourceListInput,groupResourceSaveInput,groupResourceWithdrawInput,groupSendInput,isGroup,isGroupAgentGrant,isGroupAgentGrantRead,isGroupTaskSource,isGroupMember,isGroupMessage,isGroupResource,isGroupResourceVersion,type Group,type GroupAgentGrant,type GroupMention,type GroupTaskSource,type WorkTask,type GroupAgentGrantRead,type GroupChangeFields,type GroupCreateInput,type GroupMember,type GroupMessage,type GroupResource,type GroupResourceVersion,type GroupSendInput,type MessageReference} from '@teloa/contract'
 import {groupMentionsInput,readGroupAttention,readGroupMentionsPage} from '@teloa/contract'
 import {recoveryStorageError} from './recovery-error.ts'
 import {groupReadingInput,groupMarkReadInput,readGroupReadingState} from '@teloa/contract'
 import {groupMessagePageInput,groupMessageSearchInput,readGroupMessagePage,readGroupMessageSearchResult,type GroupMessagePageInput} from '@teloa/contract'
+import {groupMessageSourcesEndpoint,readGroupMessageSources} from '@teloa/contract'
 import {groupTaskBusinessTarget,type GroupTaskBusinessTarget} from '@teloa/contract'
 import {readSavedTask} from './task-api.ts'
 import {WorkError,groupMessageBodyInput,isGroupMessageBody,isGroupMessageBodySummary,type GroupMessageBody,type GroupMessageBodySummary} from '@teloa/contract'
@@ -135,7 +137,7 @@ function command(value:unknown):GroupCommand{
 }
 
 export type GroupApi=ReturnType<typeof createGroupApi>
-export function createGroupApi(call:Call,journal?:GroupRequestJournal,newId:()=>string=()=>crypto.randomUUID(),ownerId='self'){
+export function createGroupApi(call:Call,journal?:GroupRequestJournal,newId:()=>string=()=>crypto.randomUUID(),ownerId='self',recoveryJournal?:GroupDeliveryRecoveryJournal){
  let pending:GroupCommand|undefined,recoveryError:ReturnType<typeof recoveryStorageError>|undefined,busy=false,directory:GroupDirectory|undefined,directoryGeneration=0
  const groups=new Map<string,GroupSnapshot>(),groupGenerations=new Map<string,number>(),messageDirectories=new Map<string,GroupMessageDirectory>(),messageGenerations=new Map<string,number>(),resourceDirectories=new Map<string,GroupResourceDirectory>(),resourceGenerations=new Map<string,number>(),resourceVersions=new Map<string,GroupResourceVersion>(),resourceVersionGenerations=new Map<string,number>()
  try{
@@ -203,6 +205,7 @@ export function createGroupApi(call:Call,journal?:GroupRequestJournal,newId:()=>
  }
  const topicKey=(groupId:string,rootId:string|undefined)=>JSON.stringify([groupId,rootId??null])
  return {
+  deliveryRecovery:createGroupDeliveryRecoveryApi(call,recoveryJournal,newId),
   pending:()=>pending?clone(pending):undefined,
   recoveryMessage:()=>recoveryError,
   discardInaccessibleRecovery:(items?:readonly Group[])=>{
@@ -287,6 +290,15 @@ export function createGroupApi(call:Call,journal?:GroupRequestJournal,newId:()=>
    if(!isGroupMessageBody(value)||value.groupId!==groupId||value.messageId!==messageId||value.chars!==summary.chars||value.sha256!==summary.sha256)throw new WorkError('teloa/source-unavailable','群消息全文与原消息不一致。')
    const hash=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(value.text))),byte=>byte.toString(16).padStart(2,'0')).join('')
    if(hash!==summary.sha256)throw new WorkError('teloa/source-unavailable','群消息全文与原消息不一致。')
+   return clone(value)
+  },
+  async messageSources(groupId:string,messageId:string,runId:string){
+   const input=groupMessageBodyInput({groupId,messageId}),value=readGroupMessageSources(await call(groupMessageSourcesEndpoint.name,input))
+   if(value.groupId!==groupId||value.messageId!==messageId||value.runId!==null&&value.runId!==runId)throw new WorkError('teloa/source-unavailable','引用来源与原回复不一致。')
+   for(const item of value.items)if(!('fullText'in item.message)){
+    const hash=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(item.message.text))),byte=>byte.toString(16).padStart(2,'0')).join('')
+    if(hash!==item.sha256)throw new WorkError('teloa/source-unavailable','引用来源正文与原消息不一致。')
+   }
    return clone(value)
   },
   async resource(groupId:string,resourceId:string,version:number):Promise<GroupResourceVersion>{

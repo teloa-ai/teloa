@@ -1,5 +1,6 @@
 import {readActiveGroupWorkResource} from './group-work-resources.ts'
 import type {Pool,PoolClient} from 'pg'
+import {assertArtifactAvailable} from './artifact-availability.ts'
 import {WorkError,roleSupportsScope,groupAgentGrantChangeInput,groupAgentGrantGetInput,groupDefinition,isGroupAgentGrant,isGroupAgentGrantRead,normalizeReferences,type GroupAgentGrant,type GroupAgentGrantRead,type GroupAgentResourceGrant} from '@teloa/contract'
 import {readActiveAttachment} from './group-attachments.ts'
 import {readStoredRole} from './roles.ts'
@@ -51,10 +52,14 @@ export class GroupAgentGrantService{
  constructor(pool:Pool,now:()=>string){this.pool=pool;this.now=now}
 
  async get(owner:string,input:unknown):Promise<GroupAgentGrantRead>{
+  const client=await this.pool.connect()
+  try{await client.query('begin');const result=await this.getInTransaction(client,owner,input);await client.query('commit');return result}
+  catch(error){await client.query('rollback');throw error}finally{client.release()}
+ }
+ /** 复用调用方事务，避免日程预检在持锁时另占数据库连接。 */
+ async getInTransaction(client:PoolClient,owner:string,input:unknown):Promise<GroupAgentGrantRead>{
   ownerId(owner)
-  const request=groupAgentGrantGetInput(input),client=await this.pool.connect()
-  try{
-   await client.query('begin')
+  const request=groupAgentGrantGetInput(input)
    const context=await this.context(client,owner,request.groupId,request.roleId,'share')
    // 范围不支持时照常回读最新一行：有行就按「有行但不作数」给 `invalidated`（契约 `isGroupAgentGrantRead` 要求
    // `not-granted` 必须配 `grant:null`，`contract/src/collaboration.ts:295`），没有行才是 `not-granted`；本人因此看得到、也撤得掉历史遗留行。
@@ -65,9 +70,7 @@ export class GroupAgentGrantService{
    const status=context.scopeSupported?this.status(context,grant,grant?await this.resourcesAvailable(client,owner,request.groupId,grant.resources):true,executionReady):grant?'invalidated':'not-granted'
    const result={groupVersion:context.groupVersion,roleVersion:context.roleVersion,grant,status}
    if(!isGroupAgentGrantRead(result))throw new WorkError('teloa/storage-corrupt','群员工授权状态损坏。')
-   await client.query('commit')
    return result
-  }catch(error){await client.query('rollback');throw error}finally{client.release()}
  }
 
  async change(owner:string,input:unknown):Promise<GroupAgentGrant>{
@@ -155,6 +158,7 @@ export class GroupAgentGrantService{
     // 契约只保证 36 位十六进制与连字符，未必是合法 uuid；先判形状再查，避免把格式问题变成数据库异常。
     const found=uuid(resource.id)?(await client.query('select 1 from teloa_artifact_versions where owner_id=$1 and artifact_id=$2 and number=$3 for share',[owner,resource.id,resource.version])).rows[0]:undefined
     if(!found)throw new WorkError('teloa/forbidden','授权的原件不存在、已撤回或不属于当前本人。')
+    await assertArtifactAvailable(client,owner,resource.id,resource.version)
    }
   }
  }

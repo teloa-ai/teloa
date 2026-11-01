@@ -25,7 +25,7 @@ export type MarketPublicationMetadata={
  localized:{title:LocalizedMetadata;description?:LocalizedMetadata}
  resources:{id:string;title:LocalizedMetadata}[]
 }
-type AtomicInput={kind:'atomic-skill';requestId:string;source:MarketImportSource;metadata:{id:string;title:string;version:string;categories:string[];localized?:Pick<LocalizedFields,'title'>};trust?:MarketSourceTrust;files:MarketFileInput[]}
+type AtomicInput={kind:'atomic-skill';requestId:string;source:MarketImportSource;metadata:{id:string;title:string;version:string;categories:string[];localized?:Pick<LocalizedFields,'title'>;modelDependencies?:IndustryModelDependency[]};trust?:MarketSourceTrust;files:MarketFileInput[]}
 type IndustryInput={kind:'industry-template';requestId:string;source:MarketImportSource;manifestPath:string;trust?:MarketSourceTrust;files:MarketFileInput[];references:MarketContentReference[]}
 type ImportInput=AtomicInput|IndustryInput
 type Normalized={kind:MarketContent['kind'];logicalId:string;version:string;hash:string;baseHash:string;manifestPath:string;metadata:Record<string,unknown>;trust:MarketSourceTrust;trustHash:string;files:MarketContent['files'];provides:MarketProvidedResource[];references:MarketContentReference[];requestSpec:Record<string,unknown>;source:MarketImportReceipt['source'];requestId:string}
@@ -116,7 +116,8 @@ function publicationField(input:unknown,original:string,label:string):LocalizedM
  */
 export function marketPublicationMetadata(input:Pick<MarketContent,'kind'|'metadata'>):MarketPublicationMetadata{
  if(input.kind==='atomic-skill'){
-  const metadata=exact(input.metadata,['id','title','version','categories','localized']),title=requiredText(metadata.title,'技能名称',120)
+  const metadata=exact(input.metadata,['id','title','version','categories','localized','modelDependencies']),title=requiredText(metadata.title,'技能名称',120)
+  industryResourceModelDependencies('skill',metadata.modelDependencies)
   const localized=metadata.localized===undefined?undefined:exact(metadata.localized,['title'])
   return {requiredLocales:marketPublicationRequiredLocales,localized:{title:publicationField(localized?.title,title,'技能名称')},resources:[]}
  }
@@ -162,14 +163,14 @@ function utf8(file:MarketContent['files'][number],label:string):string{
  try{return new TextDecoder('utf-8',{fatal:true}).decode(file.bytes)}catch{throw bad(label+'必须是 UTF-8 文本。')}
 }
 function normalizeAtomic(input:AtomicInput):Omit<Normalized,'requestSpec'|'source'|'requestId'> {
- const metadataRow=exact(input.metadata,['id','title','version','categories','localized'])
+ const metadataRow=exact(input.metadata,['id','title','version','categories','localized','modelDependencies'])
  if(!stableId(metadataRow.id))throw bad('技能标识仅允许字母、数字和连字符。')
  if(!semver(metadataRow.version))throw bad('技能版本必须是固定的三段版本号。')
  if(!Array.isArray(metadataRow.categories)||metadataRow.categories.length>20)throw bad('技能分类最多 20 项。')
  const categories=metadataRow.categories.map(value=>requiredText(value,'技能分类',80))
  if(new Set(categories).size!==categories.length)throw bad('技能分类不能重复。')
  const title=requiredText(metadataRow.title,'技能名称',120)
- const metadata={id:metadataRow.id,title,version:metadataRow.version,categories,...(metadataRow.localized===undefined?{}:{localized:localizedFields(metadataRow.localized,{title})})}
+ const metadata={id:metadataRow.id,title,version:metadataRow.version,categories,...(metadataRow.localized===undefined?{}:{localized:localizedFields(metadataRow.localized,{title})}),...industryResourceModelDependencies('skill',metadataRow.modelDependencies)}
  const contentFiles=files(input.files),entries=contentFiles.filter(file=>file.path.split('/').at(-1)==='SKILL.md')
  if(entries.length!==1)throw bad('独立技能必须只包含一个顶层 SKILL.md。')
  const manifestPath=entries[0]!.path,root=manifestPath.slice(0,manifestPath.lastIndexOf('/')+1)

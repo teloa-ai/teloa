@@ -4,15 +4,16 @@ import {groupRoutingRetryable} from './group-routing-attempts.ts'
 import {readTrustedGroupMessageRunSource} from './group-routing-outbox.ts'
 import {readGroupRunPublication} from './group-run-publication.ts'
 import {readGroupTaskSource} from './group-tasks.ts'
+import {preparedMaintenanceRecoveryControl} from './prepared-maintenance.ts'
 
 const ownerId=(value:string):void=>{if(typeof value!=='string'||!value.trim()||value.length>128)throw new WorkError('teloa/forbidden','需要有效的本人身份。')}
 const corrupt=()=>new WorkError('teloa/storage-corrupt','群消息处理状态记录损坏，已停止读取。')
 
-type Recipient=GroupRecipientStatus&{hint:GroupMessageHintCode|null}
+type Recipient=GroupRecipientStatus&{hint:GroupMessageHintCode|null;resumeControlId?:string}
 /** 已派出接收者的聚合顺序：需要核对与等待本人的状态优先于已完成，部分不可用不掩盖正在处理的员工。 */
 const phaseRank:readonly GroupMessagePhase[]=['unknown','awaiting-approval','stopping','paused','publication-blocked','running','queued','delivering','awaiting-review','blocked','stopped','completed','unavailable']
 
-/** 原工作的真实事实：原 Task 状态、本轮工作控制状态，以及挂在原 Run 会话/原 Task 上仍待本人决定的原生审批。 */
+/** 原工作的真实事实：Task 状态、本轮工作控制，以及原 Run 的原生审批或原 Task 的安全动作审批。 */
 type WorkFacts={taskState?:string;control?:string;controlId?:string;definitionActive?:boolean;approval:boolean}
 /**
  * 单个接收者：只看本尝试的投递行、真实 Run、原生审批、工作控制、原 Task 与已确认贴回原群的回帖，不用员工是否在话题里发过言推断。
@@ -23,6 +24,7 @@ function recipientPhase(outbox:Record<string,unknown>,run:Record<string,unknown>
  // 依赖交接等本人授予前序固定成果：可恢复等待，授予后由原投递继续，不是终态。
  if(outbox.state==='waiting'&&outbox.reason==='teloa/resource-required')return {phase:'queued',hint:'resource-required'}
  const state=run?.state
+ if(state==='submission_unknown')return {phase:'unknown',hint:'delivery-unknown'}
  const evidence=run?.evidence,completed=!!evidence&&typeof evidence==='object'&&'state' in evidence&&evidence.state==='ended'&&'reason' in evidence&&evidence.reason==='completed'
  // 冷恢复可暂停原控制以禁止隐式续跑，但不能抹掉已经确认贴回的回复或已完成工作这一历史事实。
  if(state==='ended'&&completed&&resultMessageId&&(mode==='reply'||facts.taskState==='completed'))return {phase:'completed',hint:null}
@@ -110,7 +112,9 @@ export class GroupRoutingStatusService{
  readonly pool:Pool
  /** 原生审批（官方 approval/asked 尚无 approval/decided）只存在于宿主会话日志；由宿主按 Run 会话提供，后端不读原生日志。 */
  readonly nativeApprovals:((sessionIds:readonly string[])=>Promise<ReadonlySet<string>>)|undefined
- constructor(pool:Pool,nativeApprovals?:(sessionIds:readonly string[])=>Promise<ReadonlySet<string>>){this.pool=pool;this.nativeApprovals=nativeApprovals}
+ /** 独立短事务沿正式恢复准入复核当前岗位、来源和固定资料；缺席时不提供维护恢复入口。 */
+ readonly preparedMaintenanceAdmission:((owner:string,runId:string)=>Promise<void>)|undefined
+ constructor(pool:Pool,nativeApprovals?:(sessionIds:readonly string[])=>Promise<ReadonlySet<string>>,preparedMaintenanceAdmission?:(owner:string,runId:string)=>Promise<void>){this.pool=pool;this.nativeApprovals=nativeApprovals;this.preparedMaintenanceAdmission=preparedMaintenanceAdmission}
 
  async status(owner:string,input:unknown):Promise<{items:GroupRoutingStatusView[]}>{
   ownerId(owner)
@@ -145,7 +149,7 @@ export class GroupRoutingStatusService{
    const runs=new Map((runIds.length?(await client.query('select id,state,session_id,task_id,role_id,evidence,group_publication from teloa_task_runs where owner_id=$1 and id=any($2::uuid[])',[owner,runIds])).rows:[]).map(row=>[String(row.id),row]))
    // 原工作事实：Task 状态、本轮工作控制、安全动作与宿主提供的未决原生审批；业务草稿的旧状态不构成审批事实。
    const taskIds=[...new Set([...outbox,...inputs,...manual].flatMap(row=>row.task_id?[String(row.task_id)]:[]))]
-   const facts=new Map<string,WorkFacts>(taskIds.map(id=>[id,{approval:false}])),taskRoles=new Map<string,string>()
+   const facts=new Map<string,WorkFacts>(taskIds.map(id=>[id,{approval:false}])),taskRoles=new Map<string,string>(),nativeApprovalRuns=new Set<string>()
    if(taskIds.length){
     for(const row of (await client.query('select id,state,assignee_role_id from teloa_tasks where owner_id=$1 and id=any($2::uuid[])',[owner,taskIds])).rows){facts.get(String(row.id))!.taskState=String(row.state);if(typeof row.assignee_role_id==='string')taskRoles.set(String(row.id),row.assignee_role_id)}
     for(const row of (await client.query(`select l.task_id,c.id,c.state,d.state as definition_state from teloa_task_work_lineage l join teloa_work_controls c on c.owner_id=l.owner_id and c.id=l.round_control_id
@@ -153,7 +157,7 @@ export class GroupRoutingStatusService{
     const active=[...runs.values()].filter(run=>run.state==='active'&&facts.has(String(run.task_id)))
     if(this.nativeApprovals&&active.length){
      const waiting=await this.nativeApprovals(active.map(run=>String(run.session_id)))
-     for(const run of active)if(waiting.has(String(run.session_id)))facts.get(String(run.task_id))!.approval=true
+     for(const run of active)if(waiting.has(String(run.session_id)))nativeApprovalRuns.add(String(run.id))
     }
     if((await client.query("select to_regclass('teloa_security_actions') as relation")).rows[0]?.relation)
      for(const row of (await client.query("select distinct task_id from teloa_security_actions where owner_id=$1 and task_id=any($2::uuid[]) and state='pending_approval'",[owner,taskIds])).rows)facts.get(String(row.task_id))!.approval=true
@@ -166,7 +170,11 @@ export class GroupRoutingStatusService{
     if(row.author_id==='self'||!isGroupRoutingDecision(stored)||!groupRoutingRetryable(stored,outbox.some(item=>item.message_id===messageId)))continue
     if(await readTrustedGroupMessageRunSource(client,owner,{groupId:request.groupId,messageId}).catch(error=>{if(error instanceof WorkError)return null;throw error}))trusted.add(messageId)
    }
-   const factsOf=(taskId:unknown)=>taskId?facts.get(String(taskId))??{approval:false}:{approval:false}
+   // Task 安全审批属于整项工作；原生审批只属于固定 Run，不能污染同 Task 的历史消息。
+   const factsOf=(taskId:unknown,runId?:unknown):WorkFacts=>{
+    const task=taskId?facts.get(String(taskId))??{approval:false}:{approval:false}
+    return {...task,approval:task.approval||!!runId&&nativeApprovalRuns.has(String(runId))}
+   }
    const results=new Map<string,string>()
    if(runIds.length)for(const row of (await client.query('select id,run_id from teloa_group_messages where owner_id=$1 and group_id=$2 and run_id=any($3::uuid[]) order by created_at,id',[owner,request.groupId,runIds])).rows)if(!results.has(String(row.run_id)))results.set(String(row.run_id),String(row.id))
    const roleIds=new Set<string>([...outbox.map(row=>String(row.role_id)),...taskRoles.values(),...[...runs.values()].flatMap(run=>typeof run.role_id==='string'?[run.role_id]:[])])
@@ -177,6 +185,10 @@ export class GroupRoutingStatusService{
    }
    for(const row of attempts.values())for(const item of Array.isArray(row.override_recipients)?row.override_recipients:[])if(isGroupMention(item))roleIds.add(item.roleId)
    const names=new Map(roleIds.size?(await client.query("select id,definition->>'name' as name from teloa_roles where owner_id=$1 and id=any($2::uuid[])",[owner,[...roleIds]])).rows.map(row=>[String(row.id),String(row.name??'')]):[])
+   const maintained=new Map<string,string>()
+   if(this.preparedMaintenanceAdmission&&!group.archived)for(const item of outbox){
+    try{const controlId=await preparedMaintenanceRecoveryControl(client,owner,item);if(controlId){await this.preparedMaintenanceAdmission(owner,String(item.run_id));maintained.set(String(item.id),controlId)}}catch(error){if(!(error instanceof WorkError))throw error}
+   }
    await client.query('commit')
    const name=(roleId:string)=>(names.get(roleId)??'').slice(0,200)
    const items=messages.map(row=>{
@@ -187,13 +199,13 @@ export class GroupRoutingStatusService{
     const explicit:Recipient[]=[]
     for(const item of manual.filter(item=>item.message_id===messageId)){
      const roleId=taskRoles.get(item.task_id);if(!roleId||explicit.some(item=>item.roleId===roleId))continue
-     const runId=item.run_id?String(item.run_id):null,resultMessageId=runId?results.get(runId)??null:null,facts=factsOf(item.task_id)
+     const runId=item.run_id?String(item.run_id):null,resultMessageId=runId?results.get(runId)??null:null,facts=factsOf(item.task_id,runId)
      const fixed=facts.taskState==='cancelled'?{phase:'stopped' as const,hint:'work-stopped' as const}:recipientPhase({state:'settled'},runId?runs.get(runId):undefined,resultMessageId,facts,'work')
      explicit.push({roleId,name:name(roleId),taskId:item.task_id,runId,phase:fixed.phase,resultMessageId,executionMode:'work',hint:fixed.hint})
     }
     const delivered=outbox.some(item=>item.message_id===messageId)
     const view=(phase:GroupMessagePhase,hintCode:GroupMessageHintCode|null,recipients:Recipient[],controlId?:string):GroupRoutingStatusView=>{
-     const value={messageId,attemptVersion:version,phase,recipients:recipients.slice(0,groupRoutingCandidatesMax).map(({hint,...item})=>item),hintCode,canRetry:!explicit.length&&!group.archived&&groupRoutingRetryable(decision,delivered)&&(row.author_id==='self'||trusted.has(messageId)),...(hintCode==='budget-exhausted'?{budget:{...decision?.budget}}:{}),...(hintCode==='continue-paused'?{controlId}:{})}
+     const value={messageId,attemptVersion:version,phase,recipients:recipients.slice(0,groupRoutingCandidatesMax).map(({hint,resumeControlId,...item})=>item),hintCode,canRetry:!explicit.length&&!group.archived&&groupRoutingRetryable(decision,delivered)&&(row.author_id==='self'||trusted.has(messageId)),...(hintCode==='budget-exhausted'?{budget:{...decision?.budget}}:{}),...(hintCode==='continue-paused'?{controlId:controlId??recipients.find(item=>item.hint===hintCode)?.resumeControlId}:{})}
      if(!isGroupRoutingStatusView(value))throw corrupt()
      return value
     }
@@ -211,13 +223,13 @@ export class GroupRoutingStatusService{
      const item=outbox.find(entry=>entry.message_id===messageId&&entry.decision_version===version&&entry.role_id===roleId)
      if(!item)return {roleId,name:name(roleId),taskId:null,runId:null,phase:'queued',resultMessageId:null,executionMode:null,hint:null}
      const mode=item.execution_mode==='work'?'work' as const:'reply' as const
-     const runId=item.run_id?String(item.run_id):null,resultMessageId=runId?results.get(runId)??null:null,fixed=recipientPhase(item,runId?runs.get(runId):undefined,resultMessageId,factsOf(item.task_id),mode)
-     return {roleId,name:name(roleId),taskId:item.task_id?String(item.task_id):null,runId,phase:fixed.phase,resultMessageId,executionMode:mode,hint:fixed.hint}
+     const runId=item.run_id?String(item.run_id):null,resultMessageId=runId?results.get(runId)??null:null,resumeControlId=maintained.get(String(item.id)),fixed=resumeControlId?{phase:'paused' as const,hint:'continue-paused' as const}:recipientPhase(item,runId?runs.get(runId):undefined,resultMessageId,factsOf(item.task_id,runId),mode)
+     return {roleId,name:name(roleId),taskId:item.task_id?String(item.task_id):null,runId,phase:fixed.phase,resultMessageId,executionMode:mode,hint:fixed.hint,...(resumeControlId?{resumeControlId}:{})}
     })
     // 对原工作的追加／停止优先呈现原工作的真实状态；同一条消息里的简短说明回应作为接收者并列显示，不替代原工作状态。
     const input=inputs.find(item=>String(item.message_id)===messageId)
     if(input){
-     const runId=input.run_id?String(input.run_id):null,run=runId?runs.get(runId):undefined,resultMessageId=runId?results.get(runId)??null:null,fixed=workInputPhase(input,run,resultMessageId,factsOf(input.task_id))
+     const runId=input.run_id?String(input.run_id):null,run=runId?runs.get(runId):undefined,resultMessageId=runId?results.get(runId)??null:null,fixed=workInputPhase(input,run,resultMessageId,factsOf(input.task_id,runId))
      // 续办没有新派工行：接手者来自原Run冻结身份，未准备Run时才取原Task负责人，不能把被引用员工误报为不可回应。
      const roleId=typeof run?.role_id==='string'?run.role_id:taskRoles.get(String(input.task_id))
      const target:Recipient[] =roleId?[{roleId,name:name(roleId),taskId:String(input.task_id),runId,phase:fixed.phase,resultMessageId,executionMode:'work',hint:fixed.hint}]:[]

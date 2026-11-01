@@ -3,18 +3,19 @@ import assert from 'node:assert/strict'
 import {createHash,randomUUID} from 'node:crypto'
 import {homedir,tmpdir} from 'node:os'
 import {join} from 'node:path'
-import {mkdtemp,rm} from 'node:fs/promises'
+import {mkdtemp,realpath,rm,writeFile} from 'node:fs/promises'
 import {Pool} from './postgres-test-lifecycle.ts'
 import {PostgreSqlContainer,type StartedPostgreSqlContainer} from '@testcontainers/postgresql'
 import {ReferenceError} from '@teloa/mcp-reference/catalog'
-import {readRetrievalSearchResult,retrievalLimits} from '@teloa/contract'
+import {WorkError,readRetrievalSearchResult,retrievalLimits} from '@teloa/contract'
 import {ResourceService,type ResourceActor} from '../src/capabilities/resources.ts'
+import {AuthorizedLocalMaterialCatalog,initializeAuthorizedLocalMaterials} from '../src/capabilities/authorized-local-material-catalog.ts'
 import {initializeResources} from '../src/capabilities/schema.ts'
 import {MarkdownKnowledgeService} from '../src/capabilities/markdown-knowledge.ts'
 import {MarkdownKnowledgeCatalog,markdownKnowledgeReferenceId} from '../src/capabilities/markdown-knowledge-catalog.ts'
 import {KnowledgeResourceService} from '../src/capabilities/knowledge-resources.ts'
 import {chunkRetrievalText,retrievalChunker} from '../src/capabilities/retrieval-chunker.ts'
-import {RetrievalIndexService,RetrievalVectorCache,retrievalCoverageNote,type Embedder} from '../src/capabilities/retrieval-index.ts'
+import {RetrievalIndexService,RetrievalVectorCache,retrievalCoverageNote,retrievalChangedCoverageNote,retrievalHistoricalCoverageNote,type Embedder} from '../src/capabilities/retrieval-index.ts'
 
 let container:StartedPostgreSqlContainer,pool:Pool,root:string
 before(async()=>{
@@ -47,16 +48,16 @@ function fakeEmbedder(profileHash=profileA,hooks:{onCall?:(kind:string,texts:str
 const signal=()=>new AbortController().signal
 
 function memoryCatalog(){
- const texts=new Map<string,string>(),broken=new Set<string>(),reads:string[]=[]
+ const texts=new Map<string,string>(),broken=new Set<string>(),invalidated=new Set<string>(),reads:string[]=[]
  return {
-  broken,reads,
+  broken,invalidated,reads,
   add(id:string,text:string){const version=createHash('sha256').update(text).digest('hex');texts.set(id+'@'+version,text);return version},
   async list(){return {schema:'teloa.reference-list/v1' as const,references:[]}},
   async read(id:string,version:string){
    reads.push(id)
    if(broken.has(id))throw new Error('磁盘暂不可读')
    const text=texts.get(id+'@'+version)
-   if(text===undefined)throw new ReferenceError('reference/version-conflict','资料版本已变化。')
+   if(text===undefined||invalidated.has(id))throw new ReferenceError('reference/version-conflict','资料版本已变化。')
    return {schema:'teloa.reference/v1' as const,id,title:'资料',source:id,version,bytes:Buffer.byteLength(text),text}
   },
  }
@@ -103,6 +104,30 @@ test('加入后建索引，状态为 ready，检索带原文位置引用与覆�
  assert.equal((await pool.query("select column_name from information_schema.columns where table_name='teloa_retrieval_chunks' and column_name in ('text','content','excerpt')")).rowCount,0,'索引表不存分块正文')
 })
 
+test('重叠原文先合并再消耗结果预算，同源独立事实仍有精确位置',async()=>{
+ const {retrieval,human,agent,add}=world(),fact='指定事实甲=19。'
+ const text='A'.repeat(250)+fact+'B'.repeat(800)+'\n\n# 独立条款\n指定事实乙=23。'
+ const doc=await add('合成分块资料',text)
+ const embedder:Embedder={profileHash:profileA,async embed(kind,texts){return texts.map(text=>{
+  const vector=new Float32Array(1024);vector[kind==='query'||text.includes(fact)?0:1]=1;return vector
+ })}}
+ await retrieval.enroll(human,{sourceIds:[doc.sourceId]})
+ await retrieval.buildPending(human,embedder,signal())
+ assert.equal(chunkRetrievalText(text).filter(chunk=>chunk.text.includes(fact)).length,2,'真实分块包含合法60字重叠')
+ const result=await retrieval.search(agent,['general'],{query:'指定事实',limit:2},embedder,signal())
+ assert.equal(result.results.length,2)
+ assert.equal(result.results.filter(hit=>hit.excerpt.includes(fact)).length,1,'同一原文事实不能占用两条证据预算')
+ assert.ok(result.results.some(hit=>hit.excerpt.includes('指定事实乙=23。')))
+ for(const hit of result.results){
+  assert.equal(hit.resourceId,doc.id);assert.equal(hit.sourceVersion,doc.sourceVersion)
+  assert.equal(hit.excerpt,text.slice(...hit.chars))
+  assert.deepEqual(hit.lines,[text.slice(0,hit.chars[0]).split('\n').length-1,text.slice(0,hit.chars[1]-1).split('\n').length-1])
+  assert.ok(Buffer.byteLength(hit.excerpt)<=retrievalLimits.maxExcerptBytes)
+ }
+ assert.equal(result.results[0]!.score,1,'保留最高原余弦，不累加重叠分数')
+ assert.ok(result.results[0]!.chars[1]<=result.results[1]!.chars[0])
+})
+
 test('知识修订后旧索引不再命中，新版本为 stale 并可重建，未变分块复用向量',async()=>{
  const identity={id:randomUUID,now:()=>new Date().toISOString()},knowledge=new MarkdownKnowledgeService(pool,root,'default',identity)
  const resources=new ResourceService(pool,new MarkdownKnowledgeCatalog(knowledge),identity),revisions=new KnowledgeResourceService(pool,knowledge,resources),retrieval=new RetrievalIndexService(pool,resources,identity)
@@ -127,6 +152,160 @@ test('知识修订后旧索引不再命中，新版本为 stale 并可重建，�
  assert.equal(fresh.results[0]!.resourceId,v2)
  assert.match(fresh.results[0]!.excerpt,/提前三天/)
  assert.equal(await count('select count(*)::int as count from teloa_retrieval_indexes where resource_id=$1',[v1.id]),0,'建索引结束后清理失效索引')
+})
+
+test('原件变版后状态为 stale，无有效候选时不推理，也不自动认可新正文',async()=>{
+ const {catalog,retrieval,human,add}=world(),{embedder,calls}=fakeEmbedder()
+ const doc=await add('差旅报销制度',policy)
+ await retrieval.enroll(human,{sourceIds:[doc.sourceId]})
+ await retrieval.buildPending(human,embedder,signal())
+ catalog.invalidated.add(doc.sourceId)
+ const state=await retrieval.status(human,profileA)
+ assert.equal(state.items[0]!.state,'stale');assert.equal(state.items[0]!.chunkCount,null);assert.equal(state.items[0]!.sourceChanged,true)
+ assert.equal((await retrieval.status(human,profileB)).items[0]!.sourceChanged,true,'切换模型后仍需先确认原件，不自动整理旧绑定')
+ const result=await retrieval.search(human,['general'],{query:'报销审批'},embedder,signal())
+ assert.deepEqual(result,{coverage:{searched:[],pending:[{resourceId:doc.id,title:doc.title,reason:'stale',sourceState:'changed'}],note:retrievalChangedCoverageNote},results:[]})
+ assert.equal(calls.filter(call=>call.kind==='query').length,0)
+})
+
+test('查询推理期间原件变版只进入 pending，其他有效资料继续返回',async()=>{
+ const {catalog,retrieval,human,add}=world()
+ const doc=await add('差旅报销制度',policy),keep=await add('产品手册',handbook)
+ const {embedder}=fakeEmbedder(profileA,{onCall(kind){if(kind==='query')catalog.invalidated.add(doc.sourceId)}})
+ await retrieval.enroll(human,{sourceIds:[doc.sourceId,keep.sourceId]})
+ await retrieval.buildPending(human,embedder,signal())
+ const result=await retrieval.search(human,['general'],{query:'报销审批',limit:1},embedder,signal())
+ assert.deepEqual(result.coverage.pending,[{resourceId:doc.id,title:doc.title,reason:'stale',sourceState:'changed'}])
+ assert.deepEqual(result.coverage.searched,[{resourceId:keep.id,title:keep.title,version:keep.version}])
+ assert.equal(result.results.length,1);assert.equal(result.results[0]!.resourceId,keep.id)
+})
+
+test('摘录回读前原件变版重新排名，填补有效结果且不吞掉存储或权限错误',async()=>{
+ const {catalog,resources,retrieval,human,add}=world(),{embedder}=fakeEmbedder()
+ const doc=await add('差旅报销制度',policy),keep=await add('产品手册',handbook)
+ await retrieval.enroll(human,{sourceIds:[doc.sourceId,keep.sourceId]})
+ await retrieval.buildPending(human,embedder,signal())
+ const original=resources.readExcerptsInTransaction.bind(resources)
+ resources.readExcerptsInTransaction=async(...args)=>{catalog.invalidated.add(doc.sourceId);return original(...args)}
+ const result=await retrieval.search(human,['general'],{query:'报销单先由部门负责人审批，再交财务复核',limit:1},embedder,signal())
+ assert.deepEqual(result.coverage.pending,[{resourceId:doc.id,title:doc.title,reason:'stale',sourceState:'changed'}])
+ assert.equal(result.results.length,1);assert.equal(result.results[0]!.resourceId,keep.id)
+ resources.readExcerptsInTransaction=async()=>{throw new WorkError('teloa/forbidden','权限已撤销。')}
+ await assert.rejects(retrieval.search(human,['general'],{query:'开机'},embedder,signal()),{code:'teloa/forbidden'})
+ resources.readExcerptsInTransaction=async()=>{throw new WorkError('teloa/storage-corrupt','索引已损坏。')}
+ await assert.rejects(retrieval.search(human,['general'],{query:'开机'},embedder,signal()),{code:'teloa/storage-corrupt'})
+})
+
+test('真实本机原件改版只投影 stale，经明确新版本确认与旧版撤回后恢复检索',async()=>{
+ await initializeAuthorizedLocalMaterials(pool)
+ const workspace=await realpath(await mkdtemp(join(root,'local-'))),identity={id:randomUUID,now:()=>new Date().toISOString()}
+ const human:ResourceActor={ownerId:randomUUID(),kind:'human',scopeIds:['general','design']},reads:string[]=[];let allowed=true
+ const catalog=new AuthorizedLocalMaterialCatalog(pool,identity,{authorize:async()=>({workspaceRoot:workspace,assertCurrent:()=>{if(!allowed)throw Error('许可已撤回')},isProtectedPath:path=>{reads.push(path);return false}})})
+ const resources=new ResourceService(pool,catalog,identity),retrieval=new RetrievalIndexService(pool,resources,identity),{embedder}=fakeEmbedder()
+ const add=async(path:string,text:string,scopeIds:string[])=>{
+  await writeFile(join(workspace,path),text)
+  const source=await catalog.register(human,{requestId:randomUUID(),path,title:path,scopeIds})
+  const draft=await resources.create(human,{requestId:randomUUID(),title:path,sourceId:source.id,sourceVersion:source.version,scopeIds})
+  return resources.apply(human,{draftId:draft.id,expectedVersion:draft.version})
+ }
+ const doc=await add('制度.md',policy,['general']),keep=await add('手册.md',handbook,['general']),hidden=await add('范围外.md',policy,['design'])
+ await retrieval.enroll(human,{sourceIds:[doc.sourceId,keep.sourceId,hidden.sourceId]});await retrieval.buildPending(human,embedder,signal())
+ await writeFile(join(workspace,'制度.md'),policy.replace('三十日','十五日'))
+ catalog.list=async()=>{throw Error('不得枚举来源目录')};reads.length=0
+ const principal={...human,kind:'agent' as const,scopeIds:['general']}
+ const status=await retrieval.status(principal,profileA)
+ assert.equal(status.items.find(x=>x.resourceId===doc.id)!.state,'stale')
+ assert.equal(status.items.find(x=>x.resourceId===keep.id)!.state,'ready')
+ const pending=await retrieval.search(principal,['general'],{query:'报销期限'},embedder,signal())
+ assert.deepEqual(pending.coverage.pending,[{resourceId:doc.id,title:doc.title,reason:'stale',sourceState:'changed'}]);assert.ok(pending.results.every(x=>x.resourceId===keep.id))
+ assert.ok(reads.length>0);assert.ok(reads.every(path=>path!==join(workspace,'范围外.md')))
+ assert.equal((await resources.getResource(human,{resourceId:doc.id})).sourceVersion,doc.sourceVersion,'检查不自动认可新版本')
+ assert.deepEqual(await retrieval.buildPending(human,fakeEmbedder(profileB).embedder,signal()),{ready:2,failed:0},'换模型后正常资料照常整理，混合批次不把变版原件写成 failed')
+ const switched=await retrieval.status(principal,profileB)
+ assert.equal(switched.items.find(x=>x.resourceId===doc.id)!.sourceChanged,true)
+ assert.equal(switched.items.find(x=>x.resourceId===doc.id)!.state,'stale')
+ assert.equal(switched.items.find(x=>x.resourceId===keep.id)!.state,'ready')
+ const current=await catalog.current(doc.sourceId,{actor:human,scopeIds:['general']})
+ const draft=await resources.create(human,{requestId:randomUUID(),title:doc.title,sourceId:current.id,sourceVersion:current.version,scopeIds:['general']})
+ const replacement=await resources.apply(human,{draftId:draft.id,expectedVersion:draft.version})
+ await resources.withdraw(human,{resourceId:doc.id,expectedVersion:doc.version});await retrieval.buildPending(human,embedder,signal())
+ const restored=await retrieval.search(principal,['general'],{query:'报销期限'},embedder,signal())
+ assert.equal(restored.coverage.pending.length,0);assert.ok(restored.results.some(x=>x.resourceId===replacement.id&&x.excerpt.includes('十五日')))
+ allowed=false
+ await assert.rejects(retrieval.status(principal,profileA),{code:'teloa/forbidden'})
+ await assert.rejects(retrieval.search(principal,['general'],{query:'报销'},embedder,signal()),{code:'teloa/forbidden'})
+})
+
+test('旧资源保留active且新正文已确认时只标历史，不重复确认或恢复旧索引',async()=>{
+ await initializeAuthorizedLocalMaterials(pool)
+ const workspace=await realpath(await mkdtemp(join(root,'confirmed-version-'))),identity={id:randomUUID,now:()=>new Date().toISOString()}
+ const human:ResourceActor={ownerId:randomUUID(),kind:'human',scopeIds:['general','design']},catalog=new AuthorizedLocalMaterialCatalog(pool,identity,{authorize:async()=>({workspaceRoot:workspace,assertCurrent:()=>{},isProtectedPath:()=>false})})
+ const resources=new ResourceService(pool,catalog,identity),retrieval=new RetrievalIndexService(pool,resources,identity),{embedder,calls}=fakeEmbedder(),file=join(workspace,'制度.md')
+ await writeFile(file,'旧版规则。')
+ const source=await catalog.register(human,{requestId:randomUUID(),path:'制度.md',title:'制度',scopeIds:['general']})
+ const first=await resources.create(human,{requestId:randomUUID(),title:'制度',sourceId:source.id,sourceVersion:source.version,scopeIds:['general']})
+ const old=await resources.apply(human,{draftId:first.id,expectedVersion:first.version})
+ await retrieval.enroll(human,{sourceIds:[source.id]});await retrieval.buildPending(human,embedder,signal())
+ await writeFile(file,'已确认的当前规则。')
+ const current=await catalog.current(source.id,{actor:human,scopeIds:['general']})
+ const nextDraft=await resources.create(human,{requestId:randomUUID(),title:'制度',sourceId:source.id,sourceVersion:current.version,scopeIds:['general']})
+ const next=await resources.apply(human,{draftId:nextDraft.id,expectedVersion:nextDraft.version})
+ assert.equal(old.version,next.version,'不同资源均从1开始，不能按内部修订号判断正文新旧')
+ const originalCheck=resources.isRetrievalSourceCurrentInTransaction.bind(resources)
+ resources.isRetrievalSourceCurrentInTransaction=async(client,actor,expected)=>{if(expected.resourceId===next.id)throw new WorkError('teloa/source-unavailable','暂不可读');return originalCheck(client,actor,expected)}
+ assert.equal((await retrieval.status(human,profileA)).items.find(row=>row.resourceId===old.id)!.sourceState,'changed','异常缺省不是真实current见证')
+ resources.isRetrievalSourceCurrentInTransaction=originalCheck
+ const beforeBuild=await retrieval.search(human,['general'],{query:'规则'},embedder,signal())
+ assert.equal(beforeBuild.coverage.pending.find(row=>row.resourceId===old.id)!.sourceState,'historical')
+ assert.equal(beforeBuild.coverage.pending.find(row=>row.resourceId===next.id)!.sourceState,undefined)
+ assert.equal(beforeBuild.coverage.note,retrievalHistoricalCoverageNote)
+ await retrieval.buildPending(human,embedder,signal())
+ const result=await retrieval.search(human,['general'],{query:'规则'},embedder,signal())
+ assert.deepEqual(result.coverage.searched,[{resourceId:next.id,title:'制度',version:next.version}])
+ assert.deepEqual(result.coverage.pending,[{resourceId:old.id,title:'制度',reason:'stale',sourceState:'historical'}])
+ assert.equal(result.coverage.note,retrievalHistoricalCoverageNote)
+ assert.ok(result.results.every(hit=>hit.resourceId===next.id&&hit.sourceVersion===current.version))
+ assert.equal((await resources.getResource(human,{resourceId:old.id})).status,'active','历史资源保留，不靠删除或撤回来隐藏状态')
+ const queries=calls.filter(row=>row.kind==='query').length
+ const restricted=await retrieval.search(human,['general'],{query:'规则'},embedder,signal(),[old.id])
+ assert.deepEqual(restricted.coverage.searched,[]);assert.equal(restricted.coverage.pending[0]!.sourceState,'changed')
+ assert.equal(restricted.coverage.note,retrievalChangedCoverageNote)
+ assert.equal(calls.filter(row=>row.kind==='query').length,queries,'许可内无当前版本，不读取许可外新版或嵌入查询')
+ await writeFile(join(workspace,'待核对.md'),'尚未变化的规则。')
+ const otherSource=await catalog.register(human,{requestId:randomUUID(),path:'待核对.md',title:'待核对',scopeIds:['general']})
+ const otherDraft=await resources.create(human,{requestId:randomUUID(),title:'待核对',sourceId:otherSource.id,sourceVersion:otherSource.version,scopeIds:['general']})
+ await resources.apply(human,{draftId:otherDraft.id,expectedVersion:otherDraft.version})
+ await retrieval.enroll(human,{sourceIds:[otherSource.id]});await retrieval.buildPending(human,embedder,signal())
+ await writeFile(join(workspace,'待核对.md'),'尚未确认的新规则。')
+ const mixed=await retrieval.search(human,['general'],{query:'规则'},embedder,signal())
+ assert.equal(mixed.coverage.pending.find(row=>row.resourceId===old.id)!.sourceState,'historical')
+ assert.ok(mixed.coverage.pending.some(row=>row.sourceState==='changed'))
+ assert.ok(mixed.coverage.note.includes(retrievalHistoricalCoverageNote.slice(retrievalCoverageNote.length)))
+ assert.ok(mixed.coverage.note.includes(retrievalChangedCoverageNote.slice(retrievalCoverageNote.length)))
+ const read=resources.readExcerptsInTransaction.bind(resources)
+ resources.readExcerptsInTransaction=async(client,actor,scopes,hits)=>{if(hits.some(value=>typeof value==='object'&&value!==null&&'resourceId'in value&&value.resourceId===next.id))throw new WorkError('teloa/version-conflict','读时变版');return read(client,actor,scopes,hits)}
+ const changed=await retrieval.search(human,['general'],{query:'规则'},embedder,signal())
+ assert.ok(changed.coverage.pending.every(row=>row.sourceState==='changed'))
+ assert.equal(changed.coverage.note,retrievalChangedCoverageNote,'读时冲突撤销旧historical见证')
+})
+
+test('范围外已确认同源新版不作为historical见证，也不泄露新版身份',async()=>{
+ const {catalog,resources,retrieval,human,add}=world(),{embedder,calls}=fakeEmbedder()
+ const old=await add('可见旧版','旧正文。',['general'])
+ await retrieval.enroll(human,{sourceIds:[old.sourceId]});await retrieval.buildPending(human,embedder,signal())
+ const latest=catalog.add(old.sourceId,'范围外的新正文。'),read=catalog.read.bind(catalog),requestedVersions:string[]=[]
+ catalog.read=async(id,version)=>{requestedVersions.push(version);if(id===old.sourceId&&version!==latest)throw new ReferenceError('reference/version-conflict','原文已变化');return read(id,version)}
+ const draft=await resources.create(human,{requestId:randomUUID(),title:'范围外已确认新版',sourceId:old.sourceId,sourceVersion:latest,scopeIds:['design']})
+ const current=await resources.apply(human,{draftId:draft.id,expectedVersion:draft.version})
+ await retrieval.buildPending(human,embedder,signal());requestedVersions.length=0
+ const queries=calls.filter(row=>row.kind==='query').length,actor={...human,kind:'agent' as const,scopeIds:['general']}
+ const result=await retrieval.search(actor,['general'],{query:'规则'},embedder,signal(),[old.id,current.id])
+ assert.deepEqual(result.coverage.searched,[])
+ assert.deepEqual(result.coverage.pending,[{resourceId:old.id,title:old.title,reason:'stale',sourceState:'changed'}])
+ assert.equal(result.coverage.note,retrievalChangedCoverageNote)
+ assert.equal(requestedVersions.includes(latest),false)
+ assert.equal(JSON.stringify(result).includes(current.id),false);assert.equal(JSON.stringify(result).includes(current.title),false)
+ assert.equal(calls.filter(row=>row.kind==='query').length,queries)
 })
 
 test('撤回提交后的第一次检索就不再命中，覆盖范围也不再列出',async()=>{
@@ -238,7 +417,7 @@ test('新模型推理失败时不混用旧模型，启动对账仍保留旧模�
  const unavailable=await retrieval.search(human,['general'],{query:'报销'},b.embedder,signal())
  assert.deepEqual(unavailable.results,[])
  assert.deepEqual(unavailable.coverage.pending,[{resourceId:doc.id,title:'差旅报销制度',reason:'building'}])
- await retrieval.reconcile(profileB)
+ await retrieval.reconcile(human,profileB)
  assert.equal((await retrieval.status(human,profileA)).items[0]!.state,'ready')
  assert.ok((await retrieval.search(human,['general'],{query:'报销'},a.embedder,signal())).results.length>0)
 })
@@ -294,6 +473,7 @@ test('reconcile 保留合法模型就绪索引，清理撤回、绑定变化与�
   {sourceVersion:'0'.repeat(64)},
   {scopeIds:['design']},
   {chunker:'teloa.chunk.zh/v0'},
+  {chunker:'teloa.chunk.zh/v1;target=300;max=450;overlap=60;heading=200'},
   {state:'building'},
   {state:'failed',failure:{code:'teloa/dependency-unavailable',message:'本地检索模型暂不可用。'}},
  ]
@@ -301,11 +481,11 @@ test('reconcile 保留合法模型就绪索引，清理撤回、绑定变化与�
   const row={resourceVersion:1,sourceId:kept.sourceId,sourceVersion:kept.sourceVersion,scopeIds:kept.scopeIds,chunker:retrievalChunker,state:'ready',failure:null,...binding}
   await pool.query("insert into teloa_retrieval_indexes(id,owner_id,resource_id,resource_version,source_id,source_version,scope_ids,profile_hash,chunker,state,chunk_count,failure,created_at) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,0,$11,now())",[randomUUID(),human.ownerId,kept.id,row.resourceVersion,row.sourceId,row.sourceVersion,JSON.stringify(row.scopeIds),String(index).repeat(64),row.chunker,row.state,row.failure===null?null:JSON.stringify(row.failure)])
  }
- const removed=await retrieval.reconcile(profileA)
+ const removed=await retrieval.reconcile(human,profileA)
  assert.ok(removed.removed>=9)
  assert.deepEqual((await pool.query('select id from teloa_retrieval_indexes where owner_id=$1 order by id',[human.ownerId])).rows.map(row=>row.id),keptIndexes)
  assert.equal(await count('select count(*)::int as count from teloa_retrieval_chunks c where not exists(select 1 from teloa_retrieval_indexes i where i.id=c.index_id)',[]),0)
- assert.equal((await retrieval.reconcile()).removed>=0,true)
+ assert.equal((await retrieval.reconcile(human)).removed>=0,true)
 })
 
 test('Agent 主体不能加入、移出或建索引',async()=>{
@@ -315,8 +495,48 @@ test('Agent 主体不能加入、移出或建索引',async()=>{
  await retrieval.enroll(human,{sourceIds:[doc.sourceId]})
  await assert.rejects(retrieval.remove(agent,{sourceIds:[doc.sourceId]}),{code:'teloa/forbidden'})
  await assert.rejects(retrieval.buildPending(agent,embedder,signal()),{code:'teloa/forbidden'})
+ await assert.rejects(retrieval.reconcile(agent,profileA),{code:'teloa/forbidden'})
  await assert.rejects(retrieval.enroll({...human,ownerId:''},{sourceIds:[doc.sourceId]}),{code:'teloa/forbidden'})
+ await assert.rejects(retrieval.reconcile({...human,ownerId:''},profileA),{code:'teloa/forbidden'})
  assert.equal(await count('select count(*)::int as count from teloa_retrieval_enrollments where owner_id=$1',[human.ownerId]),1)
+})
+
+test('本人对账不清除另一主体仍有效的配置构建，原构建沿同索引完成',{timeout:10000},async()=>{
+ const a=world(),b=world(),docA=await a.add('A 的合成资料',policy)
+ const body=Array.from({length:35},(_,index)=>`# 合成节${index}\n\n合成条款${index}的固定数值为${index+1}。\n`).join('\n')
+ const docB=await b.add('B 的合成资料',body)
+ await a.retrieval.enroll(a.human,{sourceIds:[docA.sourceId]})
+ await b.retrieval.enroll(b.human,{sourceIds:[docB.sourceId]})
+ await a.retrieval.buildPending(a.human,fakeEmbedder(profileA).embedder,signal())
+ let entered!:()=>void,release!:()=>void,batches=0
+ const secondBatch=new Promise<void>(resolve=>{entered=resolve}),held=new Promise<void>(resolve=>{release=resolve})
+ const embedder:Embedder={profileHash:profileB,async embed(_kind,texts){if(++batches===2){entered();await held}return texts.map(vectorOf)}}
+ const snapshot=async()=>({
+  indexes:(await pool.query('select * from teloa_retrieval_indexes where owner_id=$1 order by id',[b.human.ownerId])).rows,
+  chunks:(await pool.query('select c.* from teloa_retrieval_chunks c join teloa_retrieval_indexes i on i.id=c.index_id where i.owner_id=$1 order by c.index_id,c.ordinal',[b.human.ownerId])).rows,
+ })
+ const building=b.retrieval.buildPending(b.human,embedder,signal())
+ let indexId:string|undefined,firstVectors:unknown[]=[]
+ try{
+  await secondBatch
+  const before=await snapshot()
+  assert.equal(before.indexes.length,1);assert.equal(before.indexes[0]!.state,'building')
+  assert.equal(before.indexes[0]!.profile_hash,profileB);assert.equal(before.indexes[0]!.chunk_count,35)
+  assert.equal(before.chunks.length,32)
+  indexId=before.indexes[0]!.id as string;firstVectors=before.chunks
+  const current=await b.resources.getResource(b.human,{resourceId:docB.id})
+  assert.equal(current.status,'active');assert.equal(current.sourceVersion,docB.sourceVersion)
+  assert.equal((await b.retrieval.status(b.human,profileB)).items[0]!.state,'building')
+  assert.deepEqual(await a.retrieval.reconcile(a.human,profileA),{removed:0})
+  assert.deepEqual(await snapshot(),before,'A 的当前配置不能被当成 B 的配置已过期')
+ }finally{release();await building}
+ const done=await snapshot()
+ assert.equal(done.indexes[0]!.id,indexId);assert.equal(done.indexes[0]!.state,'ready')
+ assert.equal(done.chunks.length,35);assert.equal(new Set(done.chunks.map(row=>row.ordinal)).size,35)
+ assert.deepEqual(done.chunks.slice(0,32),firstVectors,'原已提交向量不重建或丢失')
+ await a.resources.withdraw(a.human,{resourceId:docA.id,expectedVersion:docA.version})
+ assert.deepEqual(await a.retrieval.reconcile(a.human),{removed:1},'无 profile 的启动对账仍清理本人的失效绑定')
+ assert.deepEqual(await snapshot(),done,'通用启动对账也不清另一主体的合法索引')
 })
 
 test('建索引每批不超过 32 条，批间可取消，取消后已写向量被复用',async()=>{

@@ -40,5 +40,6 @@ jobs:
       - run: pnpm test:repo
       - run: pnpm test:references
       - run: pnpm test:extensions
+      - run: pnpm test:runtime-packages
       - run: pnpm test:native
       - run: pnpm test:work

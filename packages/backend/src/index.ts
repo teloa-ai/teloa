@@ -1,3 +1,4 @@
+export {resolveConversationEmployeeMention,bindEmployeeMentionDispatch,assertEmployeeMentionExistingTarget} from './work/conversation-work-employee-mention.ts'
 export { ConversationService, FileConversationRepository, sessionInput } from './work/conversations.ts'
 export {createHardwareStore,initializeHardwareDevices,type HardwareStore} from './devices/store.ts'
 export {createDirectDeviceStore,type DirectDeviceStore,type DirectDeviceBinding,type DirectDeviceCapture} from './devices/direct-store.ts'
@@ -60,6 +61,7 @@ export { RoleLifecycleService,initializeRoleLifecycle } from './work/role-lifecy
 export { HandoffService,initializeHandoffs } from './work/handoffs.ts'
 export { ArtifactSnapshotStore,initializeArtifactSnapshots } from './work/artifact-snapshots.ts'
 export { ArtifactService,initializeArtifacts } from './work/artifacts.ts'
+export {ArtifactAvailabilityService,assertArtifactAvailable} from './work/artifact-availability.ts'
 export { ArtifactFeedbackService,initializeArtifactFeedback } from './work/artifact-feedback.ts'
 
 export * from './work/artifact-messages.ts'
@@ -69,6 +71,7 @@ export {listConversationArtifacts} from './work/artifact-conversation-directory.
 
 export {TaskTransitions,initializeTaskTransitions,initializeTaskCompletions} from './work/task-transitions.ts'
 export {ObjectConversationService,initializeObjectConversations} from './work/object-conversations.ts'
+export {RoleRunConversationDirectory} from './work/role-run-conversation-directory.ts'
 export {WorkAccess,workAccess,combineWorkAccessLeases,type WorkAccessRequest,type WorkAccessLease,type WorkAccessPolicy,type WorkCapability,type SessionCapabilityProducer,type SessionCapabilityReader} from './work/work-access.ts'
 export {TaskRunService,TaskRunPresetError,initializeTaskRuns,readStoredTaskRun,readRunGroupContinuation,groupContinuationNotice,currentGroupContinuationNotice,type TaskRun,type TaskExecutionScope,type TaskRunConfigurationFailure,type TaskRunPreparationTarget} from './work/task-runs.ts'
 export {initializeTaskRunAbortProofs,readNativeRunSettlement,recordNativeRunResourceSettlement,recordNativeRunAbortProof,assertNativeRunAbortProof,hashNativeRunSettlement,type NativeRunAbortProof,type NativeRunResourceSettlement,type NativeJobOwnerSettlement} from './work/task-run-abort-proof.ts'
@@ -212,7 +215,9 @@ export {TaskCompletionService,type CompletionVerifierInput,type CompletionVerifi
 export {WorkBudgetService,initializeWorkBudgets,defaultWorkBudgetPolicy,type RunBudgetTerminal} from './work/work-budget.ts'
 export * from './work/work-control.ts'
 export * from './work/work-recovery.ts'
+export * from './work/prepared-maintenance.ts'
 export * from './work/task-run-stop-recovery.ts'
+export * from './work/task-run-submission.ts'
 export * from './work/group-routing-outbox.ts'
 export * from './work/work-events.ts'
 export * from './work/work-progress.ts'
@@ -231,3 +236,9 @@ export * from './work/owner-plan-authority.ts'
 export {OwnerWorkAuthority as OwnerExecutionAuthority} from './work/owner-work-authority.ts'
 
 export {readResourceRelations} from './work/resource-relations.ts'
+
+export {KnowledgeCopyService,initializeKnowledgeCopies} from './capabilities/knowledge-copy.ts'
+export {LocalKnowledgeCopyService,initializeLocalKnowledgeCopies} from './capabilities/local-knowledge-copy.ts'
+export * from './work/group-delivery-recovery.ts'
+
+export {readTaskRunReference,readTaskRunReferenceCitation,isTaskKnowledgeReferenceId,taskReferenceReadTool,type TaskReferenceReadPort,type TaskReferenceResult} from './work/task-run-reference.ts'

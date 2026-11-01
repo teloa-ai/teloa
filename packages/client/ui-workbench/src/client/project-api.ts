@@ -2,18 +2,20 @@ import {projectDefinition,projectInput,projectOverviewInput,projectUuid,readProj
 import {createProjectContextApi} from './project-context-api.ts'
 import {createProjectRuntimeApi} from './project-runtime-api.ts'
 import {createResourceApi} from './resource-api.ts'
+import {readProjectCreationContext,type ProjectCreationContext,type ProjectCreationDrafts,type ProjectCreationTicket} from './project-creation-drafts.ts'
 type Journal={read:()=>string|null;write:(value:string)=>void;clear:()=>void}
 type Call=(endpoint:string,input:unknown)=>Promise<unknown>
 export type ProjectApi=ReturnType<typeof createProjectApi>
 const fieldsOf=(row:ProjectDefinition)=>projectDefinition({scope:row.scope,title:row.title,goal:row.goal,dueDate:row.dueDate,state:row.state,links:row.links,references:row.references})
-export function createProjectApi(call:Call,journal?:Journal,contextJournal?:Journal,runtimeJournal?:Journal){
- let pending:{requestId:string;fields:ProjectDefinition}|undefined,busy=false,recoveryError:Error|undefined
+export function createProjectApi(call:Call,journal?:Journal,contextJournal?:Journal,runtimeJournal?:Journal,creationDrafts?:ProjectCreationDrafts){
+ let pending:{requestId:string;fields:ProjectDefinition;draft?:ProjectCreationContext}|undefined,busy=false,recoveryError:Error|undefined
  try{
   const raw=journal?.read()
-  if(raw){const stored=projectInput(JSON.parse(raw),['requestId','fields']);if(!projectUuid(stored.requestId))throw Error();pending={requestId:stored.requestId,fields:projectDefinition(stored.fields)}}
+  if(raw){const stored=projectInput(JSON.parse(raw),['requestId','fields','draft']);if(!projectUuid(stored.requestId))throw Error();pending={requestId:stored.requestId,fields:projectDefinition(stored.fields),...(stored.draft===undefined?{}:{draft:readProjectCreationContext(stored.draft)})}}
  }catch{recoveryError=Error('项目创建恢复记录损坏，请先核对项目目录。')}
  const same=(a:ProjectDefinition,b:ProjectDefinition)=>JSON.stringify(fieldsOf(a))===JSON.stringify(fieldsOf(b))
  return {
+  creationDrafts,
   context:createProjectContextApi(call,contextJournal),
   runtime:runtimeJournal?createProjectRuntimeApi(call,runtimeJournal):undefined,
   async materialMetadata(scope:string):Promise<Record<string,{sourceTitle?:string;updatedAt:string}>>{
@@ -42,16 +44,24 @@ export function createProjectApi(call:Call,journal?:Journal,contextJournal?:Jour
    const result=await call('projects/candidates',{scope,kind,query});if(!Array.isArray(result)||result.length>100)throw Error('项目候选响应格式不正确。')
    const rows=result.map(readProjectItem);if(rows.some(row=>row.kind!==kind||!row.available||row.origin!=='direct')||new Set(rows.map(row=>row.id)).size!==rows.length)throw Error('项目候选响应不一致。');return rows
   },
-  async create(value:ProjectDefinition){
+  async create(value:ProjectDefinition,ticket?:ProjectCreationTicket){
    if(recoveryError)throw recoveryError
    if(busy)throw Error('项目正在保存，请等待当前请求结束。')
    const fields=projectDefinition(value)
    if(pending&&!same(pending.fields,fields))throw Error('上次创建结果尚未核对，请先恢复或核对目录。')
-   pending??={requestId:crypto.randomUUID(),fields};busy=true
+   if(pending?.draft&&ticket&&(pending.draft.owner!==ticket.owner||pending.draft.origin!==ticket.origin))throw Error('上次创建结果尚未核对，请先恢复或核对目录。')
+   busy=true
    try{
+    const draft=pending?.draft??(ticket?{owner:ticket.owner,origin:ticket.origin}:undefined)
+    if(draft&&!creationDrafts)throw Object.assign(Error('项目草稿身份尚未确认。'),{code:'teloa/conflict'})
+    const admitted=draft?await creationDrafts!.check(draft,ticket):undefined
+    pending??={requestId:crypto.randomUUID(),fields,...(draft?{draft}:{})}
     journal?.write(JSON.stringify(pending))
-    const result=readProject(await call('projects/create',pending))
+    const result=readProject(await call('projects/create',{requestId:pending.requestId,fields:pending.fields}))
     if(!same(result,fields))throw Error('项目创建回包与请求不一致，请核对目录。')
+    // 正式调用会等回执确认；这期间换代的旧成功不能驱动新身份窗口。
+    if(admitted)await creationDrafts!.check(admitted,admitted)
+    if(pending.draft)creationDrafts!.clear(pending.draft,fields)
     journal?.clear();pending=undefined;return result
    }finally{busy=false}
   },

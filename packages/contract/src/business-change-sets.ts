@@ -1,7 +1,7 @@
 import {WorkError,isRecord} from './index.ts'
 import {readBusinessRecordBatch,readBusinessRecordReceipt,type BusinessRecordBatch,type BusinessRecordBatchResult} from './business-records.ts'
-import type {BusinessObjectSnapshot} from './business-data.ts'
-export type BusinessRecordBatchPreview={fingerprint:string;definitions:readonly {type:string;schemaFingerprint:string}[];targets:readonly BusinessObjectSnapshot[];operations:readonly {operation:string;type:string;title:string;before?:BusinessObjectSnapshot;fields?:readonly {name:string;label?:string;value:string}[];summary?:string}[]}
+import type {BusinessObjectSnapshot,BusinessFieldValue} from './business-data.ts'
+export type BusinessRecordBatchPreview={fingerprint:string;definitions:readonly {type:string;schemaFingerprint:string}[];targets:readonly BusinessObjectSnapshot[];operations:readonly {operation:string;type:string;title:string;before?:BusinessObjectSnapshot;fields?:readonly {name:string;label?:string;value:BusinessFieldValue}[];summary?:string}[]}
 export type BusinessChangeSetPrepare=BusinessRecordBatch&{changeSetId?:string;expectedRevision?:number}
 export type BusinessChangeSetApply={changeSetId:string;expectedRevision:number;expectedDigest:string}
 export type BusinessChangeSet={schema:'teloa.business-change-set/v1';id:string;scope:string;revision:number;digest:string;state:'draft'|'awaiting-approval'|'applied'|'rejected'|'stale';sessionId:string;batch:BusinessRecordBatch;preview:BusinessRecordBatchPreview;createdAt:string;updatedAt:string;receipt?:BusinessRecordBatchResult}

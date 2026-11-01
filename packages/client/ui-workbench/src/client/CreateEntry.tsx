@@ -10,6 +10,9 @@ import {Pencil,RefreshCw} from 'lucide-react'
 import {PageCreateRevisionContext} from './page-create-revision-context.js'
 import {ToolbarIconButton} from './ToolbarIconButton.js'
 import type {WorkbenchNavigationStorage} from './workbench-navigation-state.js'
+import {createRolePreview} from './page-create-role-preview.js'
+import {useBusinessScopes} from './business-scope-context.js'
+import {EmployeeAvatar} from './EmployeeAvatar.js'
 
 /**
  * 页内新建的统一入口：Markdown 说明、已有创建方式、只读预览与确认。
@@ -77,7 +80,7 @@ export function CreateEntry(props:CreateEntryProps){
 }
 
 function CreateEntryContent({entity,scope,api,empty,openForm,openMarket,prepare,onPrepared,onConfirm,afterConfirm,renderConfirmation,renderBusinessPreview,titleKey,directSentence=false,hideSentence=false,embedded=false,active=true,focusDraft,onBusyChange,submitLabelKey,confirmLabelKey,descriptionPlaceholderKey,sentenceDraft}:CreateEntryProps){
- const {t}=useI18n()
+ const {t}=useI18n(),scopeNames=useBusinessScopes()
  const prepareRevision=useContext(PageCreateRevisionContext),[revisionFailure,setRevisionFailure]=useState(false)
  const [directory,setDirectory]=useState<PageCreateDraftDirectory>()
  const [failure,setFailure]=useState<'create.readFailed'|'create.conflict'|'create.forbidden'>()
@@ -159,9 +162,12 @@ function CreateEntryContent({entity,scope,api,empty,openForm,openMarket,prepare,
  // 展开另一行与 effect 清空预览之间还有一帧；只有逐字匹配当前行的预览才允许确认。
  const currentPreview=preview?.draft.id===openDraft?preview:undefined
  const plan=currentPreview?.draft.entity==='plan'
+ const role=currentPreview?.draft.entity==='role'
  let planPreview:ReturnType<typeof createPlanPreview>|undefined
+ let rolePreview:ReturnType<typeof createRolePreview>|undefined
  if(plan&&currentPreview)try{planPreview=createPlanPreview(currentPreview,t)}catch{/* 无效正文不能退回原字段路径或继续确认。 */}
- const guard:ReturnType<typeof createConfirmGuard>=plan&&!planPreview?{ok:false,reason:'not-previewed'}:createConfirmGuard(currentPreview)
+ if(role&&currentPreview)try{rolePreview=createRolePreview(currentPreview,t,scopeNames)}catch{/* 无效岗位不能用通用字段预览掩盖并继续创建。 */}
+ const guard:ReturnType<typeof createConfirmGuard>=plan&&!planPreview||role&&!rolePreview?{ok:false,reason:'not-previewed'}:createConfirmGuard(currentPreview)
  // 确认与丢弃都要 `expectedBodyHash`：预览之后草案被改过，这两条都该被挡回来而不是照旧落定（D8）。
  const apply=async(preview:PageCreateDraftPreview,appliedRef:string)=>{
   const nextGuard=createConfirmGuard(preview)
@@ -236,14 +242,16 @@ function CreateEntryContent({entity,scope,api,empty,openForm,openMarket,prepare,
          ?<p role="status" className={css.notice}>{t('create.preview.loading')}</p>
          :<div className={css.preview}>
           <h4>{t(plan?'create.plan.preview.title':'create.preview.fields')}</h4>
-          <dl className={css.fields}>{(plan?planPreview?.fields??[]:createReadableFields(currentPreview)).map(field=><div key={field.path} className={field.value.includes('\n')?css.documentField:undefined}><dt>{field.path}</dt><dd>{field.value}</dd></div>)}</dl>
-          {!plan&&currentPreview.fieldsTruncated&&<p className={css.disclosure}>{t('create.preview.truncated')}</p>}
-          {plan&&!planPreview&&<p role="alert">{t('create.readFailed')}</p>}
+          {rolePreview?.kind==='employee'&&<EmployeeAvatar avatarKey={rolePreview.avatarKey}/>}
+          <dl className={css.fields}>{(plan?planPreview?.fields??[]:role?rolePreview?.fields??[]:createReadableFields(currentPreview)).map(field=><div key={field.path} className={field.value.includes('\n')?css.documentField:undefined}><dt>{field.path}</dt><dd>{field.value}</dd></div>)}</dl>
+          {!plan&&!role&&currentPreview.fieldsTruncated&&<p className={css.disclosure}>{t('create.preview.truncated')}</p>}
+          {(plan&&!planPreview||role&&!rolePreview)&&<p role="alert">{t('create.readFailed')}</p>}
+          {rolePreview&&<ul className={css.consequences}>{rolePreview.consequences.map(text=><li key={text}>{text}</li>)}</ul>}
           {planPreview&&<ul className={css.consequences}>{planPreview.consequences.map(text=><li key={text}>{text}</li>)}</ul>}
           {planPreview&&<details><summary>{t('create.plan.preview.references')}</summary><dl className={css.fields}>{planPreview.references.map(reference=><div key={reference.path}><dt>{reference.path}</dt><dd>{reference.value}</dd></div>)}</dl></details>}
 
-          {currentPreview.consequences.some(item=>!plan||!isPlanPreviewConsequence(item.id))&&<><h4>{t('create.preview.consequences')}</h4>
-          <ul className={css.consequences}>{currentPreview.consequences.filter(item=>!plan||!isPlanPreviewConsequence(item.id)).map(item=><li key={item.kind+item.id}>{t(createConsequenceKey(item.kind))}{!plan&&<span className={css.status}>{item.id}</span>}{item.required&&<span className={css.status}>{t('create.consequence.required')}</span>}</li>)}</ul></>}
+          {currentPreview.consequences.some(item=>(!plan||!isPlanPreviewConsequence(item.id))&&(!role||item.id!=='role-onboarding'))&&<><h4>{t('create.preview.consequences')}</h4>
+          <ul className={css.consequences}>{currentPreview.consequences.filter(item=>(!plan||!isPlanPreviewConsequence(item.id))&&(!role||item.id!=='role-onboarding')).map(item=><li key={item.kind+item.id}>{t(createConsequenceKey(item.kind))}{!plan&&<span className={css.status}>{item.id}</span>}{item.required&&<span className={css.status}>{t('create.consequence.required')}</span>}</li>)}</ul></>}
           {currentPreview.businessPreview!==undefined&&renderBusinessPreview?.(currentPreview.businessPreview)}
           {!focusDraft&&!plan&&<><h4>{t('create.preview.next')}</h4>
           <p>{t('create.next.step',{step:t(createNextKey(entity))})}</p></>}

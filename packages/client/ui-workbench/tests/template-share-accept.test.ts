@@ -1,6 +1,6 @@
 import {test} from 'node:test'
 import assert from 'node:assert/strict'
-import {buildSharePlan,sharePackageDigest,sharePackageSummary} from '../src/client/share-package-plan.ts'
+import {buildSharePlan,sharePackageDigest,sharePackageSummary,shareWorkCopy} from '../src/client/share-package-plan.ts'
 import {createShareAcceptance,readPublicCatalogSkill,resolvePublicCatalogEntry,shareIndustryItem,teamCoordination,type ShareAcceptPorts} from '../src/client/template-share-accept.ts'
 import {templateShareErrorKey} from '../src/client/template-share-errors.ts'
 import {buildEmployeeTemplate} from '../src/client/employee-template-share.ts'
@@ -12,16 +12,104 @@ import {createMarketContentApi} from '../src/client/market-content-api.ts'
 import {readAtomicSkill} from '../src/client/atomic-skill.ts'
 import {catalogEntry} from './market-catalog-fixture.ts'
 import type {MarketItem} from '../src/client/market-preview.ts'
+import {scopedShareFixture} from './fixtures/template-share-scoped.ts'
+import {inspectIndustryContent} from '../src/client/industry-content.ts'
 
 const duties={triggers:['New ticket arrives'],autonomousActions:['Draft a reply'],confirmationPoints:['Before refunds'],escalationRules:['Legal threats go to the lead'],deliveryChecks:['Cite the source']}
 const role=(id:string,name:string,skills:string[]=[],responsibility=duties)=>({id,name,kind:'employee' as const,duty:'Verify sources.',dataScope:'Provided documents.',executionScope:'Confirm external writes.',skills,knowledge:[],scopes:['general'],responsibility})
 const skillText=(name:string)=>`---\nname: ${name}\ndescription: Keep notes\n---\n# Notes`
 const base={publisher:'Max',license:'CC-BY-4.0',plugins:[]}
 const memory=()=>{const values=new Map<string,string>();return {values,storage:{getItem:(k:string)=>values.get(k)??null,setItem:(k:string,v:string)=>values.set(k,v),removeItem:(k:string)=>values.delete(k)}}}
+
+test('F24-SKILL001 安装回执须核对本条目的实际就绪，冲突解除后沿用原回执恢复',async()=>{
+ const {storage}=memory(),pkg=buildSharePlan({...base,subject:'app',roles:[],skills:[{name:'notes',text:skillText('notes'),license:'MIT'}]}),fake=industry(),original=fake.ports.prepare
+ let available=false
+ fake.ports.prepare=async loadId=>{const result=await original(loadId);return {...result,rows:result.rows.map(row=>row.kind==='skill'?{...row,state:available?'ready' as const:'needs-user' as const,entry:available?null:'skill-confirm' as const}:row)}}
+ const first=await createShareAcceptance(storage,{createRole:async()=>{throw Error('No employee in app')},industry:fake.ports}).accept(pkg,{scope:'general',skills:['notes']})
+ assert.equal(first.complete,false);assert.equal(first.skills[0]?.state,'needs-user');assert.equal(first.skills[0]?.installationId,'inst-notes');assert.equal(first.skills[0]?.nativeName,'native-notes');assert.ok(first.pendingKinds.includes('skill'))
+ assert.equal(fake.calls.installs.length,1)
+ const retry=()=>createShareAcceptance(storage,{createRole:async()=>{throw Error('No employee in app')},industry:fake.ports}).accept(pkg,{scope:'general',skills:['notes']})
+ const stillBlocked=await retry();assert.equal(stillBlocked.complete,false);assert.equal(stillBlocked.skills[0]?.state,'needs-user')
+ available=true
+ const ready=await retry();assert.equal(ready.complete,true);assert.equal(ready.skills[0]?.state,'done');assert.equal(ready.skills[0]?.installationId,first.skills[0]?.installationId);assert.equal(ready.pendingKinds.includes('skill'),false)
+ assert.equal(fake.calls.installs.length,1,'不能因来源冲突重复安装');assert.equal(fake.calls.imports.length,1,'不重新导入');assert.equal(fake.calls.loads.length,1,'不重建加载')
+})
+
+test('F24-SKILL001 就绪清单缺项或读取失败时保留安装回执，不宣称实际可用',async t=>{
+ for(const mode of ['missing','unreadable','other-instance'] as const)await t.test(mode,async()=>{
+  const {storage}=memory(),pkg=buildSharePlan({...base,subject:'app',roles:[],skills:[{name:'notes',text:skillText('notes'),license:'MIT'}]}),fake=industry(),original=fake.ports.prepare
+  fake.ports.prepare=async loadId=>{if(mode==='unreadable')throw Error('Readiness unavailable');const result=await original(loadId);return {...result,rows:mode==='missing'?[]:result.rows.map(row=>({...row,itemInstanceId:'10000000-0000-4000-8000-999999999999'}))}}
+  const result=await createShareAcceptance(storage,{createRole:async()=>{throw Error('No employee in app')},industry:fake.ports}).accept(pkg,{scope:'general',skills:['notes']})
+  assert.equal(result.complete,false);assert.equal(result.skills[0]?.state,'pending');assert.equal(result.skills[0]?.installationId,'inst-notes');assert.ok(result.pendingKinds.includes('skill'))
+  fake.ports.prepare=original
+  const resumed=await createShareAcceptance(storage,{createRole:async()=>{throw Error('No employee in app')},industry:fake.ports}).accept(pkg,{scope:'general',skills:['notes']})
+  assert.equal(resumed.complete,true);assert.equal(fake.calls.installs.length,1)
+ })
+})
 /** 两位员工各有自己的技能，另有一项公共技能；协调者明确声明为第二位。 */
 const team=()=>buildSharePlan({...base,subject:'team',title:'Support team',roles:[role('a','Lead',['research-notes']),role('b','Agent',['triage','internal-comms'])],coordinatorRoleId:'b',
  skills:[{name:'research-notes',title:'Research notes',resourceId:'research-notes',version:'1.0.0',text:skillText('research-notes'),license:'MIT'},{name:'triage',title:'Triage',resourceId:'triage',version:'2.0.0',text:skillText('triage'),license:'MIT'},{name:'internal-comms',title:'Internal comms',resourceId:'internal-comms',version:'1.2.0',publicId:'internal-comms'}],
  connections:[{serverName:'slack',title:'Slack',tools:['send_message']}],bindings:[{roleId:'b',connections:['slack']}]})
+
+test('F24 跨范围接收保存完整原源，丢回执沿原请求恢复；员工副本映射方法而业务配置仅待正式采用',async()=>{
+ const pkg=scopedShareFixture(),before=structuredClone(pkg),fake=industry(),rawImport=fake.ports.importContent,saved=new Map<string,MarketItem>(),received:MarketItem[]=[]
+ let lose=true
+ fake.ports.importContent=async(item,requestId)=>{
+  if(saved.has(requestId))return saved.get(requestId)!
+  const invalid=inspectIndustryContent(item.manifest as never,item.packageContent!).filter(row=>row.state==='invalid');assert.deepEqual(invalid,[],'不能导入 scope 已变而正文未映射的 invalid 包')
+  const output=await rawImport(item,requestId);output.contentStorage!.contentId='00000000-0000-4000-8000-'+String(saved.size+100).padStart(12,'0');saved.set(requestId,output);received.push(item)
+  if(lose){lose=false;throw Error('lost source reply')}
+  return output
+ }
+ const {storage,values}=memory(),flow=createShareAcceptance(storage,{createRole:async()=>{throw Error('Not manual')},industry:fake.ports})
+ await assert.rejects(flow.accept(pkg,{scope:'general',skills:[]}),/lost source reply/)
+ const journal=JSON.parse([...values.values()][0]!),sourceRequest=journal.original.requestId
+ assert.equal(journal.original.scope,'SOC');assert.equal(journal.original.targetScope,'general');assert.equal(journal.original.content,undefined);assert.equal(fake.calls.loads.length,0)
+ assert.equal(journal.original.files.find((file:{path:string})=>file.path==='soc-overview.json').sha256,createHash('sha256').update(pkg.files.find(file=>file.path==='soc-overview.json')!.text).digest('hex'))
+ const result=await flow.accept(pkg,{scope:'general',skills:[]})
+ assert.equal(saved.size,2);assert.ok(saved.has(sourceRequest));assert.equal(fake.calls.imports.length,2);assert.equal(fake.calls.loads.length,1)
+ for(const file of pkg.files)assert.equal(new TextDecoder().decode(received[0]!.packageContent!.files.find(row=>row.path===file.path)!.bytes),file.text,'原分享文件逐字保留')
+ const original=received[0]!,copy=received[1]!;assert.equal((original.manifest as any).scope,'SOC');assert.equal((copy.manifest as any).scope,'general')
+ assert.notEqual(original.packageContent!.hash,copy.packageContent!.hash);assert.notEqual(original.manifest!.id,copy.manifest!.id)
+ assert.equal((copy.manifest as any).resources.some((resource:any)=>resource.kind==='business-configuration'),false)
+ assert.equal(JSON.parse(new TextDecoder().decode(copy.packageContent!.files.find(file=>file.path==='work.json')!.bytes)).domain,'general')
+ assert.equal(result.originalSource?.shareSha256,await sharePackageDigest(pkg));assert.deepEqual(result.originalSource?.mappings,[{resourceId:'work',from:'SOC',to:'general'}])
+ assert.equal(result.businessConfigurations?.[0]?.state,'needs-user');assert.ok(result.pendingKinds.includes('business-configuration'));assert.ok(result.pendingKinds.includes('plan'))
+ assert.deepEqual(pkg,before)
+})
+
+test('F24 目标映射保留 general 方法并拒绝未知原范围',async()=>{
+ const pkg=scopedShareFixture(),work=pkg.files.find(file=>file.path==='work.json')!,definition=JSON.parse(work.text)
+ work.text=JSON.stringify({...definition,domain:'general'})
+ const mapped=shareWorkCopy(pkg,'other','copy-fixture');assert.deepEqual(mapped.mappings,[]);assert.equal(JSON.parse(mapped.copy!.files.find(file=>file.path==='work.json')!.text).domain,'general')
+ work.text=JSON.stringify({...definition,domain:'unknown'})
+ assert.throws(()=>shareWorkCopy(pkg,'general','copy-fixture'),{code:'teloa/invalid-input',message:'The original work template does not match its source scope.'})
+ const {storage,values}=memory(),calls:string[]=[],unexpected=(name:string)=>async()=>{calls.push(name);throw Error('Unexpected port call')}
+ const ports:NonNullable<ShareAcceptPorts['industry']>={publicSkill:unexpected('publicSkill'),target:unexpected('target'),importContent:unexpected('importContent'),load:unexpected('load'),getLoad:unexpected('getLoad'),installSkill:unexpected('installSkill'),prepare:unexpected('prepare'),roles:unexpected('roles')}
+ const flow=createShareAcceptance(storage,{createRole:async()=>{calls.push('createRole');throw Error('Unexpected employee creation')},industry:ports})
+ await assert.rejects(flow.accept(pkg,{scope:'general',skills:[]}),{code:'teloa/invalid-input'})
+ assert.equal(values.size,0,'确定的本地前置错误没有已派发请求，不能创建恢复记录')
+ assert.deepEqual(calls,[],'未知范围在任何业务端口调用前拒绝')
+ work.text=JSON.stringify({...definition,format:'unknown-work-format'})
+ await assert.rejects(flow.accept(pkg,{scope:'general',skills:[]}),{code:'teloa/invalid-input'})
+ assert.equal(values.size,0);assert.deepEqual(calls,[],'固定格式错误同样在派发前拒绝')
+})
+
+test('F24 知识接收必须读回 ready；定义已保存不伪报正文已可用，原申请恢复不重复员工',async()=>{
+ const text='# Shared SOP\nCheck the supplied source.\n',employee={...role('a','Analyst'),knowledge:['original-knowledge']}
+ const pkg=buildSharePlan({...base,subject:'employee',roles:[employee],skills:[],knowledge:[{referenceId:'original-knowledge',id:'sop',title:'Shared SOP',version:'1.0.0',text,roleIds:['a'],sourceVersion:createHash('sha256').update(text).digest('hex')}]})
+ const fake=industry(),original=fake.ports.prepare;let ready=false
+ fake.ports.prepare=async loadId=>{const result=await original(loadId);return {...result,rows:[...result.rows,...fake.load!.items.filter(item=>item.kind==='knowledge').map(item=>({itemInstanceId:item.instanceId,kind:'knowledge',title:item.title,state:ready?'ready' as const:'pending' as const,step:null,entry:null}))]}}
+ const {storage}=memory(),flow=createShareAcceptance(storage,{createRole:async()=>{throw Error('Not a manual employee')},industry:fake.ports})
+ const pending=await flow.accept(pkg,{scope:'general',skills:[]})
+ assert.equal(pending.complete,false);assert.equal(pending.knowledge?.[0]?.state,'pending');assert.ok(pending.pendingKinds.includes('knowledge'))
+ const imported=await shareIndustryItem(pkg,{scope:'general',skills:[]})
+ assert.equal(new TextDecoder().decode(imported.packageContent!.files.find(file=>file.path==='sop.md')!.bytes),text)
+ ready=true
+ const complete=await flow.accept(pkg,{scope:'general',skills:[]})
+ assert.equal(complete.complete,true);assert.equal(complete.knowledge?.[0]?.state,'done')
+ assert.equal(fake.calls.imports.length,1);assert.equal(fake.calls.loads.length,1);assert.equal(fake.roles.length,1)
+})
 
 /** 内存模拟的加载服务：按导入内容的清单生成条目实例与关系；安装回执给出与资源 id 不同的原生名。 */
 /** pluginRow：一键准备后读到的依赖应用行（状态、入口与原因），缺省时清单不含应用行。 */
@@ -41,7 +129,7 @@ function industry(over:Partial<NonNullable<ShareAcceptPorts['industry']>>={},plu
   },
   getLoad:async()=>load!,
   installSkill:async(source,requestId)=>{calls.installs.push({itemInstanceId:source.itemInstanceId,requestId});const item=load!.items.find(i=>i.instanceId===source.itemInstanceId)!;return {state:'installed',installationId:'inst-'+item.localId,nativeName:'native-'+item.localId}},
-  prepare:async()=>{calls.prepare++;for(const item of load!.items.filter(i=>i.kind==='role'))if(!roles.some(r=>r.itemInstanceId===item.instanceId))roles.push({itemInstanceId:item.instanceId,state:'paused',roleId:'role-'+item.localId});return {rows:[...load!.items.filter(i=>i.kind==='mcp').map(i=>({itemInstanceId:i.instanceId,kind:'mcp',state:'needs-user',step:null,entry:'connector-settings'})),...(pluginRow?load!.items.filter(i=>i.kind==='plugin').map(i=>({itemInstanceId:i.instanceId,kind:'plugin',step:null,...pluginRow})):[])]} as never},
+  prepare:async()=>{calls.prepare++;for(const item of load!.items.filter(i=>i.kind==='role'))if(!roles.some(r=>r.itemInstanceId===item.instanceId))roles.push({itemInstanceId:item.instanceId,state:'paused',roleId:'role-'+item.localId});return {rows:[...load!.items.filter(i=>i.kind==='skill').map(i=>({itemInstanceId:i.instanceId,kind:'skill',title:i.title,state:'ready',step:null,entry:null})),...load!.items.filter(i=>i.kind==='mcp').map(i=>({itemInstanceId:i.instanceId,kind:'mcp',state:'needs-user',step:null,entry:'connector-settings'})),...(pluginRow?load!.items.filter(i=>i.kind==='plugin').map(i=>({itemInstanceId:i.instanceId,kind:'plugin',step:null,...pluginRow})):[])]} as never},
   roles:async()=>roles.map(r=>({...r})),
   ...over,
  }

@@ -4,20 +4,23 @@ import {Session,SessionId,SessionLogOffset} from '@deepseek-ai/dsh-session'
 import {ReasoningEffortId} from '@deepseek-ai/dsh-llm'
 import type {} from '@deepseek-ai/dsh-api-session-controller'
 import type {} from '@deepseek-ai/dsh-agent-loop'
-import {readStoredConversationWorkContext,readStoredConversationWorkRequest,readStoredRole,combineWorkAccessLeases,workAccess,type OwnerExecutionAuthority,type ConversationService,type ObjectConversationService,type ProjectRuntimeActor,type ResourceService,type TaskRunService,type RoleMemoryService} from '@teloa/backend'
+import {readStoredConversationWorkContext,readStoredConversationWorkRequest,readStoredRole,combineWorkAccessLeases,workAccess,ArtifactAvailabilityService,type OwnerExecutionAuthority,type ConversationService,type ObjectConversationService,type ProjectRuntimeActor,type ResourceService,type TaskRunService,type RoleMemoryService} from '@teloa/backend'
 import {WorkError,roleSupportsScope,type DigitalRole} from '@teloa/contract'
 import type {ProjectRuntimeHostPorts} from './project-runtime-host.ts'
 import {readSessionEvents} from './session-events.ts'
+import {artifactInputSources,bindArtifactInputSources} from './artifact-input-guard.ts'
 
 type Ports={
  owner:string;pool:TaskRunService['pool'];conversations:Pick<ConversationService,'snapshotBySession'|'repository'>
- links:Pick<ObjectConversationService,'bySession'>;runs:()=>Promise<Pick<TaskRunService,'get'|'conversationParent'>>
+ links:Pick<ObjectConversationService,'bySession'>;runs:()=>Promise<Pick<TaskRunService,'sessionRun'|'conversationParent'>>
  resources:Pick<ResourceService,'readForIndexInTransaction'>;roleMemories:()=>Promise<Pick<RoleMemoryService,'confirmedForExperience'|'confirmedForRun'>>
  ownerExecution?:Pick<OwnerExecutionAuthority,'current'>
  isBuilder?:(sessionId:string)=>Promise<boolean>
 }
 const denied=()=>new WorkError('teloa/forbidden','项目执行者的真实归属或业务范围已不可核验。')
 const unavailable=()=>new WorkError('teloa/dependency-unavailable','原会话模型配置尚不可读取，请稍后继续。')
+// 岗位职责/授权和资源由同一已校验记录提供；交付格式、外观与暂停状态不改变输入可见范围。
+const roleInputBoundary=(role:DigitalRole)=>createHash('sha256').update(JSON.stringify({duty:role.duty,dataScope:role.dataScope,executionScope:role.executionScope,skills:[...role.skills].sort(),knowledge:[...role.knowledge].sort(),responsibility:role.responsibility?{triggers:role.responsibility.triggers,autonomousActions:role.responsibility.autonomousActions,confirmationPoints:role.responsibility.confirmationPoints,escalationRules:role.responsibility.escalationRules}:null})).digest('hex')
 
 /** 宿主只读事实适配；冷日志不 resolveAgent，不把 UI 的 parent/scope 当授权。 */
 export function createProjectRuntimeAdapters(ctx:Context,ports:Ports){
@@ -45,12 +48,10 @@ export function createProjectRuntimeAdapters(ctx:Context,ports:Ports){
   }
   const binding=await ports.conversations.snapshotBySession(actor,sessionId)
   if(binding.sessionId!==sessionId||binding.ownerId!==actor)throw denied()
-  const rows=(await ports.pool.query('select id from teloa_task_runs where owner_id=$1 and session_id=$2 order by created_at desc,id desc limit 2',[actor,sessionId])).rows
-  if(rows.length>1)throw denied()
-  if(rows[0]){
-   const runs=await ports.runs(),run=await runs.get(actor,{runId:rows[0].id})
+  const runs=await ports.runs(),run=await runs.sessionRun(actor,{sessionId})
+  if(run){
    if(run.sessionId!==sessionId)throw denied()
-   // get() 已核对整份固定输入与 Run 哈希；这里不从消息文本猜测 task 身份。
+   // 后端已核对固定输入、归属与多轮同源链；这里不从消息文本猜测 task 身份。
    const input=JSON.parse(run.inputText) as {task:{scope:string;goal:string};role:{id:string}}
    if(run.executor?.kind==='owner'){
     if(input.task?.scope!=='general'||typeof input.task.goal!=='string'||run.roleId!==null)throw denied()
@@ -80,7 +81,7 @@ export function createProjectRuntimeAdapters(ctx:Context,ports:Ports){
    const parent=await runs.conversationParent(actor,{runId:run.id})
    let parentMessageId:string|undefined
    if(parent){const row=(await ports.pool.query('select * from teloa_conversation_work_requests where owner_id=$1 and request_id=$2',[actor,parent.requestId])).rows[0];if(!row)throw denied();const original=readStoredConversationWorkRequest(row);if(original.sessionId!==parent.sessionId||original.requestId!==parent.requestId)throw denied();parentMessageId=original.messageId}
-   return {...state,title:binding.title,kind:'task',scope:input.task.scope,scopes:[...new Set([input.task.scope,...role.scopes])],roleId:role.id,goal:input.task.goal,...parent?{parentSessionId:parent.sessionId,parentMessageId:parentMessageId!}:{}}
+   return {...state,title:binding.title,kind:'task',scope:input.task.scope,scopes:[...new Set([input.task.scope,...role.scopes])],roleId:role.id,roleKind:role.kind,roleVersion:role.version,goal:input.task.goal,...parent?{parentSessionId:parent.sessionId,parentMessageId:parentMessageId!}:{}}
   }
   if(binding.purpose==='task-run')throw denied()
   const links=(await ports.links.bySession(actor,{sessionId})).filter(link=>link.kind==='role'&&link.active)
@@ -91,7 +92,7 @@ export function createProjectRuntimeAdapters(ctx:Context,ports:Ports){
    const roleRow=(await ports.pool.query('select * from teloa_roles where owner_id=$1 and id=$2',[actor,link.objectId])).rows[0]
    if(!roleRow)throw denied();const role=readStoredRole(roleRow),scope=link.scopeId??(role.scopes.length===1?role.scopes[0]:undefined)
    if(role.ownerId!==actor||role.state==='retired'||!scope||!roleSupportsScope(role.scopes,scope))throw denied()
-   return {...state,title:binding.title,kind:'employee',scope,scopes:[...role.scopes],roleId:role.id}
+   return {...state,title:binding.title,kind:'employee',scope,scopes:[...role.scopes],roleId:role.id,roleKind:role.kind,roleVersion:role.version,roleInputBoundary:roleInputBoundary(role)}
   }
   if(stored?.requestedRoleId)throw denied()
   const context=(await ports.pool.query('select * from teloa_conversation_work_contexts where owner_id=$1 and session_id=$2',[actor,sessionId])).rows[0]
@@ -135,10 +136,12 @@ export function createProjectRuntimeAdapters(ctx:Context,ports:Ports){
   if(role.ownerId!==actor||role.state==='retired')throw denied()
   // Task（包括群Run）的分身记忆继续由原固定Run/view决定；不能借项目口读取私有全集。
   if(role.kind==='twin'&&target.kind!=='employee')return []
-  const scopes=target.scopes??[target.scope],memories=await ports.roleMemories(),result=new Map<string,Awaited<ReturnType<typeof optionalMemories>>[number]>()
+  const scopes=[target.scope],memories=await ports.roleMemories(),result=new Map<string,Awaited<ReturnType<typeof optionalMemories>>[number]>()
   for(const scope of scopes){
    if(!roleSupportsScope(role.scopes,scope))continue
    const selected=role.kind==='twin'?await memories.confirmedForRun(db,actor,{scope,groupId:null,memoryViewId:null},role):await memories.confirmedForExperience(db,actor,scope,role)
+   const sources=artifactInputSources(selected)
+   if(sources.references.length)await new ArtifactAvailabilityService(ports.pool,()=>new Date().toISOString()).bindInputInTransaction(db,actor,{sessionId:target.sessionId,...sources})
    for(const memory of selected)result.set(memory.id,{kind:'role',id:memory.id,title:memory.title,version:memory.version,hash:memory.contentHash,markdown:memory.markdown,scopeIds:memory.visibility.kind==='role'?[...memory.visibility.scopeIds]:[scope]})
   }
   return [...result.values()]
@@ -159,6 +162,7 @@ export function createProjectRuntimeAdapters(ctx:Context,ports:Ports){
    const role=await currentRole()
    const memories=await (await ports.roleMemories()).confirmedForRun(ports.pool,ports.owner,{scope:expected.scope,groupId:null,memoryViewId:null},role)
    if(memories.some(memory=>memory.visibility.kind!=='private'))throw denied()
+   if(artifactInputSources(memories).references.length)await bindArtifactInputSources(ports.owner,ports.pool,input.sessionId,memories)
    // 来源服务完成后重新核对，不能让最后一次异步读取带出旧版本身份。
    await currentRole()
    input.signal?.throwIfAborted()

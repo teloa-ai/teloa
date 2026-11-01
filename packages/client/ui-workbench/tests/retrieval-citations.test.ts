@@ -1,10 +1,32 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import {readRetrievalSearchResult,retrievalCitationPath,readRetrievalCitationPath} from '@teloa/contract'
-import {isRetrievalCitationLink,openRetrievalCitation,readRetrievalSourceAddress,resolveRetrievalCitation,retrievalSourceAddress,type RetrievalCitationPort} from '../src/client/retrieval-citations.ts'
+import {isRetrievalCitationLink,openRetrievalCitation,projectTurnAliasCitations,readRetrievalSourceAddress,resolveRetrievalCitation,retrievalSourceAddress,type RetrievalCitationPort} from '../src/client/retrieval-citations.ts'
 
 const sessionId='session-original',resourceId='11111111-1111-4111-8111-111111111111',sourceId='local_material_22222222-2222-4222-8222-222222222222',sourceVersion='b'.repeat(64)
 const hit={resourceId,resourceVersion:1,title:'原始资料',sourceId,sourceVersion,lines:[0,2] as [number,number],chars:[0,20] as [number,number],heading:'固定依据',score:0.7,excerpt:'乙负责整理五条待办。'}
+test('项目memory/rule旧引用进入来源导航，普通同名目录文件不被接管',()=>{
+ assert.equal(isRetrievalCitationLink('memory/22222222-2222-4222-8222-222222222222'),true)
+ assert.equal(isRetrievalCitationLink('rule/22222222-2222-4222-8222-222222222222'),true)
+ for(const path of ['memory/notes.md','rule/manual.md','role/22222222-2222-4222-8222-222222222222'])assert.equal(isRetrievalCitationLink(path),false)
+})
+test('官方事件源的历史英文scheme只为原轮次唯一来源补入口，不为全部来源、代码图片或伪造引用列入口',async()=>{
+ const {MutableSessionEventSource}=await import(new URL('./types/client/contract/events.js',import.meta.resolve('@deepseek-ai/dsh-api-session-controller/client')).href)
+ const id='22222222-2222-4222-8222-222222222222',projectId=resourceId,source={kind:'memory',id,title:'单价',version:1,hash:'a'.repeat(64)},link='[原记忆](memory:'+id+')'
+ const rows=(text:string,extra:object[]=[])=>{const sourceFeed=new MutableSessionEventSource();sourceFeed.replace([
+  {event:{type:'turn/start',seq:0,data:{turn:1}}},
+  {event:{type:'user/message',seq:1,surfaceOp:'append',data:{id:'input',source:{kind:'user'}}}},
+  {event:{type:'user/message',seq:2,surfaceOp:'append',data:{source:{kind:'runtime-context',form:'snapshot',sections:[{name:'teloa/project-context-generation',text:JSON.stringify([sessionId,projectId,1])},{name:'teloa/project-context',text:JSON.stringify([{source,markdown:'单价正文'},...extra])}]}}}},
+  {event:{type:'assistant/message',seq:3,surfaceOp:'append',data:{turn:1,message:{role:'assistant',content:[{type:'text',text}]}}}},
+  {event:{type:'turn/end',seq:4,data:{turn:1}}},
+ ],false);return sourceFeed.getSnapshot().entries}
+ assert.deepEqual(projectTurnAliasCitations(rows(link+' '+link),sessionId,1).map(row=>row.path),['memory:'+id])
+ assert.deepEqual(projectTurnAliasCitations(rows('没有引用'),sessionId,1),[])
+ assert.deepEqual(projectTurnAliasCitations(rows(link),sessionId,2),[])
+ assert.deepEqual(projectTurnAliasCitations(rows(link.replace(id,resourceId)),sessionId,1),[])
+ assert.deepEqual(projectTurnAliasCitations(rows(link,[{source:{...source,version:2,hash:'b'.repeat(64)},markdown:'另一版本'}]),sessionId,1),[],'同轮同ID两版本不猜测')
+ for(const text of ['`'+link+'`','```md\n'+link+'\n```','~~~md\n'+link+'\n~~~','    '+link,'\\'+link,'!'+link])assert.deepEqual(projectTurnAliasCitations(rows(text),sessionId,1),[],'代码、图片或转义文字不是引用入口：'+text)
+})
 function events(hits=[hit],name='teloa_knowledge_search'){
  const result={coverage:{searched:[{resourceId,title:'原始资料',version:hits[0]!.resourceVersion}],pending:[],note:'只查已加入资料'},results:hits}
  return [{event:{type:'tool/call',seq:1,data:{turn:1,callId:'original-call',name}}},{event:{type:'tool/result',seq:2,data:{turn:1,message:{source:{kind:'tool',callId:'original-call'},toolCallId:'original-call',content:[{type:'text',text:JSON.stringify(result)}]}}}}]
@@ -57,4 +79,31 @@ test('来源撤回、当前会话改变或原回执撤下时拒绝打开；不�
  const late=openRetrievalCitation(port,sourceId);current=false;resolveAvailable!(true);await assert.rejects(late,{code:'teloa/source-unavailable'})
  current=true;const removed=openRetrievalCitation(port,sourceId);rows=[];resolveAvailable!(true);await assert.rejects(removed,{code:'teloa/source-unavailable'})
  assert.equal(opened.length,1)
+})
+
+test('直接任务规范引用使用现有来源页，当前主体和固定版本由宿主重验',async()=>{
+ const {taskReferenceCitationPath}=await import('@teloa/contract')
+ const {readTaskCitation}=await import('../src/client/retrieval-citations.ts')
+ const taskId='33333333-3333-4333-8333-333333333333',path=taskReferenceCitationPath({taskId,resourceId,resourceVersion:1,sourceVersion}),opened:string[]=[]
+ let current=true,changed=false
+ const result={taskId,resourceId,resourceVersion:1,sourceVersion,sessionId,sourceId,title:'原文',text:'固定正文',citationPath:path}
+ const port:RetrievalCitationPort={sessionId,current:()=>current,events:{getSnapshot:()=>({entries:[]} as never),subscribe:()=>()=>{}},available:async()=>true,taskSource:async()=>({...result,...(changed?{sourceVersion:'c'.repeat(64)}:{})}),openResource:address=>opened.push(address)}
+ await openRetrievalCitation(port,path)
+ assert.deepEqual(readRetrievalSourceAddress(opened[0]!),{sessionId,path,task:{sessionId,path}})
+ changed=true;await assert.rejects(readTaskCitation(port,{sessionId,path}));current=false;await assert.rejects(openRetrievalCitation(port,path))
+})
+
+test('直接任务轮尾来源只接受同轮真实调用及匹配引用，不接受用户JSON或错版',async()=>{
+ const {taskReferenceCitationPath}=await import('@teloa/contract'),{taskTurnCitations}=await import('../src/client/retrieval-citations.ts')
+ const taskId='33333333-3333-4333-8333-333333333333',path=taskReferenceCitationPath({taskId,resourceId,resourceVersion:1,sourceVersion})
+ const value={schema:'teloa.reference/v1',id:sourceId,source:sourceId,version:sourceVersion,title:'正文',text:'正文',citationPath:path,references:[{id:resourceId,version:1}]}
+ const call={event:{type:'tool/call',data:{turn:1,callId:'task-call',name:'mcp__teloa_reference__read_reference',arguments:{id:sourceId,version:sourceVersion}}}}
+ const result=(data:unknown,turn=1)=>({event:{type:'tool/result',data:{turn,message:{toolCallId:'task-call',source:{kind:'tool',callId:'task-call'},content:[{type:'text',text:JSON.stringify(data)}]}}}})
+ const run=(entries:unknown[])=>taskTurnCitations(entries as never,1)
+ assert.deepEqual(run([call,result(value)]),[{path,title:'正文',version:1}])
+ assert.deepEqual(run([result(value)]),[])
+ assert.deepEqual(run([call,result(value,2)]),[])
+ assert.deepEqual(run([call,result({...value,version:'c'.repeat(64)})]),[])
+ assert.deepEqual(run([call,result({...value,references:[{id:resourceId,version:2}]})]),[])
+ assert.deepEqual(run([{event:{type:'user/message',data:{turn:1,message:{content:[{type:'text',text:JSON.stringify(value)}]}}}}]),[])
 })

@@ -1,3 +1,4 @@
+import {permissionPendingCopy} from './permission-pending-copy.js'
 import {ToolbarIconButton} from './ToolbarIconButton.js'
 import {RefreshCw} from 'lucide-react'
 import {useEffect,useRef,useState,type ReactNode} from 'react'
@@ -47,20 +48,28 @@ export function RoleDelegation({role,api,toolGrants,resources,groups,changed,con
   void Promise.all([toolGrants?.get(role.id),resources.directory(),groups?readRoleGroups(groups,role.id):Promise.resolve([])]).then(([tools,directory,rows])=>{if(live){setToolNames(tools?.roleVersion===role.version&&tools.grant?.roleId===role.id&&tools.grant.roleVersion<=role.version&&tools.grant.state==='active'?[...new Set(tools.grant.rules.map(rule=>rule.name))]:[]);setKnowledge(directory.resources.filter(row=>role.knowledge.includes(row.id)&&row.status==='active'));setMemberships(rows);setChoicesReady(true)}},cause=>{if(live)setError(localizeWorkError(locale,cause))});return()=>{live=false}
  },[toolGrants,resources,groups,role.id,role.version,revision,locale])
  useEffect(()=>setDiscarded(false),[api,role.id,role.version])
- const pending=api.pending(),failure=api.recoveryMessage(),blocked=busy||!!pending||!!failure||!read||read.roleVersion!==role.version,startBlocked=blocked||role.state!=='active'
+ // 恢复请求保留原版本；撤销许可只含 consentId，须由读取回执核对员工归属。
+ const pendingOwner=(request:ReturnType<RoleDelegationApi['pending']>)=>{
+  if(!request)return undefined
+  if(request.endpoint!=='twin-execution-consents/revoke')return request.input.roleId===role.id?'current':'foreign'
+  const consent=read?.roleId===role.id?read.consents.find(item=>item.id===request.input.consentId):undefined
+  return consent?consent.roleId===role.id?'current':'foreign':'unknown'
+ }
+ const pending=api.pending(),failure=api.recoveryMessage(),pendingOwnership=pendingOwner(pending),blocked=busy||!!pending||!!failure||!read||read.roleId!==role.id||read.roleVersion!==role.version,startBlocked=blocked||role.state!=='active'
  const current=read?.delegations.filter(item=>item.roleId===role.id&&item.roleVersion===role.version).sort((a,b)=>b.updatedAt.localeCompare(a.updatedAt)||b.version-a.version)[0]
  const editBlocked=startBlocked||current?.state==='active'||current?.state==='pausing'||current?.state==='ending'
- const activeConsent=current&&read?.consents.find(consent=>consent.roleVersion===role.version&&consent.state==='active'&&consent.authorization.kind==='delegation'&&consent.authorization.delegationId===current.id&&consent.authorization.delegationVersion===current.version)
+ const activeConsent=current&&read?.consents.find(consent=>consent.roleId===role.id&&consent.roleVersion===role.version&&consent.state==='active'&&consent.authorization.kind==='delegation'&&consent.authorization.delegationId===current.id&&consent.authorization.delegationVersion===current.version)
  const setDraft=(next:RoleDelegationFields|undefined|((value:RoleDelegationFields|undefined)=>RoleDelegationFields|undefined))=>{const original=slot.read().value,fields=typeof next==='function'?next(original?.fields):next;if(fields){slot.set({...original,expectedRoleVersion:original?.expectedRoleVersion??role.version,expectedVersion:original?original.expectedVersion:current?.version??null,fields});setEditing(true)}else setEditing(false)}
  const toggle=(field:'allowedTools'|'knowledgeIds'|'groupIds',id:string,selected:boolean)=>{setConfirmed(false);setDraft(value=>value?{...value,[field]:selected?[...new Set([...value[field],id])]:value[field].filter(item=>item!==id)}:value)}
- async function act(operation:()=>Promise<unknown>,original?:DelegationDraft){if(busy)return;setError(undefined);setDiscarded(false);try{await slot.run(original,operation);if(mounted.current&&liveSlot.current===slot){if(!slot.read().value)setEditing(false);setConfirmed(false);setRevision(value=>value+1)}}catch{/* 原版本和失败输入仍在本人 API 草稿槽。 */}}
+ async function act(operation:()=>Promise<unknown>,original?:DelegationDraft,recover=false){if(busy||(recover?pendingOwner(api.pending())!=='current'||!!api.recoveryMessage():!!api.pending()||!!api.recoveryMessage()))return;setError(undefined);setDiscarded(false);try{await slot.run(original,operation);if(mounted.current&&liveSlot.current===slot){if(!slot.read().value)setEditing(false);setConfirmed(false);setRevision(value=>value+1)}}catch{/* 原版本和失败输入仍在本人 API 草稿槽。 */}}
  const recoveryDraft=pending?.endpoint==='role-delegations/change'&&pending.input.action==='save'&&pending.input.roleId===role.id&&pending.input.expectedRoleVersion===savedDraft.value?.expectedRoleVersion&&pending.input.expectedVersion===savedDraft.value?.expectedVersion&&JSON.stringify(pending.input.fields)===JSON.stringify(draft)?savedDraft.value:undefined
  const change=(action:'pause'|'resume'|'end')=>{if(!current||blocked||action==='resume'&&(startBlocked||!applicationPresentation.can('people')))return;void act(()=>api.change({requestId:crypto.randomUUID(),roleId:role.id,expectedRoleVersion:role.version,expectedVersion:current.version,action}))}
  const management=<section className={css.block} aria-label={t('roleDelegation.title')} aria-busy={busy||!read&&!error}>
   <h3>{t('roleDelegation.title')}</h3><p>{t('roleDelegation.description')}</p><p role="status">{t(roleDelegationStatus(role,read))}</p>
-  {!!(error||savedDraft.error)&&<p role="alert">{savedDraft.error?localizeWorkError(locale,savedDraft.error):error}</p>}{failure&&<p role="alert">{localizeWorkError(locale,failure)} {t('recovery.nextStep')} <button type="button" disabled={busy} onClick={()=>{setDiscarded(false);try{api.discard();setDiscarded(true)}catch(cause){setError(localizeWorkError(locale,cause))}}}>{t('recovery.discard')}</button></p>}
+  {!!(error||savedDraft.error)&&<p role="alert">{savedDraft.error?localizeWorkError(locale,savedDraft.error):error}</p>}{failure&&<p role="alert">{localizeWorkError(locale,failure)} {(!pending||pendingOwnership==='current')&&<>{t('recovery.nextStep')} <button type="button" disabled={busy} onClick={()=>{const live=api.pending();if(busy||live&&pendingOwner(live)!=='current')return;setDiscarded(false);try{api.discard();setDiscarded(true)}catch(cause){setError(localizeWorkError(locale,cause))}}}>{t('recovery.discard')}</button></>}</p>}
   {discarded&&<p role="status">{t('recovery.discarded')}</p>}
-  {pending&&<p>{t('roleDelegation.pending')} <button type="button" disabled={busy||!!failure} onClick={()=>void act(api.recover,recoveryDraft)}>{t('roleDelegation.recover')}</button></p>}
+  {(pendingOwnership==='foreign'||pendingOwnership==='unknown'||failure&&!pending)&&<p role="status">{permissionPendingCopy(locale,pendingOwnership==='foreign'?'foreign':'unknown')}</p>}
+  {pending&&pendingOwnership==='current'&&<p>{t('roleDelegation.pending')} <button type="button" disabled={busy||!!failure} onClick={()=>void act(api.recover,recoveryDraft,true)}>{t('roleDelegation.recover')}</button></p>}
   {overview&&current&&<dl data-teloa-delegation-scope>
    <dt>{t('roleDelegation.scope')}</dt><dd>{scopes[current.scope]??current.scope}</dd>
    <dt>{t('roleDelegation.tools')}</dt><dd>{current.allowedTools.map(name=>roleToolLabel(name,t)).join(', ')||t('roleDelegation.overview.empty')}</dd>
@@ -90,5 +99,5 @@ export function RoleDelegation({role,api,toolGrants,resources,groups,changed,con
   </form>}
   {!!read?.delegations.length&&<details data-teloa-delegation-history><summary>{t('roleDelegation.history')}</summary>{read.delegations.map(item=><p key={item.id}>{scopes[item.scope]??item.scope} · {t(item.roleVersion===role.version?item.state==='active'?'roleDelegation.status.active':`roleDelegation.status.${item.state}`:'roleDelegation.status.stale')} · {item.allowedTools.map(name=>overview?roleToolLabel(name,t):name).join(', ')}</p>)}</details>}
  </section>
- return overview?<RoleDelegationOverview role={role} current={current} status={roleDelegationStatus(role,read)} toolNames={toolNames} knowledge={knowledge} groups={memberships} ready={choicesReady} error={savedDraft.error?localizeWorkError(locale,savedDraft.error):error??(failure?localizeWorkError(locale,failure):undefined)} pending={!!pending} hasHistory={!!read?.delegations.length} closed={()=>setConfirmed(false)}>{management}</RoleDelegationOverview>:management
+ return overview?<RoleDelegationOverview role={role} current={current} status={roleDelegationStatus(role,read)} toolNames={toolNames} knowledge={knowledge} groups={memberships} ready={choicesReady} error={savedDraft.error?localizeWorkError(locale,savedDraft.error):error??(failure?localizeWorkError(locale,failure):undefined)} pending={pendingOwnership==='current'} hasHistory={!!read?.delegations.length} closed={()=>setConfirmed(false)}>{management}</RoleDelegationOverview>:management
 }
