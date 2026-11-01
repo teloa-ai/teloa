@@ -1,3 +1,4 @@
+import {sha256Digest} from '@teloa/contract'
 export type BusinessDataQuality='complete'|'missing'
 
 export type BusinessDataItem={
@@ -39,7 +40,7 @@ function hash(value:unknown):value is string{return typeof value==='string'&&/^[
 
 async function digest(value:unknown):Promise<string>{
  const bytes=new TextEncoder().encode(JSON.stringify(value))
- const result=await crypto.subtle.digest('SHA-256',bytes)
+ const result=await sha256Digest(bytes)
  return Array.from(new Uint8Array(result),byte=>byte.toString(16).padStart(2,'0')).join('')
 }
 

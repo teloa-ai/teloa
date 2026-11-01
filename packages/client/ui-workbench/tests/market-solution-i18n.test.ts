@@ -81,7 +81,7 @@ test('市场工具行里搜索框旁有「问一问」按钮，走产品页同�
   const rowStart=source.indexOf('className={css.toolRow}')
   const row=source.slice(rowStart,source.indexOf('</div>}',rowStart))
   assert.match(row, /searchControl/)
-  assert.match(source, /const searchControl=<label className=\{clsx\(css\.globalSearch,/)
+  assert.match(source, /const searchControl=<label[^>]*className=\{clsx\(css\.globalSearch,/)
   assert.match(row, /t\('market\.solution\.ask'\)/)
   // 搜索词有无决定用哪条草稿，最终都交给既有的 props.prepare，不新起端点。
   assert.match(source, /trimmed\?t\('market\.solution\.askDraft',\{query:trimmed\}\):t\('market\.solution\.askDraftEmpty'\)/)

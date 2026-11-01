@@ -46,7 +46,7 @@ export function EmployeeGroupInvite({role,api,close,invited}:{role:PreviewRole;a
  }}>
   <div className={css.body}>
    <div className={css.identity}><EmployeeAvatar avatarKey={role.avatarKey} size="sm"/><div><strong>{role.name}</strong><p>{employeeCopy(locale,'invitePrompt')}</p></div></div>
-   <label className={css.search}><Search size={16} aria-hidden/><input type="search" aria-label={employeeCopy(locale,'searchGroups')} placeholder={employeeCopy(locale,'searchGroups')} value={query} disabled={busy} onChange={event=>searchSlot.set(event.target.value)}/></label>
+   <label data-teloa-field-shell className={css.search}><Search size={16} aria-hidden/><input type="search" aria-label={employeeCopy(locale,'searchGroups')} placeholder={employeeCopy(locale,'searchGroups')} value={query} disabled={busy} onChange={event=>searchSlot.set(event.target.value)}/></label>
    {error&&<div className={css.error} role="alert"><p>{error}</p>{loadError&&<button type="button" disabled={busy} onClick={()=>retryLoad(value=>value+1)}>{t('common.retry')}</button>}</div>}
    <fieldset disabled={busy} className={css.groups}>
     <legend>{employeeCopy(locale,'chooseGroup')}</legend>

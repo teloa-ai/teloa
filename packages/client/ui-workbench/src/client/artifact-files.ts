@@ -1,3 +1,4 @@
+import {sha256Digest} from '@teloa/contract'
 import { artifactFileTotalBytes,isArtifactFile,isArtifactFileDirectory,type ArtifactFile,type ArtifactFileDirectory } from '@teloa/contract'
 import type { ArtifactSourceRef } from './artifact-preview.ts'
 import type {TeloaTranslate} from './i18n/index.ts'
@@ -39,7 +40,7 @@ export function createArtifactFileApi(call:(endpoint:string,payload:unknown,sign
       const result=await call('artifacts/files/write',{sessionId:file.sessionId,path:file.path,expectedId:file.id,expectedSha256:file.sha256,text},signal)
       signal.throwIfAborted();assertSession(file.sessionId)
       if(!isArtifactFile(result)||result.id!==file.id||result.sessionId!==file.sessionId||result.path!==file.path)throw Error('文件写入响应身份不一致，请保留草稿并核对原文件。')
-      const bytes=fileBytes(result),digest=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',bytes))).map(value=>value.toString(16).padStart(2,'0')).join('')
+      const bytes=fileBytes(result),digest=Array.from(new Uint8Array(await sha256Digest(bytes))).map(value=>value.toString(16).padStart(2,'0')).join('')
       if(bytes.length!==result.bytes||digest!==result.sha256||new TextDecoder('utf-8',{fatal:true,ignoreBOM:true}).decode(bytes)!==text)throw Error('文件写入内容待核对，请保留草稿。')
       return result
     },
@@ -55,7 +56,7 @@ export function createArtifactFileApi(call:(endpoint:string,payload:unknown,sign
       const result=await call('artifacts/files/read',{sessionId,path},signal)
       signal.throwIfAborted();assertSession(sessionId)
       if(!isArtifactFile(result)||result.sessionId!==sessionId||result.path!==path)throw Error('文件快照与当前会话或路径不一致。')
-      const bytes=fileBytes(result),digest=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',bytes))).map(value=>value.toString(16).padStart(2,'0')).join('')
+      const bytes=fileBytes(result),digest=Array.from(new Uint8Array(await sha256Digest(bytes))).map(value=>value.toString(16).padStart(2,'0')).join('')
       signal.throwIfAborted();assertSession(sessionId)
       if(bytes.length!==result.bytes||digest!==result.sha256)throw Error('文件内容校验失败，请重新读取；未保存损坏快照。')
       return result

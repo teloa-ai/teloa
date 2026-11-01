@@ -1,3 +1,4 @@
+import {sha256Digest} from '@teloa/contract'
 import {
  industryUpdateCanonical,readBusinessImportStageInput,readBusinessImportStageReceiptInput,readBusinessImportApplyInput,readBusinessImportRevisionInput,
  readBusinessImportMapping,readBusinessImportDraft,readBusinessImportReceipt,readBusinessRichFieldValue,
@@ -28,7 +29,7 @@ const exact=(value:unknown,keys:string[])=>{if(!value||typeof value!=='object'||
 const hash=(value:unknown):value is string=>typeof value==='string'&&/^[a-f0-9]{64}$/.test(value)
 const same=(a:unknown,b:unknown)=>industryUpdateCanonical(a)===industryUpdateCanonical(b)
 function freeze<T>(value:T):T{if(value&&typeof value==='object'&&!Object.isFrozen(value)){for(const item of Object.values(value))freeze(item);Object.freeze(value)}return value}
-async function sha(bytes:Uint8Array){return [...new Uint8Array(await crypto.subtle.digest('SHA-256',bytes as Uint8Array<ArrayBuffer>))].map(b=>b.toString(16).padStart(2,'0')).join('')}
+async function sha(bytes:Uint8Array){return [...new Uint8Array(await sha256Digest(bytes as Uint8Array<ArrayBuffer>))].map(b=>b.toString(16).padStart(2,'0')).join('')}
 async function stageEvidence(input:BusinessImportAnyStageInput){const {requestId:_,...body}=input;return {inputDigest:await sha(new TextEncoder().encode(industryUpdateCanonical(body))),fileHash:await sha(Uint8Array.from(atob(input.dataBase64),c=>c.charCodeAt(0)))}}
 /** 一实例固定实际本人、Personal Space、业务及 API 代次；展示名不参与归属。 */
 export class BusinessImportFlow{

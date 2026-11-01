@@ -73,7 +73,10 @@ export function ArtifactPanel({ messageAuthor, taskSources, taskRuns, recovery, 
     const [readingSaved,setReadingSaved]=useState(false);
     const targetKey = target ? JSON.stringify(target) : '';
     const composing = useRef(false);
-    const persistentSource = !!target && (target.source.kind === 'session' || target.source.kind === 'task' && state.tasks.some(task => task.id === target.source.id && task.storage === 'persistent'));
+    const sourceTask = target?.source.kind === 'task' ? state.tasks.find(task => task.id === target.source.id) : undefined;
+    const fixedArtifact = target?.artifact ? state.artifacts.find(item => item.id === target.artifact?.id) : undefined;
+    // 资料及员工目录会先读到固定成果；任务台账尚未加载不代表它是演示内容。
+    const persistentSource = !!target && (target.source.kind === 'session' || target.source.kind === 'task' && (sourceTask ? sourceTask.storage === 'persistent' : fixedArtifact?.storage === 'persistent'));
     const visibleArtifacts = artifactPanelArtifacts(state.artifacts,persistentSource);
     const rows = target ? visibleArtifacts.filter(item => sourceKey(item.source) === sourceKey(target.source) || target.source.kind==='task'&&item.revisions?.some(revision=>revision.taskId===target.source.id) || target.source.kind==='task'&&item.produced?.some(producer=>producer.taskId===target.source.id) || item.links.some(link => sourceKey(link.object) === sourceKey(target.source))) : [];
     // 固定引用可能早于目标版本载入；同一成果新增版本也必须重新核对缺失的初始选择。
@@ -88,6 +91,7 @@ export function ArtifactPanel({ messageAuthor, taskSources, taskRuns, recovery, 
         if(revisionPending.current&&revisionPending.current!==revisionOwner.current){revisionPending.current=null;busyRef.current=false;setBusy(false);setError('');setNotice('')}
     },[targetKey,open,revisionIdentity,methodReuseIdentity,selected,versionNumber,sectionId]);
     const [fileDrafts, setFileDrafts] = useState<Record<string, ArtifactFileDraft>>({});
+    const retainedDraftKey=target?'new:'+sourceKey(target.source):'';
     const [expanded,setExpanded]=useState(false);
     const [showList,setShowList]=useState(!target?.artifact&&!target?.initialAction);
     // Esc 退出放大后焦点回到发起放大的按钮：此时焦点可能已落在 body，关闭再重开的默认交接会把焦点拽进名称输入框。
@@ -107,7 +111,7 @@ export function ArtifactPanel({ messageAuthor, taskSources, taskRuns, recovery, 
         setNotice('');
         setLinkId('');
         setExpanded(false);
-        setShowList(!target.artifact&&!target.initialAction);
+        setShowList(!target.artifact&&!target.initialAction&&drafts[retainedDraftKey]===undefined&&fileDrafts[retainedDraftKey]===undefined);
         composing.current = false;
     }, [targetKey, open]);
     useEffect(() => {
@@ -159,7 +163,6 @@ export function ArtifactPanel({ messageAuthor, taskSources, taskRuns, recovery, 
     const onCancel=(event:SyntheticEvent<HTMLDialogElement>)=>{if(event.target!==event.currentTarget)return;event.stopPropagation();event.preventDefault();if(closingBlocked||composing.current)return;if(inline&&expanded){restoreToggle.current=true;setExpanded(false)}else close()};
     const fallback = artifactPanelStart(rows.map(item => ({ id: item.id, primary: item.primary, updatedAt: item.versions.at(-1)!.at, versions:item.versions.map(version=>version.number) })), target.artifact?.id,!!target.artifact,target.artifact?.version);
     if(fallback.mode==='missing')return present(<dialog ref={dialog} className={panelClass} aria-label={t("artifact.panel.text.006")} onKeyDown={onKeyDown} onCancel={onCancel}><p role="alert">{loadError||t('error.notFound')}</p><button type="button" disabled={closingBlocked} onClick={back}>{inline?t('overview.back'):t("artifact.panel.text.009")}</button></dialog>);
-    const retainedDraftKey='new:'+sourceKey(target.source);
     const retainedDraft=!readingSaved&&!target.artifact&&(drafts[retainedDraftKey]!==undefined||fileDrafts[retainedDraftKey]!==undefined);
     const selectedId = retainedDraft ? null : selected && rows.some(item => item.id === selected) ? selected : fallback.selected;
     const artifact = state.artifacts.find(item => item.id === selectedId), version = artifact?.versions.find(item => item.number === versionNumber) || artifact?.versions.at(-1), latest = artifact?.versions.at(-1);
@@ -238,7 +241,7 @@ export function ArtifactPanel({ messageAuthor, taskSources, taskRuns, recovery, 
         setBusy(false);
     } }}>{t("artifact.panel.text.015")}{item.title}</button>)}
       {loadError && (target.source.kind === 'session' || target.source.kind === 'task') && <p role="alert">{loadError}{t("artifact.panel.text.022")}</p>}{busy && <p role="status">{t("artifact.panel.text.023")}</p>}{error && <p role="alert" className={base.error}>{error}</p>}{notice && <p role="status">{notice}</p>}
-      {sourceError && <p role="status">{sourceError}{t("artifact.panel.text.024")}</p>}
+      {sourceError && !(artifact?.storage==='persistent'&&version&&view==='preview') && <p role="status">{sourceError}{t("artifact.panel.text.024")}</p>}
       {showList&&rows.length>0?<section className={css.resultList} aria-label={t('artifact.panel.allResults')}>
         <header><h3>{source?.title||t('artifact.panel.text.006')}</h3><p>{t('artifact.panel.listHelp')}</p></header>
         {rows.map(item=>{const linked=item.links.find(link=>sourceKey(link.object)===sourceKey(target.source))?.artifactVersion,current=item.versions.find(row=>row.number===(item.id===selectedId?versionNumber:linked))??item.versions.at(-1)!;return <button type="button" className={css.resultRow} key={item.id} onClick={()=>choose(item.id)}>

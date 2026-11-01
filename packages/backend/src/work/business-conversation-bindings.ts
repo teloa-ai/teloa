@@ -6,11 +6,13 @@ import type {ConversationService} from './conversations.ts'
 import {readStoredConversationWorkRequest,type ConversationWorkService,type ConversationWorkGuardOperation,type ConversationWorkPreparedGuard} from './conversation-work.ts'
 import {readStoredTask} from './tasks.ts'
 import {workRequestChildId} from './conversation-work-task-protection.ts'
+import {BusinessConfigurationStore} from './business-configuration-store.ts'
 type Ports={drafts:Pick<BusinessConfigurationDraftService,'begin'|'get'>;conversations:Pick<ConversationService,'bySession'>&Partial<Pick<ConversationService,'list'|'snapshotBySession'>>;contexts:Pick<ConversationWorkService,'context'>;visibleSessions?:(signal?:AbortSignal)=>Promise<readonly {sessionId:string;origin?:string}[]>}
 const forbidden=()=>new WorkError('teloa/forbidden','当前本人未获准访问该业务会话。')
 const conflict=()=>new WorkError('teloa/conflict','业务会话预约与当前目标或上下文不一致。')
 const invalid=()=>new WorkError('teloa/invalid-input','业务会话分页身份不正确。')
 const corrupt=()=>new WorkError('teloa/storage-corrupt','业务会话预约存储不一致。')
+const unconfigured=()=>new WorkError('teloa/conflict','原业务尚未采用正式配置，不能按调整业务恢复此预约。',{reason:'builder-scope-unconfigured'})
 function actorValid(a:BusinessConfigurationActor){
  if(!a||typeof a.ownerId!=='string'||!a.ownerId.trim()||a.ownerId!==a.ownerId.trim()||a.ownerId.length>128||/[\x00-\x1f\x7f]/.test(a.ownerId)||!Array.isArray(a.scopeIds)||new Set(a.scopeIds).size!==a.scopeIds.length||a.scopeIds.some(s=>!isBusinessScopeKey(s)))throw forbidden()
 }
@@ -52,6 +54,13 @@ export class BusinessConversationBindingService{
  private async scope(a:BusinessConfigurationActor,r:Pick<BusinessConversationBinding,'scope'>,db:Pick<PoolClient,'query'>=this.pool){
   if(r.scope!==undefined&&(!a.scopeIds.includes(r.scope)||!(await db.query('select 1 from teloa_business_scopes where owner_id=$1 and scope=$2',[a.ownerId,r.scope])).rowCount))throw forbidden()
  }
+ private async requireBuilderConfiguration(a:BusinessConfigurationActor,r:Pick<BusinessConversationBinding,'kind'|'scope'>){
+  if(r.kind!=='builder'||r.scope===undefined)return
+  await this.scope(a,r)
+  const db=await this.pool.connect()
+  try{if(!await new BusinessConfigurationStore(this.pool).currentInTransaction(db,a.ownerId,r.scope))throw unconfigured()}
+  finally{db.release()}
+ }
  private async authorize(a:BusinessConfigurationActor,r:BusinessConversationBinding){
   await this.scope(a,r)
   if(r.draftId){
@@ -78,6 +87,8 @@ export class BusinessConversationBindingService{
   actorValid(a);const spec=readBusinessConversationReserve(input)
   let r=await this.raw(a.ownerId,spec.requestId)
   if(r&&JSON.stringify(readBusinessConversationReserve(rToSpec(r)))!==JSON.stringify(spec))throw conflict()
+  // 旧业务只登记了范围、尚无正式配置时不能调整；在写预约前拒绝，避免留下无法恢复的卡片。
+  if(!r?.draftId)await this.requireBuilderConfiguration(a,spec)
   if(!r){
    await this.scope(a,spec)
    await this.pool.query('insert into teloa_business_conversation_bindings(owner_id,request_id,kind,title,workspace_id,scope_id,created_at,updated_at) values($1,$2,$3,$4,$5,$6,$7,$7) on conflict(owner_id,request_id) do nothing',[a.ownerId,spec.requestId,spec.kind,spec.title,spec.workspaceId??null,spec.scope??null,this.identity.now()])
@@ -93,6 +104,29 @@ export class BusinessConversationBindingService{
    if(r.draftId!==draft.id)throw conflict()
   }
   return this.authorize(a,r)
+ }
+ /** 仅撤销没有草案和原生会话、且对应旧业务仍无正式配置的错误预约。 */
+ async abandonUnconfigured(a:BusinessConfigurationActor,input:unknown):Promise<{requestId:string}>{
+  actorValid(a);const spec=readBusinessConversationReserve(input)
+  if(spec.kind!=='builder'||spec.scope===undefined)throw invalid()
+  if(!this.ports.conversations.list)throw new WorkError('teloa/dependency-unavailable','原生会话目录尚未接入，不能核对旧预约。')
+  const db=await this.pool.connect()
+  try{
+   await db.query('begin')
+   await this.scope(a,spec,db)
+   const row=(await db.query('select * from teloa_business_conversation_bindings where owner_id=$1 and request_id=$2 for update',[a.ownerId,spec.requestId])).rows[0]
+   if(row){
+    const existing=decode(row)
+    if(JSON.stringify(rToSpec(existing))!==JSON.stringify(spec)||existing.draftId||existing.sessionId)throw conflict()
+   }
+   if(await new BusinessConfigurationStore(this.pool).currentInTransaction(db,a.ownerId,spec.scope))throw conflict()
+   const native=await this.ports.conversations.list(a.ownerId,{})
+   if(native.some(item=>item.requestId===spec.requestId))throw conflict()
+   if(row)await db.query('delete from teloa_business_conversation_bindings where owner_id=$1 and request_id=$2 and draft_id is null and session_id is null',[a.ownerId,spec.requestId])
+   await db.query('commit')
+   return {requestId:spec.requestId}
+  }catch(error){await db.query('rollback').catch(()=>{});throw error}
+  finally{db.release()}
  }
  async bind(a:BusinessConfigurationActor,input:unknown):Promise<BusinessConversationBinding>{
   actorValid(a);const {requestId,sessionId}=readBusinessConversationBind(input),r=await this.raw(a.ownerId,requestId)

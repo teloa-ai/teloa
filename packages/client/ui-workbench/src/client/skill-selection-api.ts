@@ -1,3 +1,4 @@
+import {sha256Digest} from '@teloa/contract'
 import {WorkError} from '@teloa/contract'
 import {createSkillInstallApi,type SkillInstallationRecord} from './skill-install-api.js'
 import {recoveryStorageError,type RecoveryJournal} from './recovery-error.js'
@@ -22,7 +23,7 @@ const stamp=(value:unknown):value is string=>{try{return typeof value==='string'
 const object=(value:unknown):value is Record<string,unknown>=>value!==null&&typeof value==='object'&&!Array.isArray(value)
 const exact=(value:unknown,keys:readonly string[]):Record<string,unknown>=>{if(!object(value)||Object.keys(value).length!==keys.length||keys.some(key=>!Object.hasOwn(value,key)))throw invalid();return value}
 const stable=(value:unknown):string=>JSON.stringify(value,(_key,item)=>object(item)?Object.fromEntries(Object.entries(item).sort(([a],[b])=>a<b?-1:a>b?1:0)):item)
-const digest=async(value:unknown)=>Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(stable(value)))),byte=>byte.toString(16).padStart(2,'0')).join('')
+const digest=async(value:unknown)=>Array.from(new Uint8Array(await sha256Digest(new TextEncoder().encode(stable(value)))),byte=>byte.toString(16).padStart(2,'0')).join('')
 const same=(a:unknown,b:unknown)=>stable(a)===stable(b)
 
 function readSelection(value:unknown,expectedOwner:string,nativeName:string):SkillSelection{

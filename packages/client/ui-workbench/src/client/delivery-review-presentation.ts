@@ -1,3 +1,4 @@
+import {sha256Digest} from '@teloa/contract'
 /** 宿主交付复核的来源种类；与 harness-dsh 的 deliveryReviewSource 同一常量值。 */
 export const deliveryReviewSourceKind='plugin:teloa.delivery-review'
 /** 宿主按复核编辑计划应用后追加的交付 notice 摘要。 */
@@ -27,7 +28,7 @@ export function readHostReviewDelivery(node:{source:unknown;content:readonly unk
 
 /** 浏览器内的 SHA-256（hex）。 */
 export async function sha256Hex(text:string):Promise<string>{
- const digest=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(text))
+ const digest=await sha256Digest(new TextEncoder().encode(text))
  return [...new Uint8Array(digest)].map(byte=>byte.toString(16).padStart(2,'0')).join('')
 }
 

@@ -15,7 +15,7 @@ import type { ThemeSnapshot } from '@deepseek-ai/dsh-client-ui-theme/client'
 /** Body attribute selecting the dark base palette in the token stylesheets. */
 export const DARK_ATTRIBUTE = 'data-ds-dark-theme'
 
-/** Body variable carrying the user's content font size in px. */
+/** Body variable carrying the user's content font size as a CSS length. */
 export const CONTENT_FONT_SIZE_VARIABLE = '--dsh-content-font-size'
 
 /** Scope interface-control typography to the active Teloa theme. */
@@ -76,7 +76,8 @@ export class ThemePresenter {
     else body.removeAttribute(DARK_ATTRIBUTE)
     const base=prototypeThemes[scheme]
     const textFont=snapshot.fontFamilies?.text||base['--teloa-design-font']!
-    const textSize=`${snapshot.fontSizes.text}px`
+    // rem 保留浏览器默认字体调整；16px 根字号时与本人设置的 px 数值一致。
+    const textSize=`${snapshot.fontSizes.text/16}rem`
     // 留空沿用 Teloa 默认；本人设置同时作用于工作台和原生页面。
     const palette:Record<string,string>={...base,'--teloa-design-font':textFont,'--teloa-design-text-base':textSize}
     // 仅通过公开设计变量适配原生页面；不依赖原生 DOM 或内部类名。

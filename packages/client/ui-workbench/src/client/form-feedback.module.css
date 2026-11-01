@@ -1,0 +1,5 @@
+.field{display:flex;flex-direction:column;gap:6px;min-width:0}
+.field .error{margin:0;color:var(--teloa-danger);font-size:var(--teloa-font-control);line-height:var(--teloa-leading-body);overflow-wrap:anywhere}
+.field :is(input,textarea)[aria-invalid=true]{border-color:var(--teloa-danger)}
+.hint.hint{margin:0;color:var(--teloa-muted);font-size:var(--teloa-font-caption);line-height:var(--teloa-leading-body)}
+.status{position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip-path:inset(50%);white-space:nowrap}

@@ -43,7 +43,7 @@ test('资料目录以树和正文为主，筛选不再占据目录，390px 主�
   assert.match(styles,/@media\(max-width:720px\)\{[\s\S]*\.page button[^{]*\{[^}]*min-height:44px[^}]*min-width:44px/)
 })
 
-test('市场窄窗口保留两主入口与明确分组的原分类，技能仍到达同一列表',async()=>{
+test('市场窄窗口保留可回流的分类入口，技能仍到达同一列表',async()=>{
   const styles=await read('MarketPage.module.css')
   // 真实工作台总是注入官方目录 API；技能等原分类经同一官方目录区块（kinds 限定类型）到达，本机资源留在「已添加」
   const section=function MarketCatalogSection(){return null}
@@ -68,7 +68,9 @@ test('市场窄窗口保留两主入口与明确分组的原分类，技能仍�
   assert.deepEqual(nodes(tree).find(node=>node.type===section)!.props.kinds,['skill'],'技能到达同一官方目录区块且只列技能')
   assert.equal(nodes(tree).some(node=>node.type===catalogModule.MarketResourceCatalog),false,'不另挂本机技能块')
   assert.match(styles,/\.categories\{[^}]*display:flex[^}]*overflow-x:auto/)
-  assert.match(styles,/\.primaryNavigation \.categories\{[^}]*flex-wrap:nowrap/)
+  assert.match(styles,/\.primaryNavigation \.categories\{[^}]*flex-wrap:wrap/)
+  assert.match(styles,/\.primaryNavigation \.categories\{[^}]*overflow:visible/)
+  assert.match(styles,/\.primaryNavigation \.categories button\{[^}]*flex:none/)
   assert.doesNotMatch(styles,/data-mobile-layer=category[^}]*\.categories\{[^}]*display:grid/)
   assert.match(styles,/@media\(max-width:740px\)\{[\s\S]*data-mobile-layer=detail[^}]*\.categories[^}]*display:none/)
   assert.match(styles,/@media\(max-width:740px\)\{[\s\S]*\.page button:where\(:not\(\[data-teloa-toolbar-icon\]\)\)\{[^}]*min-height:44px[^}]*min-width:44px/)

@@ -3,6 +3,40 @@ import assert from 'node:assert/strict'
 import {ConversationDirectoryChanges} from '../src/conversation-directory.ts'
 import {ConversationService, type ConversationRepository} from '../../backend/src/work/conversations.ts'
 
+test('已有会话反复ensure或adopt重放不发布失效，真实新增才唤醒目录',async()=>{
+ const changes=new ConversationDirectoryChanges(),signal=new AbortController().signal
+ let rows:Awaited<ReturnType<ConversationRepository['read']>>=[],sequence=0,writes=0,inspections=0
+ const repository=changes.trackWrites({read:async()=>structuredClone(rows),write:async(value:typeof rows)=>{writes++;rows=structuredClone(value)}})
+ const service=new ConversationService(repository,{create:async id=>id,inspect:async()=>{inspections++}},{id:()=> 'conversation-'+(++sequence),now:()=> '2026-10-30T10:00:00Z'}),owner='local:teloa-owner'
+ await service.ensure(owner,{sessionId:'known'})
+ assert.deepEqual(await changes.watch({},signal),{revision:1})
+ for(let i=0;i<3;i++)await service.ensure(owner,{sessionId:'known'})
+ assert.equal(inspections,4,'每次核验原生会话与主体权限，不使用显示缓存代替准入')
+ assert.equal(writes,1);assert.deepEqual(await changes.watch({},signal),{revision:1})
+ const adoption={sessionId:'known',requestId:'11111111-1111-4111-8111-111111111111',title:'已接入会话'}
+ await service.adopt(owner,adoption);assert.deepEqual(await changes.watch({},signal),{revision:2})
+ await service.adopt(owner,adoption);assert.deepEqual(await changes.watch({},signal),{revision:2})
+ await assert.rejects(service.ensure('another-owner',{sessionId:'known'}),{code:'teloa/forbidden'})
+ assert.deepEqual(await changes.watch({},signal),{revision:2})
+ let woke=false
+ const waiting=changes.watch({revision:2},signal).then(value=>{woke=true;return value})
+ await service.ensure(owner,{sessionId:'another'})
+ assert.deepEqual(await waiting,{revision:3});assert.equal(woke,true)
+ changes.dispose()
+})
+
+test('落盘失败不通知；已保存预约后宿主创建失败仍通知，保留原请求恢复入口',async()=>{
+ const failed=new ConversationDirectoryChanges(),signal=new AbortController().signal
+ const broken=failed.trackWrites({read:async()=>[],write:async(_rows:never[])=>{throw Error('disk error')}})
+ await assert.rejects(broken.write([]),/disk error/);assert.deepEqual(await failed.watch({},signal),{revision:0});failed.dispose()
+ const changes=new ConversationDirectoryChanges()
+ let rows:Awaited<ReturnType<ConversationRepository['read']>>=[]
+ const repository=changes.trackWrites({read:async()=>rows,write:async(value:typeof rows)=>{rows=structuredClone(value)}})
+ const service=new ConversationService(repository,{create:async()=>{throw Error('host unavailable')},inspect:async()=>{}},{id:()=> 'pending-work',now:()=> '2026-10-30T10:00:00Z'})
+ await assert.rejects(service.create('owner',{requestId:'11111111-1111-4111-8111-111111111111',title:'待恢复工作'}),/host unavailable/)
+ assert.equal(rows[0]?.status,'pending');assert.deepEqual(await changes.watch({},signal),{revision:1});changes.dispose()
+})
+
 test('接入落盘后唤醒原目录；读取和订阅之间的接入不会漏掉',async()=>{
  const changes=new ConversationDirectoryChanges(),signal=new AbortController()
  let rows:Awaited<ReturnType<ConversationRepository['read']>>=[]

@@ -11,6 +11,8 @@ import * as marketIdentity from '../src/client/market-item-identity.ts'
 import * as industryManifest from '../src/client/industry-manifest.ts'
 import * as groupMessageOverlays from '../src/client/group-message-overlays.ts'
 import * as groupMessageWindow from '../src/client/group-message-window.ts'
+import * as dialogueNavigation from '../src/client/dialogue-navigation.ts'
+import * as groupContentLoading from '../src/client/group-content-loading.ts'
 import * as groupTaskSourcePresentation from '../src/client/group-task-source-presentation.ts'
 import {roleFormDraftModule} from './role-form-drafts-fixture.ts'
 import {groupReadingFixture} from './group-reading-fixture.ts'
@@ -31,12 +33,17 @@ export function mount(file:string,additional:Record<string,unknown>={},expose:re
  const states:any[]=[],effects:(()=>unknown)[]=[];let cursor=0
  const React={createElement:(type:any,props:any,...children:any[])=>{const node={type,props:props??{},children:children.flat(Infinity)};return typeof type==='function'&&INLINE_COMPONENTS.has(type.name)?type({...node.props,children:node.children}):node},useMemo:(factory:()=>unknown)=>factory(),useCallback:(fn:unknown)=>fn,useEffect:(effect:()=>unknown)=>{effects.push(effect)},useId:()=>"fixture-id",useSyncExternalStore:(_subscribe:unknown,getSnapshot:()=>unknown)=>getSnapshot(),useState:(initial:any)=>{const i=cursor++;if(!(i in states))states[i]=typeof initial==='function'?initial():initial;return [states[i],(next:any)=>states[i]=typeof next==='function'?next(states[i]):next]},useRef:(value:any)=>{const i=cursor++;return states[i]??(states[i]={current:value})}}
  const modules:Record<string,unknown>={react:React,'./role-form-drafts.js':roleFormDraftModule(React),'./group-message-window.js':groupMessageWindow,'./market-preview.js':preview,'./market-resource-index.js':resources,'./market-home-presentation.js':presentation,'./market-solution-presentation.js':solutions,'./market-item-identity.ts':marketIdentity,'./market-item-identity.js':marketIdentity,'./industry-manifest.js':industryManifest,'./industry-manifest.ts':industryManifest,'./market-taxonomy-filter.js':taxonomy,'./i18n/provider.js':{useI18n:()=>({t,locale:'en',list:(values:string[])=>values.join(', '),number:(value:number)=>String(value),dateTime:(value:string|Date)=>String(value)})},'./directory-focus.js':{useDirectoryFocus:()=>({}),closeDirectoryDetailOnEscape:()=>{}},'./MarketAppsDirectory.js':appsDirectoryModule,clsx:{default:(...values:unknown[])=>values.filter(Boolean).join(' ')},...additional}
- const require=(id:string)=>modules[id]??(id==='./group-task-source-presentation.js'?groupTaskSourcePresentation:id==='./group-message-overlays.js'?groupMessageOverlays:id==='./use-group-reading.js'?groupReadingFixture:undefined)??(id.endsWith('ToolbarIconButton.js')?{ToolbarIconButton:toolbarIconComponent(React)}:undefined)??applicationCapabilityModules[id as keyof typeof applicationCapabilityModules]??(id.endsWith('.css')?{default:css}:new Proxy({},{get:()=>()=>undefined}))
+ const require=(id:string)=>modules[id]??(id==='./dialogue-navigation.js'?dialogueNavigation:id==='./group-content-loading.js'?groupContentLoading:id==='./group-task-source-presentation.js'?groupTaskSourcePresentation:id==='./group-message-overlays.js'?groupMessageOverlays:id==='./use-group-reading.js'?groupReadingFixture:undefined)??(id.endsWith('ToolbarIconButton.js')?{ToolbarIconButton:toolbarIconComponent(React)}:undefined)??applicationCapabilityModules[id as keyof typeof applicationCapabilityModules]??(id.endsWith('.css')?{default:css}:new Proxy({},{get:()=>()=>undefined}))
  // 市场已共用关闭钩子；在同一 React 状态容器执行真钩子，不能用空模块掩盖在途保护。
  const dismissCode=ts.transpileModule(readFileSync(new URL('../src/client/use-dialog-dismiss.ts',import.meta.url),'utf8'),{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.CommonJS}}).outputText
  const dismissExports:Record<string,unknown>={}
  new Function('require','exports',dismissCode)(require,dismissExports)
  modules['./use-dialog-dismiss.js']??=dismissExports
+ // 分批目录钩子也使用同一 React 状态容器的真实现，保留原条目身份与选择行为。
+ const windowCode=ts.transpileModule(readFileSync(new URL('../src/client/collection-window.ts',import.meta.url),'utf8'),{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.CommonJS}}).outputText
+ const windowExports:Record<string,unknown>={}
+ new Function('require','exports',windowCode)(require,windowExports)
+ modules['./collection-window.js']??=windowExports
  const code=ts.transpileModule(readFileSync(new URL('../src/client/'+file,import.meta.url),'utf8'),{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.React}}).outputText
  const exported:Record<string,any>={}
  new Function('require','exports','React',code+(file==='MarketPage.tsx'?'\nexports.TestCatalog=MarketCatalog;':'')+expose.map(name=>'\nexports.'+name+'='+name+';').join(''))(require,exported,React)

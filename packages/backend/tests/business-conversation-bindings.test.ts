@@ -53,6 +53,31 @@ test('reservation_recovers_each_gap_without_new_draft',async()=>{
  for(const change of [{title:'另一标题'},{workspaceId:'other'},{kind:'daily',scope:'SOC'}])await assert.rejects(f.make().reserve(f.a,{...input,...change}),{code:'teloa/conflict'})
  await assert.rejects(f.make().reserve(f.a,{...input,ownerId:'other'}),{code:'teloa/invalid-input'})
 })
+test('未采用配置的旧范围不留下新预约；仅空预约可幂等放弃',async()=>{
+ const f=await fixture()
+ await withLegacySecurityScopes(pool,f.a.ownerId,new api.BusinessSpaceService(pool,identity).ensurePersonal(f.a.ownerId))
+ f.a.scopeIds=['SOC']
+ const input={requestId:randomUUID(),kind:'builder' as const,title:'新业务',scope:'SOC'}
+ await assert.rejects(f.make().reserve(f.a,input),{code:'teloa/conflict',details:{reason:'builder-scope-unconfigured'}})
+ assert.equal((await pool.query('select count(*)::int n from teloa_business_conversation_bindings where owner_id=$1 and request_id=$2',[f.a.ownerId,input.requestId])).rows[0].n,0)
+ await pool.query('insert into teloa_business_conversation_bindings(owner_id,request_id,kind,title,scope_id,created_at,updated_at) values($1,$2,$3,$4,$5,now(),now())',[f.a.ownerId,input.requestId,input.kind,input.title,input.scope])
+ assert.equal((await f.make().byRequest(f.a,{requestId:input.requestId}))?.draftId,undefined)
+ await assert.rejects(f.make().abandonUnconfigured({...f.a,scopeIds:[]},input),{code:'teloa/forbidden'})
+ await assert.rejects(f.make().abandonUnconfigured(f.a,{...input,title:'其他预约'}),{code:'teloa/conflict'})
+ assert.deepEqual(await f.make().abandonUnconfigured(f.a,input),{requestId:input.requestId})
+ assert.deepEqual(await f.make().abandonUnconfigured(f.a,input),{requestId:input.requestId})
+ assert.equal(await f.make().byRequest(f.a,{requestId:input.requestId}),undefined)
+})
+test('已有原生会话的空预约不能放弃',async()=>{
+ const f=await fixture()
+ await withLegacySecurityScopes(pool,f.a.ownerId,new api.BusinessSpaceService(pool,identity).ensurePersonal(f.a.ownerId))
+ f.a.scopeIds=['SOC']
+ const input={requestId:randomUUID(),kind:'builder' as const,title:'新业务',scope:'SOC'}
+ await pool.query('insert into teloa_business_conversation_bindings(owner_id,request_id,kind,title,scope_id,created_at,updated_at) values($1,$2,$3,$4,$5,now(),now())',[f.a.ownerId,input.requestId,input.kind,input.title,input.scope])
+ await f.conversations.create(f.a.ownerId,{requestId:input.requestId,title:input.title})
+ await assert.rejects(f.make().abandonUnconfigured(f.a,input),{code:'teloa/conflict'})
+ assert.ok(await f.make().byRequest(f.a,{requestId:input.requestId}))
+})
 test('daily_requires_current_context 与跨本人、撤权、未登记范围',async()=>{
  const f=await fixture();await withLegacySecurityScopes(pool,f.a.ownerId,new api.BusinessSpaceService(pool,identity).ensurePersonal(f.a.ownerId));f.a.scopeIds=['SOC']
  await assert.rejects(f.make().reserve({...f.a,scopeIds:['missing']},{requestId:randomUUID(),kind:'daily',title:'工作',scope:'missing'}),{code:'teloa/forbidden'})

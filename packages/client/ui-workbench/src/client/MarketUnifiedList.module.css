@@ -2,7 +2,7 @@
 /* 两排筛选（行业 / 功能）+ 排序：左列行标签，右列按钮；标签列宽由最长标签决定（subgrid），换行时按钮对齐在按钮列里 */
 .filterBar{display:grid;grid-template-columns:max-content minmax(0,1fr);gap:8px 14px;align-items:start}
 .filterRow{grid-column:1/-1;display:grid;grid-template-columns:subgrid;align-items:start}
-.filterLabel{font-size:var(--teloa-font-caption);line-height:30px;color:var(--teloa-muted);white-space:nowrap}
+.filterLabel{font-size:var(--teloa-font-caption);line-height:1.5;color:var(--teloa-muted);white-space:nowrap}
 .filterRowSub .filterLabel{padding-left:10px;border-left:2px solid var(--teloa-border)}
 .chips{display:flex;flex-wrap:wrap;gap:6px;min-width:0}
 .filterBar .chips button{display:inline-flex;align-items:center;gap:6px;min-height:30px;min-width:0;padding:3px 12px;border:1px solid var(--teloa-border);border-radius:999px;background:var(--teloa-surface);color:var(--teloa-text);font:inherit;font-size:var(--teloa-font-caption);line-height:1.4;white-space:nowrap;cursor:pointer}
@@ -84,7 +84,7 @@
 .templateDetails{margin-top:16px}
 .detailTabs{display:flex;flex-wrap:wrap;gap:6px 18px;border-bottom:1px solid var(--teloa-border)}
 .detailTabs.detailTabs button{font:inherit;font-size:var(--teloa-font-control);padding:8px 0;border:0;border-radius:0;border-bottom:2px solid transparent;background:transparent;color:var(--teloa-muted);cursor:pointer}
-.detailTabs button[aria-selected=true]{border-bottom-color:var(--teloa-text);color:var(--teloa-text)}
+.detailTabs button[aria-selected=true]{color:var(--teloa-text);font-weight:var(--teloa-weight-medium)}
 .detailTabs button:focus-visible{outline:2px solid var(--teloa-focus);outline-offset:3px}
 .detailPanel{padding-top:16px;font-size:var(--teloa-font-control);line-height:1.8;overflow-wrap:anywhere}
 .detailPanel ul{margin:7px 0;padding-left:20px}
@@ -152,3 +152,16 @@
 /* 市场与已添加共用固定卡片槽位；原始全文仍在详情中读取。 */
 .cards .cardRequirements{overflow:hidden;display:-webkit-box;-webkit-line-clamp:1;-webkit-box-orient:vertical;max-height:1.5em;flex:none}
 .cards .cardRequirements:empty{display:none}
+
+/* 卡片不再以 200px 固定高度裁掉大字号和长名称。 */
+.grid.cards,.grid{grid-template-columns:repeat(auto-fill,minmax(min(100%,280px),1fr));gap:18px;align-items:stretch}
+.cards .gridCard{height:100%;min-height:240px;overflow:visible;padding:20px;gap:12px;border-radius:14px}
+.cards .cardHead{height:auto;min-height:52px;align-items:flex-start}.cards .rowTop{flex-wrap:wrap;align-items:baseline}.cards .gridTitle{font-size:var(--teloa-font-section);font-weight:600;line-height:1.5;flex-basis:100%}
+.cardCredit{line-height:1.6;max-height:none}.gridPitch{font-size:var(--teloa-font-control);line-height:1.7}.cards .cardRequirements{max-height:none;-webkit-line-clamp:2;line-height:1.6}.cardFoot{margin-top:auto;padding-top:8px}
+.grid .gridCard:hover{border-color:var(--teloa-control-border);box-shadow:var(--teloa-composer-shadow)}
+@media(max-width:600px){.grid.cards,.grid{gap:14px}.cards .gridCard{min-height:220px;padding:18px}.filterPanel{box-sizing:border-box;max-width:100%}}
+
+.cards>li:has(.rowAfter:not(:empty)){display:flex;flex-direction:column;min-width:0}.cards>li:has(.rowAfter:not(:empty))>.gridCard{flex:1;border-bottom:0;border-bottom-left-radius:0;border-bottom-right-radius:0}.cards .rowAfter{margin:0;padding:16px 20px;border:1px solid var(--teloa-border);border-top:0;border-radius:0 0 12px 12px;background:var(--teloa-surface)}
+.rowAfter:empty{display:none}
+.cards>li:has(.rowAfter:not(:empty)):hover>.rowAfter{background:var(--teloa-subtle)}
+.cards>li:has(.rowAfter:not(:empty)):hover>.gridCard{background:var(--teloa-subtle)}

@@ -161,7 +161,7 @@ async function firstFold(page:any,action:string){
  assert.ok(box.height>=44,'真实宿主祖先中主动作高度仍至少 44px')
  assert.equal(await page.locator('dialog[open] article h3').evaluate((node:HTMLElement)=>getComputedStyle(node).fontSize),'22px','真实 TaskPage/TeamPage 祖先不覆盖卡片标题字号')
  const privacy=page.locator('dialog[open] p').filter({hasText:/^不包含账号、登录密钥、私人记忆、会话、权限或工作进度。$|^副本使用你自己的材料、模型和权限；添加不会开始执行任务。$/})
- assert.equal(await privacy.evaluate((node:HTMLElement)=>getComputedStyle(node).fontSize),'12px','真实员工详情祖先不覆盖隐私说明字号')
+ assert.equal(await privacy.evaluate((node:HTMLElement)=>getComputedStyle(node).fontSize),'13px','隐私说明使用统一说明字号，真实员工详情祖先不得覆盖')
  const dialog=await page.locator('dialog[open]').boundingBox();assert.ok(dialog&&dialog.x>=0&&dialog.x+dialog.width<=viewport.width,'抽屉不横向溢出')
  await button.hover()
  const contrast=await button.evaluate((node:HTMLElement)=>{

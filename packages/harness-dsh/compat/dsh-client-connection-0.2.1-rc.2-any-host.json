@@ -1,0 +1,25 @@
+{
+  "schema": "teloa.dsh-compat-patch/v1",
+  "package": "@deepseek-ai/dsh-client-connection",
+  "version": "0.2.1-rc.2",
+  "upstreamCommit": "687f282e8625c6b8d11ff58211a90524be2e4317",
+  "patchSha256": "1d78e8607ae1ee77c5026e4a11894507a24e35b86f3f4dffc1e6ac426a58374b",
+  "files": [
+    {
+      "path": "lib/index.js",
+      "beforeSha256": "0ebcca7583e082716f79b0b55bc1749d48269cc8db2989b043b321b57abd3684",
+      "afterSha256": "93e81b9cc01d798934f3017722ab8c1cc9c28dd51a7fadfc6109cc368ef3e35b"
+    }
+  ],
+  "api": [
+    "HostConnectionService"
+  ],
+  "scope": {
+    "default": "Accept every valid request authority for port-forwarded browser access without a host allowlist.",
+    "boundary": "Preserve same-origin checks, cross-site rejection, launch-token and signed-cookie authentication, protocol and authority scoped cookies, and all request admission and RPC behavior. Treat this deployment as remotely reachable for directory selection.",
+    "limitations": [
+      "The listener remains loopback; external reachability is provided by the forwarding or proxy layer.",
+      "Requests with an invalid Host, a mismatched Origin or a cross-site marker remain rejected."
+    ]
+  }
+}

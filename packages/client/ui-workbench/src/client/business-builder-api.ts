@@ -40,6 +40,12 @@ export function createBusinessBuilderApi(call:Call){
    if(['requestId','kind','title','workspaceId','scope'].some(k=>result[k as keyof typeof r]!==r[k as keyof typeof r]))throw invalid()
    return result
   },
+  async abandonUnconfigured(input:BusinessConversationReserve,signal?:AbortSignal){
+   const r=readBusinessConversationReserve(input)
+   if(r.kind!=='builder'||r.scope===undefined)throw invalid()
+   const result=await call('business-conversations/abandon-unconfigured',r,signal)
+   if(!result||typeof result!=='object'||Object.keys(result).length!==1||!('requestId'in result)||result.requestId!==r.requestId)throw invalid()
+  },
   async bind(input:{requestId:string;sessionId:string},signal?:AbortSignal){
    const r=readBusinessConversationBind(input),result=readBusinessConversationBinding(await call('business-conversations/bind',r,signal))
    if(result.requestId!==r.requestId||result.sessionId!==r.sessionId)throw invalid()

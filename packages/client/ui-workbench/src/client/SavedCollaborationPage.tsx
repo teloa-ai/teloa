@@ -58,6 +58,7 @@ import {twinDisplayName} from './team-presentation.js'
 import {useI18n} from './i18n/provider.js'
 import {localizeWorkError} from './i18n/errors.js'
 import {scheduleGroupMessageRefresh} from './group-message-refresh.js'
+import {readGroupContentPart} from './group-content-loading.js'
 import {useGroupReading} from './use-group-reading.js'
 import {loadGroupMessageWindow,readGroupMessageWindow} from './group-message-window.js'
 import type {GroupMessageSearchResult,GroupTopicSummary} from '@teloa/contract'
@@ -250,14 +251,22 @@ export function SavedCollaborationPage({workResources,artifactRail,templateMater
  // 群身份是读取的前提；消息或资料单口失败不抹掉已核验的成员与其他成功内容。
  const readGroupContents=async(id:string,generation:number,focusRoot?:string,focusMessage?:string)=>{
   const reading=++groupReadGeneration.current
-  const [identity,main,materials,replies]=await Promise.allSettled([api.get(id),focusMessage&&!focusRoot?loadGroupMessageWindow(api,id,undefined,{around:focusMessage}):readMessages(id),api.resources(id),focusRoot?(focusMessage?loadGroupMessageWindow(api,id,focusRoot,{around:focusMessage}):readMessages(id,focusRoot)):Promise.resolve(undefined)])
-  if(reading!==groupReadGeneration.current||generation!==viewGeneration.current||selectedGroup.current!==id||!visibleRef.current)return
+  const current=()=>reading===groupReadGeneration.current&&generation===viewGeneration.current&&selectedGroup.current===id&&visibleRef.current
+  const identityRead=api.get(id).then(value=>{if(current())setSnapshot(value);return value})
+  const mainRead=focusMessage&&!focusRoot?loadGroupMessageWindow(api,id,undefined,{around:focusMessage}):readMessages(id)
+  const topicRead=focusRoot?(focusMessage?loadGroupMessageWindow(api,id,focusRoot,{around:focusMessage}):readMessages(id,focusRoot)):Promise.resolve(undefined)
+  const [identity,main,materials,replies]=await Promise.allSettled([
+   identityRead,
+   readGroupContentPart(identityRead,mainRead,current,value=>setMessages(value.items)),
+   readGroupContentPart(identityRead,api.resources(id),current,value=>setResources(value.items)),
+   readGroupContentPart(identityRead,topicRead,current,value=>{if(value)setTopic(value.items)}),
+  ])
+  if(!current())return
   if(identity.status==='rejected'){setReadFailures(current=>[...new Set([...current,'group' as const])]);setError(localizeWorkError(locale,identity.reason));return}
   const next=identity.value,failed:('messages'|'resources'|'topic')[]=[]
-  setSnapshot(next)
-  if(main.status==='fulfilled')setMessages(main.value.items);else failed.push('messages')
-  if(materials.status==='fulfilled')setResources(materials.value.items);else failed.push('resources')
-  if(replies.status==='fulfilled'){if(replies.value)setTopic(replies.value.items)}else failed.push('topic')
+  if(main.status==='rejected')failed.push('messages')
+  if(materials.status==='rejected')failed.push('resources')
+  if(replies.status==='rejected')failed.push('topic')
   setReadFailures(failed)
   if(focusMessage){const focused=focusRoot?replies:main;if(focused.status==='fulfilled'&&focused.value?.items.some(message=>message.id===focusMessage&&message.groupId===id&&(message.rootId??undefined)===focusRoot))setFocusedMessage({groupId:id,...(focusRoot?{rootId:focusRoot}:{}),messageId:focusMessage});else{setError(localizeWorkError(locale,Object.assign(Error(),{code:'teloa/source-unavailable'})));return}}
   const failure=[main,materials,replies].find(row=>row.status==='rejected')
@@ -701,7 +710,7 @@ export function SavedCollaborationPage({workResources,artifactRail,templateMater
    {reactionPending&&<div className={css.routeNotice} role="status"><span>{t('collaboration.pending.description')}</span><button type="button" aria-label={t('team.detail.recoverMemory')} disabled={recoveringReaction} onClick={()=>void recoverReaction()}>{t('collaboration.action.recover')}</button><button type="button" onClick={()=>{reactions?.discard();setDiscarded(true)}}>{t('recovery.discard')}</button></div>}
    <div className={clsx(css.layout,group&&css.hasSelection,panelOpen&&css.withPanel)}>
     {!conversationDirectory&&<aside className={css.directory} aria-label={t('collaboration.directory.aria')}><header><div><h2>{t('collaboration.directory.title')}</h2></div><button type="button" className={css.iconButton} aria-label={t('collaboration.action.new')} disabled={!allowed} onClick={()=>openGroupForm({kind:'create'})}><Plus size={17}/></button></header>
-     <label className={css.search}><Search size={14}/><input aria-label={t('collaboration.search.aria')} value={query} placeholder={t('collaboration.search.placeholder')} onChange={event=>setQuery(event.target.value)}/></label>
+     <label data-teloa-field-shell className={css.search}><Search size={14}/><input aria-label={t('collaboration.search.aria')} value={query} placeholder={t('collaboration.search.placeholder')} onChange={event=>setQuery(event.target.value)}/></label>
      <select className={css.scope} aria-label={t('collaboration.scope.aria')} value={scope} onChange={event=>setScope(event.target.value)}><option value="all">{t('collaboration.scope.all')}</option>{Object.entries(scopes).map(([id,label])=><option key={id} value={id}>{label}</option>)}</select>
      <div className={css.tabs} aria-label={t('collaboration.directory.categories')}><button type="button" aria-pressed={!archived} onClick={()=>setArchived(false)}>{t('collaboration.directory.inbox')}</button><button type="button" aria-pressed={archived} onClick={()=>setArchived(true)}>{t('collaboration.directory.archived')}</button></div>
      <div className={css.groupList}>{directory===undefined&&!directoryError?<p className={css.hint} role="status">{t('collaboration.directory.loading')}</p>:rows.map(item=><button type="button" key={item.id} className={css.groupRow} aria-current={selected===item.id?'page':undefined} onClick={()=>void loadGroup(item.id)}><span className={css.mailRow}><span className={css.avatar} aria-hidden="true"><Users size={18}/></span><span className={css.mailBody}><span className={css.rowTop}><span>{t('collaboration.directory.group')}{item.pinned&&<Pin size={10}/>}</span><time dateTime={item.updatedAt}>{time(item.updatedAt)}</time></span><strong>{item.name}</strong></span></span><small>{item.purpose||item.announcement||t('collaboration.directory.group')}</small><em>{scopeLabel(item.scope)}{item.memberCount!==undefined&&" · "+t('collaboration.members.savedCount',{count:item.memberCount})}</em></button>)}
@@ -1124,7 +1133,7 @@ export function SavedGroupForm({open=true,permissions,channels,form,roles,profil
     </section>
     <section {...panelProps('members')}>
      {existing&&!choosing&&<div className={css.memberToolbar}><strong>{t('collaboration.members.savedCount',{count:members.length+1})}</strong><button ref={addButton} type="button" className={css.secondary} disabled={readOnly} onClick={startAdding}><Plus size={15}/>{t('collaboration.form.addMembers')}</button></div>}
-     <label className={css.memberSearch}><Search size={16}/><input ref={memberSearch} aria-label={t('collaboration.form.searchMembers')} placeholder={t('collaboration.form.searchMembers')} value={query} onChange={event=>setQuery(event.target.value)}/></label>
+     <label data-teloa-field-shell className={css.memberSearch}><Search size={16}/><input ref={memberSearch} aria-label={t('collaboration.form.searchMembers')} placeholder={t('collaboration.form.searchMembers')} value={query} onChange={event=>setQuery(event.target.value)}/></label>
      {isPicker&&!team&&(choosing?picked:members).length>0&&<div className={css.selectedMembers}>{(choosing?picked:members).map(id=>{const role=roles.find(item=>item.id===id);return <button type="button" key={id} onClick={()=>choosing?setPicked(current=>current.filter(value=>value!==id)):setMembers(current=>current.filter(value=>value!==id))} aria-label={t('collaboration.form.removeMember',{name:role?roleName(role):id})}>{role?roleName(role):id}<X size={12}/></button>})}</div>}
      <fieldset className={css.groupMembers}><legend>{t(isPicker?'collaboration.form.selectMembers':'collaboration.form.members')}</legend>
       {!choosing&&<div className={css.groupMemberChoice}><span className={css.avatar} aria-hidden="true">{profileName.slice(0,1)}</span><span className={css.memberIdentity}><strong>{profileName}</strong><small>{t('collaboration.message.selfRole')}</small></span><CheckCheck size={16} aria-hidden="true"/></div>}

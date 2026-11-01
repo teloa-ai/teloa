@@ -47,10 +47,11 @@ before(async()=>{
  frame=frame.replace('beginNativeNavigation={beginNativeNavigation}','beginNativeNavigation={()=>{const signal=layoutController.beginNavigation();f.lastNativeNavigation=signal;return signal}}')
  frame=frame.replace('isNativeChild:()=>false','isNativeChild:id=>isNativeChildSession(nativeSessions,id)')
  frame=frame.replace("open:id=>{selected=id;if(f.nativeOpenView==='messages')store.actions.openMessages('native');else if(f.nativeOpenView)store.actions.navigate(f.nativeOpenView);for(const l of listeners)l()}","open:id=>{f.afterOpen=true;uiWorkspace.openSession(id)}")
- frame=frame.replace('list:async()=>{if(f.holdVoiceDirectory)',"list:async()=>{if(f.afterOpen){f.postOpenRefreshPending=true;await new Promise(resolve=>f.releasePostOpen=()=>{f.afterOpen=false;resolve()})}if(f.holdVoiceDirectory)")
+ // 同时挂住打开后的所有目录读取；显式放行前，不允许任何一次返回来掩盖等待关系。
+ frame=frame.replace('list:async()=>{if(f.holdVoiceDirectory)',"list:async()=>{if(f.afterOpen&&!f.postOpenReleased){f.postOpenStarted=(f.postOpenStarted||0)+1;f.postOpenRefreshPending=true;if(!f.postOpenGate)f.postOpenGate=new Promise(resolve=>f.releasePostOpen=()=>{f.postOpenReleased=true;f.afterOpen=false;resolve()});await f.postOpenGate;f.postOpenFinished=(f.postOpenFinished||0)+1}if(f.holdVoiceDirectory)")
  const setup=`f.native={cancelPending:()=>layoutController.beginNavigation(),main:()=>main.getSnapshot(),scope:()=>uiSession.adapter.current.getSnapshot().ctx===owners.get(main.getSnapshot()).ctx,child:()=>{uiWorkspace.openSession('native-child')},checkUnowned:()=>{try{uiSession.bindingSource({sessionId:'native-child',binding:owners.get('assistant-original')});return false}catch{return true}}};
  f.nativeVoiceEvents=[];for(const name of ['readiness','start','read','media','ready']){const original=props.employeeVoiceApi[name];props.employeeVoiceApi[name]=(...args)=>{f.nativeVoiceEvents.push(name+':start');const pending=original(...args);void pending.then(result=>f.nativeVoiceEvents.push(name+':'+(result?.state||'done')),()=>f.nativeVoiceEvents.push(name+':failed'));return pending}}
- layoutStore=store;rows.get('assistant-original').purpose='assistant';byId['assistant-original'].displayTitle='模型修改过的原助手标题';uiWorkspace.openSession('business-original');observeMainSessionBinding(main,nativeSessions,work);f.voiceDirectory=()=>work.getDirectorySnapshot();
+ layoutStore=store;rows.get('assistant-original').purpose='assistant';byId['assistant-original'].displayTitle='模型修改过的原助手标题';uiWorkspace.openSession('business-original');observeMainSessionBinding(main,nativeSessions,work);f.voiceDirectory=()=>work.getDirectorySnapshot();f.refreshVoiceDirectory=()=>work.refreshDirectory();
  `
  frame=frame.replace("const frameRoot=",setup+"const frameRoot=")
  await writeFile(join(temp,'fixture.tsx'),native+frame)
@@ -61,7 +62,7 @@ before(async()=>{
 },{timeout:120000})
 after(async()=>{if(fixtureTemp)await rm(fixtureTemp,{recursive:true,force:true})})
 
-test('官方 UiSession/Workspace 原助手入口不依赖打开后的目录刷新，原生子作用域取消留言',{timeout:30000},async t=>{
+for(const loadedDirectory of [false,true])test('官方 UiSession/Workspace 原助手入口不依赖打开后的目录刷新，原生子作用域取消留言（'+(loadedDirectory?'已有目录':'首次打开')+'）',{timeout:30000},async t=>{
  const script=fixtureScript,styles=fixtureStyles
  // node:test 超时只中止 t.signal 并立即运行已登记的 after，测试体仍继续：超时后不再启动浏览器，已启动的随中止关闭以结束挂起的页面调用。
  t.signal.throwIfAborted()
@@ -71,17 +72,23 @@ test('官方 UiSession/Workspace 原助手入口不依赖打开后的目录刷�
  await page.route('**/*',(route:any)=>route.request().isNavigationRequest()?route.fulfill({contentType:'text/html',body:'<html lang="zh-CN"><body><div id="root"></div></body></html>'}):route.abort());await page.goto('https://fixture.invalid')
  await page.evaluate(()=>{sessionStorage.setItem('teloa.assistant-visible/v1','true');(window as any).frameStartup={voice:true,sessionId:'business-original'}});await page.addStyleTag({content:styles});await page.addScriptTag({content:script})
  await page.waitForFunction(()=>(window as any).frameFixture?.native.main()==='business-original').catch(async(error:unknown)=>{t.diagnostic(JSON.stringify({errors,...await page.evaluate(()=>({body:document.body.innerText,keys:Object.keys((window as any).frameFixture??{}),main:(window as any).frameFixture?.native?.main()}))}));throw error})
+ if(loadedDirectory){await page.evaluate(()=>(window as any).frameFixture.refreshVoiceDirectory());await page.waitForFunction(()=>(window as any).frameFixture.voiceDirectory().status==='ready')}
+ const previousRows=await page.evaluate(()=>(window as any).frameFixture.rows().map((row:any)=>row.sessionId))
  await page.getByRole('button',{name:'实时通话',exact:true}).click()
  await page.waitForFunction(()=>(window as any).frameFixture.postOpenRefreshPending)
  // 假媒体流可能在监听瞬间触发 VAD 直接进入录音：监听或录音任一合法活动相位都证明通话已真实启动（employee-voice-copy 的 listening/recording）。
  await page.getByText(/^(正在听，请说话|正在听你说话…)$/).waitFor().catch(async(error:unknown)=>{t.diagnostic(JSON.stringify({errors,mediaWarnings,...await page.evaluate(()=>{const f=(window as any).frameFixture;return {main:f.native.main(),sameScope:f.native.scope(),directory:f.voiceDirectory().status,navigationAborted:f.lastNativeNavigation?.aborted,voiceEvents:f.nativeVoiceEvents,voiceMicrophones:f.voiceMicrophones,userActivation:navigator.userActivation?.hasBeenActive,text:document.body.innerText}})}));throw error})
  assert.equal(await page.evaluate(()=>(window as any).frameFixture.voiceStarts.length),1,'活动相位必须来自这一次真实启动')
  assert.equal(await page.evaluate(()=>(window as any).frameFixture.lastNativeNavigation.aborted),true,'官方Layout在自己的会话打开commit后中止导航信号，不等于本人取消留言')
- assert.equal(await page.evaluate(()=>(window as any).frameFixture.voiceDirectory().status),'loading')
+ const directory=await page.evaluate(()=>{const f=(window as any).frameFixture,s=f.voiceDirectory();return {status:s.status,rows:s.rows.map((row:any)=>row.sessionId),started:f.postOpenStarted,finished:f.postOpenFinished||0}})
+ assert.equal(directory.status,'ready','后台刷新保留已核验目录，不退回首次加载状态')
+ assert.deepEqual(directory.rows,previousRows,'目录读取挂起期间仍保留已核验的原列表')
+ assert.ok(directory.started>0,'确实已发起打开后的目录刷新')
+ assert.equal(directory.finished,0,'目录尚无回包时通话已经启动，不能等待后续刷新')
  assert.equal(await page.evaluate(()=>(window as any).frameFixture.native.scope()),true)
  assert.equal(await page.evaluate(()=>(window as any).frameFixture.voiceStarts[0].sessionId),'assistant-original')
  await page.getByRole('button',{name:'挂断',exact:true}).click();await page.getByText('通话已结束',{exact:true}).waitFor()
- await page.evaluate(()=>(window as any).frameFixture.releasePostOpen());await page.waitForFunction(()=>(window as any).frameFixture.voiceDirectory().status==='ready')
+ await page.evaluate(()=>(window as any).frameFixture.releasePostOpen());await page.waitForFunction(()=>{const f=(window as any).frameFixture;return f.postOpenFinished===f.postOpenStarted&&f.voiceDirectory().status==='ready'&&!f.voiceDirectory().refreshing})
  await page.getByRole('region',{name:'语音通话',exact:true}).getByRole('button',{name:'关闭',exact:true}).first().click()
  await page.evaluate(()=>{const f=(window as any).frameFixture;f.holdAssistantOpen=true;f.assistantReading=false})
  await page.getByRole('button',{name:'实时通话',exact:true}).click();await page.waitForFunction(()=>(window as any).frameFixture.assistantReading)

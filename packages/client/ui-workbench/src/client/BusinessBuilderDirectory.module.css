@@ -1,11 +1,32 @@
-.directory{margin-top:28px;max-width:900px;min-width:0}.directory header{display:flex;align-items:center;justify-content:space-between;gap:12px}.directory h2{font-size:var(--teloa-font-section);font-weight:var(--teloa-weight-heading)}/* 1.0（设计 05）：草稿行为图标、名称、等宽时间与「继续」文字链接；标题旁带数量。 */
+.directory{margin-top:28px;min-width:0}
+.directory>header{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:14px}
+.directory>header h2{margin:0;font-size:var(--teloa-font-section);font-weight:var(--teloa-weight-heading)}
 .count{margin-left:8px;color:var(--teloa-muted);font-size:var(--teloa-font-caption);font-weight:var(--teloa-weight-regular);font-variant-numeric:tabular-nums}
-/* 用 .directory 前缀压过页面基础 .page button 的边框、圆角与强调色。 */
-.directory .item{display:flex;align-items:center;gap:12px;width:100%;min-height:44px;padding:11px 0;border:0;border-top:1px solid var(--teloa-border);border-radius:0;background:transparent;text-align:left;color:var(--teloa-text);font:inherit;font-size:var(--teloa-font-control);cursor:pointer}.directory .item:hover:not(:disabled){background:transparent}.item:hover:not(:disabled) strong{text-decoration:underline;text-underline-offset:3px}.item:disabled{opacity:.55;cursor:default}.item>svg{flex:none;color:var(--teloa-muted)}.item strong{flex:1;min-width:0;overflow-wrap:anywhere;font-size:var(--teloa-font-control);font-weight:var(--teloa-weight-medium)}.item time{width:100px;color:var(--teloa-muted);font-size:var(--teloa-font-caption);font-variant-numeric:tabular-nums}.directory .go{flex:none;color:var(--teloa-text);font-size:var(--teloa-font-caption);font-weight:var(--teloa-weight-medium)}.actions{display:flex;justify-content:flex-end;flex-wrap:wrap;gap:10px;margin-top:22px}@media(max-width:740px){.directory button{min-height:44px}.actions>button{flex:1}}
 
-.item strong,.directory>div>p{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden;overflow-wrap:anywhere}
-.draftRow{display:flex;align-items:center;gap:16px;border-top:1px solid var(--teloa-border)}
-.directory .draftRow>.item{flex:1;min-width:0;border-top:0}
-.directory .draftRow>button:not(.item){flex:none;padding:8px 0;border:0;background:transparent;color:var(--teloa-muted);font:inherit;font-size:var(--teloa-font-control);cursor:pointer}
-.directory .draftRow>button:not(.item):disabled{opacity:.5;cursor:default}
-@media(max-width:520px){.draftRow{flex-wrap:wrap;gap:0}.directory .draftRow>.item{flex-basis:100%}.directory .draftRow>button:not(.item){margin-left:auto;min-height:44px}}
+/* 草案与上方业务卡共用列宽、间距和表面；继续搭建与丢弃保持独立按钮。 */
+.cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,420px),1fr));align-items:stretch;gap:16px}
+.draftCard{display:flex;flex-direction:column;gap:12px;min-width:0;padding:18px 20px 14px;border:1px solid var(--teloa-border);border-radius:12px;background:var(--teloa-surface)}
+.draftCard:hover{border-color:var(--teloa-muted)}
+.directory .item{display:flex;align-items:flex-start;flex:1;gap:12px;box-sizing:border-box;width:100%;min-height:0;padding:0;border:0;border-radius:0;background:transparent;text-align:left;color:var(--teloa-text);font:inherit;cursor:pointer}
+.directory .item:hover:not(:disabled){background:transparent}
+.item:hover:not(:disabled) strong{text-decoration:underline;text-underline-offset:3px}
+.directory .item:focus-visible{outline:2px solid var(--teloa-focus);outline-offset:4px;border-radius:var(--teloa-design-r1)}
+.item:disabled{opacity:.55;cursor:default}
+.tile{display:grid;place-items:center;flex:none;width:36px;height:36px;border-radius:9px;background:var(--teloa-subtle);color:var(--teloa-secondary)}
+.copy{display:flex;flex-direction:column;flex:1;gap:3px;min-width:0}
+.copy strong{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden;overflow-wrap:anywhere;font-size:15px;font-weight:var(--teloa-weight-heading);line-height:1.5}
+.go{display:inline-flex;align-items:center;gap:6px;color:var(--teloa-secondary);font-size:var(--teloa-font-caption);font-weight:var(--teloa-weight-medium);line-height:1.6}
+.go>svg{flex:none}
+.footer{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-top:auto;padding-top:12px;border-top:1px solid var(--teloa-border)}
+.footer time{color:var(--teloa-muted);font-size:var(--teloa-font-caption);font-variant-numeric:tabular-nums;line-height:1.6}
+.recoveryNote{margin:0;color:var(--teloa-secondary);font-size:var(--teloa-font-caption);line-height:1.6}
+.directory .footer>button{flex:none;min-height:32px;padding:4px 8px;border:0;border-radius:var(--teloa-design-r1);background:transparent;color:var(--teloa-muted);font:inherit;font-size:var(--teloa-font-caption);cursor:pointer}
+.directory .footer>button:hover:not(:disabled){background:var(--teloa-hover);color:var(--teloa-text)}
+.directory .footer>button:disabled{opacity:.5;cursor:default}
+
+.actions{display:flex;justify-content:flex-end;flex-wrap:wrap;gap:10px;margin-top:22px}
+@media(max-width:740px){
+ .cards{grid-template-columns:1fr}
+ .directory button,.directory .item,.directory .footer>button{min-height:44px}
+ .actions>button{flex:1}
+}

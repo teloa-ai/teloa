@@ -1,3 +1,4 @@
+import {sha256Digest} from '@teloa/contract'
 import {industryTeamSeed,industryTeamRole,type IndustryTeamSeed} from './industry-team.ts'
 import {marketCatalogUpstreamTreeInput,type MarketCatalogEntry,type TemplateShareIntent} from '@teloa/contract'
 import type {RoleFields} from './role-preview.ts'
@@ -40,6 +41,8 @@ export type ShareAcceptPorts={
   installSkill:(source:{loadId:string;itemInstanceId:string},requestId:string)=>Promise<{state:'installed';installationId:string;nativeName:string}|{state:'pending'}>
   /** 原一键准备：有可自动完成的项就执行一次，返回最终清单。 */
   prepare:(loadId:string)=>Promise<IndustryReadiness>
+  /** 已完成的接收只读核对，不再准备或覆盖本人后续配置。 */
+  readiness:(loadId:string)=>Promise<IndustryReadiness>
   roles:(loadId:string)=>Promise<ShareIndustryRole[]>
   /** 只读核对本人明确创建的真实团队，不在接收过程中建群。 */
   team?:(seed:IndustryTeamSeed)=>Promise<{groupId:string}|undefined>
@@ -48,7 +51,7 @@ export type ShareAcceptPorts={
  v1?:Omit<Parameters<typeof createTemplateAcceptance>[1],'createRole'>
 }
 type Install={requestId:string;state?:'installed'|'pending'|'failed';installationId?:string;nativeName?:string}
-type Progress={sha256:string;scope:string;skills:string[];contentRequestId:string;loadRequestId:string;sourceMetadataVersion?:1;target?:IndustryLoadCreateInput['target'];content?:{id:string;hash:string};loadId?:string;installs:Record<string,Install>}
+type Progress={sha256:string;scope:string;skills:string[];contentRequestId:string;loadRequestId:string;sourceMetadataVersion?:1;completed?:true;target?:IndustryLoadCreateInput['target'];content?:{id:string;hash:string};loadId?:string;installs:Record<string,Install>}
 const KEY='teloa.share-accept/v3/'
 const uuid=()=>crypto.randomUUID()
 
@@ -69,7 +72,7 @@ export async function readPublicCatalogSkill(catalog:Pick<MarketCatalogApi,'list
  const entry=found.entry,unavailable=()=>Object.assign(Error('Public skill content does not match the current catalog source.'),{code:'teloa/source-unavailable'})
  if(entry.kind!=='skill'||entry.compatibility.status==='unsupported')throw unavailable()
  const files=entry.delivery==='upstream'?entry.upstream.files:found.artifact?.files
- const treeHash=entry.delivery==='upstream'?Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(marketCatalogUpstreamTreeInput(entry.upstream)))),byte=>byte.toString(16).padStart(2,'0')).join(''):found.artifact?.treeHash
+ const treeHash=entry.delivery==='upstream'?Array.from(new Uint8Array(await sha256Digest(new TextEncoder().encode(marketCatalogUpstreamTreeInput(entry.upstream)))),byte=>byte.toString(16).padStart(2,'0')).join(''):found.artifact?.treeHash
  if(!files?.length||!treeHash)throw unavailable()
  const contentId=found.addedContentId===null?(await catalog.add(entry.id,{version,treeHash})).contentId:found.addedContentId
  const item=await content.hydrate({kind:'skill',contentStorage:{contentId,createdAt:new Date().toISOString(),loaded:true}} as MarketItem),skill=item.atomicSkill
@@ -104,7 +107,7 @@ function pluginState(row:IndustryReadinessRow|undefined,read:boolean):ShareAccep
 export function createShareAcceptance(storage:WorkbenchNavigationStorage,ports:ShareAcceptPorts){
  const legacy=createTemplateAcceptance(storage,{createRole:ports.createRole,...(ports.v1??{})} as Parameters<typeof createTemplateAcceptance>[1])
  let busy=false
- const progress=(sha256:string):Progress|undefined=>{const raw=storage.getItem(KEY+sha256);if(!raw)return undefined;const p=JSON.parse(raw) as Progress;if(p.sha256!==sha256||typeof p.scope!=='string'||!Array.isArray(p.skills)||!p.contentRequestId||!p.loadRequestId||!p.installs||p.sourceMetadataVersion!==undefined&&p.sourceMetadataVersion!==1)throw Error('Template recovery record is invalid.');return p}
+ const progress=(sha256:string):Progress|undefined=>{const raw=storage.getItem(KEY+sha256);if(!raw)return undefined;const p=JSON.parse(raw) as Progress;if(p.sha256!==sha256||typeof p.scope!=='string'||!Array.isArray(p.skills)||!p.contentRequestId||!p.loadRequestId||!p.installs||p.sourceMetadataVersion!==undefined&&p.sourceMetadataVersion!==1||p.completed!==undefined&&p.completed!==true)throw Error('Template recovery record is invalid.');return p}
  const selectedProgress=(sha256:string,summary:ShareSummary):Progress|undefined=>{
   const p=progress(sha256)
   // 旧空包在构造内容时即失败，尚无任何派发步骤才允许重新选择；未知回执仍锁定原申请。
@@ -164,7 +167,7 @@ export function createShareAcceptance(storage:WorkbenchNavigationStorage,ports:S
    const installed=p.skills.every(id=>p.installs[id]?.state==='installed')
    // 技能未全部装好时不建岗位：避免员工先建好、方法却留空。
    let readiness:IndustryReadiness|undefined
-   if(installed){try{readiness=await industry.prepare(loadId)}catch{readiness=undefined}}
+   if(installed){try{readiness=await (p.completed?industry.readiness(loadId):industry.prepare(loadId))}catch{readiness=undefined}}
    const instances=await industry.roles(loadId)
    const roles:ShareAcceptanceResult['roles']=summary.roles.map(role=>{const target=itemOf(role.resourceId),instance=target?industryTeamRole(load,target.instanceId,instances):undefined;return {resourceId:role.resourceId,name:role.name,...(instance?.roleId?{roleId:instance.roleId}:{}),state:instance?.roleId&&['active','paused'].includes(instance.state)?'done':instance?.state==='failed'?'failed':'pending'}})
    const skills:ShareAcceptItem[]=summary.skills.map(s=>{const step=p.installs[s.resourceId];if(!p.skills.includes(s.resourceId))return {resourceId:s.resourceId,title:s.title,state:'skipped'};return {resourceId:s.resourceId,title:s.title,state:step?.state==='installed'?'done':step?.state==='failed'?'failed':'pending',...(step?.installationId?{installationId:step.installationId}:{}),...(step?.nativeName?{nativeName:step.nativeName}:{})}})
@@ -182,6 +185,7 @@ export function createShareAcceptance(storage:WorkbenchNavigationStorage,ports:S
    }
    const result:ShareAcceptanceResult={sha256,complete:false,...(groupId?{groupId}:{}),roleIds:roles.flatMap(r=>r.roleId?[r.roleId]:[]),roles,...(coordinatorRoleId?{coordinatorRoleId}:{}),coordinator,loadId,pendingKinds:[...new Set([...(summary.plans.length?['plan']:[]),...(summary.workTemplates.length?['work-template']:[]),...(plugins.some(p=>p.state!=='done')?['plugin']:[])])],skills,mcp,plugins,plans:empty(summary,'plans')}
    result.complete=roles.every(r=>r.state==='done')&&[...skills,...mcp].every(i=>i.state==='done'||i.state==='skipped')&&(coordinator==='done'||coordinator==='skipped')
+   if(result.complete&&!p.completed){p.completed=true;save()}
    return result
   }finally{busy=false}
  }}

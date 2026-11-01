@@ -92,7 +92,7 @@ export function Capabilities({sessionId,work,i18n,openResources,openTeamCapabili
       {tab&&<ComposerSubmenu key={tab} anchor={anchors[tab]} id={id+'-list'} label={category} back={()=>setTab(null)} focusRequest={focusRequest}>
         <div className={css.picker}>
           <header className={menuCss.contextHeader}><button type="button" aria-label={t('home.contextBack')} onClick={()=>{setTab(null);anchors[tab].current?.focus()}}><ArrowLeft size={16}/></button><strong>{category}</strong></header>
-          <label className={css.search}><Search size={15}/><input aria-label={t('capabilities.picker.searchAria')} value={query} onChange={event=>setQuery(event.target.value)} placeholder={t('capabilities.picker.searchPlaceholder')}/></label>
+          <label data-teloa-field-shell className={css.search}><Search size={15}/><input aria-label={t('capabilities.picker.searchAria')} value={query} onChange={event=>setQuery(event.target.value)} placeholder={t('capabilities.picker.searchPlaceholder')}/></label>
           {state.catalogStatus==='loading'&&<p role="status">{t('capabilities.catalog.loading')}</p>}
           {state.catalogStatus==='failed'&&<p role="alert">{localizeWorkError(locale,state.catalogError)}</p>}
           {tab==='knowledge'&&snapshot&&snapshot.knowledge.status==='unavailable'&&<p role="alert">{localizeWorkError(locale,snapshot.knowledge.message)}</p>}

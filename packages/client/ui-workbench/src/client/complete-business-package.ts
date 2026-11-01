@@ -1,3 +1,4 @@
+import {sha256Digest} from '@teloa/contract'
 import {WorkError,industryUpdateCanonical,isEmployeeKnowledgeContent,localizedMetadata,readBusinessActionDefinition,readBusinessDashboardResource,readBusinessObjectTypeDefinition,readBusinessViewDefinition,readIndustryDataSourceDefinition,readRoleTemplateDefinition,type DigitalRole,type EmployeeKnowledgeContent,type BusinessDashboardResourceDefinition} from '@teloa/contract'
 import {readIndustryDirectory,validateIndustryPath,type IndustryContent} from './industry-directory.ts'
 import {inspectIndustryContent} from './industry-content.ts'
@@ -12,7 +13,7 @@ export type CompleteBusinessPackageInput={scope:string;packageId:string;packageV
 export type CompleteBusinessPackageResult={item:MarketItem;counts:Record<string,number>;fileCount:number}
 const encode=(value:string)=>new TextEncoder().encode(value)
 const decode=(value:Uint8Array)=>new TextDecoder('utf-8',{fatal:true}).decode(value)
-const hash=async(value:Uint8Array)=>Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',Uint8Array.from(value))),byte=>byte.toString(16).padStart(2,'0')).join('')
+const hash=async(value:Uint8Array)=>Array.from(new Uint8Array(await sha256Digest(Uint8Array.from(value))),byte=>byte.toString(16).padStart(2,'0')).join('')
 const json=(value:unknown)=>encode(industryUpdateCanonical(value))
 const order=(a:string,b:string)=>a<b?-1:a>b?1:0
 const fail=(message:string):never=>{throw Error(message)}

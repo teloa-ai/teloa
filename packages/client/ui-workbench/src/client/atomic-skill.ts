@@ -1,3 +1,4 @@
+import {sha256Digest} from '@teloa/contract'
 import {localizedMetadata,skillFrontmatterName,type LocalizedMetadata} from '@teloa/contract'
 import { readIndustryFiles, type IndustryContent, type IndustryFileInput } from './industry-directory.ts'
 
@@ -17,7 +18,7 @@ export type AtomicSkillContent = AtomicSkillMetadata & {
 }
 
 const digest = async (value: string) => Array.from(
-  new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value))),
+  new Uint8Array(await sha256Digest(new TextEncoder().encode(value))),
   byte => byte.toString(16).padStart(2, '0'),
 ).join('')
 

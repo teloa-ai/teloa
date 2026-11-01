@@ -53,6 +53,7 @@ import {ensureHomeObjectContext} from './home-object-context.js'
 import type {HomeContextApi} from './home-native-controller.js'
 import {homeNativeCopy} from './home-native-copy.js'
 import {HomeNativePreparationNotice} from './HomeNativePreparationNotice.js'
+import {canRetryHomeNativeInput,recoverHomeNativeInput} from './home-native-preparation.js'
 import {taskArtifactPort} from './task-artifact-port.js'
 import type {RuntimeSettingsSurface} from './runtime-settings-surface.js'
 import {StatusLabel} from './StatusLabel.js'
@@ -442,9 +443,11 @@ export function WorkbenchFrame({assistantActivity,assistantChat,groupWorkLinks,e
   const [assistantActive,setAssistantActive]=useState(()=>{try{return navigationStorage.getItem('teloa.assistant-visible/v1')==='true'}catch{return false}})
   const setCompanionActive=(active:boolean)=>{setAssistantActive(active);try{navigationStorage.setItem('teloa.assistant-visible/v1',String(active))}catch{/* 仅偏好不可写时仍允许本页使用。 */}}
   const homeManagement=useSyncExternalStore(management.subscribe,management.getSnapshot)
-  const [homeSessionId,setHomeSessionId]=useState<string>(),[homeInputError,setHomeInputError]=useState<'restore'|'location'|'slow'>(),[homeRetry,setHomeRetry]=useState(0)
+  const [homeSessionId,setHomeSessionId]=useState<string>(),[homeInputError,setHomeInputError]=useState<'restore'|'location'|'slow'>(),[homeRetry,setHomeRetry]=useState(0),[homeInputChecking,setHomeInputChecking]=useState(true)
+  const homeInputValid=homeSessionId!==undefined&&homeSessionId===current&&homeManagement.ready&&!homeInputError&&!knownBusinessSession&&(!businessBuilder||builderState.status==='ready'&&builderState.nativeReady&&!builderState.error)
   useEffect(()=>{
     if(state.view!=='home')return
+    setHomeInputChecking(true)
     if(!homeManagement.ready){
       // 连接层未就绪时准备器不会启动；同样要有到点恢复态，不能让首页永久显示“正在准备”。
       const timer=setTimeout(()=>setHomeInputError('slow'),12000)
@@ -452,6 +455,7 @@ export function WorkbenchFrame({assistantActivity,assistantChat,groupWorkLinks,e
     }
     // 准备器先只读水合恢复中的原生会话，归属确认后才允许认领或新建首页。
     if(businessBuilder&&builderState.error&&!knownBusinessSession)return
+    if(businessBuilder&&builderState.status!=='ready'){setHomeInputError(undefined);return}
     // 业务会话不是首页待用稿；回工作台沿原准备器恢复本人首页，保留业务草案归属。
     const controller=new AbortController()
     // 慢连接到点显示可重试态，但仍允许同一有效恢复完成；离开页面或重试才撤销旧准备器。
@@ -459,11 +463,22 @@ export function WorkbenchFrame({assistantActivity,assistantChat,groupWorkLinks,e
       if(controller.signal.aborted)return
       setHomeInputError('slow')
     },12000)
-    setHomeSessionId(undefined);setHomeInputError(undefined)
+    // 同一份已核验草稿保留画面，复核完成前由会话外壳阻止交互；换身份仍须重新准备。
+    setHomeSessionId(id=>id===current&&!knownBusinessSession?id:undefined);setHomeInputError(undefined)
     if(knownBusinessSession)setBuilderError(undefined)
-    void prepareHomeSession(controller.signal).then(id=>{if(!controller.signal.aborted)setHomeSessionId(id)}).catch(cause=>{if(!controller.signal.aborted)setHomeInputError(cause&&typeof cause==='object'&&cause.code==='teloa/home-location-required'?'location':'restore')}).finally(()=>clearTimeout(timeout))
+    void recoverHomeNativeInput(prepareHomeSession,controller.signal).then(id=>{
+      if(controller.signal.aborted)return
+      clearTimeout(timeout);setHomeSessionId(id);setHomeInputChecking(false)
+    }).catch(cause=>{
+      if(controller.signal.aborted)return
+      const latest=businessBuilder?.getSnapshot()
+      // 尚在连接或等待原生输入时维持准备态，由就绪订阅继续；不能把短暂缺少归属当成失败。
+      if(canRetryHomeNativeInput(cause)&&latest&&!latest.error&&(latest.status==='loading'||!latest.nativeReady||latest.checkedSessionId!==(mainSession.getSnapshot()??null)))return
+      clearTimeout(timeout);setHomeSessionId(undefined);setHomeInputChecking(false)
+      setHomeInputError(cause&&typeof cause==='object'&&cause.code==='teloa/home-location-required'?'location':'restore')
+    })
     return()=>{clearTimeout(timeout);controller.abort()}
-  },[state.view,homeRetry,prepareHomeSession,homeManagement.ready,businessBuilder,current,builderState.checkedSessionId,builderState.sessionKind,builderState.error,builderVisible])
+  },[state.view,homeRetry,prepareHomeSession,homeManagement.ready,businessBuilder,current,builderState.status,builderState.nativeReady,builderState.checkedSessionId,builderState.sessionKind,builderState.error,builderVisible])
 
   const title=useSessions(value=>current?value.byId[current]?.displayTitle:undefined)
   const taskChatSource=current&&taskRunChat?taskRunChat.forSession(current):emptyTaskRunChatSource
@@ -603,7 +618,7 @@ export function WorkbenchFrame({assistantActivity,assistantChat,groupWorkLinks,e
   const [groupCreateRequest,setGroupCreateRequest]=useState(0)
   const [teamMaterialsRequest,setTeamMaterialsRequest]=useState<{groupId:string;serial:number}>(),teamMaterialsSerial=useRef(0)
   const requestTeamMaterials=(groupId:string)=>setTeamMaterialsRequest({groupId,serial:++teamMaterialsSerial.current})
-  useEffect(()=>{if(['messages','tasks','plans','attention'].includes(state.view)||homeCreation==='task'||restoredDetailView==='tasks'||restoredDetailView==='plans')void conversationGroups.refresh()},[state.view,homeCreation,restoredDetailView,conversationGroups])
+  useEffect(()=>{if(['messages','tasks','plans','attention'].includes(state.view)||homeCreation==='task'||restoredDetailView==='tasks'||restoredDetailView==='plans')void conversationGroups.ensureLoaded()},[state.view,homeCreation,restoredDetailView,conversationGroups])
   const closeNarrowDirectory=()=>{if(window.matchMedia('(max-width:740px)').matches)actions.closeSidebar()}
   // 交办弹层与任务详情共用同一份已保存群目录：只列未归档的，范围过滤在 TaskForm 内按主责范围做。
   const savedGroupOptions=groupDirectorySnapshot.items.filter(group=>!group.archived).map(group=>({id:group.id,name:group.name,scope:group.scope}))
@@ -1009,6 +1024,7 @@ export function WorkbenchFrame({assistantActivity,assistantChat,groupWorkLinks,e
         return saved.state==='installed'?{state:'installed',installationId:saved.id,nativeName:saved.native.name}:{state:'pending'}
       },
       // 分享副本建好后保持暂停、由本人检查后再启用：明确请求 activate:false，不代为上岗。
+      readiness:loadId=>industryLoadApi.readiness(loadId),
       prepare:async loadId=>{const readiness=await industryLoadApi.readiness(loadId);if(!readiness.counts.auto)return readiness;const receipt=await industryLoadApi.prepare(loadId,readiness.digest,{activate:false});void loadRoles().catch(()=>{});return receipt.readiness??industryLoadApi.readiness(loadId)},
       roles:async loadId=>{const rows=await industryRoleApi.list();mergeIndustryRoles(rows);return rows.map(row=>({loadId:row.loadId,itemInstanceId:row.itemInstanceId,state:row.state,...(row.role?{roleId:row.role.id}:{})}))},
       team:async seed=>{const saved=await findIndustryTeam(groupApi,seed);return saved?{groupId:saved.group.id}:undefined},
@@ -1820,6 +1836,16 @@ export function WorkbenchFrame({assistantActivity,assistantChat,groupWorkLinks,e
       const run=async()=>{try{const bound=await businessBuilder!.recover(requestId,false,token);if(bound.sessionId===mainSession.getSnapshot()&&homeCreationLocation(latestState.current)===location){actions.closeDetail();actions.openMessages('native')}}catch(error){navigationError(error,token,()=>void run(),false)}};void run()
     }catch(error){setBuilderError(localizeWorkError(locale,error))}
   }
+  async function restartUnconfiguredBuilder(){
+    if(!builderFlow||!businessBuilder)return
+    const flow=builderFlow,controller=businessBuilder
+    const location=homeCreationLocation(latestState.current)
+    setBuilderError(undefined)
+    try{
+      await flow.abandonUnconfiguredCreation()
+      if(controller.getSnapshot().flow===flow&&homeCreationLocation(latestState.current)===location)requestCreation({builder:true})
+    }catch(error){setBuilderError(localizeWorkError(locale,error))}
+  }
   function offerRecordPreparation(binding:BusinessConversationBinding|null){
     const selection=recordPreparationRef.current
     if(!selection||selection.api!==businessBuilder?.getSnapshot().api||binding?.kind!=='daily'||!binding.sessionId||binding.scope!==selection.reference.scope||binding.sessionId!==mainSession.getSnapshot())return
@@ -2145,11 +2171,11 @@ export function WorkbenchFrame({assistantActivity,assistantChat,groupWorkLinks,e
     roleConversationOpening.current.add(roleId)
     const navigationKey=crypto.randomUUID();setRoleNavigationStatus({key:navigationKey,message:t('roleDelegation.openingConversation',{name:tasksRef.current.roles.find(role=>role.id===roleId)?.name??t('navigation.v2.colleagues')})})
     try{
-    const role=await readLatestConversationRole(roleId)
+    const [role,links]=await Promise.all([readLatestConversationRole(roleId),objectConversationApi.list('role',roleId),work.refreshDirectory()])
+    const directory=work.getDirectorySnapshot()
+    if(directory.status!=='ready')throw directory.error??Error(t('frame.p5.conversationChangedOpen'))
     const object:ConversationObject={kind:'role',id:role.id,title:role.kind==='twin'?twinDisplayName(profile.displayName,t):role.name,version:role.version,canStart:roleCanStartConversation(role.state)}
-    const links=await objectConversationApi.list('role',role.id)
     mergeObjectLinks(links)
-    await work.refreshDirectory()
     const recent=latestRoleConversation(presentConversations(work.getDirectorySnapshot().rows,Object.values(searchNative)),links,management.getSnapshot().archived)
     if(!recent){
       if(!object.canStart)return false
@@ -2427,7 +2453,7 @@ export function WorkbenchFrame({assistantActivity,assistantChat,groupWorkLinks,e
     else {const artifact=await artifactApi.get(item.id);mergeArtifacts([artifact]);openArtifacts(artifact.source,{id:artifact.id,version:item.version??artifact.versions.at(-1)!.number})}
   }
   const renderBusinessPage=(options:{embedded:boolean;visible:boolean;target:BusinessTarget;entry?:BusinessEntry;navigation?:{state:WorkbenchDirectoryNavigation;change:(patch:WorkbenchDirectoryPatch)=>void}})=>
-    businessBuilder&&!configurationServices?options.visible?<section role={builderState.status==='failed'?'alert':'status'}><p>{t(builderState.status==='failed'?'business.builder.error':'business.builder.loading')}</p>{builderState.status==='failed'&&<button type="button" onClick={()=>void businessBuilder.retry()}>{t('common.retry')}</button>}</section>:null:
+    businessBuilder&&!configurationServices?options.visible&&builderState.status==='failed'?<section role="alert"><p>{t('business.builder.error')}</p><button type="button" onClick={()=>void businessBuilder.retry()}>{t('common.retry')}</button></section>:null:
     <BusinessPage shareDraftKey={builderState.namespace?JSON.stringify([builderState.namespace,options.target.scope,'legacy']):undefined} workspace={{collaboration:{tasks:taskApi,artifacts:artifactApi,businessTasks:businessTaskApi},start:()=>requestDaily(options.target.scope,localizedScopeNames[options.target.scope]??options.target.scope),newConversation:()=>requestDaily(options.target.scope,localizedScopeNames[options.target.scope]??options.target.scope,true),actionReady:businessReady&&!dailyBusy,conversationStatus:dailyStatus,responsibility:configurationResponsibility,groups:groupApi,openGroup:openSavedGroup,createGroup:createDirectoryGroup,talkRole:openRoleConversation,attention:attentionItems,openAttention,tasksKnown:taskAttentionKnown&&!taskLoadError,tasksFailed:!!taskLoadError,rolesKnown:roleDirectoryKnown&&!roleLoadError,rolesFailed:!!roleLoadError,renderRole:(id,close,visible=true)=>renderTeamPage({embedded:true,visible,selected:id,select:next=>{if(next)actions.previewRole(next);else close()}}),attentionKnown:attentionStatus.known,attentionFailed:!!(workAttention.error||taskLoadError||securityAttentionError||handoffError||serverRecoveryError)||savedPlanDirectory==='failed',refresh:()=>{retryAttention();void loadRoles()}}} {...(configurationServices?{configuration:configurationServices}:{})} plugins={industryPlugins} projectApi={projectApi} projectConversations={projectConversationActions} openProjectItem={openProjectItem} key={businessPageEntryProps(options.entry).key} {...businessPageEntryProps(options.entry).props} scopeLabels={scopeLabels} backHome={()=>applyBusinessNav({kind:'back-home'})} openStaff={openStaffOfScope} {...(businessScopeAutomations(options.target.scope)!==undefined?{automations:businessScopeAutomations(options.target.scope)!}:{})} manageIndustryResources={scope=>actions.openIndustryResources({scope})} industryLoads={savedIndustryLoads} dataSources={industryDataSources} {...(businessSourceObservations[options.target.scope]?{sourceObservation:businessSourceObservations[options.target.scope]}:{})} businessLedgerApi={businessLedgerApi} businessDashboardApi={businessDashboardApi} colorScheme={state.colorScheme} businessCustomizationApi={businessCustomizationApi} businessShareApi={businessShareApi} pageCreate={{api:pageCreateApi,prepare:prompt=>preparePageCreation(prompt,options.target.scope),openMarket:()=>actions.openMarket(),confirmConnector:confirmPageCreateConnector,openConnector:openConfirmedPageCreateConnector}} businessTaskApi={businessTaskApi} createBusinessTask={createBusinessSavedTask} recoverBusinessTask={recoverBusinessSavedTask} plans={businessCompositionPlans} goComposition={openComposition} isPinned={businessShortcutPinned(options.target)} togglePin={personalBusinessShortcuts.toggle} openFull={()=>businessPanel&&enterBusiness(businessPanel)} embedded={options.embedded} openPlans={scope=>actions.openPlans({kind:'plans',scope})} capabilities={scope=><CapabilityTargetPanel market={()=>actions.openMarket()}/>} visible={options.visible} state={tasks} target={options.target} go={openContextBusiness} openTask={id=>{if(businessDetailOpen&&id===contextTask?.id)openContextObject();else actions.openTask(id)}} openWork={()=>{actions.rememberDirectory('tasks',{category:writeDirectoryFilterCategory({scope:options.target.scope,routed:'all'}),query:undefined,selectedId:undefined});actions.selectTask(null);actions.navigate('tasks')}} openMessages={()=>actions.navigate('messages')} openGroups={()=>actions.openMessages('groups')} openResources={()=>actions.openResources()} market={id=>actions.openMarket(id)}/>
 
   // —— 原生右栏页签的内容源：DSH 出座位，这里出内容 ——
@@ -2605,9 +2631,9 @@ export function WorkbenchFrame({assistantActivity,assistantChat,groupWorkLinks,e
           <AssistantConversationTitleContext.Provider key="native-conversation" value={assistantCurrent&&current?{sessionId:current,name:assistantName}:undefined}><div className={clsx(css.nativeConversation,(!nativeMainVisible||nativePanelVisible)&&css.hidden)} aria-label={t('frame.nativeConversationAria')}>{renderSlot('teloa.conversation',{
             content:renderSlot('main',{}, {entryKey:'conversation'}),
             openTaskForm:(goal,scope)=>{if(!current)return;setHomeTaskGroupId(null);setHomeTaskSourceSession(current);setHomeTaskDrafts(drafts=>drafts[current]?drafts:{...drafts,[current]:{title:'',goal,scope,skills:[],groupId:null}});setHomeCreation('task')},
-            home:state.view==='home',ready:state.view!=='home'||homeSessionId!==undefined&&homeSessionId===current,
+            home:state.view==='home',ready:state.view!=='home'||homeInputValid&&!homeInputChecking,retainingInput:homeInputValid&&homeInputChecking,
             engaged:sessionId=>{if(latestState.current.view==='home'&&mainSession.getSnapshot()===sessionId)actions.openMessages('native')},
-            notice:state.view==='home'&&(homeSessionId===undefined||homeSessionId!==current)?<HomeNativePreparationNotice locale={locale} error={homeInputError} retry={()=>setHomeRetry(value=>value+1)} reload={()=>window.location.reload()} ready={homeManagement.ready} resetKey={homeRetry} chooseLocation={()=>requestCreation({},true)}/>:undefined,
+            notice:state.view==='home'&&(!homeInputValid||homeInputChecking)?<HomeNativePreparationNotice locale={locale} error={homeInputError} retry={()=>setHomeRetry(value=>value+1)} reload={()=>window.location.reload()} ready={homeManagement.ready} resetKey={homeRetry} chooseLocation={()=>requestCreation({},true)}/>:undefined,
             overview:<WorkHome assistantName={assistantName} current={current} workTasks={tasks.tasks} colleagues={tasks.roles} conversationLinks={activeObjectLinks} attention={actions.openAttention} attentionStatus={attentionStatus} planStatus={planStatus} management={management} plans={()=>actions.openPlans()} visible={state.view==='home'} work={work} useSessions={useSessions} open={()=>actions.navigate('messages')} openTask={actions.openTask} openTasks={()=>actions.navigate('tasks')}/>,
           })}</div></AssistantConversationTitleContext.Provider>
           {builderState.sessionKind==='daily'&&(state.view==='home'||conversationVisible)&&dailyStatus}
@@ -2628,7 +2654,7 @@ export function WorkbenchFrame({assistantActivity,assistantChat,groupWorkLinks,e
           {renderTeamPage({embedded:roleEmbedded,visible:roleEmbedded||state.view==='team',selected:roleEmbedded?detailRole!.id:state.roleId,select:id=>{setTeamFocusScope(null);if(roleEmbedded&&!id)closeObjectPanel();else actions.selectRole(id)},navigation:{state:state.navigationDirectories.team??{},change:patch=>actions.rememberDirectory('team',patch)}})}
           </div>
           <div className={clsx(css.objectHost,businessEmbedded&&css.objectPanel)}>{businessEmbedded&&panelHeader}
-          {businessLedgerHome&&<BusinessHome labels={scopeLabels} directory={{status:businessDirectoryStatus,...(businessDirectoryError?{error:businessDirectoryError}:{}),retry:()=>{void loadBusinessDirectory().catch(()=>{})}}} roles={tasks.roles} dataSources={industryDataSources} sourceObservations={businessSourceObservations} loads={savedIndustryLoads} plans={businessCompositionPlans} goComposition={openComposition} attention={attentionItems} tasks={tasks.tasks} open={openBusinessScope} openStaff={openStaffOfScope} connect={scope=>actions.openIndustryResources({scope})} creationReady={!businessBuilder||businessReady} addBusiness={()=>requestCreation({builder:true})} market={()=>openMarketCategory('home')} builderDirectory={<>{builderError&&<p role="alert">{builderError}</p>}{!!builderState.error&&<p role="alert">{t('business.builder.error')} <button type="button" onClick={()=>void businessBuilder?.retry()}>{t('common.retry')}</button></p>}{builderFlow&&<BusinessBuilderDirectory flow={builderFlow} ready={businessReady} recover={recoverBuilder} open={continueBuilder}/>}</>}/>}
+          {businessLedgerHome&&<BusinessHome labels={scopeLabels} directory={{status:businessDirectoryStatus,...(businessDirectoryError?{error:businessDirectoryError}:{}),retry:()=>{void loadBusinessDirectory().catch(()=>{})}}} roles={tasks.roles} dataSources={industryDataSources} sourceObservations={businessSourceObservations} loads={savedIndustryLoads} plans={businessCompositionPlans} goComposition={openComposition} attention={attentionItems} tasks={tasks.tasks} open={openBusinessScope} openStaff={openStaffOfScope} connect={scope=>actions.openIndustryResources({scope})} creationReady={!businessBuilder||businessReady} addBusiness={()=>requestCreation({builder:true})} market={()=>openMarketCategory('home')} builderDirectory={<>{builderError&&<p role="alert">{builderError}</p>}{!!builderState.error&&<p role="alert">{t('business.builder.error')} <button type="button" onClick={()=>void businessBuilder?.retry()}>{t('common.retry')}</button></p>}{builderFlow&&<BusinessBuilderDirectory flow={builderFlow} ready={businessReady} recover={recoverBuilder} restart={restartUnconfiguredBuilder} open={continueBuilder}/>}</>}/>}
           {renderBusinessPage({embedded:businessEmbedded,visible:businessPageVisible({embedded:businessEmbedded,view:state.view,ledgerHome:businessLedgerHome}),target:businessEmbedded?businessPanel!:state.businessTarget,entry:businessEntry,navigation:{state:state.navigationDirectories.spaces??{},change:patch=>actions.rememberDirectory('spaces',patch)}})}
           </div>
           {state.view==='projects'&&<ProjectOverviewPage api={projectApi} scopeLabels={scopeLabels} labelsReady={businessDirectoryStatus!=='loading'} scopeName={scope=>localizedScopeNames[scope]??scope} navigation={{state:state.navigationDirectories.projects??{},change:patch=>actions.rememberDirectory('projects',patch)}} open={project=>enterBusiness({scope:project.scope as CollaborationScope,section:'projects',id:project.id})} visible={state.view==='projects'}/>}

@@ -55,7 +55,10 @@ test('rc.1真实Controller/Query/JSONL/ProjectionCache/Workspace与只读PG：�
  agent.session.append('turn/start',{turn:0} as never);agent.session.append('user/message',createUserMessage({source:{kind:'user'},content:[{type:'text',text:'真实本人活动'}]}),{surfaceOp:'append'})
  await Reflect.get(ctx,'sessionProjectionCache').write(agent.session)
  assert.equal((await ctx.sessionController.list({},AbortSignal.timeout(5000))).items[0]!.sessionId,older.sessionId)
- for(const handle of owned.values())await handle.dispose()
+ for(const handle of owned.values()){
+  await Reflect.get(ctx,'sessionProjectionCache').write(handle.agent.session)
+  await handle.dispose()
+ }
  assert.equal(ctx.agents.list().length,0);assert.ok((await query.listSessions()).every(record=>!record.live))
  const directory=await ctx.sessionController.list({},AbortSignal.timeout(5000));assert.equal(directory.items[0]!.sessionId,older.sessionId);assert.equal(directory.items[0]!.agentAvailable,false)
  assert.equal(directory.items.find(item=>item.sessionId===newer.sessionId)!.blank,true)

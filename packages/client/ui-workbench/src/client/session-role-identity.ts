@@ -15,12 +15,21 @@ export async function readSessionRoleIdentity(sessionId:string,port:IdentityPort
 
 
 /** 目录只使用本人可见原会话的正式关联，失败或歧义保持未知，不从当前主会话继承。 */
-export async function readDirectoryRoleIdentities<T extends {id:string;name:string}>(sessionIds:readonly string[],links:IdentityPort['links'],roles:readonly T[]):Promise<Record<string,T>>{
- const results=await Promise.allSettled(sessionIds.map(async sessionId=>{
-  const matches=(await links(sessionId)).filter(link=>link.kind==='role'&&link.active&&link.sessionId===sessionId)
-  if(matches.length!==1)return undefined
-  const role=roles.find(role=>role.id===matches[0]!.objectId)
-  return role?[sessionId,role] as const:undefined
+export async function readDirectoryRoleIdentities<T extends {id:string;name:string}>(sessionIds:readonly string[],links:IdentityPort['links'],roles:readonly T[],options:{signal?:AbortSignal;onResolved?:(sessionId:string,role:T|undefined)=>void}={}):Promise<Record<string,T>>{
+ const ids=[...new Set(sessionIds)],items:Record<string,T>={},byId=new Map(roles.map(role=>[role.id,role]))
+ let next=0
+ await Promise.all(Array.from({length:Math.min(6,ids.length)},async()=>{
+  while(next<ids.length&&!options.signal?.aborted){
+   const sessionId=ids[next++]!
+   let role:T|undefined
+   try{
+    const matches=(await links(sessionId)).filter(link=>link.kind==='role'&&link.active&&link.sessionId===sessionId)
+    if(matches.length===1)role=byId.get(matches[0]!.objectId)
+   }catch{/* 单条失败保持未确认身份，不阻塞其他员工。 */}
+   if(options.signal?.aborted)return
+   if(role)items[sessionId]=role
+   options.onResolved?.(sessionId,role)
+  }
  }))
- return Object.fromEntries(results.flatMap(result=>result.status==='fulfilled'&&result.value?[result.value]:[]))
+ return items
 }

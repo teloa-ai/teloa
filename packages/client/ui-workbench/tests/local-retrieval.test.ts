@@ -67,6 +67,15 @@ test('全部八个 RPC 路由使用既有 payload 和请求 signal；只读不�
  assert.deepEqual(calls[4]?.payload,{sourceIds:['source-a']});assert.deepEqual(calls[5]?.payload,{sourceIds:['source-a']})
  assert.ok(calls.every(c=>c.signal===signal));assert.deepEqual(calls[7]?.payload,{})
 })
+test('批量加入与移出复用来源数组及 signal，去重并拒绝空批次、无效来源和超限',async()=>{
+ const calls:{endpoint:string;payload:unknown;signal?:AbortSignal|undefined}[]=[],signal=new AbortController().signal
+ const api=createLocalRetrievalApi(async(endpoint,payload,signal)=>{calls.push({endpoint,payload,signal});return index})
+ await api.enrollSources(['source-a','source-b','source-a'],signal)
+ await api.removeSources(['source-b','source-a','source-b'],signal)
+ assert.deepEqual(calls,[{endpoint:'retrieval/enroll',payload:{sourceIds:['source-a','source-b']},signal},{endpoint:'retrieval/remove',payload:{sourceIds:['source-b','source-a']},signal}])
+ for(const ids of [[],[''],[' '],['a'.repeat(129)],['source:invalid'],['source\ninvalid'],Array.from({length:501},(_,i)=>'source-'+i)])for(const apply of [api.enrollSources,api.removeSources])assert.throws(()=>apply(ids,signal),{code:'teloa/invalid-input'})
+ assert.equal(calls.length,2,'无效批次不发送 RPC')
+})
 test('首屏保持简洁；确认态完整显示容量、来源、许可、路径和硬件未验口径',()=>{
  const first=renderModel()
  assert.match(first,/准备检索模型/);assert.doesNotMatch(first,/registry.npmjs.org|host\/models|SHA-256/)

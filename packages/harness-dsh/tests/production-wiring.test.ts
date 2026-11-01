@@ -136,8 +136,16 @@ test('production apply 以真实 Context、临时 PG 与实际 /teloa handler �
   assert.equal(rejected.ok,false,'覆盖仓库的工作区不能用于新建会话')
   assert.equal(rejected.error?.code,'teloa/forbidden')
   // 专用工作区照旧可用：收敛的是仓库根及其祖先，不是整个工作区设置。
-  const ordinary=await call(rpc,'conversations/create',{requestId:randomUUID(),title:'专用工作区会话'}) as {status:string}
+  const beforeConversation=await call(rpc,'conversations/watch',{}) as {revision:number}
+  const ordinaryRequest={requestId:randomUUID(),title:'专用工作区会话'}
+  const ordinary=await call(rpc,'conversations/create',ordinaryRequest) as {status:string;sessionId:string}
   assert.equal(ordinary.status,'ready')
+  const afterConversation=await call(rpc,'conversations/watch',{}) as {revision:number}
+  assert.ok(afterConversation.revision>beforeConversation.revision,'真实落盘使其他浏览器发现新增会话')
+  for(let i=0;i<3;i++)await call(rpc,'conversations/ensure',{sessionId:ordinary.sessionId})
+  await call(rpc,'conversations/create',ordinaryRequest)
+  await call(rpc,'conversations/adopt',{...ordinaryRequest,sessionId:ordinary.sessionId})
+  assert.deepEqual(await call(rpc,'conversations/watch',{}),afterConversation,'正式RPC链路反复打开、创建重放和接入重放不发送无效目录通知')
 
   const data=await call(rpc,'business-data/query',{scope:'SOC',limit:1}) as {items:Array<Record<string,unknown>>}
   const item=data.items[0]

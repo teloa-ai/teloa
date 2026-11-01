@@ -1,6 +1,6 @@
 import {test,before,after} from 'node:test'
 import assert from 'node:assert/strict'
-import {mkdtemp,writeFile,rm} from 'node:fs/promises'
+import {mkdtemp,writeFile,rm,mkdir} from 'node:fs/promises'
 import {fileURLToPath} from 'node:url'
 import {join} from 'node:path'
 import {build} from 'vite'
@@ -11,7 +11,7 @@ const root=fileURLToPath(new URL('../../../../',import.meta.url)),client=fileURL
 let browser:any,script:string,styles:string,temp:string
 const entry=`
 import React,{useState,useMemo} from 'react';import {createRoot} from 'react-dom/client';
-import {StaffRoster} from '${client}StaffRoster.tsx';
+import {StaffRoster} from '${client}StaffRoster.tsx';import tokens from '${client}theme-tokens.module.css';import {prototypeThemes} from '${client}../brand/prototype-theme.ts';document.body.dataset.teloaUiFont='14';document.body.style.margin='0';
 import {ContinuousPage} from '${client}ContinuousPage.tsx';import {emptyTaskPreview} from '${client}task-preview.ts';import {projectSavedPlan} from '${client}plan-api.ts';
 import {I18nProvider} from '${client}i18n/provider.tsx';import {translateMessage} from '${client}i18n/messages.ts';import {BusinessScopeProvider} from '${client}business-scope-context.tsx';
 const snapshot={locale:'zh-CN',dshLocale:'zh',revision:1},runtime={t:(key,params)=>translateMessage('zh-CN',key,params),subscribe:()=>()=>{},getSnapshot:()=>snapshot};
@@ -24,14 +24,15 @@ const eventPlan={...original,completionPolicy:{kind:'manual'},workDefinition:{..
 const template={key:'fixed',itemId:'fixed',templateId:'review',title:'固定安全模板',version:'1.0.0',scope:'SOC',hash:'a'.repeat(64),example:false,source:'测试固定来源',author:'本人',license:'MIT',description:'核对资料',requirements:[],output:'结果',skills:[]};
 window.planFixture={creates:[],updates:[],contacts:[],selected:[],tasks:[],conversations:[]};crypto.randomUUID=()=>'66666666-6666-4666-8666-666666666666';
 function App(){
- const mode=window.planMode,sourcePlan=mode==='event-plan'?eventPlan:mode==='owner'?ownerPlan:mode.startsWith('origin')?{...original,source:{kind:'manual',sessionId:'original-plan-session'}}:original,[plans,setPlans]=useState(mode==='event-plan'||mode==='owner'||mode==='edit'||mode.startsWith('origin')?[sourcePlan]:[]),[target,go]=useState(mode==='event-plan'||mode==='owner'||mode==='edit'||mode.startsWith('origin')?{kind:'plan',id:original.id}:mode==='business'?{kind:'plans',scope:'SOC'}:{kind:'plans'}),[seed,setSeed]=useState(mode==='template'||mode==='journal-sandbox-template'?{template:{...template,example:mode==='journal-sandbox-template'},fields:{...fields,title:template.title},...(mode==='template'?{source:{kind:'market-content',contentId:original.id,contentHash:template.hash,resourceId:'review',resourceVersion:'1.0.0'}}:{})}:null);
+ const [appearance,setAppearance]=useState({size:14,theme:'light'});window.planFixture.appearance=(size,theme)=>setAppearance({size,theme});
+ const mode=window.planMode,sourcePlan=mode==='event-plan'?eventPlan:mode==='owner'?ownerPlan:mode.startsWith('origin')?{...original,source:{kind:'manual',sessionId:'original-plan-session'}}:original,[plans,setPlans]=useState(mode==='many'?Array.from({length:1000},(_,i)=>({...original,id:'44444444-4444-4444-8444-'+String(i).padStart(12,'0'),title:'核对计划 '+i})):mode==='event-plan'||mode==='owner'||mode==='edit'||mode.startsWith('origin')?[sourcePlan]:[]),[target,go]=useState(mode==='event-plan'||mode==='owner'||mode==='edit'||mode.startsWith('origin')?{kind:'plan',id:original.id}:mode==='business'?{kind:'plans',scope:'SOC'}:{kind:'plans'}),[seed,setSeed]=useState(mode==='template'||mode==='journal-sandbox-template'?{template:{...template,example:mode==='journal-sandbox-template'},fields:{...fields,title:template.title},...(mode==='template'?{source:{kind:'market-content',contentId:original.id,contentHash:template.hash,resourceId:'review',resourceVersion:'1.0.0'}}:{})}:null);
  window.planFixture.enterScope=scope=>go({kind:'plans',...(scope?{scope}:{})});
  window.planFixture.enterTemplate=example=>setSeed({template:{...template,example},fields:{...fields,title:template.title},...(!example?{source:{kind:'market-content',contentId:original.id,contentHash:template.hash,resourceId:'review',resourceVersion:'1.0.0'}}:{})});
  const [sort,setSort]=useState('name');
  if(mode==='staff')return <I18nProvider runtime={runtime}><label>排序<select value={sort} onChange={event=>setSort(event.target.value)}><option value="name">姓名</option><option value="duty">岗位</option></select></label><StaffRoster roles={[...roles,roles[0]]} labels={roles.flatMap(row=>row.scopes.map(scope=>({scope,title:scope,kind:'builtin',loads:0,activeLoads:0,tasks:0,groups:0})))} tasks={[{id:'original-task',assigneeId:roles[0].id,state:'ready',title:'原始任务',updatedAt:stamp,scope:'SOC'}]} sort={sort} fold={{toggled:[]}} onFoldChange={()=>{}} searching={false} onSelect={id=>window.planFixture.selected.push(id)} onTalk={id=>window.planFixture.contacts.push(['chat',id])} onPhone={id=>window.planFixture.contacts.push(['phone',id])} onOpenTask={id=>window.planFixture.tasks.push(id)} onHire={()=>{}}/></I18nProvider>;
  const merge=rows=>setPlans(current=>[...current.filter(row=>!rows.some(next=>next.id===row.id)),...rows]);
  const api=useMemo(()=>({list:async()=>plans,directory:async()=>({items:[],cursor:null}),executions:async()=>({items:[],nextCursor:null}),skips:async()=>({items:[],nextCursor:null}),schedule:async()=>mode==='event-plan'?{available:true,overview:{planId:original.id,planVersion:1,state:'paused',nextAt:null,latest:null,latestSkip:null},health:null}:null,pending:()=>mode==='journal-pending'?{kind:'create'}:null,recoveryMessage:()=>null,create:async(fields,source)=>{window.planFixture.creates.push({fields,source});return {...original,...fields,source,id:'55555555-5555-4555-8555-555555555555'}},update:async(plan,fields)=>{window.planFixture.updates.push({plan,fields});return {...plan,...fields,version:plan.version+1}}}),[]);
- return <I18nProvider runtime={runtime}><BusinessScopeProvider labels={['general','SOC','sales'].map(scope=>({scope,title:scope,kind:'builtin',loads:0,activeLoads:0,tasks:0,groups:0}))}><ContinuousPage draftStorage={mode.startsWith('journal')?{namespace:'owner:journal-test',storage:mode==='journal-quota'?{getItem:key=>sessionStorage.getItem(key),setItem:()=>{throw Error('QuotaExceededError')},removeItem:key=>sessionStorage.removeItem(key)}:window.sessionStorage}:undefined} openConversation={async id=>{window.planFixture.conversations.push(id);if(mode==='origin-error')throw Error('原会话暂不可用');}} prepareConversation={mode.startsWith('conversation')?async request=>{window.planFixture.conversations.push(request);if(mode==='conversation-error')throw Error('会话准备失败');}:undefined} visible state={{...emptyTaskPreview(),roles,continuous:{plans:plans.map(projectSavedPlan),runs:[],loaded:true}}} target={target} go={go} persistence={{api,plans,controls:mode==='event-plan'?{get:async()=>({ownerId:original.ownerId,scope:'definition',state:'active'}),pending:()=>null}:undefined,merge,refreshRoles:()=>{},industrySource:()=>null}} seed={seed} clearSeed={()=>setSeed(null)} change={()=>{}} openArtifacts={()=>{}} openMarket={()=>{}} openTask={()=>{}} openRole={id=>window.planFixture.contacts.push(['role',id])} openBusiness={()=>{}} team={()=>{}} attention={()=>{}}/></BusinessScopeProvider></I18nProvider>
+ return <div className={tokens.tokens} style={{...prototypeThemes[appearance.theme],'--teloa-design-text-base':appearance.size/16+'rem',height:'100dvh',fontFamily:'var(--teloa-design-font)',fontSize:'var(--teloa-font-body)'}}><I18nProvider runtime={runtime}><BusinessScopeProvider labels={['general','SOC','sales'].map(scope=>({scope,title:scope,kind:'builtin',loads:0,activeLoads:0,tasks:0,groups:0}))}><ContinuousPage draftStorage={mode.startsWith('journal')?{namespace:'owner:journal-test',storage:mode==='journal-quota'?{getItem:key=>sessionStorage.getItem(key),setItem:()=>{throw Error('QuotaExceededError')},removeItem:key=>sessionStorage.removeItem(key)}:window.sessionStorage}:undefined} openConversation={async id=>{window.planFixture.conversations.push(id);if(mode==='origin-error')throw Error('原会话暂不可用');}} prepareConversation={mode.startsWith('conversation')?async request=>{window.planFixture.conversations.push(request);if(mode==='conversation-error')throw Error('会话准备失败');}:undefined} visible state={{...emptyTaskPreview(),roles,continuous:{plans:plans.map(projectSavedPlan),runs:[],loaded:true}}} target={target} go={go} persistence={{api,plans,controls:mode==='event-plan'?{get:async()=>({ownerId:original.ownerId,scope:'definition',state:'active'}),pending:()=>null}:undefined,merge,refreshRoles:()=>{},industrySource:()=>null}} seed={seed} clearSeed={()=>setSeed(null)} change={()=>{}} openArtifacts={()=>{}} openMarket={()=>{}} openTask={()=>{}} openRole={id=>window.planFixture.contacts.push(['role',id])} openBusiness={()=>{}} team={()=>{}} attention={()=>{}}/></BusinessScopeProvider></I18nProvider></div>
 }createRoot(document.getElementById('root')).render(<App/>);
 `
 before(async()=>{
@@ -67,15 +68,18 @@ async function startGoal(page:any,goal='核对已授权资料'){
 }
 test('真实自然语言入口交给原会话，不打开或保存另一个计划表单；失败保留目标',async t=>{
  const page=await mount(t,'conversation')
+ await page.getByRole('button',{name:'新建自动化',exact:true}).click()
  await page.getByRole('textbox',{name:'持续工作目标',exact:true}).fill('每周一九点核对已授权资料，只保存暂停计划')
  await page.getByRole('button',{name:'在会话中创建',exact:true}).click()
  const actual=await page.evaluate(()=>(window as any).planFixture)
  assert.deepEqual(actual.conversations,[{goal:'每周一九点核对已授权资料，只保存暂停计划',scope:'general'}])
  assert.deepEqual(actual.creates,[]);assert.equal(await page.getByRole('dialog').count(),0)
+ await page.getByRole('button',{name:'新建自动化',exact:true}).click()
  await page.getByRole('button',{name:'按表单创建',exact:true}).click()
  await page.getByRole('dialog',{name:'新建持续计划',exact:true}).waitFor()
  assert.equal(await page.getByRole('dialog').getByRole('textbox',{name:'工作目标',exact:true}).inputValue(),'每周一九点核对已授权资料，只保存暂停计划')
  const failed=await mount(t,'conversation-error')
+ await failed.getByRole('button',{name:'新建自动化',exact:true}).click()
  await failed.getByRole('textbox',{name:'持续工作目标',exact:true}).fill('不能丢的自动化草稿')
  await failed.getByRole('button',{name:'在会话中创建',exact:true}).click()
  await failed.getByRole('alert').waitFor();assert.match(await failed.getByRole('alert').innerText(),/操作未完成，请稍后重试/)
@@ -108,6 +112,7 @@ test('编辑已保存计划仍固定业务与员工，固定业务模板不能�
  let form=page.getByRole('dialog')
  assert.equal(await form.getByRole('combobox',{name:/^业务范围/}).isDisabled(),true)
  assert.equal(await form.getByRole('combobox',{name:/^负责员工/}).isDisabled(),true)
+ assert.ok(await form.getByRole('combobox',{name:/^负责员工/}).evaluate((el:HTMLElement)=>parseFloat(getComputedStyle(el).opacity))<1,'锁定的选择控件有可见的禁用反馈')
  await page.close()
  const seeded=await mount(t,'template');form=seeded.getByRole('dialog')
  await form.waitFor();assert.equal(await form.getByRole('combobox',{name:/^业务范围/}).isDisabled(),true)
@@ -146,8 +151,14 @@ test('全局与业务内新建草稿分别保留，不能锁住另一个业务�
 
 test('目标优先入口不自动保存，关闭后恢复编辑过的草稿，规则和历史仍可达',async t=>{
  const page=await mount(t)
- assert.equal(await page.getByRole('heading',{name:'你想让员工持续做什么？'}).count(),1)
+ assert.equal(await page.getByRole('dialog').count(),0)
+ await page.getByRole('button',{name:'新建自动化',exact:true}).click()
+ await page.getByRole('dialog',{name:'新建自动化',exact:true}).waitFor()
+ assert.equal(await page.getByText('你想让员工持续做什么？',{exact:true}).count(),1)
  await page.getByRole('textbox',{name:'持续工作目标'}).fill('整理反馈，识别紧急问题')
+ await page.keyboard.press('Escape')
+ await page.getByRole('dialog').waitFor({state:'hidden'})
+ assert.equal(await page.getByRole('button',{name:'新建自动化',exact:true}).evaluate((el:HTMLElement)=>el===document.activeElement),true)
  await page.getByRole('button',{name:'计划 0',exact:true}).click()
  await page.getByRole('button',{name:'新建自动化',exact:true}).click()
  assert.equal(await page.getByRole('textbox',{name:'持续工作目标'}).inputValue(),'整理反馈，识别紧急问题')
@@ -157,6 +168,7 @@ test('目标优先入口不自动保存，关闭后恢复编辑过的草稿，�
  await form.getByRole('textbox',{name:'计划名称',exact:true}).fill('本人改过的名称')
  await form.getByRole('textbox',{name:'工作目标',exact:true}).fill('补充后的目标')
  await page.keyboard.press('Escape')
+ await page.getByRole('button',{name:'新建自动化',exact:true}).click()
  await page.getByRole('button',{name:'继续设置',exact:true}).click()
  form=page.getByRole('dialog')
  assert.equal(await form.getByRole('textbox',{name:'计划名称',exact:true}).inputValue(),'本人改过的名称')
@@ -254,7 +266,7 @@ test('浏览器存储不足时明确提示未持久化且关闭重开仍保留�
  const page=await mount(t,'journal-quota');await startGoal(page)
  const form=page.getByRole('dialog',{name:'新建持续计划',exact:true});await form.getByLabel('计划名称',{exact:true}).fill('存储不足时不要丢这份输入')
  assert.match(await form.getByRole('alert').innerText(),/草稿未能保存到浏览器/)
- await form.getByRole('button',{name:'关闭并保留草稿',exact:true}).click();await page.getByRole('button',{name:'继续设置',exact:true}).click()
+ await form.getByRole('button',{name:'关闭并保留草稿',exact:true}).click();await page.getByRole('button',{name:'新建自动化',exact:true}).click();await page.getByRole('button',{name:'继续设置',exact:true}).click()
  assert.equal(await form.getByLabel('计划名称',{exact:true}).inputValue(),'存储不足时不要丢这份输入');assert.deepEqual(await page.evaluate(()=>(window as any).planFixture.creates),[])
 })
 
@@ -265,4 +277,36 @@ test('原计划提交结果待核对时恢复输入不会另发创建或更新',
  assert.equal(await form.getByRole('button',{name:'保存暂停计划',exact:true}).isDisabled(),true)
  await form.locator('form').evaluate((node:HTMLFormElement)=>node.dispatchEvent(new Event('submit',{bubbles:true,cancelable:true})))
  const calls=await page.evaluate(()=>(window as any).planFixture);assert.deepEqual(calls.creates,[]);assert.deepEqual(calls.updates,[]);assert.deepEqual(calls.tasks,[])
+})
+
+
+test('创建自动化抽屉在窄屏、矮窗、深浅色和大字下可操作，关闭后保留列表与草稿',async t=>{
+ const page=await mount(t),evidence=process.env.TELOA_UI_SCREENSHOT_DIR;if(evidence)await mkdir(evidence,{recursive:true})
+ for(const [width,height]of [[390,568],[768,900],[1440,960]] as const)for(const size of [14,28])for(const theme of ['light','dark']){
+  await page.setViewportSize({width,height});await page.evaluate(({size,theme}:any)=>(window as any).planFixture.appearance(size,theme),{size,theme})
+  const before=await page.locator('h1').boundingBox(),trigger=page.getByRole('button',{name:'新建自动化',exact:true});await trigger.click()
+  const dialog=page.getByRole('dialog',{name:'新建自动化',exact:true});await dialog.waitFor();const input=dialog.getByRole('textbox',{name:'持续工作目标',exact:true});await input.fill('每周核对资料，并把需要处理的事项整理为简报。')
+  const bounds=await dialog.evaluate((el:HTMLElement)=>{const r=el.getBoundingClientRect();return {left:r.left>=-1,right:r.right<=innerWidth+1,top:r.top>=-1,bottom:r.bottom<=innerHeight+1,overflow:el.scrollWidth<=el.clientWidth+1}});assert.deepEqual(bounds,{left:true,right:true,top:true,bottom:true,overflow:true},JSON.stringify({width,height,size,theme}))
+  for(const button of await dialog.getByRole('button').all()){await button.scrollIntoViewIfNeeded();assert.equal(await button.evaluate((el:HTMLElement)=>{const r=el.getBoundingClientRect();return el.contains(document.elementFromPoint(r.x+r.width/2,r.y+r.height/2))}),true)}
+  if(evidence&&size===14&&theme==='dark'&&width!==768)await page.screenshot({path:join(evidence,'automation-'+width+'.png')})
+  assert.equal((await page.locator('h1').boundingBox())!.y,before!.y,'创建不能挤动列表页头')
+  assert.ok(await input.evaluate((el:HTMLElement)=>parseFloat(getComputedStyle(el).fontSize))>=size)
+  await dialog.getByRole('button',{name:'继续设置',exact:true}).click();const form=page.getByRole('dialog',{name:'新建持续计划',exact:true});await form.waitFor();assert.equal(await page.getByRole('dialog').count(),1,'创建方式切换不叠放两个弹窗')
+  const scope=await form.getByRole('combobox',{name:/^业务范围/}).boundingBox(),role=await form.getByRole('combobox',{name:/^负责员工/}).boundingBox();assert.ok(scope&&role);if(width>=768&&size===14)assert.ok(Math.abs(scope.y-role.y)<1&&role.x>scope.x+scope.width,'宽窗口的业务和负责人在同一行');else assert.ok(role.y>=scope.y+scope.height,'小屏或大字号时相关字段依次排列')
+  for(const select of await form.getByRole('combobox').all()){
+   await select.scrollIntoViewIfNeeded();await page.keyboard.press('Tab');await select.focus();const control=await select.evaluate((el:HTMLElement)=>{const r=el.getBoundingClientRect(),d=el.closest('dialog')!.getBoundingClientRect(),style=getComputedStyle(el);return {width:r.left>=d.left-1&&r.right<=d.right+1,height:r.height,font:parseFloat(style.fontSize),exposed:el.contains(document.elementFromPoint(r.x+r.width/2,r.y+r.height/2)),focus:(el as HTMLSelectElement).disabled||parseFloat(style.outlineWidth)>=2}});assert.ok(control.width&&control.height>=38&&control.font>=size&&control.focus&&control.exposed,JSON.stringify({width,size,theme,control}))
+  }
+
+  for(const button of await form.getByRole('button').all()){await button.scrollIntoViewIfNeeded();assert.equal(await button.evaluate((el:HTMLElement)=>{const r=el.getBoundingClientRect();return el.contains(document.elementFromPoint(r.x+r.width/2,r.y+r.height/2))}),true,'表单操作始终可触达')}
+  if(evidence&&size===14&&theme==='dark'&&width!==768){await form.evaluate((el:HTMLElement)=>{el.scrollTop=0});await page.screenshot({path:join(evidence,'automation-form-'+width+'.png')})}
+  await page.keyboard.press('Escape');await form.waitFor({state:'hidden'});assert.equal(await trigger.evaluate((el:HTMLElement)=>el===document.activeElement),true)
+ }
+ assert.deepEqual(await page.evaluate(()=>(window as any).planFixture.creates),[])
+ await page.getByRole('button',{name:'新建自动化',exact:true}).click();assert.match(await page.getByRole('textbox',{name:'持续工作目标',exact:true}).inputValue(),/每周核对资料/)
+})
+
+test('千条自动化目录分批展示，搜索覆盖首批之外且展开不创建或执行计划',async t=>{
+ const page=await mount(t,'many'),rows=page.locator('[data-teloa-entry]');await rows.first().waitFor();assert.equal(await rows.count(),50)
+ await page.getByRole('button',{name:'再显示 50 项',exact:true}).click();assert.equal(await rows.count(),100)
+ await page.getByRole('textbox').fill('核对计划 999');await page.waitForFunction(()=>document.querySelectorAll('[data-teloa-entry]').length===1);assert.match(await rows.first().innerText(),/核对计划 999/);assert.deepEqual(await page.evaluate(()=>(window as any).planFixture.creates),[])
 })

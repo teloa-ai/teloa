@@ -154,7 +154,7 @@ test('同一目录代次下，筛选、管理就绪翻转、加载中与失败�
  assert.equal(f.titleOf('A'),'conversationDirectory.employeeTitle:Alice')
 })
 
-test('新目录代次、员工表变化与人工刷新都会重读；未核实前不显示旧身份，迟到的旧代结果不覆盖新代',async t=>{
+test('新目录代次、员工表变化与人工刷新都会重读；同源后台核验保留显示，迟到旧代不覆盖新代',async t=>{
  const f=fixture(t)
  f.render();await settle()
  assert.deepEqual(f.calls,['A','B'])
@@ -165,12 +165,12 @@ test('新目录代次、员工表变化与人工刷新都会重读；未核实�
  assert.deepEqual(f.calls,['A','B','A','B','C'])
  assert.equal(f.titleOf('A'),'conversationDirectory.employeeTitle:Alice')
 
- // 人工刷新得到同一批会话的新代次：仍重读；读完前不显示上一代身份。
+ // 人工刷新得到同一批会话的新代次：仍重读；本轮核验期间保留上轮已确认的显示。
  f.hold(true)
  f.state.directory={status:'ready',rows:[conversation('A'),conversation('B'),conversation('C')],error:undefined}
  f.render();await settle()
  assert.deepEqual(f.calls.slice(5),['A','B','C'],'人工刷新重读')
- assert.equal(f.titleOf('A'),'Chat A','未核实的新代次不显示旧员工')
+ assert.equal(f.titleOf('A'),'conversationDirectory.employeeTitle:Alice','同源后台核验期间保留上次已确认的员工显示')
 
  // 关联变更后再刷新：新代次（Bob）先回；旧代次（Alice）迟到不覆盖。
  f.state.roles=[...f.state.roles,{id:'bob',name:'Bob',kind:'employee',avatarKey:'squirrel-general'}]
@@ -202,8 +202,8 @@ test('N48 员工分类按真实员工会话关联划分：员工单聊只在员�
  // 名称像员工也不猜：只看关联。
  f.hold(true);f.state.directory={status:'ready',rows:[conversation('A'),conversation('B'),{...conversation('Alice'),title:'Alice'}],error:undefined}
  select('employee');await settle()
- assert.deepEqual(f.visible(),[],'新代次未核实前员工分类不显示旧身份')
- select('session');assert.deepEqual(f.visible().sort(),['A','Alice','B'],'未核实的会话留在会话分类，不隐藏')
+ assert.deepEqual(f.visible(),['A'],'后台重读保持已确认员工留在原分类')
+ select('session');assert.deepEqual(f.visible().sort(),['Alice','B'],'后台重读不把已确认员工临时塞回普通会话')
  f.release('first',3,'alice');await settle();await settle()
  assert.deepEqual(f.visible().sort(),['Alice','B'],'标题叫 Alice 的普通会话仍在会话')
  select('employee');assert.deepEqual(f.visible(),['A'])
@@ -251,4 +251,25 @@ test('N48 身份读取失败或歧义：会话留在会话分类可达、不冒�
  f.state.directory={...f.state.directory,rows:[conversation('A'),conversation('B')]};f.render();await settle();f.render()
  assert.deepEqual(f.visible(),['B'],'重新核验后员工单聊离开会话分类')
  assert.equal(f.titleOf('A'),'conversationDirectory.employeeTitle:Alice')
+})
+
+test('后台身份结果分批返回时不逐条拆改分类，整轮确认解绑后再一次更新',async t=>{
+ const f=fixture(t);f.render();await settle()
+ f.control(node=>node.type==='button'&&node.children.includes(dialogueCopy.dialogueCopy('en','employee'))).props.onClick();f.render()
+ assert.deepEqual(f.visible(),['A'])
+ f.hold(true);f.state.directory={status:'ready',rows:[conversation('A'),conversation('B')],error:undefined};f.render();await settle()
+ assert.equal(nodes(f.render()).some(node=>node.props.role==='status'&&node.children.includes('workDirectory.syncing')),false,'已就绪列表不插入同步提示推挤原行')
+ f.release('first',1,'');await settle()
+ assert.deepEqual(f.visible(),['A'],'单条先返回解绑，不在整轮结束前改分类')
+ f.release('first',1,'');await settle()
+ assert.deepEqual(f.visible(),[],'本轮确认完成后反映真实解绑')
+ f.control(node=>node.type==='button'&&node.children.includes(dialogueCopy.dialogueCopy('en','session'))).props.onClick();f.render()
+ assert.deepEqual(f.visible().sort(),['A','B']);assert.deepEqual(f.opens,[])
+})
+
+test('员工目录仅排序变化不重读关联，也不重置已确认分类',async t=>{
+ const f=fixture(t);f.state.roles.push({id:'bob',name:'Bob',kind:'employee',avatarKey:'general'});f.render();await settle()
+ const before=[...f.calls];assert.equal(f.titleOf('A'),'conversationDirectory.employeeTitle:Alice')
+ f.state.roles=[...f.state.roles].reverse();f.render();await settle()
+ assert.deepEqual(f.calls,before);assert.equal(f.titleOf('A'),'conversationDirectory.employeeTitle:Alice')
 })

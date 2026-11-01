@@ -45,7 +45,7 @@ test('平台普通文字与参考应用行共用正文family；普通时间/计�
  }
  async function read(mode:string){return page.evaluate((mode:string)=>{
   const get=(el:Element)=>{const s=getComputedStyle(el);return {text:el.textContent?.trim().slice(0,80),family:s.fontFamily,size:s.fontSize,weight:s.fontWeight,line:s.lineHeight}}
-  const root=document.getElementById('teloa-main')!,body=get(document.body),selectors:Record<string,string>={market:'#market li strong',overview:'[class*="_rowTitle"] strong',attention:'[class*="_attentionRow"] strong',tasks:'button[class*="_tableLink"]',automation:'[class*="_savedPlan"] strong',roster:'#roster strong',portal:'dialog h2'}
+  const root=document.getElementById('teloa-main')!,body=get(document.body),selectors:Record<string,string>={market:'#market li strong',overview:'[class*="_rowTitle"] strong',attention:'[class*="_attentionRow"] strong',tasks:'button[class*="_tableLink"]',automation:'[data-teloa-entry] strong',roster:'#roster strong',portal:'dialog h2'}
   const primary=document.querySelector(selectors[mode]!)!,numbers=[...document.querySelectorAll('time,button span')].filter(el=>el.tagName==='TIME'||/^\d+$/.test(el.textContent?.trim()??'')).map(get)
   const ordinary=[...document.querySelectorAll('#teloa-main button,#teloa-main input,#teloa-main select,#teloa-main textarea')].filter(el=>el.textContent?.trim()||el.tagName!=='BUTTON').map(get)
   const probes=Object.fromEntries(['native-input','portal-button','portal-input','portal-select','portal-textarea','code-probe','terminal-probe'].map(id=>{const el=document.getElementById(id);return [id,el?get(el):null]}))

@@ -1,3 +1,4 @@
+import {sha256Digest} from './browser-crypto.mjs'
 import {isRecord,isWorkResource,resourceId,resourceScopes,resourceTopics,resourceVersion,type WorkResource} from './resources.ts'
 
 export const knowledgeCategories=['business-context','policy','sop','criteria','reference','template-asset','system-data-guide'] as const
@@ -90,6 +91,6 @@ export function isKnowledgeTreeMutation(value:unknown):value is KnowledgeTreeMut
 /** 浏览器与 Node 均可用的正文 SHA-256 完整性校验。 */
 export async function verifyKnowledgeVersionContent(value:unknown):Promise<boolean>{
  if(!isKnowledgeVersion(value))return false
- const bytes=new TextEncoder().encode(value.markdown),actual=await globalThis.crypto.subtle.digest('SHA-256',bytes)
+ const bytes=new TextEncoder().encode(value.markdown),actual=await sha256Digest(bytes)
  return [...new Uint8Array(actual)].map(byte=>byte.toString(16).padStart(2,'0')).join('')===value.contentHash
 }

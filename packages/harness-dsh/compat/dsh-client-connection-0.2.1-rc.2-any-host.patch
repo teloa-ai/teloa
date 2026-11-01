@@ -1,0 +1,28 @@
+--- a/lib/index.js
++++ b/lib/index.js
+@@ -235,14 +235,14 @@
+ * @param trustedHosts - non-loopback authorities this deployment serves: exact `host:port`, or port-less `host` matching any port.
+ * @param bindHost - the listener's own bind IP literal, accepted on any port independently of `trustedHosts`.
+ * @param protocol - listener protocol for default Host ports; HTTP when no Web carrier is mounted.
+-* @returns true when the Host is ours (loopback, the bind address, or trusted) and any attached browser markers are same-origin.
++* @returns true for any valid Host when attached browser markers are same-origin; authentication is checked separately.
+ */
+ function isTrustedApiRequest(request, trustedHosts, bindHost, protocol = "http:") {
+ 	const host = header$1(request.headers, "host");
+ 	if (host === void 0) return false;
+ 	const hostUrl = parseAuthority(host, protocol);
+ 	if (hostUrl === void 0) return false;
+-	if (!isLoopbackHostname(hostUrl.hostname) && !isTrustedAuthority(hostUrl, trustedHosts, protocol) && !isBindAddressAuthority(hostUrl, bindHost)) return false;
++	if (canonicalAuthority(host, hostUrl) !== host.toLowerCase()) return false;
+ 	if (header$1(request.headers, "sec-fetch-site") === "cross-site") return false;
+ 	const origin = header$1(request.headers, "origin");
+ 	if (origin === void 0) return true;
+@@ -718,7 +718,7 @@
+ 			this.peers.clear();
+ 			await Promise.all(peers.map((peer) => peer.dispose()));
+ 		}, "client-connection: Peer scopes");
+-		this.allowsRemoteAuthorities = trustedHosts.some(isRemoteAuthority);
++		this.allowsRemoteAuthorities = true;
+ 	}
+ 	/** Generic channel registry scoped to the Context reading this service. */
+ 	get rpc() {

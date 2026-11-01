@@ -327,6 +327,7 @@ import {resolveTeloaDshHome,resolveTeloaDshProfile,resolveTeloaRuntime,resolveTe
 import {assertCompositionSafety,readCompositionRows,readProfileFacts} from './composition-safety.ts'
 import {registerTeloaLogFile} from './teloa-log.ts'
 import {ConversationDirectoryChanges} from './conversation-directory.ts'
+import {registerTeloaSessionTitle} from './session-title-provider.ts'
 
 import {initializeTeloaDatabase} from '@teloa/backend'
 
@@ -334,7 +335,7 @@ export const name='teloa-harness-dsh'
 // 子 Agent 的执行态工具闸需要沿会话谱系读取父 Agent；未声明此依赖时，
 // 子会话首轮会在运行时因 Cordis 拒绝读取 `agents` 而失败。
 // 模型目录和固定 Run 策略直接读取 llm；真实兄弟服务不能靠根 Context 桩隐式访问。
-export const inject=['goals','sessionProjections','systemPrompt','teloaNativeInput','llm','connection','sessions','sessionController','teloaModelCatalog','workspaceRegistry','storageDomain','workingDirectory','tools','skills','agentPresets','agents','subagents','agentTeams','sessionPersistence','jobs','approval','permissionPresets','sandboxPolicy','tokenMeter','fs','fileReferences','attachments','webServer','settings','credentials']
+export const inject=['goals','sessionProjections','systemPrompt','sessionTitle','teloaNativeInput','llm','connection','sessions','sessionController','teloaModelCatalog','workspaceRegistry','storageDomain','workingDirectory','tools','skills','agentPresets','agents','subagents','agentTeams','sessionPersistence','jobs','approval','permissionPresets','sandboxPolicy','tokenMeter','fs','fileReferences','attachments','webServer','settings','credentials']
 const projectRoot=fileURLToPath(new URL('../../../',import.meta.url))
 const owner='local:teloa-owner'
 const conversationWorkContextEndpoints=['conversations/assistant','work-context/read','work-context/set','work-context/eligibility','conversation-budgets/read','conversation-budgets/configure','work-requests/list','work-requests/status','work-requests/stop','work-requests/resume'] as const
@@ -425,9 +426,12 @@ async function applyHost(ctx:Context,projectRoot:string):Promise<void> {
   const signalActivity=createSignalActivity(runtimeRoot,()=>({CI:process.env.CI,NODE_ENV:process.env.NODE_ENV,...trusted}),()=>trusted)
   const reportResourceInstall=createResourceInstallReporter(runtimeRoot,()=>({CI:process.env.CI,NODE_ENV:process.env.NODE_ENV,...trusted}),()=>trusted)
   const workspaceRoot=resolveTeloaWorkspaceRoot(projectRoot,trusted)
-  const repository=new FileConversationRepository(resolve(runtimeRoot,'conversations.json'))
+  const conversationDirectory=new ConversationDirectoryChanges()
+  ctx.effect(()=>()=>conversationDirectory.dispose(),'Teloa 会话目录失效通知')
+  const repository=conversationDirectory.trackWrites(new FileConversationRepository(resolve(runtimeRoot,'conversations.json')))
   // 启动时主动校验；损坏存储不得表现为一个正常的空工作台。
   await repository.read()
+  registerTeloaSessionTitle(ctx,owner,async sessionId=>(await repository.read()).some(row=>row.ownerId===owner&&row.sessionId===sessionId&&row.status==='ready'&&row.purpose===undefined))
   await installNativeSessionReferenceDirectory(ctx,{owner,bindings:()=>repository.read()})
   // 工作区不再是仓库根，装配期自己建出来；0o700 与运行目录里其余状态一致。
   await mkdir(workspaceRoot,{recursive:true,mode:0o700})
@@ -455,8 +459,6 @@ async function applyHost(ctx:Context,projectRoot:string):Promise<void> {
     const {pool,identity,plans}=await autoDreamPlans()
     return (await new RoleService(pool,identity,{plans}).list(actor,{})).find(role=>role.id===roleId)
   })
-  const conversationDirectory=new ConversationDirectoryChanges()
-  ctx.effect(()=>()=>conversationDirectory.dispose(),'Teloa 会话目录失效通知')
   // 根类型检查同时加载 Host/Client 的 sessions 声明，在接入边界明确 Host 服务类型。
   const sessionStore=Reflect.get(ctx,'sessions') as unknown as SessionStore
   const copies=new CopyService(new FileCopyRepository(resolve(runtimeRoot,'copies.json')),{ 
@@ -2580,7 +2582,7 @@ async function applyHost(ctx:Context,projectRoot:string):Promise<void> {
     if((retrievalEndpoints as readonly string[]).includes(endpoint))return localRetrieval.handle(endpoint,payload,signal)
     if((localModelEndpoints as readonly string[]).includes(endpoint))return localModelsHandler.handle(endpoint,payload,signal)
     if((modelOptionEndpoints as readonly string[]).includes(endpoint))return readDshModelOptions(ctx,payload,signal)
-    if(endpoint==='conversations/assistant')return conversationDirectory.mutate(()=>service.ensureAssistant(owner,payload,async(sessionId,register)=>{
+    if(endpoint==='conversations/assistant')return service.ensureAssistant(owner,payload,async(sessionId,register)=>{
       if(ctx.workspaceRegistry.archivedSessionIds.includes(brandString<SessionId>(sessionId)))return false
       // 与上下文设置共用同一事务锁，登记之前重新核对；回调不得借用 service 的串行队列。
       const db=await database.pool.connect()
@@ -2589,7 +2591,7 @@ async function applyHost(ctx:Context,projectRoot:string):Promise<void> {
         if(result.rowCount!==1){await db.query('commit');return false}
         await register();await db.query('commit');return true
       }catch(error){await db.query('rollback').catch(()=>{});throw error}finally{db.release()}
-    }))
+    })
     if(endpoint==='conversation-budgets/read')return conversationBudgetSettings.read(owner,payload)
     if(endpoint==='conversation-budgets/configure')return conversationBudgetSettings.configure(owner,payload)
     if(endpoint==='work-context/read')return conversationWork.context(owner,payload)
@@ -2599,11 +2601,11 @@ async function applyHost(ctx:Context,projectRoot:string):Promise<void> {
     if(endpoint==='work-requests/status'||endpoint==='work-requests/stop'){const input=taskInput(payload,['sessionId','requestId']);return endpoint==='work-requests/status'?workDispatch.status(input.sessionId as string,input.requestId as string):workDispatch.stop(input.sessionId as string,input.requestId as string,signal)}
     if(endpoint==='work-requests/resume'){const input=taskInput(payload,['sessionId','requestId']);return workDispatch.resume(input.sessionId as string,input.requestId as string,signal)}
     return (groupWorkLinkEndpoints as readonly string[]).includes(endpoint)?await groupWorkLinkHandler(endpoint,payload,signal):(projectRuntimeEndpoints as readonly string[]).includes(endpoint)?await projectRuntimeHandler(endpoint,payload,signal):(projectContextEndpoints as readonly string[]).includes(endpoint)?await projectContextHandler(endpoint,payload,signal):(projectEndpoints as readonly string[]).includes(endpoint)?await projectHandler(endpoint,payload,signal):(securityActionEndpoints as readonly string[]).includes(endpoint)?await securityActionHandler(endpoint,payload,signal):(businessSpaceEndpoints as readonly string[]).includes(endpoint)?await businessSpaceHandler(endpoint,payload):(businessScopeEndpoints as readonly string[]).includes(endpoint)?await businessScopeHandler(endpoint,payload):(businessDataEndpoints as readonly string[]).includes(endpoint)?await businessDataHandler(endpoint,payload,signal):(businessWorkEndpoints as readonly string[]).includes(endpoint)?await businessWorkHandler(endpoint,payload,signal):(businessBuilderEndpoints as readonly string[]).includes(endpoint)?await businessBuilderHandler(endpoint,payload,signal):(businessDashboardResourceEndpoints as readonly string[]).includes(endpoint)?await businessDashboardResourceHandler(endpoint,payload,signal):(businessImportEndpoints as readonly string[]).includes(endpoint)?await businessImportHandler(endpoint,payload,signal):(businessResponsibilityEndpoints as readonly string[]).includes(endpoint)?await businessResponsibilityHandler(endpoint,payload,signal):(businessDefinitionEndpoints as readonly string[]).includes(endpoint)?await businessDefinitionHandler(endpoint,payload,signal):endpoint===businessDashboardShareEndpoint?await businessDashboardShareHandler(endpoint,payload,signal):(businessDashboardEndpoints as readonly string[]).includes(endpoint)?await businessDashboardHandler(endpoint,payload,signal):(pageCreateDraftEndpoints as readonly string[]).includes(endpoint)?await pageCreateDraftHandler(endpoint,payload,signal):(skillEditEndpoints as readonly string[]).includes(endpoint)?await skillEditHandler(endpoint,payload,signal):(businessTaskEndpoints as readonly string[]).includes(endpoint)?await businessTaskHandler(endpoint,payload):(githubSourceEndpoints as readonly string[]).includes(endpoint)?await githubSourceHandler(endpoint,payload):(marketPluginInstallationEndpoints as readonly string[]).includes(endpoint)?await marketPluginInstallationHandler(endpoint,payload,signal):(skillUpgradePreviewEndpoints as readonly string[]).includes(endpoint)?await skillUpgradePreviewHandler(endpoint,payload):(skillSelectionEndpoints as readonly string[]).includes(endpoint)?await skillSelectionHandler(endpoint,payload):(skillAvailabilityEndpoints as readonly string[]).includes(endpoint)?await skillAvailabilityHandler(endpoint,payload):(skillInstallationEndpoints as readonly string[]).includes(endpoint)?await skillInstallationsHandler(endpoint,payload):(industryPlanEndpoints as readonly string[]).includes(endpoint)?await industryPlansHandler(endpoint,payload):(industryTaskEndpoints as readonly string[]).includes(endpoint)?await industryTasksHandler(endpoint,payload):(industryRoleEndpoints as readonly string[]).includes(endpoint)?await industryRolesHandler(endpoint,payload):(industryKnowledgeEndpoints as readonly string[]).includes(endpoint)?await industryKnowledgeHandler(endpoint,payload):(industryDataSourceEndpoints as readonly string[]).includes(endpoint)?await industryDataSourceHandler(endpoint,payload,signal):(industryExecutionToolEndpoints as readonly string[]).includes(endpoint)?await industryExecutionToolHandler(endpoint,payload,signal):(industryMcpConnectionEndpoints as readonly string[]).includes(endpoint)?await industryMcpConnectionHandler(endpoint,payload,signal):(managedMcpConnectionEndpoints as readonly string[]).includes(endpoint)?await managedMcpConnectionHandler(endpoint,payload):(connectorEndpoints as readonly string[]).includes(endpoint)?await connectorHandler(endpoint,payload,signal):(industryPluginEndpoints as readonly string[]).includes(endpoint)?await industryPluginHandler(endpoint,payload,signal):(industryPrepareEndpoints as readonly string[]).includes(endpoint)?await industryPrepareHandler(endpoint,payload,signal):(industryLoadEndpoints as readonly string[]).includes(endpoint)?await industryLoadsHandler(endpoint,payload):endpoint==='tasks/attention'?await taskAttentionHandler(payload):endpoint==='work-attention'?await workAttentionHandler(payload,signal):(planScheduleEndpoints as readonly string[]).includes(endpoint)?await planScheduleHandler(endpoint,payload):(planEndpoints as readonly string[]).includes(endpoint)?await planHandler(endpoint,payload,signal):(marketContentEndpoints as readonly string[]).includes(endpoint)?await marketContentHandler(endpoint,payload):(marketCatalogEndpoints as readonly string[]).includes(endpoint)?await marketCatalogHandler(endpoint,payload):roleToolGrantEndpoints.includes(endpoint)?await roleGrantHandler(endpoint,payload):(webAccessEndpoints as readonly string[]).includes(endpoint)?await webAccessHandler(endpoint,payload):(groupAgentGrantEndpoints as readonly string[]).includes(endpoint)?await groupAgentGrantHandler(endpoint,payload):(groupTaskEndpoints as readonly string[]).includes(endpoint)?await groupTaskHandler(endpoint,payload):(groupAttachmentEndpoints as readonly string[]).includes(endpoint)?await groupAttachmentHandler(endpoint,payload,signal):(taskMaterialEndpoints as readonly string[]).includes(endpoint)?await taskMaterialHandler(endpoint,payload):taskRunEndpoints.some(known=>known===endpoint)?await taskRunHandler(endpoint,payload,signal):(taskRunFlowEndpoints as readonly string[]).includes(endpoint)?await taskRunFlowHandler(endpoint,payload,signal):(endpoint==='tasks/context'||endpoint==='object-conversations/list'||endpoint==='object-conversations/session'||endpoint==='object-conversations/change')?await handleObjectConversations(endpoint,payload):artifactEndpoints.includes(endpoint)?await artifactHandler(endpoint,payload,signal):(handoffEndpoints as readonly string[]).includes(endpoint)?await handleHandoffs(endpoint,payload):endpoint==='roles/lifecycle'?await changeRoleLifecycle(payload):(roleMemoryEndpoints as readonly string[]).includes(endpoint)?await roleMemoryHandler(endpoint,payload):(roleDailyLogEndpoints as readonly string[]).includes(endpoint)?await roleDailyLogHandler(endpoint,payload):taskEndpoints.includes(endpoint)?await taskHandler(endpoint,payload,signal):roleEndpoints.includes(endpoint)?await roleHandler(endpoint,payload):(groupEndpoints as readonly string[]).includes(endpoint)?await groupHandler(endpoint,payload):artifactFileEndpoints.includes(endpoint)?await readArtifactFile(endpoint,payload,signal):resourceEndpoints.includes(endpoint)?await resources.handle(endpoint,payload)
-        :endpoint==='conversations/create'?await conversationDirectory.mutate(()=>service.create(owner,payload))
+        :endpoint==='conversations/create'?await service.create(owner,payload)
         :endpoint==='session-capabilities/read'?await readNativeSessionCapabilities(owner,payload)
         :endpoint==='conversations/read'?await service.bySession(owner,sessionInput(payload))
-        :endpoint==='conversations/ensure'?await conversationDirectory.mutate(()=>service.ensure(owner,payload))
-        :endpoint==='conversations/adopt'?await conversationDirectory.mutate(()=>service.adopt(owner,payload))
+        :endpoint==='conversations/ensure'?await service.ensure(owner,payload)
+        :endpoint==='conversations/adopt'?await service.adopt(owner,payload)
         :endpoint==='copies/create'?await copies.create(owner,payload)
         :endpoint==='copies/list'?await copies.list(owner,payload)
         :endpoint==='copies/resolve'?await copies.resolve(owner,payload)

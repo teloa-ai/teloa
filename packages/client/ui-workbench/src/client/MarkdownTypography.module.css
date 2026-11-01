@@ -1,3 +1,7 @@
 /* 正文标题复用工作台字体层级，不使用浏览器默认标题字号。 */
 .typography.typography :is(h1,h2,h3,h4,h5,h6){font-size:var(--teloa-font-body);font-weight:var(--teloa-weight-heading);line-height:var(--teloa-leading-heading);overflow-wrap:anywhere}
 .typography.typography :is(h1,h2){font-size:var(--teloa-font-section)}
+
+/* 资料、会话预览与成果正文采用阅读层级，避免 h1/h2 被压成同一级。 */
+.typography.typography{font-size:var(--teloa-font-reading);line-height:1.8;overflow-wrap:anywhere}
+.typography.typography h1{font-size:var(--teloa-font-detail);line-height:1.4;margin:0 0 24px}.typography.typography h2{font-size:var(--teloa-font-dialog);margin:28px 0 12px}.typography.typography h3{font-size:var(--teloa-font-section);margin:24px 0 10px}.typography.typography :is(h4,h5,h6){font-size:var(--teloa-font-body);margin:20px 0 8px}.typography.typography :is(p,ul,ol){margin-block:12px}.typography.typography :is(th,td){line-height:1.7}

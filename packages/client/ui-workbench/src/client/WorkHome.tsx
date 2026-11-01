@@ -58,7 +58,7 @@ export function WorkHome({assistantName='Teloa',current,visible,work,management,
     finally{setOpening(undefined)}
   }
   if(!visible)return null
-  return <section className={css.page} aria-label={t('navigation.home')}>
+  return <section className={css.page} data-teloa-home-briefing aria-label={t('navigation.home')}>
     <div className={css.content}>
       {/* 1.0：需要你与员工在办合成一张卡片，「一起处理」为描边次按钮；页面唯一实心主动作留给输入框。 */}
       <section className={css.attentionStrip} aria-label={t('home.overview.attention')}>

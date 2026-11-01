@@ -124,13 +124,11 @@ export function MarketAppsDirectoryView(props:MarketAppsDirectoryViewProps){
  return <section className={css.directory} aria-labelledby="market-apps-title">
   <div className={css.title}>
    <h2 id="market-apps-title">{text('market.apps.title')}</h2>
+   <label data-teloa-field-shell className={css.search}><Search size={16} aria-hidden="true"/><input type="search" value={view.query} placeholder={text('market.apps.search')} aria-label={text('market.apps.search')} onChange={event=>set({query:event.currentTarget.value})}/></label>
    <div className={css.titleActions}><button type="button" aria-pressed={view.mine} onClick={()=>set({mine:!view.mine})}>{text('market.apps.mine',{count:mineCount})}</button>
-    {(props.onCreateSkill||props.onCreateApp||props.onImportSkill)&&<details ref={addMenu} className={css.addMenu} open={addOpen} onToggle={event=>setAddOpen(event.currentTarget.open)}><summary aria-label={text('market.apps.add')} title={text('market.apps.add')}><Plus size={18}/></summary><div>{props.onCreateSkill&&<button type="button" onClick={()=>choose(props.onCreateSkill!)}>{text('market.apps.createSkill')}</button>}{props.onCreateApp&&<button type="button" onClick={()=>choose(props.onCreateApp!)}>{text('market.apps.createApp')}</button>}{props.onImportSkill&&<button type="button" onClick={()=>choose(props.onImportSkill!)}>{text('market.apps.importSkill')}</button>}</div></details>}
+    {props.onOpenTemplates&&<button type="button" className={css.link} onClick={props.onOpenTemplates}>{text('market.apps.templates')}</button>}
+    {(props.onCreateSkill||props.onCreateApp||props.onImportSkill)&&<details ref={addMenu} className={css.addMenu} open={addOpen} onToggle={event=>setAddOpen(event.currentTarget.open)}><summary onClick={event=>{event.preventDefault();setAddOpen(value=>!value)}} aria-label={text('market.apps.add')} title={text('market.apps.add')}><Plus size={18}/></summary><div>{props.onCreateSkill&&<button type="button" onClick={()=>choose(props.onCreateSkill!)}>{text('market.apps.createSkill')}</button>}{props.onCreateApp&&<button type="button" onClick={()=>choose(props.onCreateApp!)}>{text('market.apps.createApp')}</button>}{props.onImportSkill&&<button type="button" onClick={()=>choose(props.onImportSkill!)}>{text('market.apps.importSkill')}</button>}</div></details>}
    </div>
-  </div>
-  <div className={css.searchRow}>
-   <label className={css.search}><Search size={16} aria-hidden="true"/><input type="search" value={view.query} placeholder={text('market.apps.search')} aria-label={text('market.apps.search')} onChange={event=>set({query:event.currentTarget.value})}/></label>
-   {props.onOpenTemplates&&<button type="button" className={css.link} onClick={props.onOpenTemplates}>{text('market.apps.templates')}</button>}
   </div>
   <nav className={css.categories} aria-label={text('market.apps.categoryAria')}>
    {(['all',...categories] as const).map(key=><button key={key} type="button" aria-pressed={view.category===key} onClick={()=>set({category:key})}>{key==='all'?text('market.apps.all'):getTaxonomyLabel('function',key,locale)??key}</button>)}

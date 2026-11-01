@@ -1,18 +1,19 @@
 import {ActionButton} from '@teloa/client-ui-kit'
 import {useEffect,useRef,useState} from 'react'
-import type {RetrievalSearchResult,WorkResource} from '@teloa/contract'
+import {WorkError,type RetrievalSearchResult,type WorkResource} from '@teloa/contract'
 import type {LocalRetrievalApi,RetrievalStatus} from './local-retrieval-api.js'
 import type {RetrievalTranslate} from './LocalRetrievalModelPanel.js'
 import {useRetrievalSnapshot} from './use-retrieval-snapshot.js'
 import {useI18n} from './i18n/provider.js'
 import {localizeWorkError} from './i18n/errors.js'
+import {RetrievalMaterialManager} from './RetrievalMaterialManager.js'
 import css from './LocalRetrieval.module.css'
 
 /**
  * 资料页只呈现检索状态与资料操作；模型管理统一进入设置，不隐式准备或续办加入。
  * 重建收进「更多」，整理进行中的「停止整理」就近可点；索引块数只在「详细信息」里。加入与移出仍按资料来源生效。
  */
-export function LocalRetrievalResourcesPresentation({status,resource,busy,error,readFailed,modelReady=true,modelLabel,t,onEnroll,onRemove,onReindex,onCancel,onModelSettings}:{status?:RetrievalStatus|undefined;resource?:WorkResource|undefined;busy:boolean;error:string;readFailed?:boolean;modelReady?:boolean;modelLabel?:string|undefined;t:RetrievalTranslate;onEnroll:(sourceId:string)=>void;onRemove:(sourceId:string)=>void;onReindex:()=>void;onCancel:()=>void;onModelSettings?:()=>void}){
+export function LocalRetrievalResourcesPresentation({status,resource,busy,error,readFailed,modelReady=true,modelLabel,t,onEnroll,onRemove,onReindex,onCancel,onModelSettings,onManage}:{status?:RetrievalStatus|undefined;resource?:WorkResource|undefined;busy:boolean;error:string;readFailed?:boolean;modelReady?:boolean;modelLabel?:string|undefined;t:RetrievalTranslate;onEnroll:(sourceId:string)=>void;onRemove:(sourceId:string)=>void;onReindex:()=>void;onCancel:()=>void;onModelSettings?:()=>void;onManage?:()=>void}){
  const enrolled=!!resource&&!!status?.items.some(item=>item.sourceId===resource.sourceId)
  const listed=!!resource&&!!status?.items.some(item=>item.resourceId===resource.id)
  // 选中的资料已在已加入列表里就不再单独占一行；未加入、已撤回或只有同来源其他版本在列表里时，单独给它一行。
@@ -26,6 +27,7 @@ export function LocalRetrievalResourcesPresentation({status,resource,busy,error,
   <header className={css.searchHeader}>
    <div className={css.searchIntro}><strong>{t('retrieval.resources.title')}</strong><span role="status" className={css.count}>{modelLabel??(status?t('retrieval.resources.counts',{sources:status.enrolled}):t('retrieval.phase.checking'))}</span></div>
    <div className={css.searchTools}>
+    {onManage&&<ActionButton className={css.button} disabled={readOnly} onClick={onManage}>{t('retrieval.manage.title')}</ActionButton>}
     {onModelSettings&&<ActionButton className={css.button} onClick={onModelSettings}>{t(modelReady?'retrieval.resources.localModels':'retrieval.resources.goEnable')}</ActionButton>}
     {status?.building&&<ActionButton className={css.button} disabled={busy} onClick={onCancel}>{t(busy?'retrieval.resources.working':'retrieval.resources.cancel')}</ActionButton>}
     {status&&status.enrolled>0&&!status.building&&<details className={css.more} data-retrieval-more><summary>{t('retrieval.resources.more')}</summary><div className={css.moreMenu}><ActionButton className={css.menuItem} disabled={busy||status.enrolled===0||!!readFailed} onClick={(event?:{currentTarget:HTMLElement})=>{event?.currentTarget.closest('details')?.removeAttribute('open');onReindex()}}>{t(busy?'retrieval.resources.working':'retrieval.resources.rebuild')}</ActionButton></div></details>}
@@ -42,8 +44,9 @@ export function LocalRetrievalResourcesPresentation({status,resource,busy,error,
   {status&&status.items.length>0&&<details className={css.info}><summary>{t('retrieval.resources.details')}</summary><ul>{status.items.map(row=><li key={row.resourceId??row.sourceId}>{row.title??t('retrieval.index.unavailable')} · {t('retrieval.index.'+row.state)}{row.chunkCount!==null&&` · ${t('retrieval.resources.chunks',{count:row.chunkCount})}`}</li>)}</ul><p>{t('retrieval.resources.totalChunks',{chunks:status.chunks})}</p></details>}
  </section>
 }
-export function LocalRetrievalResources({api,resource,visible,onModelSettings}:{api:LocalRetrievalApi;resource?:WorkResource|undefined;visible:boolean;onModelSettings?:()=>void}){
- const {locale,t}=useI18n(),snapshot=useRetrievalSnapshot(async signal=>{const [index,model]=await Promise.all([api.status(signal),api.modelStatus(signal)]);return {index,model}},api,visible)
+export function LocalRetrievalResources({api,resource,resources=[],resourceContext,visible,onModelSettings}:{api:LocalRetrievalApi;resource?:WorkResource|undefined;resources?:readonly WorkResource[];resourceContext?:ReadonlyMap<string,string>|undefined;visible:boolean;onModelSettings?:()=>void}){
+ const {locale,t}=useI18n(),[managing,setManaging]=useState(false),snapshot=useRetrievalSnapshot(async signal=>{const [index,model]=await Promise.all([api.status(signal),api.modelStatus(signal)]);return {index,model}},api,visible)
+ useEffect(()=>{setManaging(false)},[api,visible])
  const model=snapshot.value?.model,ready=!!model?.enabled&&!!model.provider&&['ready','standby'].includes(model.provider.preparation.phase)
  const modelLabel=model?(!model.enabled?t('retrieval.resources.disabled'):ready?t('retrieval.resources.counts',{sources:snapshot.value!.index.enrolled}):t('retrieval.phase.'+(model.provider?.preparation.phase??'unprepared'))):t('retrieval.phase.checking')
  const run=(action:(signal:AbortSignal)=>Promise<RetrievalStatus>)=>void snapshot.run(async signal=>({index:await action(signal),model:await api.modelStatus(signal)}))
@@ -52,17 +55,43 @@ export function LocalRetrievalResources({api,resource,visible,onModelSettings}:{
   if(!latest.enabled||!latest.provider||!['ready','standby'].includes(latest.provider.preparation.phase)){onModelSettings?.();return api.status(signal)}
   return api.enroll(sourceId,signal)
  })
- return <><LocalRetrievalResourcesPresentation status={snapshot.value?.index} resource={resource} busy={snapshot.busy} readFailed={snapshot.readFailed} modelReady={ready} modelLabel={modelLabel} error={snapshot.error?localizeWorkError(locale,snapshot.error):''} t={t as RetrievalTranslate} {...(onModelSettings?{onModelSettings}:{})} onEnroll={enroll} onRemove={id=>run(signal=>api.remove(id,signal))} onReindex={()=>run(signal=>api.reindex(signal))} onCancel={()=>run(signal=>api.cancel(signal))}/>{ready&&<RetrievalTrial api={api}/>}</>
+ const apply=async(action:'enroll'|'remove',ids:string[])=>{
+  let applied=false
+  await snapshot.run(async signal=>{
+   const latest=action==='enroll'?await api.modelStatus(signal):snapshot.value!.model;signal.throwIfAborted()
+   if(action==='enroll'&&(!latest.enabled||!latest.provider||!['ready','standby'].includes(latest.provider.preparation.phase)))throw new WorkError('teloa/conflict','')
+   const index=await (action==='enroll'?api.enrollSources(ids,signal):api.removeSources(ids,signal));applied=true
+   return {index,model:latest}
+  })
+  return applied
+ }
+ const indexIdentity=JSON.stringify(snapshot.value?.index.items.map(row=>[row.sourceId,row.resourceId,row.version]).sort()??[])
+ const contextKey=JSON.stringify([model?.provider?.id,model?.provider?.profileHash,indexIdentity]),error=snapshot.error?localizeWorkError(locale,snapshot.error):''
+ return <><LocalRetrievalResourcesPresentation status={snapshot.value?.index} resource={resource} busy={snapshot.busy} readFailed={snapshot.readFailed} modelReady={ready} modelLabel={modelLabel} error={error} t={t as RetrievalTranslate} onManage={()=>setManaging(true)} {...(onModelSettings?{onModelSettings}:{})} onEnroll={enroll} onRemove={id=>run(signal=>api.remove(id,signal))} onReindex={()=>run(signal=>api.reindex(signal))} onCancel={()=>run(signal=>api.cancel(signal))}/>
+  <RetrievalTrial api={api} ready={ready&&!snapshot.readFailed} visible={visible} contextKey={contextKey}/>
+  {managing&&snapshot.value&&<RetrievalMaterialManager resources={resources} resourceContext={resourceContext} status={snapshot.value.index} busy={snapshot.busy} readOnly={snapshot.readFailed} error={error} modelReady={ready} close={()=>setManaging(false)} apply={apply}/>}
+ </>
 }
 
-/** 命中原片段由同一检索权限和版本校验返回；查询取消不取消后台索引。 */
-function RetrievalTrial({api}:{api:LocalRetrievalApi}){
- const {locale,t}=useI18n(),[query,setQuery]=useState(''),[result,setResult]=useState<RetrievalSearchResult>(),[busy,setBusy]=useState(false),[error,setError]=useState(''),active=useRef<AbortController>()
- useEffect(()=>{setResult(undefined);setError('');setBusy(false);return()=>active.current?.abort()},[api])
+/** 模型冷启动不能卸载试搜表单；取消查询与停止后台索引是两种独立操作。 */
+function RetrievalTrial({api,ready,visible,contextKey}:{api:LocalRetrievalApi;ready:boolean;visible:boolean;contextKey:string}){
+ const {locale,t}=useI18n(),[query,setQuery]=useState(''),[result,setResult]=useState<RetrievalSearchResult>(),[busy,setBusy]=useState(false),[error,setError]=useState(''),active=useRef<AbortController>(),input=useRef<HTMLInputElement>(null)
+ const stop=()=>{active.current?.abort();active.current=undefined;setBusy(false)}
+ useEffect(()=>{setQuery('');return()=>active.current?.abort()},[api])
+ useEffect(()=>{stop();setResult(undefined);setError('');return()=>active.current?.abort()},[api,contextKey,visible])
  const search=async()=>{
-  if(busy||!query.trim())return
+  if(active.current||busy||!ready||!visible||!query.trim())return
   const controller=new AbortController();active.current=controller;setBusy(true);setError('');setResult(undefined)
-  try{const next=await api.search(query.trim(),controller.signal);if(!controller.signal.aborted)setResult(next)}catch(cause){if(!controller.signal.aborted)setError(localizeWorkError(locale,cause))}finally{if(active.current===controller&&!controller.signal.aborted){setBusy(false);active.current=undefined}}
+  try{const next=await api.search(query.trim(),controller.signal);if(active.current===controller&&!controller.signal.aborted)setResult(next)}catch(cause){if(active.current===controller&&!controller.signal.aborted)setError(localizeWorkError(locale,cause))}finally{if(active.current===controller){setBusy(false);active.current=undefined}}
  }
- return <details className={css.panel}><summary>{t('retrieval.trial.title')}</summary><p>{t('retrieval.trial.boundary')}</p><form className={css.trialForm} onSubmit={event=>{event.preventDefault();void search()}}><label>{t('retrieval.trial.query')}<input value={query} maxLength={500} disabled={busy} onChange={event=>{setQuery(event.target.value);setResult(undefined);setError('')}}/></label><ActionButton className={css.button} type="submit" disabled={busy||!query.trim()}>{t(busy?'retrieval.trial.searching':'retrieval.trial.search')}</ActionButton></form>{error&&<p role="alert">{error}</p>}{result&&<div role="status"><p>{t('retrieval.trial.coverage',{searched:result.coverage.searched.length,pending:result.coverage.pending.length})}</p>{!result.results.length&&<p>{t('retrieval.trial.empty')}</p>}{result.results.map((hit,index)=><article key={index}><h4>{hit.title} · v{hit.resourceVersion}</h4><small>{t('retrieval.trial.lines',{start:hit.lines[0]+1,end:hit.lines[1]+1})}{hit.heading?' · '+hit.heading:''}</small><pre className={css.excerpt}>{hit.excerpt}</pre></article>)}</div>}</details>
+ return <details className={css.panel}><summary>{t('retrieval.trial.title')}</summary><p>{t('retrieval.trial.boundary')}</p>
+  {!ready&&<p role="status">{t(busy?'retrieval.trial.waiting':'retrieval.trial.notReady')}</p>}
+  <form className={css.trialForm} onSubmit={event=>{event.preventDefault();void search()}}><label>{t('retrieval.trial.query')}<input ref={input} value={query} maxLength={500} disabled={busy} onChange={event=>{setQuery(event.target.value);setResult(undefined);setError('')}}/></label><ActionButton className={css.button} type="submit" disabled={busy||!ready||!query.trim()}>{t(busy?'retrieval.trial.searching':'retrieval.trial.search')}</ActionButton>{busy&&<ActionButton className={css.button} type="button" onClick={()=>{stop();requestAnimationFrame(()=>input.current?.focus())}}>{t('retrieval.trial.cancel')}</ActionButton>}</form>
+  {error&&<p role="alert">{error}</p>}
+  {result&&<div className={css.trialResults}><p role="status">{t('retrieval.trial.coverage',{searched:result.coverage.searched.length,pending:result.coverage.pending.length})}</p>
+   {!!result.coverage.pending.length&&<details><summary>{t('retrieval.trial.pending',{count:result.coverage.pending.length})}</summary><ul>{result.coverage.pending.map(row=><li key={row.resourceId}>{row.title} · {t('retrieval.index.'+row.reason)}</li>)}</ul></details>}
+   {!result.results.length&&<p>{t('retrieval.trial.empty')}</p>}
+   {result.results.map((hit,index)=><article key={index}><header><h4>{hit.title} · v{hit.resourceVersion}</h4></header><small>{t('retrieval.trial.lines',{start:hit.lines[0]+1,end:hit.lines[1]+1})}{hit.heading?' · '+hit.heading:''}</small><pre className={css.excerpt} role="region" tabIndex={0} aria-label={t('retrieval.trial.excerpt',{title:hit.title})}>{hit.excerpt}</pre></article>)}
+  </div>}
+ </details>
 }

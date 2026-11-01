@@ -15,7 +15,7 @@ import {BusinessDataService,openResourceDatabase,type TaskRun} from '@teloa/back
 import {encodeResourceReference,type BusinessObjectReference} from '@teloa/contract'
 import {apply} from '../src/index.ts'
 import {compositionEntries,type RpcHandler} from './fixtures/production-host.ts'
-import {installNativeSessions,installNativeHostServices,publishNativeFixtureInput} from './fixtures/native-host-services.ts'
+import {installNativeSessions,installNativeHostServices,publishNativeFixtureInput,nativeFixtureTitleResponse} from './fixtures/native-host-services.ts'
 import {nativeToolInvocation} from './fixtures/native-tool-invocation.ts'
 import {testRoleResponsibility} from './role-test-fixture.ts'
 import type {ConversationWorkStatus} from '../src/conversation-work-dispatch.ts'
@@ -30,6 +30,8 @@ class WorkModel extends LlmAdapter{
  readonly repeatDispatch=new Set<string>()
  override async resolveModel(provider:string,id:string){return {provider,id,name:id,defaultMaxTokens:1024}}
  async *stream(options:GenerateOptions):AsyncIterable<StreamChunk>{
+  const title=nativeFixtureTitleResponse(options)
+  if(title){yield* title;return}
   const sessionId=String(options.sessionId),count=this.calls.get(sessionId)??0;this.calls.set(sessionId,count+1)
   if(!sessionId.startsWith('task-run-')&&(count===0||count===1&&this.repeatDispatch.has(sessionId))){
    const selected=this.instructions.get(sessionId),id=ToolCallId('dispatch-'+sessionId+'-'+count),name=selected?.name??'teloa_work_dispatch',args=JSON.stringify(selected?.arguments??{scope:'SOC',title:'调查真实事件',goal:'核对已提供的证据并给出未确认事项',roleId:this.role.id,expectedRoleVersion:this.role.version})
@@ -102,6 +104,9 @@ test('统一交办：普通主会话→真实岗位Task/Run→结果回原会话
  const work=(await call<ConversationWorkStatus[]>('work-requests/list',{sessionId:conversation.sessionId}))[0]!
  assert.equal(work.members[0]?.run?.id,run.id);assert.equal(work.counts.received,1);assert.match(work.members[0]?.result??'',/依据/)
  const origin=ctx.agents.get(SessionId(conversation.sessionId))!;await origin.whenIdle()
+ await until(()=>ctx.sessionTitle.get(origin.session)?.source.kind==='provider','本人普通对话应完成首问标题生成')
+ assert.equal(ctx.sessionTitle.get(origin.session)?.title,'集成测试会话')
+ assert.equal(ctx.sessionTitle.get(ctx.agents.get(SessionId(run.sessionId))!.session)?.source.kind,'fallback','执行会话保留原生元数据标题，不调用本人首问模型')
  // 同一原生用户轮的下一 step 再次交办；新 tool call、相同原指令身份，仍只创建原 Task/Run。
  assert.deepEqual(approvedTools,['teloa_work_dispatch','teloa_work_dispatch']);assert.ok((model.calls.get(conversation.sessionId)??0)>=3)
  for(const count of [0,1]){

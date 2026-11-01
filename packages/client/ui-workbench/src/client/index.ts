@@ -1,3 +1,5 @@
+import './browser-crypto-compat.js'
+import {installDesktopAppVisibility} from './desktop-app-visibility.js'
 import {createAssistantCompanionActivity} from './assistant-companion-activity.js'
 import {createAssistantMiniChat} from './assistant-mini-chat.js'
 import {createConversationPlanDirectory} from './conversation-plans.js'
@@ -216,6 +218,7 @@ export const name = 'teloa-ui-workbench'
 export const inject = ['slots','theme','connection','locale','remote','remote.pluginManager','remote.agentPresets','uiSession']
 
 export async function apply(ctx: Context): Promise<void> {
+  installDesktopAppVisibility(ctx)
   const releasePresentation=await applicationPresentation.configure(window.teloaApplication)
   ctx.effect(()=>releasePresentation)
   const navigationStorage=createWorkbenchNavigationStorage(applicationPresentation.getNavigationStorageScope(),window)
@@ -670,6 +673,9 @@ export async function apply(ctx: Context): Promise<void> {
   const homeSession=new HomeNativeController({
     storage:navigationStorage,identity:()=>crypto.randomUUID(),
     isEligible:async(id,afterAdopt=false)=>{
+      // 原生空历史不代表普通工作：助手主聊和任务执行会话仍保留自己的固定身份。
+      const selected=work.getSnapshot().conversation
+      if(selected?.sessionId===id&&selected.purpose!==undefined||work.getDirectorySnapshot().rows.some(row=>row.sessionId===id&&row.purpose!==undefined))return false
       const state=businessBuilder.getSnapshot()
       if(!afterAdopt&&state.status==='ready'&&state.checkedSessionId===id&&(!state.error||state.sessionKind!==null))return state.sessionKind===null
       try{return await businessBuilderApi.bySession({sessionId:id})===null}
@@ -699,6 +705,8 @@ export async function apply(ctx: Context): Promise<void> {
       const child=requireWorkContext()
       const binding=await call('conversations/adopt',{sessionId:id,requestId:homeNativeAdoptionRequestId(navigationStorage,id),title:child.sessions.list.getSnapshot().byId[brandString<SessionId>(id)]?.title||'通用工作会话'})
       if(!isConversation(binding)||binding.sessionId!==id)throw Error('待用会话绑定未确认。')
+      // 冷恢复时目录可能尚未读到专用身份；以本次宿主回执收口，不能把助手主聊交给首页。
+      if(binding.purpose!==undefined)throw Object.assign(Error('专用会话不能作为首页工作草稿。'),{code:'teloa/session-not-adoptable'})
       await work.refreshDirectory()
     },
   })
@@ -1068,6 +1076,7 @@ export async function apply(ctx: Context): Promise<void> {
           const saved = pending ? await skillInstallApi.recover() : await (async () => { const preview = await skillInstallApi.preview(input); return skillInstallApi.install({ requestId, source: input, expectedBundleHash: preview.bundleHash, ...(preview.trustHash ? { expectedTrustHash: preview.trustHash } : {}) }) })()
           return saved.state === 'installed' ? { state: 'installed' as const, installationId: saved.id, nativeName: saved.native.name } : { state: 'pending' as const }
         },
+        readiness: loadId => industryLoadApi.readiness(loadId),
         prepare: async loadId => { const readiness = await industryLoadApi.readiness(loadId); if (!readiness.counts.auto) return readiness; const receipt = await industryLoadApi.prepare(loadId, readiness.digest, { activate: false }); return receipt.readiness ?? industryLoadApi.readiness(loadId) },
         roles: async loadId => (await industryRoleApi.list()).map(row => ({ loadId: row.loadId, itemInstanceId: row.itemInstanceId, state: row.state, ...(row.role ? { roleId: row.role.id } : {}) })),
         team: async seed => { const saved = await findIndustryTeam(groupApi, seed); return saved ? { groupId: saved.group.id } : undefined },

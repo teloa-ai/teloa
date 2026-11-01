@@ -28,7 +28,7 @@ async function openedDirectory(){
   const render=()=>page.render('WorkDirectory',props)
   const click=()=>{const row=nodes(render()).find(node=>node.props['data-session-id']==='A')!;const button=nodes(row).find(node=>node.type==='button'&&node.props.className==='open')!;assert.equal(button.props.disabled,false);button.props.onClick()}
   const copyOpen=()=>{nodes(render()).find(node=>node.type===ConversationActionMenu)!.props.choose('copy');return nodes(render()).find(node=>node.type===ConversationActions)!.props.open as (row:Conversation,signal:AbortSignal)=>Promise<void>}
-  return {work,port,opened,render,click,copyOpen,mode:()=>mode}
+  return {work,port,opened,render,click,copyOpen,props,mode:()=>mode}
 }
 
 test('目录点击实际已打开而选中投影仍非目标时，恢复原生单聊',async()=>{
@@ -38,6 +38,18 @@ test('目录点击实际已打开而选中投影仍非目标时，恢复原生�
   assert.deepEqual(f.work.getSnapshot(),snapshot)
   assert.equal(f.work.getSnapshot().sessionId,'B')
   assert.equal(f.mode(),'native')
+})
+
+test('离开确认迟到时不执行旧点击；重复点击同一在途会话不重复读取',async()=>{
+ const f=await openedDirectory(),first=deferred<boolean>(),second=deferred<boolean>(),entered=deferred<void>(),created:string[]=[]
+ let guards=0,reads=0
+ Object.assign(f.props,{beforeOpen:()=>++guards===1?first.promise:second.promise,createGroup:()=>{created.push('group');entered.resolve()}})
+ f.port.ensure=async id=>{reads++;return conversation(id)}
+ f.click();f.click();assert.equal(guards,1)
+ nodes(f.render()).find(node=>node.type==='button'&&node.children.includes('collaboration.action.new'))!.props.onClick()
+ second.resolve(true);await entered.promise
+ first.resolve(true);await new Promise(resolve=>setImmediate(resolve))
+ assert.deepEqual(created,['group']);assert.equal(reads,0);assert.deepEqual(f.opened,[]);assert.equal(f.mode(),'directory')
 })
 
 test('目录打开被较新选择或打开取消、或领养身份不符时，不恢复原生单聊',async()=>{
@@ -107,9 +119,9 @@ test('同一目录中的群和一对一仍打开各自真实通道，群详情�
  const [directory,frame,group,collaboration]=await Promise.all([read('WorkDirectory.tsx'),read('WorkbenchFrame.tsx'),read('SavedCollaborationPage.tsx'),read('CollaborationPage.tsx')])
  assert.doesNotMatch(directory,/className=\{css\.section\} aria-label=\{t\('conversationDirectory\.(direct|groups)'\)\}/)
  assert.match(directory,/const typedRows=unifiedRows\.filter\(entry=>directoryType===/);assert.match(directory,/\.map\(renderEntry\)/)
- assert.match(directory,/await work\.openConversation\(row\)/)
+ assert.match(directory,/await work\.openConversation\(row,signal\)/)
  assert.match(directory,/onClick=\{\(\)=>\{void navigateDirectory\(\(\)=>openGroup\(group\.id\)\)\}\}/)
- assert.match(directory,/if\(!beforeOpen\|\|await beforeOpen\(\)\)run\(\)/,'先经离开守卫，再打开原群')
+ assert.match(directory,/if\(beforeOpen&&!await beforeOpen\(\)\)return;if\(!signal\.aborted\)run\(\)/,'先经离开守卫，再打开原群')
  assert.match(frame,/const openSavedGroup=.*?setGroupCreateRequest\(0\);actions\.openGroupTopic\(id,''\)/)
  assert.match(frame,/onOpened=\{\(\)=>\{actions\.openMessages\('native'\)/)
  assert.doesNotMatch(frame,/shell\.messageType\.(ai|group)/)

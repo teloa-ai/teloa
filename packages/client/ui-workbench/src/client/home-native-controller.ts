@@ -70,7 +70,14 @@ export class HomeNativeController{
     const eligible=await this.port.isEligible?.(actual)
     if(this.port.storage.getItem(draftKey)!==actual)throw Error('待用会话身份已变化，请重试。')
     if(eligible===false){this.accept(actual);continue}
-    await this.port.adopt(actual)
+    try{await this.port.adopt(actual)}catch(error){
+     // 旧首页缓存可能指向现已登记的助手；只退役首页引用，原会话和原生输入仍留在原处。
+     if(error&&typeof error==='object'&&'code'in error&&error.code==='teloa/session-not-adoptable'){
+      if(this.port.storage.getItem(draftKey)!==actual)throw Error('待用会话身份已变化，请重试。')
+      this.accept(actual);continue
+     }
+     throw error
+    }
     const adoptedEligible=await this.port.isEligible?.(actual,true)
     if(this.port.storage.getItem(draftKey)!==actual)throw Error('待用会话身份已变化，请重试。')
     if(adoptedEligible===false){this.accept(actual);continue}

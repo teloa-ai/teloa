@@ -65,7 +65,7 @@ export function WorkspaceSearch({visible,source,conversationStatus,knowledgeStat
  if(!visible)return null
  return <dialog ref={dialog} className={css.dialog} aria-label={t('workspaceSearch.title')} {...dismissEvents} onKeyDown={trapTab}>
  <header className={css.header}>
-  <label className={css.search}><Search size={17} aria-hidden="true"/><input ref={input} role="combobox" aria-autocomplete="list" aria-expanded="true" aria-controls={resultList} aria-activedescendant={activeKey?optionId(activeKey):undefined} aria-label={t('workspaceSearch.inputAria')} value={query} onKeyDown={navigate} onChange={event=>{setQuery(event.target.value);setSelectedKey(undefined);setError('')}} placeholder={t('workspaceSearch.placeholder')}/></label>
+  <label data-teloa-field-shell className={css.search}><Search size={17} aria-hidden="true"/><input ref={input} role="combobox" aria-autocomplete="list" aria-expanded="true" aria-controls={resultList} aria-activedescendant={activeKey?optionId(activeKey):undefined} aria-label={t('workspaceSearch.inputAria')} value={query} onKeyDown={navigate} onChange={event=>{setQuery(event.target.value);setSelectedKey(undefined);setError('')}} placeholder={t('workspaceSearch.placeholder')}/></label>
   <button className={css.close} type="button" aria-label={t('workspaceSearch.closeAria')} disabled={busy} onClick={close}><X size={20}/></button>
  </header>
  <div className={css.types} role="tablist" aria-label={t('workspaceSearch.title')}>

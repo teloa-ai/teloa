@@ -1,0 +1,5 @@
+.footer{display:flex;flex:none;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;padding:16px 4px;color:var(--teloa-muted);font-size:var(--teloa-font-caption);font-variant-numeric:tabular-nums}
+.footer button{min-height:38px;padding:8px 14px;border:1px solid var(--teloa-border-strong);border-radius:8px;color:var(--teloa-text);background:var(--teloa-surface);font:inherit;cursor:pointer}
+.footer button:hover{background:var(--teloa-hover)}
+.footer button:focus-visible{outline:2px solid var(--teloa-focus);outline-offset:2px}
+@media(max-width:760px){.footer button{min-height:44px}}

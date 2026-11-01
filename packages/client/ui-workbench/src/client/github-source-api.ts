@@ -1,3 +1,4 @@
+import {sha256Digest} from '@teloa/contract'
 import {isGithubRepositoryName} from '@teloa/contract'
 import {recoveryStorageError} from './recovery-error.ts'
 type Call=(method:string,payload:unknown)=>Promise<unknown>
@@ -28,7 +29,7 @@ function source(value:unknown):GithubSourceInput{
 }
 function request(value:unknown):GithubSourceRequest{try{const row=exact(value,['requestId','owner','repo','ref','path']);if(!uuid(row.requestId))throw Error();return {requestId:row.requestId.toLowerCase(),...source({owner:row.owner,repo:row.repo,ref:row.ref,...(row.path===undefined?{}:{path:row.path})})}}catch(error){if(error instanceof Error&&/(owner|repo|ref)/.test(error.message))throw error;throw Error('GitHub 来源 requestId 或请求格式不正确。')}}
 const same=(left:GithubSourceRequest,right:GithubSourceInput)=>left.owner===right.owner&&left.repo===right.repo&&left.ref===right.ref&&left.path===right.path
-const digest=async(value:Uint8Array)=>Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',Uint8Array.from(value))),byte=>byte.toString(16).padStart(2,'0')).join('')
+const digest=async(value:Uint8Array)=>Array.from(new Uint8Array(await sha256Digest(Uint8Array.from(value))),byte=>byte.toString(16).padStart(2,'0')).join('')
 const encode=(value:Uint8Array)=>{let result='';for(let at=0;at<value.length;at+=0x8000)result+=String.fromCharCode(...value.subarray(at,at+0x8000));return btoa(result)}
 function decode(value:unknown):Uint8Array{
  if(typeof value!=='string'||value.length>MAX_BASE64||value.length%4!==0||!/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(value))throw Error('GitHub 来源文件字节格式不正确。')

@@ -49,7 +49,7 @@ import { useDirectoryFocus } from './directory-focus.js';
 import { openDialog } from './dialog-focus.js';
 import { useDialogDismiss } from './use-dialog-dismiss.js';
 import {RoleProfileDrawer} from './RoleProfileDrawer.js';
-import { Children, isValidElement, useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import { Children, isValidElement, useCallback, useEffect, useId, useRef, useState, type ReactNode } from 'react';
 import {createRoleFormDrafts,useRoleFormDraft} from './role-form-drafts.js'
 import { Activity, Archive, ArrowLeft, ArrowUpRight, BookOpen, Bot, Brain, Check, ChevronLeft, ChevronRight, History, ListPlus, MessagesSquare, Pause, Play, Plus, RefreshCw, Route, ScrollText, Search, ShieldCheck, UserCog, Users, Wrench, X, MessageCircle, Phone, Download, Pencil, MoreHorizontal, Share2, Sparkles, Zap } from 'lucide-react';
 import {ToolbarIconButton} from './ToolbarIconButton.js';
@@ -275,7 +275,7 @@ export function TeamPage({ localRetrievalApi,openRetrieval,twinDrafts,employeeAr
             </header>
             {describing&&pageCreate&&sharedTemplates&&<div><CreateEntry entity={'share' as PageCreateEntity} directSentence descriptionPlaceholderKey="create.sentence.placeholder.employee" sentenceDraft={{key:'teloa.team-template-creation-input/v1',storage:sharedTemplates.storage}} api={pageCreate.api} prepare={prompt=>pageCreate.prepare({...prompt,text:t('market.create.defaultEmployeePrompt')+'\n\n'+prompt.text})} openMarket={pageCreate.openMarket} renderConfirmation={({preview})=><button type="button" onClick={()=>{try{sharedTemplates.openDraft(readSharePackage((JSON.parse(preview.draft.body) as {package:unknown}).package))}catch{setAssignmentError(t('templateShare.invalid'))}}}>{t('templateShare.previewShare')}</button>}/></div>}
             <div className={teamCss.rosterBar}>
-              <label className={teamCss.rosterSearch}><Search size={16}/><input aria-label={t('team.search')} value={query} onChange={event => setQuery(event.target.value)} placeholder={t('team.search')}/>{query && <button type="button" className={teamCss.rosterSearchClear} aria-label={t('team.page.searchClear')} title={t('team.page.searchClear')} onClick={() => setQuery('')}><X size={14}/></button>}</label>
+              <label data-teloa-field-shell className={teamCss.rosterSearch}><Search size={16}/><input aria-label={t('team.search')} value={query} onChange={event => setQuery(event.target.value)} placeholder={t('team.search')}/>{query && <button type="button" className={teamCss.rosterSearchClear} aria-label={t('team.page.searchClear')} title={t('team.page.searchClear')} onClick={() => setQuery('')}><X size={14}/></button>}</label>
               <label className={teamCss.businessFilter}>{employeeCopy(locale,'business')}<select value={businessFilter} onChange={event=>setBusinessFilter(event.target.value)}><option value="all">{employeeCopy(locale,'allBusinesses')}</option>{scopeLabels.map(label=><option key={label.scope} value={label.scope}>{collaborationScopes[label.scope]??label.title}</option>)}</select></label>
               <span className={teamCss.statusPills} role="group" aria-label={t('team.stateFilter')}>
                 {statusPills.map(([id, label]) => <button key={id} type="button" aria-pressed={status === id} onClick={() => setStatus(id)}>{label}</button>)}
@@ -518,7 +518,8 @@ export function RoleDetail({ localRetrievalApi,openRetrieval,twinDrafts,employee
         </div>
         <p>{dutyLead}</p>
         <div className={teamCss.identityActions} aria-label={t('team.profile.title')}>
-          <button type="button" className={teamCss.primaryPill} disabled={!talk} aria-describedby={talkDisabledReason?`role-chat-note-${encodeURIComponent(role.id)}`:undefined} onClick={()=>{if(!talk)return;setChatNotice(undefined);void talk(role.id).then(opened=>{if(!opened)setChatNotice(t('team.profile.historyEmpty'))}).catch(error=>setError(localizeWorkError(locale,error)))}}><MessageCircle size={14} aria-hidden/>{retired?t('team.profile.action.history'):employeeCopy(locale,'message')}</button>
+          {role.state==='paused'&&role.storage==='persistent'&&persistence&&<button type="button" className={teamCss.primaryPill} disabled={!allowed||lifecyclePending} onClick={()=>openProfilePanel('management')}><UserCog size={14} aria-hidden/>{t('team.profile.action.resume')}</button>}
+          <button type="button" className={role.state==='paused'&&persistence?teamCss.outlinePill:teamCss.primaryPill} disabled={!talk} aria-describedby={talkDisabledReason?`role-chat-note-${encodeURIComponent(role.id)}`:undefined} onClick={()=>{if(!talk)return;setChatNotice(undefined);void talk(role.id).then(opened=>{if(!opened)setChatNotice(t('team.profile.historyEmpty'))}).catch(error=>setError(localizeWorkError(locale,error)))}}><MessageCircle size={14} aria-hidden/>{retired?t('team.profile.action.history'):employeeCopy(locale,'message')}</button>
           <button type="button" className={teamCss.outlinePill} disabled={!phone||retired||role.storage!=='persistent'} aria-describedby={!phone?`role-phone-note-${encodeURIComponent(role.id)}`:undefined} onClick={()=>{void phone?.(role.id).catch(error=>setError(localizeWorkError(locale,error)))}}><Phone size={14} aria-hidden/>{employeeCopy(locale,'call')}</button>
           <DetailsMenu menuRef={profileMenu} className={teamCss.profileMenu} resetKey={role.id} closeOnSelect>
             <summary aria-label={employeeCopy(locale,'moreActions')} title={employeeCopy(locale,'moreActions')}><MoreHorizontal size={16}/></summary>
@@ -668,7 +669,7 @@ export function RoleForm({skillTitles,work,resourceApi,runtimeConfigs,initial,pe
   const [readingSource,setReadingSource]=useState(false)
   const importGeneration=useRef(0)
   useEffect(()=>()=>{importGeneration.current++},[])
-  const [validationError,setValidationError]=useState<string>()
+  const [validationError,setValidationError]=useState<string>(),validationErrorId=useId()
   const nameRef=useRef<HTMLInputElement>(null),dutyRef=useRef<HTMLTextAreaElement>(null),dataRef=useRef<HTMLTextAreaElement>(null),executionRef=useRef<HTMLTextAreaElement>(null),scopeRef=useRef<HTMLInputElement>(null)
   useEffect(()=>{
    if(!validationError)return
@@ -739,7 +740,7 @@ export function RoleForm({skillTitles,work,resourceApi,runtimeConfigs,initial,pe
   // 员工配置保留 required，由上述校验统一提示并聚焦，避免原生气泡抢先拦截。
   return <Dialog pending={pending} noValidate capability="people" title={t(role?'team.form.editRole':'team.form.newRole')} drawer={!!role} wide={!role} close={close} submit={submit}>
     {discard&&<div className={teamCss.inlineNotice}><p>{t('roleDelegation.status.stale')}</p><button type="button" onClick={discard}>{t('collaboration.resources.discardDraft')}</button></div>}
-    {validationError&&<p className={teamCss.inlineNotice} role="alert">{validationError}</p>}
+    {validationError&&<p id={validationErrorId} className={teamCss.inlineNotice} role="alert">{validationError}</p>}
     {initialFields&&!role&&<p>{retryPending?t('team.form.retryPending'):employeeCopy(locale,'draftRestored')}</p>}
     {mustPause&&<p className={teamCss.inlineNotice} role="status">{t('roleModels.pauseBeforeEdit')}</p>}
     <nav className={clsx(teamCss.roleSteps,mode==='hire'&&teamCss.roleStepsFour)} aria-label={t('team.form.steps')}>
@@ -751,10 +752,10 @@ export function RoleForm({skillTitles,work,resourceApi,runtimeConfigs,initial,pe
       <div className={css.buttons}><button type="button" onClick={confirmPendingHireChange}>{t('team.hire.drift.confirm')}</button><button type="button" onClick={()=>setPendingHireChange(undefined)}>{t('team.hire.drift.cancel')}</button></div>
     </div>}
     {mode==='edit'&&step===0&&<section className={teamCss.stepPanel} aria-label={t('team.form.step.identity')}>
-      <label>{t('team.form.name')}<input ref={nameRef} aria-invalid={!!validationError&&!value.name.trim()} required maxLength={80} value={value.name} onChange={event=>patch({name:event.target.value})} placeholder={t('team.form.namePlaceholder')}/></label>
+      <label>{t('team.form.name')}<input ref={nameRef} aria-invalid={!!validationError&&!value.name.trim()} aria-describedby={validationError&&!value.name.trim()?validationErrorId:undefined} required maxLength={80} value={value.name} onChange={event=>patch({name:event.target.value})} placeholder={t('team.form.namePlaceholder')}/></label>
       {value.kind==='employee'&&<EmployeeAvatarPicker value={value.avatarKey} name={value.name} onChange={avatarKey=>patch({avatarKey})}/>}
       <label>{t('team.form.kind')}<select disabled={!!role} value={value.kind} onChange={event=>patch({kind:event.target.value as RoleFields['kind']})}><option value="employee">{t('team.form.employee')}</option><option value="twin">{t('team.form.twin')}</option></select></label>
-      <label>{t('team.form.mission')}<textarea ref={dutyRef} aria-invalid={!!validationError&&!value.duty.trim()} required rows={3} maxLength={4000} value={value.duty} onChange={event=>patch({duty:event.target.value})} placeholder={t('team.form.missionPlaceholder')}/></label>
+      <label>{t('team.form.mission')}<textarea ref={dutyRef} aria-invalid={!!validationError&&!value.duty.trim()} aria-describedby={validationError&&!value.duty.trim()?validationErrorId:undefined} required rows={3} maxLength={4000} value={value.duty} onChange={event=>patch({duty:event.target.value})} placeholder={t('team.form.missionPlaceholder')}/></label>
       <p className={teamCss.stepHint}>{t('team.form.responsibilityHint')}</p>
       <div className={teamCss.responsibilityEditor}>{responsibilityGroups(value.responsibility??emptyResponsibility()).map(group=><label key={group.key}>{t(group.labelKey)}<textarea rows={2} maxLength={4000} value={responsibilityText(group.items)} onChange={event=>patch({responsibility:{...(value.responsibility??emptyResponsibility()),[group.key]:responsibilityItems(event.target.value)}})}/><small>{t('team.form.onePerLine')}</small></label>)}</div>
       {value.kind==='twin'&&<p className={teamCss.inlineNotice}>{t('team.form.twinNote')}</p>}
@@ -762,13 +763,13 @@ export function RoleForm({skillTitles,work,resourceApi,runtimeConfigs,initial,pe
     {mode==='hire'&&step===0&&<section className={teamCss.stepPanel} aria-label={t('team.hire.step.identity')}>
       <h1>{t('team.hire.identity.title')}</h1>
 
-      <label>{t('team.hire.identity.nameLabel')}<input ref={nameRef} aria-invalid={!!validationError&&!value.name.trim()} autoFocus required maxLength={80} value={value.name} onChange={event=>patch({name:event.target.value})} placeholder={t('team.hire.identity.namePlaceholder')}/></label>
+      <label>{t('team.hire.identity.nameLabel')}<input ref={nameRef} aria-invalid={!!validationError&&!value.name.trim()} aria-describedby={validationError&&!value.name.trim()?validationErrorId:undefined} autoFocus required maxLength={80} value={value.name} onChange={event=>patch({name:event.target.value})} placeholder={t('team.hire.identity.namePlaceholder')}/></label>
       <EmployeeAvatarPicker value={value.avatarKey} name={value.name} onChange={avatarKey=>patch({avatarKey})}/>
     </section>}
     {mode==='edit'&&step===1&&<section className={teamCss.stepPanel} aria-label={t('team.form.step.scope')}>
       <fieldset className={teamCss.scopes}><legend>{t('team.detail.businessScope')}</legend>{roleScopeOptions(collaborationScopes,value.scopes).map(([id,label])=><label key={id}><input ref={value.scopes.length?undefined:scopeRef} type="checkbox" checked={value.scopes.includes(id as CollaborationScope)} onChange={event=>patch({scopes:event.target.checked?[...value.scopes,id as CollaborationScope]:value.scopes.filter(scope=>scope!==id)})}/>{label}</label>)}</fieldset>
-      <label>{t('team.form.dataScope')}<textarea ref={dataRef} required rows={3} maxLength={4000} value={value.dataScope} onChange={event=>patch({dataScope:event.target.value})}/></label>
-      <label>{t('team.form.executionScope')}<textarea ref={executionRef} required rows={3} maxLength={4000} value={value.executionScope} onChange={event=>patch({executionScope:event.target.value})}/></label>
+      <label>{t('team.form.dataScope')}<textarea ref={dataRef} aria-invalid={!!validationError&&!value.dataScope.trim()} aria-describedby={validationError&&!value.dataScope.trim()?validationErrorId:undefined} required rows={3} maxLength={4000} value={value.dataScope} onChange={event=>patch({dataScope:event.target.value})}/></label>
+      <label>{t('team.form.executionScope')}<textarea ref={executionRef} aria-invalid={!!validationError&&!value.executionScope.trim()} aria-describedby={validationError&&!value.executionScope.trim()?validationErrorId:undefined} required rows={3} maxLength={4000} value={value.executionScope} onChange={event=>patch({executionScope:event.target.value})}/></label>
       <p className={teamCss.inlineNotice}>{t('team.form.scopeNote')}</p>
     </section>}
     {mode==='hire'&&step===1&&<section className={teamCss.stepPanel} aria-label={t('team.hire.step.job')}>
@@ -788,7 +789,7 @@ export function RoleForm({skillTitles,work,resourceApi,runtimeConfigs,initial,pe
        catch{if(token===importGeneration.current)setSourceError(employeeCopy(locale,'importInvalid'))}
        finally{if(token===importGeneration.current)setReadingSource(false)}
       }}/></label><p className={teamCss.stepHint}>{employeeCopy(locale,'importHint')}</p>{readingSource&&<p role="status">{employeeCopy(locale,'importing')}</p>}{sourceFile&&<p>{sourceFile}</p>}{sourceError&&<p role="alert">{sourceError}</p>}</>}
-      <label>{t('team.form.mission')}<textarea ref={dutyRef} aria-invalid={!!validationError&&!value.duty.trim()} required rows={3} maxLength={4000} value={value.duty} onChange={event=>patch({duty:event.target.value})} placeholder={t('team.form.missionPlaceholder')}/></label>
+      <label>{t('team.form.mission')}<textarea ref={dutyRef} aria-invalid={!!validationError&&!value.duty.trim()} aria-describedby={validationError&&!value.duty.trim()?validationErrorId:undefined} required rows={3} maxLength={4000} value={value.duty} onChange={event=>patch({duty:event.target.value})} placeholder={t('team.form.missionPlaceholder')}/></label>
       <details><summary>{t('team.form.step.capabilities')}</summary>
         <div className={teamCss.capabilityChoice}><div><h3>{t('team.detail.defaultSkill')}</h3></div><HomeSkillPicker skillTitles={skillTitles} work={work} purpose="role" query={skillQueryDraft.value??''} onQueryChange={query=>skillQuerySlot.set(query)} selected={value.skills.map(name=>({name,source:'',provider:''}))} change={skills=>patch({skills:skills.map(skill=>skill.name)})}/></div>
         <div className={teamCss.capabilityChoice}><div><h3>{t('team.form.knowledge')}</h3></div><RoleKnowledge api={resourceApi} ids={value.knowledge} scopes={value.scopes} change={knowledge=>patch({knowledge})}/></div>
@@ -840,12 +841,12 @@ export function RoleForm({skillTitles,work,resourceApi,runtimeConfigs,initial,pe
       {runtimeConfigs?.models&&<details className={teamCss.sectionNote} open={modelOpen} onToggle={event=>setModelOpen(event.currentTarget.open)}><summary>{t('roleModels.title')}</summary><RoleModelFields runtime={value.runtimeConfig} state={modelState} change={(field,model)=>setValue(current=>{const next={...current},runtime=patchRoleModel(current.runtimeConfig,field,model);if(runtime)next.runtimeConfig=runtime;else delete next.runtimeConfig;return next})} retry={()=>setModelRetry(count=>count+1)}/></details>}
       {mode==='hire'&&<details className={teamCss.sectionNote}><summary>{t('team.hire.expand')}</summary>
         <div className={teamCss.responsibilityEditor}>{responsibilityGroups(value.responsibility??emptyResponsibility()).map(group=><label key={group.key}>{t(group.labelKey)}<textarea rows={2} maxLength={4000} value={responsibilityText(group.items)} onChange={event=>patch({responsibility:{...(value.responsibility??emptyResponsibility()),[group.key]:responsibilityItems(event.target.value)}})}/><small>{t('team.form.onePerLine')}</small></label>)}</div>
-        <label>{t('team.form.dataScope')}<textarea ref={dataRef} required rows={3} maxLength={4000} value={value.dataScope} onChange={event=>patch({dataScope:event.target.value})}/></label>
-        <label>{t('team.form.executionScope')}<textarea ref={executionRef} required rows={3} maxLength={4000} value={value.executionScope} onChange={event=>patch({executionScope:event.target.value})}/></label>
+        <label>{t('team.form.dataScope')}<textarea ref={dataRef} aria-invalid={!!validationError&&!value.dataScope.trim()} aria-describedby={validationError&&!value.dataScope.trim()?validationErrorId:undefined} required rows={3} maxLength={4000} value={value.dataScope} onChange={event=>patch({dataScope:event.target.value})}/></label>
+        <label>{t('team.form.executionScope')}<textarea ref={executionRef} aria-invalid={!!validationError&&!value.executionScope.trim()} aria-describedby={validationError&&!value.executionScope.trim()?validationErrorId:undefined} required rows={3} maxLength={4000} value={value.executionScope} onChange={event=>patch({executionScope:event.target.value})}/></label>
       </details>}
     </section>}
     {mode==='edit'&&step===4&&<section className={teamCss.reviewPanel} aria-label={t('team.form.reviewAria')}><header><span className={teamCss.avatar}>{value.name.slice(0,1)||<Bot size={15}/>}</span><div><h3>{value.name||t('team.form.unnamed')}</h3><p>{t(value.kind==='twin'?'team.form.twinShort':'team.form.employee')} · {list(value.scopes.map(scope=>collaborationScopes[scope]??scope))}</p></div></header><dl><dt>{t('team.form.mission')}</dt><dd>{value.duty}</dd><dt>{t('team.form.responsibilityGroups')}</dt><dd>{value.responsibility?responsibilityGroups(value.responsibility).map(group=>`${t(group.labelKey)} ${t(group.items.length?'team.form.set':'team.form.notSet')}`).join(' · '):t('team.form.unstructured')}</dd><dt>{t('team.form.step.runtime')}</dt><dd>{runtimeConfigSummary(value.runtimeConfig?.agentPresetId,runtimeDirectory,locale).label}</dd><dt>{t('roleModels.primary')}</dt><dd>{value.runtimeConfig?.model?roleModelLabel(value.runtimeConfig.model,modelState.directory):t('roleModels.inherit')}</dd><dt>{t('team.form.dataBoundary')}</dt><dd>{value.dataScope}</dd><dt>{t('team.form.executionBoundary')}</dt><dd>{value.executionScope}</dd><dt>{t('team.form.materials')}</dt><dd>{value.knowledge.length?t('team.form.materialCount',{count:value.knowledge.length}):t('team.form.noneSelected')}</dd><dt>{t('market.industry.resource.skill')}</dt><dd>{value.skills.length?list(value.skills):t('team.form.notDeclared')}</dd></dl><div className={teamCss.nextActions}><strong>{t('team.form.afterSave')}</strong>{[1,2,3,4].map(index=><span key={index}>{t(`team.form.afterSave.${index}` as 'team.form.afterSave.1')}</span>)}</div></section>}
-    <footer className={clsx(css.buttons,teamCss.stepFooter)}><button type="button" onClick={step===0?close:()=>setStep(step-1)}>{step===0?t(mode==='hire'?'team.hire.cancel':'team.form.cancel'):<><ChevronLeft size={14}/>{t('team.form.previous')}</>}</button><span>{t('team.form.progress',{current:step+1,total:steps.length})}</span><button type="submit" disabled={!allowed||readingSource||mustPause&&step===steps.length-1}>{step===steps.length-1?t(mode==='hire'?'team.hire.submit':persistent?'team.form.saveRole':'team.form.saveDemoRole'):<>{t('team.form.next')}<ChevronRight size={14}/></>}</button></footer>
+    <footer className={clsx(css.buttons,teamCss.stepFooter)}><button type="button" onClick={step===0?close:()=>setStep(step-1)}>{step===0?t(mode==='hire'?'team.hire.cancel':'team.form.cancel'):<><ChevronLeft size={14}/>{t('team.form.previous')}</>}</button><span>{t('team.form.progress',{current:step+1,total:steps.length})}</span><button type="submit" className={css.primaryAction} disabled={!allowed||readingSource||mustPause&&step===steps.length-1}>{step===steps.length-1?t(mode==='hire'?'team.hire.submit':persistent?'team.form.saveRole':'team.form.saveDemoRole'):<>{t('team.form.next')}<ChevronRight size={14}/></>}</button></footer>
   </Dialog>
 }
 

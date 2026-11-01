@@ -1,7 +1,7 @@
 .conversation{display:flex;flex-direction:column;height:100%;min-height:0;min-width:0;background:var(--teloa-background)}
 .body{display:flex;flex-direction:column;flex:1;min-height:0;min-width:0}
-.home{height:100%;overflow:auto;background:var(--teloa-background)}
-.homeConversation{height:410px;min-height:350px;max-width:980px;margin:0 auto;display:flex;flex-direction:column}
+.home{box-sizing:border-box;height:100%;overflow:auto;background:var(--teloa-background);padding:8px var(--teloa-page-gutter) 32px}
+.homeConversation{height:max(410px,min(60dvh,640px),calc(var(--teloa-font-body) * 27));min-width:0;max-width:900px;margin:0 auto calc(-1 * var(--teloa-home-hero-trim,0px));display:flex;flex-direction:column}
 .notice{max-width:880px;padding:16px;margin:0 auto;font-size:var(--teloa-font-control);color:var(--teloa-muted)}
 .recoveryNotice{width:calc(100% - 48px);max-width:460px;box-sizing:border-box;margin:48px auto 24px;padding:24px;border:1px solid var(--teloa-border);border-radius:12px;background:var(--teloa-surface);color:var(--teloa-text)}
 .recoveryNotice h2{margin:0;font-size:var(--teloa-font-section);font-weight:var(--teloa-weight-heading);line-height:var(--teloa-leading-heading)}
@@ -12,8 +12,18 @@
 .recoveryActions button:focus-visible{outline:2px solid var(--teloa-focus);outline-offset:2px}
 .recoveryActions .recoveryPrimary{background:var(--teloa-primary);border-color:var(--teloa-primary);color:var(--teloa-on-primary)}
 .recoveryActions .recoveryPrimary:hover{background:var(--teloa-primary);color:var(--teloa-on-primary);filter:brightness(.94)}
-@media(max-width:740px){.homeConversation{height:410px}}
+@media(max-width:740px){.home{padding:0 16px 24px}.homeConversation{height:max(410px,calc(var(--teloa-font-body) * 27))}}
+
+/* 原生 hero 外层也会裁剪菜单，保留目标分支的放开规则。 */
+.homeConversation :global([data-content-phase="hero"]){overflow:visible}
+/* 首页只由外层滚动，候选菜单可以越过输入区；正文会话仍由原生滚动器拥有。 */
+.home .homeConversation :global([data-conversation-region=chat]) :global([data-conversation-scroll]){overflow:visible;scrollbar-gutter:auto}
+.homeConversation :global([data-composer-card] div:has(>[role=listbox])){max-height:var(--teloa-home-menu-height,200px)!important}
+.home:global([data-teloa-home-menu-side=below]) :global([data-composer-card] div:has(>[role=listbox])){top:var(--teloa-home-card-height);bottom:auto}
 
 .homeConversation[hidden],.body[hidden]{display:none}
 /* 原生 main 仍保留同一份草稿；首页没有详情栏，不暴露它的展开入口。 */
 :global([data-teloa-home]) :global([data-sidebar-right-expand]){display:none}
+
+/* 向下展开时让原生菜单保持在总览上层；收起后恢复总览的点击层级。 */
+.home:global([data-teloa-home-menu-side=below]) .homeConversation:has(:global([role=listbox])){position:relative;z-index:3}

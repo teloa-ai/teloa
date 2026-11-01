@@ -80,6 +80,7 @@ function ports(owner:string,target:()=>Promise<any>,lose={load:false}):NonNullab
   load:async request=>{const row=await s.loads.create(owner,request);if(lose.load){lose.load=false;throw Error('Lost reply')}return row as never},
   getLoad:async loadId=>s.loads.get(owner,{loadId}) as never,
   installSkill:async(source,requestId)=>{const input={kind:'industry' as const,...source},preview=await s.skills.preview(owner,{source:input}),{installation}=await s.skills.install(owner,{requestId,source:input,expectedBundleHash:preview.bundleHash,...(preview.trustHash?{expectedTrustHash:preview.trustHash}:{})});return {state:'installed',installationId:installation.id,nativeName:installation.native.name}},
+  readiness:async loadId=>(await s.prepare('industry-loads/readiness',{loadId})) as never,
   prepare:async loadId=>{const r:any=await s.prepare('industry-loads/readiness',{loadId});if(!r.counts.auto)return r;const receipt:any=await s.prepare('industry-loads/prepare',{loadId,expectedDigest:r.digest,activate:false});return receipt.readiness??s.prepare('industry-loads/readiness',{loadId})},
   roles:async loadId=>(await s.industryRoles.list(owner,{})).items.filter(row=>row.loadId===loadId).map(row=>({itemInstanceId:row.itemInstanceId,state:row.state,...(row.role?{roleId:row.role.id}:{})})),
   team:async seed=>{const found=await findIndustryTeam({list:async()=>({items:await s.groups.list(owner,{})}),get:groupId=>s.groups.get(owner,{groupId})},seed);return found?{groupId:found.group.id}:undefined},

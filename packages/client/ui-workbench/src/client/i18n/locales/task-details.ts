@@ -1,4 +1,6 @@
 export const TASK_DETAIL_MESSAGE_ROWS = [
+ ['form.required','请填写{field}。','請填寫{field}。','Enter {field}.','{field}を入力してください。','{field}을(를) 입력하세요.','Nhập {field}.','Introduce {field}.','Renseignez {field}.','Bitte {field} eingeben.','Preencha {field}.'],
+ ['form.requiredHint','标有 * 的项目为必填项。','標有 * 的項目為必填項。','Fields marked * are required.','* は必須項目です。','* 표시 항목은 필수입니다.','Các trường có dấu * là bắt buộc.','Los campos marcados con * son obligatorios.','Les champs marqués d’un * sont obligatoires.','Mit * markierte Felder sind Pflichtfelder.','Os campos assinalados com * são obrigatórios.'],
  ["taskExecution.readiness.checking", "正在核对执行条件", "正在核對執行條件", "Checking execution requirements"],
  ["taskExecution.readiness.blocked", "执行条件尚未满足", "執行條件尚未滿足", "Execution requirements are not met"],
  ["taskExecution.readiness.unavailable", "暂时无法核对执行条件，请点击刷新后重试。", "暫時無法核對執行條件，請按重新整理後重試。", "Execution requirements could not be checked. Refresh and retry."],

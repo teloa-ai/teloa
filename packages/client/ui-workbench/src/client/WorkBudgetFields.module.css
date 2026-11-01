@@ -10,4 +10,4 @@
 .unlimited{margin:0!important;color:var(--teloa-muted);font-size:var(--teloa-font-caption)!important;line-height:1.6!important}
 .invalid{color:var(--teloa-danger,var(--teloa-text));font-size:var(--teloa-font-caption);overflow-wrap:anywhere}
 .fields :focus-visible{outline:2px solid var(--teloa-focus);outline-offset:2px}
-@media(max-width:520px){.fields{grid-template-columns:minmax(0,1fr)}.field input,.heading>select{font-size:16px!important}}
+@media(max-width:520px){.fields{grid-template-columns:minmax(0,1fr)}.field input,.heading>select{font-size:var(--teloa-font-section)!important}}

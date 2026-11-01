@@ -58,4 +58,8 @@ export const BUSINESS_BUILDER_MESSAGE_ROWS = [
  ['business.builder.discardUnknown','放弃结果尚未确认，可重试或刷新核对原草案。','放棄結果尚未確認，可重試或重新整理以核對原草案。','The discard result is unconfirmed. Retry or refresh to check the original draft.'],
  ['business.builder.discardedTitle','草案已放弃','草案已放棄','Draft discarded'],
  ['business.builder.discardedBody','可在原会话查看讨论与历史。需要重新搭建时，请新建草案。','可在原對話查看討論與歷史。需要重新搭建時，請新建草案。','View the discussion and history in the original conversation. Start a new draft to build again.'],
+ ...[
+  ['business.builder.restart','重新创建业务','重新建立業務','Start a new business'],
+  ['business.builder.unconfigured','原预约指向尚无正式配置的旧业务，无法继续。重新创建会保留旧业务资料。','原預約指向尚無正式設定的舊業務，無法繼續。重新建立會保留舊業務資料。','This reservation points to a legacy business without a saved configuration. Start a new business; the old business data stays in place.'],
+ ].map(([key,cn,tw,en])=>[key!,cn!,tw!,en!,en!,en!,en!,en!,en!,en!,en!] as const),
 ] as const

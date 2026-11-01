@@ -1,3 +1,4 @@
+import {sha256Digest} from '@teloa/contract'
 import {isIndustryManifest} from './industry-manifest.ts'
 import type { IndustryContent } from './industry-directory.ts'
 import { inspectIndustryContent, industrySkillPreviewMessage, type IndustryInspection } from './industry-content.ts'
@@ -69,7 +70,7 @@ export async function resolveIndustryReferences(item:MarketItem,items:readonly M
  }).sort((a,b)=>a.resourceId<b.resourceId?-1:a.resourceId>b.resourceId?1:0)
  const baseHash=content.baseHash||content.hash
  const identity=JSON.stringify([baseHash,resolved.map(({resourceId,sourceItemId,sourceResourceId,sourceHash})=>[resourceId,sourceItemId,sourceResourceId,sourceHash])])
- const hash=resolved.length?Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(identity))),byte=>byte.toString(16).padStart(2,'0')).join(''):baseHash
+ const hash=resolved.length?Array.from(new Uint8Array(await sha256Digest(new TextEncoder().encode(identity))),byte=>byte.toString(16).padStart(2,'0')).join(''):baseHash
  return {...item,id:resolved.length?'resolved-'+hash:'directory-'+baseHash,packageContent:{...content,baseHash,hash,resolved,resources:content.resources.map(row=>{
   const resource=manifest.resources.find(resource=>resource.id===row.id)!
   return resource.source.kind==='public'?{...row,state:resolved.some(ref=>ref.resourceId===row.id)?'available':'unresolved'}:row

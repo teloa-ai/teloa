@@ -1,3 +1,5 @@
+import {useCollectionWindow} from './collection-window.js'
+import {CollectionFooter} from './CollectionFooter.js'
 import clsx from 'clsx'
 import type {RoleAvatarKey} from '@teloa/contract'
 import {useId,useState,type ReactNode} from 'react'
@@ -123,21 +125,22 @@ export function MarketEmpty({filtered,onReset}:{filtered:boolean;onReset:()=>voi
 /** 条目卡列表：方案用双列方案卡，其余用单列条目卡；一击进入详情。 */
 export function MarketListRows({rows,layout='list',showGroups=false}:{rows:readonly MarketListRow[];layout?:'list'|'grid'|'cards';showGroups?:boolean}){
  const {t}=useI18n()
+ const window=useCollectionWindow(rows,row=>row.key,rows.find(row=>row.current)?.key)
  const dataAttrs=(row:MarketListRow)=>row.catalogId?{'data-catalog-row':row.catalogId}:{'data-teloa-entry':row.key}
  const tag=(row:MarketListRow)=>row.tag?<span className={css.tag}>{row.tag}</span>:null
  // 紧凑卡里的团队方案形象缩到与员工形象同一 40px
  const art=(row:MarketListRow,compact=false)=>row.art.kind==='industry'?<span className={clsx(pageCss.bundleArt,compact&&css.cardBundle,staffCss['tone'+staffAvatarSeed(row.art.seed).tone])} aria-hidden="true"><span/><span/><span/></span>:<ItemArt kind={row.art.kind} title={row.title} seed={row.art.seed} avatarKey={row.art.avatarKey}/>
  const ariaLabel=(row:MarketListRow)=>[row.title,row.tag,row.mark&&stateMarkLabel(row.mark,t)].filter(Boolean).join(', ')
  // 1.0 紧凑卡（设计稿 10）：形象 + 名称 + 提供方小字，一句话，底部右侧「添加 / 已添加」胶囊；已添加不再另画记号，需重启与冲突仍留记号
- if(layout==='cards')return <ul className={clsx(css.grid,css.cards)}>{rows.map(row=><li key={row.key} {...(row.catalogId?{'data-teloa-catalog-entry':row.catalogId}:{})}>
+ if(layout==='cards')return <><ul className={clsx(css.grid,css.cards)}>{window.items.map(row=><li key={row.key} {...(row.catalogId?{'data-teloa-catalog-entry':row.catalogId}:{})}>
   <button type="button" className={css.gridCard} {...dataAttrs(row)} aria-label={ariaLabel(row)} aria-current={row.current?'page':undefined} onClick={row.open}>
    <span className={css.cardHead}>{art(row,true)}<span className={css.cardIdentity}><span className={css.rowTop}><strong className={css.gridTitle}>{row.title}</strong>{showGroups&&row.group&&<span className={css.resultGroup}>{row.group}</span>}{tag(row)}{(row.mark==='restart'||row.mark==='conflict')&&<StateMark mark={row.mark} t={t}/>}</span>{row.credit&&<span className={css.cardCredit}>{row.credit}</span>}</span></span>
    <span className={css.gridPitch}>{row.summary}</span>
    <span className={css.cardRequirements}>{row.requirements}</span>
-   <span className={css.cardFoot}><span className={clsx(css.cardAction,row.mark==='added'&&css.cardAdded)}>{row.mark==='added'?stateMarkLabel('added',t):t(row.mark==='available'&&row.addable!==false?'market.primary.add':'market.catalog.official.view')}</span></span>
-  </button>
- </li>)}</ul>
- if(layout==='grid')return <ul className={css.grid}>{rows.map(row=><li key={row.key} {...(row.catalogId?{'data-teloa-catalog-entry':row.catalogId}:{})}>
+   {!row.after&&<span className={css.cardFoot}><span className={clsx(css.cardAction,row.mark==='added'&&css.cardAdded)}>{row.mark==='added'?stateMarkLabel('added',t):t(row.mark==='available'&&row.addable!==false?'market.primary.add':'market.catalog.official.view')}</span></span>}
+  </button>{row.after&&<div className={css.rowAfter}>{row.after}</div>}
+ </li>)}</ul><CollectionFooter {...window}/></>
+ if(layout==='grid')return <><ul className={css.grid}>{window.items.map(row=><li key={row.key} {...(row.catalogId?{'data-teloa-catalog-entry':row.catalogId}:{})}>
   {/* 方案卡内容多（一句话 + 包含），可访问名只取标题、标签与状态 */}
   <button type="button" className={css.gridCard} {...dataAttrs(row)} aria-label={ariaLabel(row)} aria-current={row.current?'page':undefined} onClick={row.open}>
    {art(row)}
@@ -147,9 +150,9 @@ export function MarketListRows({rows,layout='list',showGroups=false}:{rows:reado
     <span className={css.rowFacts}>{row.facts}</span>
    </span>
    <ArrowUpRight size={16} aria-hidden="true"/>
-  </button>
- </li>)}</ul>
- return <ul className={css.rows}>{rows.map(row=><li key={row.key} className={css.row} {...(row.catalogId?{'data-teloa-catalog-entry':row.catalogId}:{})}>
+  </button>{row.after&&<div className={css.rowAfter}>{row.after}</div>}
+ </li>)}</ul><CollectionFooter {...window}/></>
+ return <><ul className={css.rows}>{window.items.map(row=><li key={row.key} className={css.row} {...(row.catalogId?{'data-teloa-catalog-entry':row.catalogId}:{})}>
   {/* 单列条目卡不设 aria-label：按钮内容（标题、摘要、状态记号的读屏文字）即可访问名 */}
   <button type="button" className={css.rowButton} {...dataAttrs(row)} aria-current={row.current?'page':undefined} onClick={row.open}>
    <ItemArt kind={row.art.kind} title={row.title} seed={row.art.seed} avatarKey={row.art.avatarKey}/>
@@ -162,7 +165,7 @@ export function MarketListRows({rows,layout='list',showGroups=false}:{rows:reado
    <ChevronRight size={16} aria-hidden="true"/>
   </button>
   {row.after&&<div className={css.rowAfter}>{row.after}</div>}
- </li>)}</ul>
+ </li>)}</ul><CollectionFooter {...window}/></>
 }
 
 /** 首页按真实用途分区，不制造精选或安装统计；查看全部继续使用同一筛选。 */

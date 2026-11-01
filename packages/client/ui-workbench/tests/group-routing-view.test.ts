@@ -68,7 +68,7 @@ test('话题面板进 4 秒闭环：一次重读同时刷消息、话题、表�
  const read=page.split('\n const readGroupContents=')[1]!.split('\n const loadGroup=')[0]!
  for(const call of ['api.get(','readMessages(id)','api.resources(','readMessages(id,focusRoot)','setTopic(','readMessageOverlays('])assert.ok(read.includes(call),call)
  assert.ok(read.includes('await Promise.allSettled(['),'消息和资料读取失败各自隔离，不挡住已核验原群')
- assert.ok(read.includes('reading!==groupReadGeneration.current'),'迟到的旧读取不覆盖本次重试')
+ assert.ok(read.includes('reading===groupReadGeneration.current')&&read.includes('generation===viewGeneration.current')&&read.includes('selectedGroup.current===id')&&read.includes('visibleRef.current')&&read.includes('if(!current())return'),'迟到的旧读取、旧视图和已隐藏的群均不得覆盖本次重试')
  // 重读的连续性、失败恢复与切群取消由 group-message-recovery.browser.test.ts 验证，
  // 不再要求轮询依赖消息数组变动——这会让单次失败终止后续读取。
 })

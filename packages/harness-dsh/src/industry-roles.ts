@@ -9,7 +9,7 @@ const stamp=(v:unknown):v is string=>typeof v==='string'&&Number.isFinite(Date.p
 const invalid=()=>new WorkError('teloa/invalid-host-response','行业员工回包的身份、依赖或员工状态不一致。')
 const exact=(v:unknown,keys:string[])=>{if(!isRecord(v)||Object.keys(v).some(key=>!keys.includes(key)))throw invalid();return v}
 function read(value:unknown,owner:string):IndustryRoleInstance{
- const row=exact(value,['id','ownerId','loadId','itemInstanceId','itemLocalId','scope','definitionHash','revision','state','role','knowledge','omittedKnowledge','declarations','failure','createdAt','updatedAt'])
+ const row=exact(value,['id','ownerId','loadId','itemInstanceId','itemLocalId','scope','definitionHash','revision','state','role','preparationPending','knowledge','omittedKnowledge','declarations','failure','createdAt','updatedAt'])
  if(!uuid(row.id)||row.ownerId!==owner||!uuid(row.loadId)||!uuid(row.itemInstanceId)||typeof row.itemLocalId!=='string'||!/^[a-zA-Z0-9][a-zA-Z0-9-]{0,119}$/.test(row.itemLocalId)||!text(row.scope,80)||typeof row.definitionHash!=='string'||!/^[a-f0-9]{64}$/.test(row.definitionHash)||!integer(row.revision)||!stamp(row.createdAt)||!stamp(row.updatedAt)||row.updatedAt<row.createdAt||!Array.isArray(row.knowledge)||row.knowledge.length>30||!Array.isArray(row.omittedKnowledge)||row.omittedKnowledge.length>500||!Array.isArray(row.declarations)||row.declarations.length>500)throw invalid()
  const targets=new Set<string>(),instances=new Set<string>(),resources=new Set<string>()
  for(const value of row.knowledge){const item=exact(value,['itemInstanceId','instanceId','resourceId','resourceVersion']);if(!uuid(item.itemInstanceId)||!uuid(item.instanceId)||!uuid(item.resourceId)||!integer(item.resourceVersion)||targets.has(item.itemInstanceId.toLowerCase())||instances.has(item.instanceId.toLowerCase())||resources.has(item.resourceId.toLowerCase()))throw invalid();targets.add(item.itemInstanceId.toLowerCase());instances.add(item.instanceId.toLowerCase());resources.add(item.resourceId.toLowerCase())}
@@ -29,6 +29,10 @@ function read(value:unknown,owner:string):IndustryRoleInstance{
   if(row.state==='pending'){if(row.failure!==null)throw invalid()}
   else{const failure=exact(row.failure,['code','message']);if(typeof failure.code!=='string'||!/^teloa\/[a-z0-9-]+$/.test(failure.code)||!text(failure.message,2000))throw invalid()}
  }else throw invalid()
+ if(row.preparationPending!==undefined){
+  const role=row.role
+  if(row.preparationPending!==true||row.state!=='paused'||!isRecord(role)||role.kind!=='employee'||!Array.isArray(role.skills)||!(role.version===1&&!role.skills.length||role.version===2&&role.skills.length>0))throw invalid()
+ }
  return row as unknown as IndustryRoleInstance
 }
 export function createIndustryRolesHandler(owner:string,get:()=>Promise<Ports>){

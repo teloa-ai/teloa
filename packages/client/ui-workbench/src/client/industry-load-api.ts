@@ -108,12 +108,12 @@ export function readUnloadBlockers(reason:unknown):IndustryLoadUnloadBlocker[]{
 /** trust 只出现在随一键安装、带信任声明的技能行上（官方目录已审核、纯内容、无联网或执行权限）；reason 只出现在需要你处理的依赖应用行上；app 是应用行的固定版本与（已登记时）包名。 */
 export const industryPluginHoldReasons=['unverified','rejected','restart-required','failed','drift','unreadable'] as const
 export type IndustryPluginHoldReason=typeof industryPluginHoldReasons[number]
-export type IndustryReadinessRow={itemInstanceId:string;kind:string;title:string;state:'ready'|'auto'|'needs-user'|'optional'|'pending';step:string|null;entry:'model-settings'|'connector-settings'|'skill-confirm'|'skill-link'|'plugin'|'knowledge-retry'|'role-retry'|'role-resume'|'task-form'|'plan-form'|null;trust?:{publisher:string;license:string|null};models?:IndustryModelObservation[];reason?:IndustryPluginHoldReason;app?:{version:string;packageName:string|null}}
+export type IndustryReadinessRow={itemInstanceId:string;kind:string;title:string;state:'ready'|'auto'|'needs-user'|'optional'|'pending';step:string|null;entry:'model-settings'|'connector-settings'|'skill-confirm'|'skill-link'|'plugin'|'knowledge-retry'|'role-retry'|'role-resume'|'task-form'|'plan-form'|'business-settings'|null;trust?:{publisher:string;license:string|null};models?:IndustryModelObservation[];reason?:IndustryPluginHoldReason;app?:{version:string;packageName:string|null}}
 export type IndustryReadiness={loadId:string;status:IndustryLoadStatus;title:string;version:string;digest:string;counts:{ready:number;auto:number;needsUser:number;optional:number;pending:number};rows:IndustryReadinessRow[]}
 export type IndustryPrepareResult={itemInstanceId:string;title:string;step:string;outcome:'done'|'pending'|'failed'|'skipped';code:string|null;message:string|null}
 /** readiness 为 null：宿主已执行，但最终清单读取失败、待刷新。 */
 export type IndustryPrepareReceipt={loadId:string;digest:string;results:IndustryPrepareResult[];readiness:IndustryReadiness|null}
-const readinessStates=['ready','auto','needs-user','optional','pending'],readinessEntries=['model-settings','connector-settings','skill-confirm','skill-link','plugin','knowledge-retry','role-retry','role-resume','task-form','plan-form'],prepareOutcomes=['done','pending','failed','skipped']
+const readinessStates=['ready','auto','needs-user','optional','pending'],readinessEntries=['model-settings','connector-settings','skill-confirm','skill-link','plugin','knowledge-retry','role-retry','role-resume','task-form','plan-form','business-settings'],prepareOutcomes=['done','pending','failed','skipped']
 function readinessRecord(value:unknown):IndustryReadiness{
  try{
   const row=exact(value,['loadId','status','title','version','digest','counts','rows']),counts=exact(row.counts,['ready','auto','needsUser','optional','pending'])

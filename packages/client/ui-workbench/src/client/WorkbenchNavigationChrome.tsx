@@ -24,7 +24,7 @@ export const isWorkbenchHubView=(view:WorkbenchView):view is WorkbenchHubView=>w
 export function WorkbenchHubNavigation({view,onSelect}:{view:WorkbenchView;onSelect:(view:WorkbenchHubView)=>void}){
  const {t}=useI18n()
  if(!isWorkbenchHubView(view))return null
- return <nav className={css.hubNavigation} aria-label={t('navigation.home')}>{workbenchHubNavigation.map(([id,key])=><button type="button" key={id} className={clsx(css.hubTab,view===id&&css.hubTabActive)} aria-current={view===id?'page':undefined} onClick={()=>onSelect(id)}>{t(key)}</button>)}</nav>
+ return <nav className={css.hubNavigation} aria-label={t('navigation.home')}>{workbenchHubNavigation.map(([id,key])=><button type="button" key={id} className={css.hubTab} aria-pressed={view===id} aria-current={view===id?'page':undefined} onClick={()=>onSelect(id)}>{t(key)}</button>)}</nav>
 }
 
 /** 品牌区只保留字标与版本名；产品介绍与构建号统一在「关于」页，不再在顶部弹出重复卡片。 */

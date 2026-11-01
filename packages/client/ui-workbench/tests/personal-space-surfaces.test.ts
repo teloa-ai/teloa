@@ -86,7 +86,7 @@ test('左栏顶部不再有空间入口与切换箭头；账号块提供「我�
  assert.doesNotMatch(frame.slice(frame.indexOf('css.crumb,css.workspaceName')-5,frame.indexOf('css.crumb,css.workspaceName')+160),/shell\.workspace\.mine/)
  // WorkbenchFrame 把直接会话入口传给左栏：有历史按最近活跃打开，零历史复用既有创建链路。
  assert.match(frame,/openTwin=\{async\(\)=>\{await openTwinConversation\(\)\}\}/)
- assert.match(frame,/objectConversationApi\.list\('role',role\.id\)/)
+ assert.match(frame,/objectConversationApi\.list\('role',roleId\)/)
  assert.match(frame,/const recent=latestRoleConversation\(presentConversations\(/)
  assert.match(frame,/if\(!recent\)\{[\s\S]{0,180}await requestRoleCreation\(object,role\.scopes\)[\s\S]{0,40}return true/)
  assert.match(frame,/if\(available\.length>1\)\{setRoleScopeIntent\(\{object:fresh,scopes:available,\.\.\.\(goal\?\{goal\}:\{\}\)\}\);return\}/,'跨业务范围先选业务语境，不把业务范围误当成本机执行位置')

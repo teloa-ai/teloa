@@ -3,7 +3,7 @@ import {CircleCheck,type LucideIcon} from 'lucide-react'
 import css from './EmptyState.module.css'
 
 /** 空态动作：页面级最多两个，右侧那个可设为唯一实心主按钮。 */
-export type EmptyAction={label:string;onClick:()=>void;primary?:boolean}
+export type EmptyAction={label:string;onClick:()=>void;primary?:boolean;disabled?:boolean}
 
 /**
  * 页面级空态（1.0 设计 30）：40px 图标块 + 标题 + 一句说明 + 最多两个动作；
@@ -14,7 +14,7 @@ export function EmptyBlock({icon:Icon,title,description,actions,status=false}:{i
   {Icon&&<span className={css.icon} aria-hidden="true"><Icon size={18}/></span>}
   <h2 className={css.title}>{title}</h2>
   {description&&<p className={css.description}>{description}</p>}
-  {actions&&actions.length>0&&<div className={css.actions}>{actions.map(action=><button key={action.label} type="button" className={action.primary?css.primary:undefined} onClick={action.onClick}>{action.label}</button>)}</div>}
+  {actions&&actions.length>0&&<div className={css.actions}>{actions.map(action=><button key={action.label} type="button" className={action.primary?css.primary:undefined} disabled={action.disabled} onClick={action.onClick}>{action.label}</button>)}</div>}
  </section>
 }
 

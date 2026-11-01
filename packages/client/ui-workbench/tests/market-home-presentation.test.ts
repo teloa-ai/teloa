@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import {readFile} from 'node:fs/promises'
 import test from 'node:test'
 import {registerHooks} from 'node:module'
+import ts from 'typescript'
 import {marketEntryKinds} from '@teloa/contract'
 import {MARKET_CATEGORIES, marketCategoryKind, visibleMarketCategories, restoredMarketCategory, localizedMarketItemCopy, marketCatalogItemCopy, marketCategoryOf, marketItemPresentation, marketResourcePresentation, marketScopeOptions} from '../src/client/market-home-presentation.ts'
 import {filterMarket, type MarketItem} from '../src/client/market-preview.ts'
@@ -151,11 +152,26 @@ test('市场顶层直接展示已选定的资源分类，保留搜索和资源�
   assert.match(source,/const listKind:MarketCategory=solutionCategory\?'industry':atomicCategory/)
   // 旧方案视图保留原投影；已添加复用市场统一卡片，以同一固定尺寸显示长摘要。
   assert.equal((source.match(/<SolutionCards /g)??[]).length,1)
-  assert.match(source,/<MarketListRows rows=\{solutionListRows\(addedSolutions\)\.map\(row=>\(\{\.\.\.row,requirements:row\.facts\}\)\)\} layout="cards"\/>/)
+  assert.match(source,/<MarketListRows rows=\{solutionListRows\(addedSolutions\)\.map\(row=>\(\{\.\.\.row,requirements:row\.facts,after:loadedActions\(row\.key\)\}\)\)\} layout="cards"\/>/)
   // 方案页签：本机方案卡与官方目录上下分区，外层是区块栈（区块间距统一）
   assert.match(source,/:solutionCategory\?<section className=\{css\.sectionStack\}/)
   // 2026-10-15：加号按对象创建与导入分层；格式选择留在导入窗口，不重复占一级菜单。
-  assert.match(source,/<summary aria-label=\{t\('capabilityCenter\.createOrImport'\)\}/)
+  const syntax=ts.createSourceFile('MarketPage.tsx',source,ts.ScriptTarget.Latest,true,ts.ScriptKind.TSX)
+  let creationMenus=0
+  const visit=(node:ts.Node)=>{
+    if(ts.isJsxOpeningElement(node)&&node.tagName.getText(syntax)==='summary'){
+      for(const attribute of node.attributes.properties){
+        if(!ts.isJsxAttribute(attribute)||attribute.name.getText(syntax)!=='aria-label'||!attribute.initializer||!ts.isJsxExpression(attribute.initializer))continue
+        const expression=attribute.initializer.expression
+        if(!expression||!ts.isCallExpression(expression)||expression.expression.getText(syntax)!=='t')continue
+        const key=expression.arguments[0]
+        if(key&&ts.isStringLiteral(key)&&key.text==='capabilityCenter.createOrImport')creationMenus++
+      }
+    }
+    ts.forEachChild(node,visit)
+  }
+  visit(syntax)
+  assert.equal(creationMenus,1,'创建入口仍须由唯一的具名 summary 承载，不依赖 JSX 属性排列顺序')
   for(const key of ['market.create.employee','market.create.team','market.import.industry','market.import.skill'])assert.match(source,new RegExp("t\\('"+key.replaceAll('.','\\.')+"'\\)"),key)
   const forms=await readFile(new URL('../src/client/MarketForms.tsx',import.meta.url),'utf8')
   for(const mode of ["value:'paste'","value:'github'"])assert.ok(forms.includes(mode),'兼容导入格式仍在原导入流程')

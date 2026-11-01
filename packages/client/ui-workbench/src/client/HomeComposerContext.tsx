@@ -19,7 +19,7 @@ export function HomeComposerContext({sessionId,useSession,useInput,api,roles,blo
  const taskSnapshot=useSyncExternalStore(taskSource.subscribe,taskSource.getSnapshot,taskSource.getSnapshot)
  useEffect(()=>{if(taskSnapshot.status==='idle')void taskSource.load()},[taskSource,taskSnapshot.status])
  const run=taskSnapshot.value?.sessionId===sessionId?taskSnapshot.value:null
- const excluded=isNativeChild(sessionId)||!!run||binding.sessionId===sessionId&&binding.conversation?.purpose==='task-run'
+ const excluded=isNativeChild(sessionId)||!!run||binding.sessionId===sessionId&&binding.conversation?.purpose!==undefined
  const bindingReady=binding.sessionId===sessionId&&binding.status==='ready'
  const [objectIdentity,setObjectIdentity]=useState(false)
  const session=useSession(value=>value),input=useInput(value=>value)

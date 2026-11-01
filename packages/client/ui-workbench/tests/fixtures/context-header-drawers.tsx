@@ -17,7 +17,7 @@ const runtime={subscribe:()=>()=>{},getSnapshot:()=>snapshot,t:(key:any,params:a
 const sessionId='12345678-1234-4234-8234-123456789012' as SessionId
 // 头部组件只读取已注入的本人身份与引用；调用其它原生能力必须显式扩展夹具。
 const unavailable=():never=>{throw Error('此头部夹具未提供原生会话运行能力')}
-const slotProps={sessionId,useSession:unavailable,useProjection:unavailable,useConversation:unavailable,useChat:unavailable,useInput:unavailable,
+const slotProps={sessionId,useResource:unavailable,useSession:unavailable,useProjection:unavailable,useConversation:unavailable,useChat:unavailable,useInput:unavailable,
  inputActions:{captureInsertion:unavailable,insertText:unavailable,setDraft:unavailable,persistDraft:unavailable,addAttachments:unavailable,removeAttachment:unavailable,pruneAttachments:unavailable,submit:unavailable},
  useSessions:unavailable,useSessionStatus:unavailable,useSessionRetainInfo:unavailable,useWorkspaces:unavailable,usePanelInfo:unavailable,useAccess:unavailable,useRemoteAccess:unavailable,useSessionAccess:unavailable,useWorkspaceAccess:unavailable,
 } satisfies PropsRuntime<'conversation.session.header.utilities'>
