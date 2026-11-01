@@ -10,8 +10,9 @@ import {verifyBackup,assertMaintenanceDatabase} from './maintenance.ts'
 import {prepareDatabase,databasePool} from './database.ts'
 import {serviceStatus,startService,controlRecord,sleep,type ControlRecord} from './service.ts'
 import {canUpgradeData} from './data-version.ts'
+import {continueOrdinaryUpgrade,ordinarySwitchingReceipt,ordinaryUpgradePending} from './upgrade-intent.ts'
 
-type Receipt={from:string;to:string;backup:string;restartId:string;status:'failed'|'complete'}
+type Receipt={from:string;to:string;backup:string;restartId:string;status:'switching'|'failed'|'complete'}
 type ProcessProof={pid:number;startedAt:string;installId:string;port:number;nonceSha256:string}
 type Binding={installId:string;home:string;device:number;inode:number;port:number;workspace:string;from:string;to:string;backup:string;backupManifestSha256:string;targetManifestSha256:string;originalReceipt:Receipt;originalReceiptSha256:string}
 type Attempt={requestId:string;phase:'launching'|'unknown'|'failed'|'completed';process?:ProcessProof;error?:string}
@@ -38,7 +39,7 @@ async function preserveFailure(state:InstallState,bytes:Uint8Array,digest:string
 }
 function readReceipt(value:unknown):Receipt{
  const r=value as Receipt
- if(!r||Object.keys(r).sort().join(',')!=='backup,from,restartId,status,to'||!exactVersion(r.from)||!exactVersion(r.to)||r.from===r.to||!uuid(r.restartId)||typeof r.backup!=='string'||!['failed','complete'].includes(r.status))throw refuse()
+ if(!r||Object.keys(r).sort().join(',')!=='backup,from,restartId,status,to'||!exactVersion(r.from)||!exactVersion(r.to)||r.from===r.to||!uuid(r.restartId)||typeof r.backup!=='string'||!['switching','failed','complete'].includes(r.status))throw refuse()
  return r
 }
 function readJournal(value:unknown):Journal|undefined{
@@ -63,7 +64,8 @@ export async function archiveCompletedUpgradeResumeJournal(state:InstallState):P
  if(last.phase!=='completed'||!last.process||last.process.installId!==state.id)throw pending()
  const previous=exactVersion(binding.to)&&binding.to.split('.').map(Number),current=exactVersion(receipt.from)&&receipt.from.split('.').map(Number)
  const older=previous&&current&&previous.reduce((value,n,i)=>value||Math.sign(n-current[i]!),0)<=0
- if(state.phase!=='maintenance'||receipt.status!=='failed'||receipt.to!==state.version||!older||binding.installId!==state.id||binding.home!==state.layout.home||binding.device!==home.dev||binding.inode!==home.ino||binding.port!==state.port||binding.workspace!==state.layout.workspaceRoot||binding.from!==original.from||binding.to!==original.to||binding.backup!==original.backup||original.status!=='failed')throw refuse()
+ const allowedReceipt=receipt.status==='failed'||isDeepStrictEqual(receipt,await ordinarySwitchingReceipt(state,state.version,state.layout.releaseRoot))
+ if(state.phase!=='maintenance'||!allowedReceipt||receipt.to!==state.version||!older||binding.installId!==state.id||binding.home!==state.layout.home||binding.device!==home.dev||binding.inode!==home.ino||binding.port!==state.port||binding.workspace!==state.layout.workspaceRoot||binding.from!==original.from||binding.to!==original.to||binding.backup!==original.backup||!['failed','switching'].includes(original.status))throw refuse()
  for(const backup of [binding.backup,receipt.backup])if(await realpath(backup)!==backup||dirname(backup)!==state.layout.home+'.backups')throw refuse()
  const originalBytes=await readFile(join(state.layout.instanceRoot,'upgrade-failures',binding.originalReceiptSha256+'.json'))
  if(sha(originalBytes)!==binding.originalReceiptSha256||!isDeepStrictEqual(readReceipt(JSON.parse(originalBytes.toString())),original))throw refuse()
@@ -93,9 +95,12 @@ export async function archiveCompletedUpgradeResumeJournal(state:InstallState):P
  return {archived:true,path:archive,sha256:digest}
 }
 /** 普通 up/restart 不接管尚未收口的升级启动；停止仍沿既有明确停止入口。 */
-export async function upgradeResumePending(state:InstallState):Promise<boolean>{const j=readJournal(await optional(pathOf(state)));return !!j&&['launching','unknown'].includes(j.attempts.at(-1)!.phase)}
+export async function upgradeResumePending(state:InstallState):Promise<boolean>{const j=readJournal(await optional(pathOf(state)));return !!j&&['launching','unknown'].includes(j.attempts.at(-1)!.phase)||await ordinaryUpgradePending(state)}
 /** 仅持原安装互斥锁的明确 --resume 调用；不下载、不 stage、不建备份、不恢复到新安装。 */
 export async function resumeUpgradeInstall(state:InstallState,version:string,sourceRoot:string,p:UpgradeResumePorts=ports):Promise<InstallState>{
+ state=await continueOrdinaryUpgrade(state,version,sourceRoot)??state
+ if(version!==state.version)throw Error('源版本仍为 '+state.version+'，且没有可验证的普通升级 intent；不会补写历史操作或清除维护状态。请保留现场，用与完整普通备份版本完全匹配的 CLI 执行 teloa restore --from <备份目录> --home <全新目录>，并使用新的空数据库；新安装会取得新身份，不自动覆盖原安装。提交维护专用备份不适用。')
+ const boundSwitching=await ordinarySwitchingReceipt(state,version,sourceRoot)
  if(!exactVersion(version)||version!==state.version||state.layout.releaseRoot!==join(state.layout.home,'releases',version)||state.layout.instanceRoot!==join(state.layout.home,'instances/default')||await realpath(state.layout.home)!==state.layout.home||await realpath(state.layout.releaseRoot)!==state.layout.releaseRoot)throw refuse()
  const home=await lstat(state.layout.home);if(home.isSymbolicLink())throw refuse()
  const lock=JSON.parse(await readFile(join(state.layout.home,'install.lock'),'utf8')) as {pid?:number;identity?:string};if(lock.pid!==process.pid||!uuid(lock.identity))throw refuse()
@@ -105,20 +110,20 @@ export async function resumeUpgradeInstall(state:InstallState,version:string,sou
  const receiptPath=join(state.layout.instanceRoot,'upgrade.json'),receiptBytes=await readFile(receiptPath),currentReceipt=readReceipt(JSON.parse(receiptBytes.toString())),journalPath=pathOf(state)
  let journal=readJournal(await optional(journalPath))
  const receipt=journal?readReceipt(journal.binding.originalReceipt):currentReceipt
- if(receipt.status!=='failed'||receipt.to!==version||await realpath(receipt.backup)!==receipt.backup||dirname(receipt.backup)!==state.layout.home+'.backups')throw refuse()
+ if(receipt.status!=='failed'&&!(receipt.status==='switching'&&isDeepStrictEqual(receipt,boundSwitching))||receipt.to!==version||await realpath(receipt.backup)!==receipt.backup||dirname(receipt.backup)!==state.layout.home+'.backups')throw refuse()
  const [target,source,old,backup]=await Promise.all([verifyRelease(state.layout.releaseRoot),verifyRelease(await realpath(sourceRoot)),verifyRelease(join(state.layout.home,'releases',receipt.from)),verifyBackup(receipt.backup)])
  const installation=await readPrivateJson(join(receipt.backup,'installation.json')) as {workspaceRoot?:string;port?:number}
  if(!isDeepStrictEqual(target,source)||target.version!==version||old.version!==receipt.from||!canUpgradeData(target,old.dataVersion)||backup.installId!==state.id||backup.version!==receipt.from||backup.dataVersion!==old.dataVersion||installation.workspaceRoot!==state.layout.workspaceRoot||installation.port!==state.port)throw refuse()
  const binding:Binding={installId:state.id,home:state.layout.home,device:home.dev,inode:home.ino,port:state.port,workspace:state.layout.workspaceRoot,from:receipt.from,to:version,backup:receipt.backup,backupManifestSha256:sha(await readFile(join(receipt.backup,'backup-manifest.json'))),targetManifestSha256:sha(await readFile(join(state.layout.releaseRoot,'release-manifest.json'))),originalReceipt:receipt,originalReceiptSha256:journal?journal.binding.originalReceiptSha256:sha(receiptBytes)}
  if(journal&&!isDeepStrictEqual(journal.binding,binding))throw refuse()
- if(!journal&&(state.phase!=='maintenance'||currentReceipt.status!=='failed'))throw refuse()
+ if(!journal&&(state.phase!=='maintenance'||currentReceipt.status!=='failed'&&!(currentReceipt.status==='switching'&&isDeepStrictEqual(currentReceipt,boundSwitching))))throw refuse()
  if(journal){const original=await readFile(join(state.layout.instanceRoot,'upgrade-failures',binding.originalReceiptSha256+'.json'));if(sha(original)!==binding.originalReceiptSha256||!isDeepStrictEqual(readReceipt(JSON.parse(original.toString())),receipt))throw refuse()}
  const proof=async()=>{
   await lease()
   if(sha(await readFile(join(state.layout.releaseRoot,'release-manifest.json')))!==binding.targetManifestSha256||sha(await readFile(join(receipt.backup,'backup-manifest.json')))!==binding.backupManifestSha256)throw refuse()
   const bytes=await readFile(receiptPath),current=readReceipt(JSON.parse(bytes.toString())),last=journal?.attempts.at(-1),completed=last?{from:receipt.from,to:receipt.to,backup:receipt.backup,restartId:last.requestId,status:'complete'}:undefined
   if(!isDeepStrictEqual(current,receipt)&&!isDeepStrictEqual(current,completed))throw refuse()
-  if(current.status==='failed'&&sha(bytes)!==binding.originalReceiptSha256)throw refuse()
+  if(current.status!=='complete'&&sha(bytes)!==binding.originalReceiptSha256)throw refuse()
  }
  const authenticated=async():Promise<{status:Status;process:ProcessProof|null}>=>{
   const first=await p.control(state),status=await p.status(state),second=await p.control(state)

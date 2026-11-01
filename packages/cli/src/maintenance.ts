@@ -15,6 +15,7 @@ import {prepareDatabase,stopDatabase,databasePool,databaseConfig,ownContainer,da
 import {command} from './process.ts'
 import {maintenanceHelper} from './maintenance-process.ts'
 import {canUseData,supportedDataVersion} from './data-version.ts'
+import {authorizeOrdinaryUpgradeBackup} from './upgrade-intent.ts'
 
 const digest=(value:Buffer)=>createHash('sha256').update(value).digest('hex')
 const safePath=(path:unknown):path is string=>typeof path==='string'&&path.length>0&&!isAbsolute(path)&&!path.includes('\\')&&!path.includes('\0')&&path.split('/').every(part=>part&&part!=='.'&&part!=='..')
@@ -248,15 +249,16 @@ async function transferDatabase(state:InstallState,path:string,action:'dump'|'re
  }finally{if(temporary)await rm(temporary,{recursive:true,force:true})}
 }
 /** 调用方持安装锁；从已停止状态备份，完成后数据库仍保持停止。 */
-export async function createBackup(state:InstallState,output:string):Promise<BackupManifest>{
- assertMaintenanceStopped(await serviceStatus(state),state.phase)
+export async function createBackup(state:InstallState,output:string,options?:{ordinaryUpgradeId:string;onVerified?:(staging:string)=>Promise<void>}):Promise<BackupManifest>{
+ const recoveredStaging=options?await authorizeOrdinaryUpgradeBackup(state,output,options.ordinaryUpgradeId):undefined
+ assertMaintenanceStopped(await serviceStatus(state),recoveredStaging&&state.phase==='maintenance'?'stopped':state.phase)
  await portAvailable(state.port)
  const destination=await canonical(output)
  if(within(state.layout.home,destination)||within(destination,state.layout.home)||within(state.layout.workspaceRoot,destination)||within(destination,state.layout.workspaceRoot))throw Error('备份位置必须独立于安装和工作目录。')
  try{await lstat(destination);throw Error('备份目标已存在；请选择新目录。')}catch(error){if((error as NodeJS.ErrnoException).code!=='ENOENT')throw error}
  const release=await verifyRelease(state.layout.releaseRoot)
  if(release.version!==state.version||!canUseData(release,release.dataVersion))throw Error('该发行数据版本尚未通过备份验收。')
- const staging=destination+'.incomplete-'+randomUUID()
+ const staging=recoveredStaging??destination+'.incomplete-'+randomUUID()
  await writeInstall({...state,phase:'maintenance'})
  try{
   await prepareDatabase(state,{initialize:false});await assertNoRuns(state,release.dataVersion)
@@ -267,7 +269,11 @@ export async function createBackup(state:InstallState,output:string):Promise<Bac
   await writePrivateJson(join(staging,'installation.json'),{workspaceRoot:state.layout.workspaceRoot,port:state.port})
   const files=await listFiles(staging),manifest:BackupManifest={schema:'teloa.backup/v1',id:randomUUID(),createdAt:new Date().toISOString(),installId:state.id,version:state.version,dataVersion:release.dataVersion,files:await Promise.all(files.map(async path=>({path,sha256:digest(await readFile(join(staging,path)))}))),externalWorkspaceIncluded:false}
   await writePrivateJson(join(staging,'backup-manifest.json'),manifest);await verifyBackup(staging)
-  await rename(staging,destination);return manifest
+  // 普通升级先持久绑定完整清单，再发布目录；崩溃续办不能只凭目录名采用备份。
+  await options?.onVerified?.(staging)
+  await rename(staging,destination)
+  const directory=await open(dirname(destination),'r');try{await directory.sync()}finally{await directory.close()}
+  return manifest
  }finally{await stopDatabase(state);await writeInstall({...state,phase:'stopped'})}
 }
 /**

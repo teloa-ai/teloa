@@ -76,7 +76,7 @@ export async function main(args=process.argv.slice(2)):Promise<void>{
  const pkg=JSON.parse(await readFile(new URL('../package.json',import.meta.url),'utf8').catch(()=>readFile(join(programRoot,'packages/cli/package.json'),'utf8')))
  if(parsed.command==='version'){console.log(pkg.version);return}
  if(parsed.command==='help'){
-  console.log('Teloa — 本机 AI 员工团队\n\n用法：teloa <命令> [--home <目录>]\n\n  up       启动 Web；可指定 --workspace、--port、--database-config、--no-open\n  status   查看状态；--json 输出结构化结果\n  open     打开浏览器；--print-url 显式输出本机登录链接\n  stop     空闲时停止本安装，保留数据\n  restart  重启；有运行中工作时拒绝\n  logs     查看脱敏日志；--follow 持续读取\n  doctor   只读诊断；--json 输出结构化结果\n  backup   停止后备份；--output <新的备份目录>\n  restore  恢复到新安装；--from <备份目录> --home <新目录>\n  upgrade  停止后显式升级；--to <确切版本>；原失败升级用 --resume，较新CLI续办旧目标须加 --source-release <原冻结发行目录>，不重新下载或备份\n  resolve-submission 同安装处理提交；--run <原Run> (--acknowledge-unknown | --cancel-not-published) --to <本包版本>；完成后另加 --finish，保持应用停止。已有维护可用 --source-release <原目标发行目录> 继续冻结目标，不能创建新维护或更换目标。专用备份不能普通restore或自动回滚\n  maintain-prepared 保全具名未提交执行并升级；--run <原Run> --to <本包版本> --confirm；完成后另加 --finish，保持原Run与应用暂停\n  uninstall 停止并注销服务，保留全部数据\n  credentials 停止后凭据维护；--action export-plaintext（回滚到上一版前导出明文）或 reset（主密钥丢失时重置），须加 --confirm\n\n默认使用 ~/.teloa 与独立 Docker PostgreSQL。已有数据库通过 0600 权限的 JSON 配置文件提供 connectionString；模型密钥在 Web 中配置。\n\n  --help / --version')
+  console.log('Teloa — 本机 AI 员工团队\n\n用法：teloa <命令> [--home <目录>]\n\n  up       启动 Web；可指定 --workspace、--port、--database-config、--no-open\n  status   查看状态；--json 输出结构化结果\n  open     打开浏览器；--print-url 显式输出本机登录链接\n  stop     空闲时停止本安装，保留数据\n  restart  重启；有运行中工作时拒绝\n  logs     查看脱敏日志；--follow 持续读取\n  doctor   只读诊断；--json 输出结构化结果\n  backup   停止后备份；--output <新的备份目录>\n  restore  恢复到新安装；--from <备份目录> --home <新目录>\n  upgrade  停止后显式升级；--to <确切版本>；原失败升级用 --resume，较新CLI续办旧目标须加 --source-release <原冻结发行目录>，不重新下载；未完成的普通备份会继续原操作\n  resolve-submission 同安装处理提交；--run <原Run> (--acknowledge-unknown | --cancel-not-published) --to <本包版本>；完成后另加 --finish，保持应用停止。已有维护可用 --source-release <原目标发行目录> 继续冻结目标，不能创建新维护或更换目标。专用备份不能普通restore或自动回滚\n  maintain-prepared 保全具名未提交执行并升级；--run <原Run> --to <本包版本> --confirm；完成后另加 --finish，保持原Run与应用暂停\n  uninstall 停止并注销服务，保留全部数据\n  credentials 停止后凭据维护；--action export-plaintext（回滚到上一版前导出明文）或 reset（主密钥丢失时重置），须加 --confirm\n\n默认使用 ~/.teloa 与独立 Docker PostgreSQL。已有数据库通过 0600 权限的 JSON 配置文件提供 connectionString；模型密钥在 Web 中配置。\n\n  --help / --version')
   return
  }
  if(parsed.command!=='doctor'&&!((process.versions.node.startsWith('22.')&&Number(process.versions.node.split('.')[1])>=19)||process.versions.node.startsWith('24.')))throw argumentError('需要 Node 22.19+ 或 Node 24。')
@@ -146,7 +146,7 @@ export async function main(args=process.argv.slice(2)):Promise<void>{
    if(options.resume){
     if(!options['source-release']&&String(options.to)!==pkg.version)throw argumentError('续办旧目标时需要 --source-release 原冻结发行目录；不会下载或切换到当前命令包版本。')
     const next=await resumeUpgradeInstall(state,String(options.to),options['source-release']?await canonical(String(options['source-release'])):programRoot)
-    console.log('原升级已续办完成，当前版本：'+next.version+'；原失败与备份保留，未重新下载或创建备份。');return
+    console.log('原升级已续办完成，当前版本：'+next.version+'；原失败与完整备份保留；未重新下载。未完成的普通备份会继续原操作，未自动回滚。');return
    }
    if(await upgradeResumePending(state))throw Error('原升级启动尚待核对，请以原目标 upgrade --resume 继续；不能另建升级。')
    const next=await upgradeInstall(state,String(options.to),releaseSource(String(options.to),{version:pkg.version,root:programRoot}));console.log('当前版本：'+next.version+'；原数据备份路径记录在实例的 upgrade.json。');return

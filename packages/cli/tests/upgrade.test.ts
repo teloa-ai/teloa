@@ -16,7 +16,7 @@ test('仅放行已验收的数据版本，不将兼容读取等同于可逆迁�
  for(const from of [1,2,3])assert.equal(api.canUpgradeData({...release,dataVersion:4,compatibleDataVersions:[4]},from),true,'固定迁移表已支持历史数据升级到 4')
  for(const from of [1,2,3,4,5])assert.equal(api.canUpgradeData({...release,dataVersion:6,compatibleDataVersions:[6]},from),true,'保留历史数据6固定迁移边')
  for(const from of [1,2,3,4,5,6])assert.equal(api.canUpgradeData({...release,dataVersion:7,compatibleDataVersions:[7]},from),true,'本人分身候选格式须备份迁移到7')
- for(const from of [1,2,3,4,5,6,7])assert.equal(api.canUpgradeData({...release,dataVersion:8,compatibleDataVersions:[8]},from),false,'未知数据版本不能作为升级候选')
+ for(const from of [1,2,3,4,5,6,7])assert.equal(api.canUpgradeData({...release,dataVersion:99,compatibleDataVersions:[99]},from),false,'未知数据版本不能作为升级候选')
 })
 test('注册表安装记录必须固定包名、版本和完整性',()=>{
  assert.equal(typeof api.verifyRegistryInstall,'function')
@@ -54,7 +54,7 @@ test('本地命令包候选与注册表候选一样经过版本与数据兼容�
   const home=join(root,'home'),current=join(root,'current')
   await mkdir(current,{recursive:true});await writeFile(join(current,'release-manifest.json'),JSON.stringify({...release,version:'0.2.0-beta.2'}))
   const state={version:'0.2.0-beta.2',phase:'stopped',layout:{home,releaseRoot:current,instanceRoot:join(home,'instances/default'),runtimeRoot:join(home,'instances/default/runtime'),workspaceRoot:join(home,'workspaces/default')}}
-  for(const [name,manifest,error] of [['data',{version:'0.2.0-beta.3',dataVersion:8,compatibleDataVersions:[8]},/数据兼容性/],['version',{version:'0.2.0-beta.4'},/数据兼容性/]] as const){
+  for(const [name,manifest,error] of [['data',{version:'0.2.0-beta.3',dataVersion:99,compatibleDataVersions:[99]},/数据兼容性/],['version',{version:'0.2.0-beta.4'},/数据兼容性/]] as const){
    const candidate=join(root,name);await mkdir(candidate,{recursive:true})
    await writeFile(join(candidate,'release-manifest.json'),JSON.stringify({...release,...manifest}))
    await assert.rejects(api.upgradeInstall(state,'0.2.0-beta.3',api.releaseSource('0.2.0-beta.3',{version:'0.2.0-beta.3',root:candidate})),error)

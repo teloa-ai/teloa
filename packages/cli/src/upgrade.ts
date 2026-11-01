@@ -1,15 +1,15 @@
 import {readFile,mkdtemp,mkdir,chmod,unlink} from 'node:fs/promises'
-import {join,dirname} from 'node:path'
-import {randomUUID} from 'node:crypto'
+import {join} from 'node:path'
 import type {InstallState} from './contracts.ts'
 import {exactVersion,resolveLayout} from './layout.ts'
 import {writePrivateJson,writeInstall} from './state.ts'
 import {verifyRelease,stageRelease} from './releases.ts'
-import {createBackup,assertMaintenanceStopped} from './maintenance.ts'
+import {assertMaintenanceStopped} from './maintenance.ts'
 import {databasePool,prepareDatabase} from './database.ts'
 import {serviceStatus,startService,stopService,controlPath} from './service.ts'
 import {command} from './process.ts'
 import {canUpgradeData,canUseData} from './data-version.ts'
+import {beginOrdinaryUpgrade,continueOrdinaryUpgrade} from './upgrade-intent.ts'
 
 export {canUpgradeData,canUseData} from './data-version.ts'
 export function verifyRegistryInstall(pkg:any,lock:any,version:string):void{
@@ -44,12 +44,9 @@ export async function upgradeInstall(state:InstallState,version:string,download=
  if(candidate.version!==version||current.version!==state.version||!canUpgradeData(candidate,current.dataVersion))throw Error('候选版本的数据兼容性尚未验证，拒绝切换。')
  const layout=await resolveLayout({home:state.layout.home,workspace:state.layout.workspaceRoot,version})
  await stageRelease(source,layout)
- const directory=state.layout.home+'.backups';await mkdir(directory,{recursive:true,mode:0o700})
- const backup=join(directory,'before-'+version+'-'+randomUUID())
- await createBackup(state,backup)
- const next:InstallState={...state,version,layout,phase:'maintenance'},record=join(layout.instanceRoot,'upgrade.json'),restartId=randomUUID()
- await writePrivateJson(record,{from:state.version,to:version,backup,restartId,status:'switching'})
- await writeInstall(next)
+ await beginOrdinaryUpgrade(state,version)
+ const next=(await continueOrdinaryUpgrade(state,version,source))!,record=join(layout.instanceRoot,'upgrade.json')
+ const {backup,restartId}=JSON.parse(await readFile(record,'utf8')) as {backup:string;restartId:string}
  try{
   await prepareDatabase(next,current.dataVersion===candidate.dataVersion?{}:{migrationBackup:backup})
   const pool=await databasePool(next)
