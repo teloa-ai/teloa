@@ -17,7 +17,7 @@ import {readTaskRunGroupResult} from '../src/task-run-group-result.ts'
 import {installNativeWorkingDirectory} from './fixtures/native-working-directory.ts'
 
 const sha=(text:string)=>createHash('sha256').update(text).digest('hex')
-const content='---\nname: original-method\n---\nPTC-ONLY-METHOD: 保留每项依据与未知。'
+const content='---\nname: original-method\n---\nPTC-ONLY-METHOD: 保留每项依据与未知。\n'+'固定方法内容。'.repeat(500)
 const skill={name:'review',provider:'native',source:'project',description:'复核方法',content,sha256:sha(content)}
 async function fixture(t:TestContext,language:'typescript'|'python',mode:'load'|'print-only'|'outer-error'='load',review=false){
  const ctx=new Context();t.after(()=>ctx.fiber.dispose())
@@ -31,7 +31,7 @@ async function fixture(t:TestContext,language:'typescript'|'python',mode:'load'|
  ctx.provide('ptcRuntime',{language,isolation:'fixture',resolve:(request:unknown)=>request,run:async(spec:{bindings:Array<{functions:Record<string,(args:Record<string,unknown>)=>Promise<unknown>>}>})=>{
   if(mode!=='print-only')await spec.bindings[0]!.functions.teloa_skill_load!({name:skill.name,sha256:skill.sha256})
   if(mode==='outer-error')throw Error('加载完成后程序失败')
-  return {logs:[JSON.stringify(skill)],value:JSON.stringify(skill)}
+  return mode==='print-only'?{logs:[JSON.stringify(skill)],value:JSON.stringify(skill)}:{logs:[],value:'已加载'}
  }} as never)
  const snapshot:DeliveryReviewExecutionSnapshot={runId:'run',sessionId:agent.id,requestId:'rpc',allowedTools:['run_code','teloa_skill_load'],continuationMessageIds:new Set(),runtimeLinks:[],jobs:[],pendingJobCompletion:false,pendingInput:false,children:'none',flow:'none'}
  const material={goal:'本轮合成目标',inputs:{knowledge:0,group:false,context:false},methods:[],deferredMethods:[{name:skill.name,sha256:skill.sha256}],catalog:createReviewSourceCatalog([{id:'goal',kind:'goal',title:'目标',text:'本轮合成目标',origin:{field:'workRequest',pointer:'/sourceText'}}])}
@@ -59,10 +59,13 @@ async function fixture(t:TestContext,language:'typescript'|'python',mode:'load'|
  const prefix=events.filter(event=>event.seq<=draft.seq)
  const binding={runId:'run',sessionId:agent.id,requestId:'rpc',turn:draft.data.turn}
  if(review){
-  assert.equal(adapter.requests.length,4,JSON.stringify(traces));assert.equal(readTaskRunGroupResult(JSON.parse(JSON.stringify(events)),'rpc',undefined,undefined,{requireReview:true,runId:'run'}),'待复核正文')
+  assert.equal(adapter.requests.length,4,JSON.stringify(traces))
+  assert.ok(adapter.requests.slice(2).every(request=>request.messages.some(message=>message.role==='system'&&message.content.some(part=>part.type==='text'&&part.text.includes(content)))),'PTC正文即使未打印，也必须逐字供R1/R2读取，片段目录不能替代完整方法')
+  assert.equal(readTaskRunGroupResult(JSON.parse(JSON.stringify(events)),'rpc',undefined,undefined,{requireReview:true,runId:'run'}),'待复核正文')
   const assembly=await ctx.systemPrompt.assemble({agent,scope:agent})
   assert.ok(assembly.tools.some(tool=>tool.name==='run_code'),'复核租约结束恢复PTC呈现')
   assert.ok(!assembly.tools.some(tool=>tool.name===deliveryReviewToolName),'复核工具不残留')
+  assert.ok(!assembly.sections.some(section=>section.text.includes(content)),'已加载方法的复核租约正文不残留')
  }
  return {prefix,snapshot,binding,material}
 }
