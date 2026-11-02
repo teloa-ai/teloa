@@ -230,6 +230,28 @@ test('按需运行的真实首个模型请求只有目录，系统提示与用�
  assert.ok(runContextToolNames.every(name=>request.tools?.some(t=>t.name===name)))
 })
 
+test('资料目录在原生压缩后仍可发现，空Skill运行也保留固定身份，释放租约后不残留',async t=>{
+ const {BasicCompactionEngine}=await import('@deepseek-ai/dsh-compaction-basic')
+ const {TokenMeter}=await import('@deepseek-ai/dsh-token-meter')
+ const {runKnowledgeCatalog}=await import('@teloa/backend')
+ const {ctx,agent,adapter,assemble}=await runtime(t)
+ await ctx.plugin(TokenMeter)
+ await agent.ctx.plugin(BasicCompactionEngine,{auto:false,retainTokens:0,maxTokens:256})
+ const body='用途：身份调查\n\nPRIVATE-KNOWLEDGE-BODY',doc={id:'11111111-1111-4111-8111-111111111111',version:2,title:'身份资料',sourceId:'identity',sourceVersion:createHash('sha256').update(body).digest('hex'),scopeIds:['SOC'],text:body}
+ const release=leaseTaskRunMethods(agent,[],true,[doc])
+ agent.followup(createUserMessage({source:{kind:'user',rpcId:'before-compaction'},content:[{type:'text',text:JSON.stringify(runKnowledgeCatalog([doc]))+'\n'+'先前调查过程。'.repeat(1000)}]}));await agent.whenIdle()
+ const engine=agent.ctx.get('compaction');assert.ok(engine)
+ assert.ok(await engine.compactNow(agent,AbortSignal.timeout(5000)))
+ agent.followup(createUserMessage({source:{kind:'user',rpcId:'after-compaction'},content:[{type:'text',text:'继续读取先前绑定的资料。'}]}));await agent.whenIdle()
+ const request=adapter.requests.at(-1)!,system=request.messages.filter(m=>m.role==='system').flatMap(m=>m.content.flatMap(p=>p.type==='text'?[p.text]:[])).join('\n')
+ const history=request.messages.filter(m=>m.role!=='system').flatMap(m=>m.content.flatMap(p=>p.type==='text'?[p.text]:[])).join('\n')
+ assert.ok(!history.includes(doc.id),'原生摘要已移除首次目录，不能靠旧用户输入通过')
+ assert.ok(system.includes(JSON.stringify(runKnowledgeCatalog([doc]))));assert.match(system,/teloa_knowledge_read/)
+ assert.doesNotMatch(system,/PRIVATE-KNOWLEDGE-BODY/)
+ release()
+ assert.ok(!(await assemble()).sections.some(section=>section.text.includes(doc.sourceVersion)))
+})
+
 test('原生模型循环：目录启动→选择方法与检索→读取相邻资料，其他领域正文始终不进入请求',async t=>{
  const {ToolCallId}=await import('@deepseek-ai/dsh-llm')
  const {runContextMode,runContextNotice,runSkillCatalog,runKnowledgeCatalog,runContextToolNames,readRunKnowledge}=await import('@teloa/backend')
@@ -252,7 +274,7 @@ test('原生模型循环：目录启动→选择方法与检索→读取相邻�
   this.requests.push(options)
   const rendered=options.messages.flatMap(m=>m.content.flatMap(p=>p.type==='text'?[p.text]:[])).join('\n'),step=this.requests.length
   assert.doesNotMatch(rendered,/UNUSED-NETWORK-METHOD/)
-  if(step===1){assert.doesNotMatch(rendered,/IDENTITY-METHOD-ONLY|AAD PIM requires approval|NEIGHBOR-EVIDENCE/);yield* calls([{name:'teloa_skill_load',args:{name:selected.name,sha256:selected.sha256}},{name:'teloa_knowledge_search',args:{query:'AAD PIM',limit:1}}],step);return}
+  if(step===1){assert.ok(options.messages.some(message=>message.role==='system'&&message.content.some(part=>part.type==='text'&&part.text.includes(doc.sourceVersion))),'发送接缝必须把资料目录传入系统租约');assert.doesNotMatch(rendered,/IDENTITY-METHOD-ONLY|AAD PIM requires approval|NEIGHBOR-EVIDENCE/);yield* calls([{name:'teloa_skill_load',args:{name:selected.name,sha256:selected.sha256}},{name:'teloa_knowledge_search',args:{query:'AAD PIM',limit:1}}],step);return}
   assert.match(rendered,/IDENTITY-METHOD-ONLY/);assert.match(rendered,/AAD PIM requires approval/)
   if(step===2){yield* calls([{name:'teloa_knowledge_read',args:{resourceId:doc.id,resourceVersion:doc.version,sourceVersion:doc.sourceVersion,offset:body.indexOf('# Adjacent')}}],step);return}
   assert.equal(step,3);assert.match(rendered,/NEIGHBOR-EVIDENCE/)

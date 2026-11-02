@@ -1,4 +1,4 @@
-import {runContextMode,runContextNotice,runSkillCatalog,runContextToolNames} from '@teloa/backend'
+import {runContextMode,runContextNotice,runSkillCatalog,runKnowledgeCatalog,runContextToolNames} from '@teloa/backend'
 import {isDeepStrictEqual} from 'node:util'
 import {readRunKnowledge,readRunSkills,readRunPlanContext,planContextNotice,planWorkContextNotice,readArtifactRevisionContext,readRunGroupContinuation,groupContinuationNotice,currentGroupContinuationNotice,TaskRunPresetError} from '@teloa/backend'
 import {createHash} from 'node:crypto'
@@ -254,10 +254,11 @@ const taskOnDemandSkillUsageNotice=taskSkillUsageRules+' Only successful teloa_s
  * 本次运行已选择的固定方法，独立于全局技能目录与资料。使用 DSH 公开的组装作用域，旧运行正文逐字进入系统方法段，新运行只放目录与加载约定，
  * 不插值厂商变量、不开放 skill 工具或全局安装目录。先验证快照，失败时不能残留半份方法。
  */
-export function leaseTaskRunMethods(agent:Pick<Agent,'ctx'>,skills:TaskRun['skills'],onDemand=false):()=>void{
+export function leaseTaskRunMethods(agent:Pick<Agent,'ctx'>,skills:TaskRun['skills'],onDemand=false,knowledge:TaskRun['knowledge']=[]):()=>void{
  const selected=readRunSkills(skills??[])
- if(!selected.length)return ()=>{}
- const text=onDemand?[taskOnDemandSkillUsageNotice,runContextNotice,JSON.stringify(runSkillCatalog(selected))].join('\n'):[taskSkillUsageNotice,...selected.map(skill=>`\nFixed method ${JSON.stringify(skill.name)} (SHA-256 ${skill.sha256}):\n${skill.content}`)].join('\n')
+ if(!selected.length&&!onDemand)return ()=>{}
+ // 有界目录随运行租约重新组装，不依赖可能被压缩掉的首次用户输入；正文仍只经按需工具取得。
+ const text=onDemand?[taskOnDemandSkillUsageNotice,runContextNotice,JSON.stringify({skills:runSkillCatalog(selected),knowledge:runKnowledgeCatalog(readRunKnowledge(knowledge))})].join('\n'):[taskSkillUsageNotice,...selected.map(skill=>`\nFixed method ${JSON.stringify(skill.name)} (SHA-256 ${skill.sha256}):\n${skill.content}`)].join('\n')
  return agent.ctx.on('system-prompt/assemble',async(_assembly,_context,next)=>{
   const result=await next()
   return {...result,sections:[...result.sections,{name:'teloa:run-selected-methods',text,interpolate:false}]}
@@ -538,7 +539,7 @@ export function dshTaskRunPorts(ctx:Context,owner:string,inspect:(sessionId:stri
      trace:entry=>ctx.logger.info(JSON.stringify({event:'task-run.delivery-review',...entry}))}):undefined
     const modelState=(()=>{
      // 固定模型路由先装，复核租约沿用同一路由及参数。
-     try{releaseEmployee=agent.ctx?leaseEmployeeSystemPrompt(agent,run.roleSnapshot?.kind):undefined;releaseMethods=agent.ctx?leaseTaskRunMethods(agent,run.skills,run.contextMode===runContextMode):undefined;releaseToolUsage=typeof agent.ctx?.systemPrompt?.context==='function'?leaseTaskRunToolUsage(agent,run,{continuations:events=>ports.continuations?.(run,events)??Promise.resolve(undefined),goal:events=>ports.goalObservation?.(run,events)??Promise.resolve(undefined)}):undefined;return ensureModels(agent,run)}
+     try{releaseEmployee=agent.ctx?leaseEmployeeSystemPrompt(agent,run.roleSnapshot?.kind):undefined;releaseMethods=agent.ctx?leaseTaskRunMethods(agent,run.skills,run.contextMode===runContextMode,run.knowledge):undefined;releaseToolUsage=typeof agent.ctx?.systemPrompt?.context==='function'?leaseTaskRunToolUsage(agent,run,{continuations:events=>ports.continuations?.(run,events)??Promise.resolve(undefined),goal:events=>ports.goalObservation?.(run,events)??Promise.resolve(undefined)}):undefined;return ensureModels(agent,run)}
      catch(error){releaseToolUsage?.();releaseReview?.();releaseMethods?.();releaseEmployee?.();lift?.();throw error}
     })(),routing=modelState?.routing
     // 请求确定没交给原生就失败（取消、读图失败等）时撤掉收窄，会话不带着这次运行的限制留下；
