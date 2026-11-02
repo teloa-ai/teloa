@@ -155,7 +155,7 @@ export function collectReviewToolEvidence(events:readonly SessionEvent[],binding
   }
   const start=starts.get(data.subCallId)
   if(!start||settled.has(data.subCallId)||start.seq>=event.seq||start.data.parentCallId!==data.parentCallId||start.data.rootCallId!==data.rootCallId||start.data.name!==data.name||!isDeepStrictEqual(start.data.arguments,data.arguments)||typeof event.data.isError!=='boolean'||event.data.content.some(part=>part.type!=='text'))return blocked('ptc-pair')
-  if(!snapshot.allowedTools.includes(data.name)&&!event.data.isError)return blocked('ptc-authorization')
+  if((data.name==='run_code'||!snapshot.allowedTools.includes(data.name))&&!event.data.isError)return blocked('ptc-authorization')
   settled.add(data.subCallId)
   const text=event.data.content.flatMap(part=>part.type==='text'?[part.text]:[]).join('\n')
   ptcReceipts.push({callId:data.subCallId,parentCallId:data.parentCallId,rootCallId:data.rootCallId,name:data.name,turn:parent.turn,step:parent.step,assistantSeq:parent.assistantSeq,callSeq:start.seq,resultSeq:event.seq,argumentsSha256:sha(JSON.stringify(data.arguments)),isError:event.data.isError,text,sha256:sha(text)})

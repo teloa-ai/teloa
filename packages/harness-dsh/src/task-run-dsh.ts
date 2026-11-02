@@ -16,7 +16,7 @@ import type {RunGroupFile,TaskExecutionScope,TaskRun,TaskRunSkillDatabase} from 
 import type {TaskRunRuntimeLinks} from '@teloa/backend'
 import {WorkError,taskInput,groupAttachmentImageMediaTypes,groupPromptImageBytes,groupPromptImageCount,skillFrontmatterName} from '@teloa/contract'
 import {observeTaskRun,settledStopSeq,type StopFreeze} from './task-run-observation.ts'
-import {createTaskRunBackground,taskRunRuntimeId} from './task-run-background.ts'
+import {createTaskRunBackground,isTextOnlyTaskRun,taskRunRuntimeId} from './task-run-background.ts'
 import type {TaskRunPorts} from './task-run-driver.ts'
 import {taskRunPlanReportOccurrence} from './task-run-group-publisher.ts'
 import type {ManagedRunSkillResolver} from './managed-run-skills.ts'
@@ -508,6 +508,15 @@ export function dshTaskRunPorts(ctx:Context,owner:string,inspect:(sessionId:stri
     // 复核依据本轮冻结的原目标与选中方法身份，不从历史猜；没有可核对原目标时明确跳过复核。
     // 计划向群汇报的执行同样必须核对真实工具回执，不能因没有 groupContext 而退回纯文本跳过复核。
     const requiresGroupDeliveryReview=run.groupContext!==undefined||taskRunPlanReportOccurrence(run)!==undefined
+    // 保留运行期实际呈现的传输身份；复核切到原生模式后不能重猜，也不把传输写回岗位逻辑权限。
+    const reviewAllowedTools=Object.freeze((()=>{
+     if(!agent.ctx||!(run.executor?.kind==='owner'||requiresGroupDeliveryReview)||!runtimeLinks||!nativeInput?.readReviewState)return []
+     const tools=runToolNames(run.allowedTools,{group:run.groupContext!==undefined,digest,report:taskRunPlanReportOccurrence(run)!==undefined,context:run.contextMode===runContextMode})
+     tools.delete('run_code')
+     const textOnly=isTextOnlyTaskRun(run)&&!(run.contextMode===runContextMode&&run.knowledge?.length)
+     if(!digest&&!textOnly&&agent.ctx.tools.schemas(agent).some(tool=>tool.name==='run_code'))tools.add('run_code')
+     return [...tools]
+    })())
     const readExecution=(run.executor?.kind==='owner'||requiresGroupDeliveryReview)&&runtimeLinks&&nativeInput?.readReviewState?async(reviewSignal:AbortSignal):Promise<DeliveryReviewExecutionSnapshot>=>{
      const assertLive=()=>{reviewSignal.throwIfAborted();if(ctx.agents.get(agent.id)!==agent||agent.session!==session||store.get(agent.id)!==session)throw new WorkError('teloa/forbidden','复核执行会话已变化。')}
      assertLive()
@@ -529,7 +538,7 @@ export function dshTaskRunPorts(ctx:Context,owner:string,inspect:(sessionId:stri
      if(nativeCatalog&&!ports.reviewSubagents)throw new WorkError('teloa/dependency-unavailable','原生子调用复核读口尚未就绪。')
      const nativeChildren=nativeCatalog?await readNativeReviewChildren({inspect:(id,signal)=>ctx.sessionController.inspect(brandString<SessionId>(id),signal),live:id=>ctx.agents.get(brandString<SessionId>(id))},events,{runId:run.id,sessionId:run.sessionId,requestId:run.nativeRequestId},await ports.reviewSubagents!(run,reviewSignal),reviewSignal):undefined
      assertLive()
-     return {runId:run.id,sessionId:run.sessionId,requestId:run.nativeRequestId,allowedTools:[...runToolNames(run.allowedTools,{group:run.groupContext!==undefined,digest,report:taskRunPlanReportOccurrence(run)!==undefined,context:run.contextMode===runContextMode})],continuationMessageIds:new Set(proof.continuationMessageIds),runtimeLinks:links,jobs,pendingJobCompletion:proof.pendingJobCompletion,pendingInput:proof.pendingInput,children,flow,...(nativeChildren?{nativeChildren}:{})}
+     return {runId:run.id,sessionId:run.sessionId,requestId:run.nativeRequestId,allowedTools:reviewAllowedTools,continuationMessageIds:new Set(proof.continuationMessageIds),runtimeLinks:links,jobs,pendingJobCompletion:proof.pendingJobCompletion,pendingInput:proof.pendingInput,children,flow,...(nativeChildren?{nativeChildren}:{})}
     }:undefined
     const leaseReview=(material:ReviewMaterial|{skip:'no-material'}|undefined)=>agent.ctx&&material?leaseTaskDeliveryReview(agent,{runId:run.id,requestId:run.nativeRequestId,
      material,
