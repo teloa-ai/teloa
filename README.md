@@ -471,6 +471,8 @@ Create a scoped key under **Settings > Employee integrations** to call a fixed e
 
 The API uses the same employee permissions, BYOK and Task/Run pipeline as the workbench. Execution, tool approval and business acceptance remain separate. See the [SDK and integration contract](packages/sdk/README.md) or [integration guide](https://docs.teloa.ai/en/develop/employee-api).
 
+New runs load bound knowledge and Skills on demand. The initial input contains names, purposes and pinned versions; employees retrieve excerpts, read adjacent material or load a complete method as needed. Duties and task requirements remain in the initial context, with existing access, stop and revocation checks. See [on-demand task context](docs/按需上下文.md).
+
 ## Documentation
 
 | What you want to do | Start here |

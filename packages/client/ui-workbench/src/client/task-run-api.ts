@@ -1,3 +1,4 @@
+import {runContextMode,runContextNotice} from '@teloa/contract'
 import {createEmployeeApiWorkApi} from './employee-api-work-api.ts'
 import {WorkError,readWorkExecutor,isConversation,readTaskRunOrigin,readTaskRunReadiness,readRunPlanEventContext,isMessageReference,readBusinessSourceMappingDefinition,readBusinessObjectTypeDefinition,businessSourceMappingLimits,type RunPlanEventContext,type Conversation,savedArtifactSource,artifactContent,type SavedArtifactSource,type ArtifactContent} from '@teloa/contract'
 import {readManagedRunSkill,type ManagedRunSkillView} from './task-run-managed-skill.ts'
@@ -90,7 +91,8 @@ function read(value:unknown):RunView{
  catch(error){throw new WorkError('teloa/invalid-host-response',error instanceof Error&&error.message?error.message:'执行记录格式不正确。')}
 }
 function readRow(value:unknown):RunView{
- const r=taskInput(value,['id','taskId','roleId','taskVersion','roleVersion','linkVersion','sessionId','nativeRequestId','state','evidence','stopRequestedAt','allowedTools','argumentRules','inputText','createdAt','skills','knowledge','memory','flowId','agentPresetId','configurationError','subagents','contextTokenEstimate','webAccess','groupContext','groupReference','modelPolicy','modelStatus','roleSnapshot','lineage','executor','deliveryCheck','permissionMode','modelPolicyOverride'])
+ const r=taskInput(value,['contextMode','id','taskId','roleId','taskVersion','roleVersion','linkVersion','sessionId','nativeRequestId','state','evidence','stopRequestedAt','allowedTools','argumentRules','inputText','createdAt','skills','knowledge','memory','flowId','agentPresetId','configurationError','subagents','contextTokenEstimate','webAccess','groupContext','groupReference','modelPolicy','modelStatus','roleSnapshot','lineage','executor','deliveryCheck','permissionMode','modelPolicyOverride'])
+ if(r.contextMode!==undefined&&r.contextMode!==runContextMode)throw Error('执行上下文模式不正确。')
  const ownerExecutor=r.executor===undefined?undefined:readWorkExecutor(r.executor),owner=ownerExecutor?.kind==='owner'
  if(ownerExecutor&&!owner)throw Error('本人执行身份不正确。')
  // 旧宿主没有这一位：缺字段回落 null，不影响其余严格读取。
@@ -111,7 +113,7 @@ function readRow(value:unknown):RunView{
   if(!owner||r.state!=='ended'||reason!=='completed'||stopRequestedAt!==null||typeof check.state!=='string'||!['saved','review-required','unknown'].includes(check.state))throw Error('交付检查与原执行状态不一致。')
   deliveryCheck={state:check.state as TaskRunDeliveryCheck['state']}
  }
- const snapshot=taskInput(JSON.parse(r.inputText),['schema','lineage','task','role','skills','knowledge','memory','tools','planContext','industryContext','businessContext','groupContext','groupReference','groupTopic','groupContinuation','modelPolicy','executor','allowedTools','agentPresetId','artifactRevision','permissionMode','modelPolicyOverride']),task=taskInput(snapshot.task,['id','version','title','goal','scope'])
+ const snapshot=taskInput(JSON.parse(r.inputText),['contextMode','contextNotice','schema','lineage','task','role','skills','knowledge','memory','tools','planContext','industryContext','businessContext','groupContext','groupReference','groupTopic','groupContinuation','modelPolicy','executor','allowedTools','agentPresetId','artifactRevision','permissionMode','modelPolicyOverride']),task=taskInput(snapshot.task,['id','version','title','goal','scope'])
  if(snapshot.groupContinuation!==undefined)checkGroupContinuation(snapshot.groupContinuation)
  if(owner?snapshot.schema!=='teloa.task-run-input/v3':snapshot.schema!==undefined&&snapshot.schema!=='teloa.task-run-input/v2')throw Error('执行输入版本不正确。')
  if(owner&&(JSON.stringify(readWorkExecutor(snapshot.executor))!==JSON.stringify(ownerExecutor)||JSON.stringify(snapshot.allowedTools)!==JSON.stringify(r.allowedTools)||snapshot.task===undefined||snapshot.role!==undefined||r.roleSnapshot!==undefined))throw Error('本人执行来源与快照不一致。')
@@ -178,10 +180,24 @@ function readRow(value:unknown):RunView{
  const skillRows=r.skills??[]
  if(!Array.isArray(skillRows))throw Error('执行技能目录不正确。')
  const skills=skillRows.map(value=>{const skill=taskInput(value,['name','provider','source','description','content','sha256','resourceBase','managed']);if(typeof skill.name!=='string'||typeof skill.sha256!=='string'||! /^[a-f0-9]{64}$/.test(skill.sha256))throw Error('执行技能版本不正确。');const managed=readManagedRunSkill(skill.managed);if((skill.provider==='teloa-market')!==!!managed)throw Error('执行受管技能归属不一致。');return {name:skill.name,sha256:skill.sha256,...(managed?{managed}:{})}})
- const snapshotSkills=snapshot.skills??[];if(!Array.isArray(snapshotSkills))throw Error('执行技能依据不正确。');const snapshotManaged=snapshotSkills.map((value:unknown)=>readManagedRunSkill(taskInput(value,['name','provider','source','description','content','sha256','resourceBase','managed']).managed));if(JSON.stringify(snapshotManaged)!==JSON.stringify(skills.map(skill=>skill.managed)))throw Error('执行受管技能与固定输入不一致。');
+ if(snapshot.contextMode!==r.contextMode||snapshot.contextMode!==undefined&&(snapshot.contextMode!==runContextMode||snapshot.contextNotice!==runContextNotice)||snapshot.contextMode===undefined&&snapshot.contextNotice!==undefined)throw Error('运行上下文模式与固定输入不一致。')
+ const snapshotSkills=snapshot.skills??[];if(!Array.isArray(snapshotSkills))throw Error('执行技能依据不正确。')
+ if(snapshot.contextMode===runContextMode){
+  const catalog=snapshotSkills.map(value=>{const item=taskInput(value,['name','description','sha256']);if(typeof item.description!=='string')throw Error('技能用途不正确。');return {name:item.name,sha256:item.sha256}})
+  if(JSON.stringify(catalog)!==JSON.stringify(skills.map(({name,sha256})=>({name,sha256}))))throw Error('执行技能目录与固定版本不一致。')
+ }else{
+  const snapshotManaged=snapshotSkills.map((value:unknown)=>readManagedRunSkill(taskInput(value,['name','provider','source','description','content','sha256','resourceBase','managed']).managed))
+  if(JSON.stringify(snapshotManaged)!==JSON.stringify(skills.map(skill=>skill.managed)))throw Error('执行受管技能与固定输入不一致。')
+ }
  const knowledgeRows=r.knowledge??[]
  if(!Array.isArray(knowledgeRows))throw Error('执行知识目录不正确。')
  const knowledge=knowledgeRows.map(value=>{const item=taskInput(value,['id','version','title','sourceId','sourceVersion','scopeIds','text']);if(!uuid(item.id)||!positive(item.version)||typeof item.title!=='string'||typeof item.sourceVersion!=='string'||! /^[a-f0-9]{64}$/.test(item.sourceVersion))throw Error('执行知识版本不正确。');return {id:item.id,version:item.version as number,title:item.title,sourceVersion:item.sourceVersion}})
+ if(snapshot.contextMode===runContextMode){
+  const items=owner?snapshot.knowledge:snapshot.knowledge===undefined?[]:taskInput(snapshot.knowledge,['notice','contents']).contents
+  if(!Array.isArray(items))throw Error('资料目录不正确。')
+  const catalog=items.map(value=>{const item=taskInput(value,['resourceId','resourceVersion','title','purpose','sourceVersion']);if(typeof item.purpose!=='string')throw Error('资料用途不正确。');return {id:item.resourceId,version:item.resourceVersion,title:item.title,sourceVersion:item.sourceVersion}})
+  if(JSON.stringify(catalog)!==JSON.stringify(knowledge))throw Error('执行资料目录与固定版本不一致。')
+ }
  const allowPrivateMemory=roleSnapshot?.kind==='twin',memory=readMemory(r.memory,allowPrivateMemory)
  if(snapshot.memory===undefined){if(memory.length)throw Error('执行员工记忆与固定输入不一致。')}
  else{
@@ -213,7 +229,7 @@ function readRow(value:unknown):RunView{
  }
  const toolRules=readTaskToolArgumentRules(r.argumentRules??[])
  if(!Array.isArray(r.allowedTools)||toolRules.some(rule=>!(r.allowedTools as unknown[]).includes(rule.name)))throw Error('执行工具范围不一致。')
- if(owner&&(task.scope!=='general'||r.roleVersion!==null||r.roleId!==null||skills.length||memory.length||snapshot.businessContext!==undefined||snapshot.groupContext!==undefined||JSON.stringify(snapshot.knowledge)!==JSON.stringify(r.knowledge)))throw Error('本人执行不能继承岗位或其他业务范围。')
+ if(owner&&(task.scope!=='general'||r.roleVersion!==null||r.roleId!==null||skills.length||memory.length||snapshot.businessContext!==undefined||snapshot.groupContext!==undefined||snapshot.contextMode===undefined&&JSON.stringify(snapshot.knowledge)!==JSON.stringify(r.knowledge)))throw Error('本人执行不能继承岗位或其他业务范围。')
  return {...(permissionMode===undefined?{}:{permissionMode}),...(modelPolicyOverride?{modelPolicyOverride:true as const}:{}),...(ownerExecutor?{executor:ownerExecutor}:{}),...(deliveryCheck?{deliveryCheck}:{}),toolRules,knowledge,skills,...(roleSnapshot?{roleSnapshot}:{}),...(lineage?{lineage}:{}),...(subagents===undefined?{}:{subagents}),...(contextTokenEstimate===undefined?{}:{contextTokenEstimate}),...(webAccess===undefined?{}:{webAccess}),...(planContext?{planContext}:{}),...(industryContext?{industryContext}:{}),...(businessContext?{businessContext}:{}),id:r.id,taskId:r.taskId,sessionId:r.sessionId,nativeRequestId:r.nativeRequestId,state:r.state as RunView['state'],...(reason?{reason}:{}),stopRequestedAt,...(r.flowId===undefined?{}:{flowId:r.flowId as string}),...(agentPresetId===undefined?{}:{agentPresetId}),...(modelPolicy?{modelPolicy}:{}),...(modelStatus?{modelStatus}:{}),...(configurationError===undefined?{}:{configurationError}),taskVersion:r.taskVersion as number,roleVersion:r.roleVersion as number|null,title:task.title,roleId:r.roleId as string|null,scope:task.scope,goal:task.goal,roleName:role.name,createdAt:r.createdAt}
 }
 export type TaskRunApi=ReturnType<typeof createTaskRunApi>

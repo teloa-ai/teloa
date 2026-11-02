@@ -2,6 +2,7 @@ import type {Context} from '@deepseek-ai/cordis'
 import {defineTool,type PreToolDecision,type ToolExecution} from '@deepseek-ai/dsh-tools'
 import {WorkError,isRecord,readEmbeddingPreparationState,readRetrievalSearchResult,retrievalEndpoints,retrievalLimits,taskInput,embeddingProviderIds,embeddingProviderForCatalog,type EmbeddingProviderId,type EmbeddingDownloadSource,type EmbeddingPreparationState,type EmbeddingVariant} from '@teloa/contract'
 import type {Embedder,ResourceActor,RetrievalIndexService,FixedRunKnowledgeRead} from '@teloa/backend'
+import {searchRunKnowledge,type RunKnowledge} from '@teloa/backend'
 import type {TaskToolPolicyReader} from './task-tool-guard.ts'
 import {captureRetrievalPreparation,sameRetrievalPreparation,readRetrievalPrepareInput,readRetrievalPreparationDetails,type RetrievalPreparationDetails} from '@teloa/contract'
 import {retrievalCitationPath,type DigitalRole} from '@teloa/contract'
@@ -33,6 +34,8 @@ export type LocalRetrievalPorts={
  resolveKnowledge?:(role:DigitalRole)=>Promise<readonly string[]>
  /** 受管任务的主体、目标范围与可信资料许可；普通会话不调，空许可不得回落全部资料。 */
  taskAuthorization:(sessionId:string,signal:AbortSignal)=>Promise<{actor:ResourceActor;targetScopes:string[];knowledgeIds?:readonly string[]|null;fixedKnowledgeRead?:FixedRunKnowledgeRead}>
+ /** 新运行的固定资料；null 表示普通会话或旧运行，空数组绝不能回落到全部索引。每次读取均重新核验当前授权。 */
+ fixedTaskKnowledge?:(sessionId:string,signal:AbortSignal)=>Promise<RunKnowledge[]|null>
  /** 本人主体（含全部已登记范围）：只用于界面端点，模型工具永远拿不到它。 */
  humanActor:()=>Promise<ResourceActor>
  retrieval:()=>Promise<Pick<RetrievalIndexService,'search'|'enroll'|'remove'|'status'|'buildPending'|'reconcile'>>
@@ -83,7 +86,7 @@ export function searchInput(args:unknown):{query:string;limit?:number}{
 /**
  * 端侧中文检索的宿主接线（规格 §7）：
  *  - 公开工具 `teloa_knowledge_search`：本人普通会话在模型就绪后默认可用，按会话绑定范围检索；受管任务须岗位整工具授权，
- *    按 `taskKnowledgeAuthorization` 的主体与目标范围检索；子 Agent 会话拒绝。模型未就绪只报 `dependency-unavailable`，不触发准备或安装。
+ *    按 `taskKnowledgeAuthorization` 的主体与目标范围检索；子 Agent 会话拒绝。新运行可回退固定正文关键词检索，其他会话模型未就绪报 `dependency-unavailable`，均不触发准备或安装。
  *  - 界面端点 `retrieval/*`、`retrieval-model/*`：只以本人主体转发到后端与扩展服务；加入/移出/重建/准备只由本人界面操作。
  *  - 后台建索引单飞可取消；启动对账 `reconcile()` 只在进程内调用，不暴露为 RPC。
  */
@@ -279,12 +282,28 @@ export function registerLocalRetrieval(ctx:Context,ports:LocalRetrievalPorts){
  }
  ctx.tools.register(defineTool({
   name:knowledgeSearchToolName,
-  description:'Search authorized, enrolled work materials when needed to answer. Updated materials are indexed automatically. Results contain bounded excerpts, source positions (lines, character ranges, heading paths) and coverage. Cite [material title](citationPath), copying the matched citationPath exactly; never use sourceId, resourceId or local paths as links. coverage.searched lists materials actually searched; coverage.pending lists enrolled materials not yet searchable. Disclose pending coverage and do not treat unsearched material as verified. Accepts only query (1–500 characters) and limit (1–8, default 5); no material, scope or path selection.',
+  description:'Search authorized work materials when needed to answer. In a task with an on-demand catalog, search only its fixed bound versions, using keyword matching when semantic search is unavailable. Other sessions search enrolled materials. Results contain bounded excerpts, source positions (lines, character ranges, heading paths) and coverage. Cite [material title](citationPath), copying the matched citationPath exactly; never use sourceId, resourceId or local paths as links. coverage.searched lists materials actually searched; coverage.pending lists enrolled materials not yet searchable. Disclose pending coverage and do not treat unsearched material as verified. Accepts only query (1–500 characters) and limit (1–8, default 5); no material, scope or path selection.',
   parameters:{query:{type:'string',required:true},limit:{type:'integer'}},
   output:{schema:{type:'string'},render:(_args,value)=>[{type:'text',text:value}]},
   execute:async(args,exec)=>{
-   await waitForSelection()
    const input=searchInput(args),{actor,targetScopes,knowledgeIds,fixedKnowledgeRead}=await subject(exec)
+   const fixed=await ports.fixedTaskKnowledge?.(exec.agent!.session.id,exec.signal)??null
+   if(fixed!==null){
+    // 未准备模型时使用固定正文词法检索，不安装模型、不扩大索引范围、不回退到本人全部资料。
+    const embedder=embedderIfReady()
+    let semantic
+    if(embedder&&fixed.length){
+     try{semantic=await(await ports.retrieval()).search(actor,targetScopes,input,embedder,exec.signal,fixed.map(item=>item.id),fixedKnowledgeRead)}
+     catch(error){if(!(error instanceof WorkError)||error.code!=='teloa/dependency-unavailable')throw error}
+    }
+    // 推理后再次核验停止、撤权和固定版本；失败不交付已计算的片段。
+    const current=await ports.fixedTaskKnowledge!(exec.agent!.session.id,exec.signal)
+    if(current===null||JSON.stringify(current)!==JSON.stringify(fixed))throw forbidden('本次运行的资料范围已变化。')
+    exec.signal.throwIfAborted()
+    const result=searchRunKnowledge(current,input,semantic)
+    return JSON.stringify({...result,results:result.results.map(hit=>({...hit,citationPath:retrievalCitationPath(exec.agent!.session.id,hit)}))})
+   }
+   await waitForSelection()
    // 授权核验之后才取模型：未就绪不推理、不准备。
    const embedder=requireEmbedder()
    const generation=selectionGeneration
@@ -306,7 +325,7 @@ export function registerLocalRetrieval(ctx:Context,ports:LocalRetrievalPorts){
  }))
  const removePreExecute=ctx.on('tools/pre-execute',async(exec,next):Promise<PreToolDecision>=>{
   if(exec.name!==knowledgeSearchToolName)return next()
-  try{await waitForSelection();searchInput(exec.arguments);await subject(exec)}
+  try{searchInput(exec.arguments);await subject(exec)}
   catch(error){return {kind:'deny',reason:error instanceof WorkError?error.message:'暂时无法核对本地检索身份。'}}
   return next()
  })

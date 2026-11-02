@@ -1,3 +1,4 @@
+import {runContextMode,runKnowledgeCatalog,runSkillCatalog} from '../src/work/task-run-context.ts'
 import {createHash} from 'node:crypto'
 import test,{before,after} from 'node:test'
 import assert from 'node:assert/strict'
@@ -378,7 +379,7 @@ test('受管技能准备同事务固定安装引用，同请求恢复不重复�
  try{
   const load=async(_session:string,_role:unknown,db?:PoolClient)=>{assert.ok(db);assert.equal((await db.query('select state from teloa_skill_installations where id=$1',[installed.id])).rows[0].state,'installed');return [installed.skill]}
   const run=await service.prepare(f.owner,f.command,load),retry=await service.prepare(f.owner,f.command,async()=>{throw Error('恢复不应重读技能')})
-  assert.deepEqual(retry,run);assert.deepEqual(run.skills,[installed.skill]);assert.deepEqual(JSON.parse(run.inputText).skills,[installed.skill])
+  assert.deepEqual(retry,run);assert.deepEqual(run.skills,[installed.skill]);assert.deepEqual(JSON.parse(run.inputText).skills,runSkillCatalog([installed.skill]))
   const refs=await pool.query('select owner_id,run_id,installation_id,name,bundle_hash,files,ref_digest from teloa_task_run_skill_refs where run_id=$1',[run.id])
   assert.equal(refs.rowCount,1);assert.equal(refs.rows[0].owner_id,f.owner);assert.equal(refs.rows[0].installation_id,installed.id);assert.equal(refs.rows[0].name,'review');assert.equal(refs.rows[0].bundle_hash,installed.bundleHash);assert.deepEqual(refs.rows[0].files,installed.files);assert.match(refs.rows[0].ref_digest,/^[a-f0-9]{64}$/)
   assert.deepEqual(await service.get(f.owner,{runId:run.id}),run)
@@ -736,9 +737,9 @@ test('岗位技能正文与摘要持久保存，恢复不重读提供方，损�
  const skills=[{name:'review',provider:'native',source:'project',description:'复核',content,sha256:createHash('sha256').update(content).digest('hex'),resourceBase:{kind:'directory' as const,path:'/skills/review'}}]
  await assert.rejects(service.prepare(f.owner,f.command),{code:'teloa/conflict'})
  const run=await service.prepare(f.owner,f.command,async()=>skills)
- assert.deepEqual(run.skills,skills);assert.deepEqual(JSON.parse(run.inputText).skills,skills)
- // B8：技能正文原文整段写进任务提示词，所以 role-skills/task-run-skills 的 256 KiB 合计是提示词预算；改成按需加载时须同时复核该上限。
- assert.ok(run.inputText.includes(JSON.stringify(content)),'技能正文须原文出现在执行输入里')
+ assert.deepEqual(run.skills,skills);assert.deepEqual(JSON.parse(run.inputText).skills,runSkillCatalog(skills))
+ assert.equal(run.contextMode,runContextMode)
+ assert.ok(!run.inputText.includes(JSON.stringify(content)),'启动只给技能目录，正文仍固定保存在服务端')
  assert.deepEqual(await service.prepare(f.owner,f.command,async()=>{throw Error('不应重读')}),run)
  assert.equal((await service.claim(f.owner,{runId:run.id})).dispatch,true)
  await pool.query("update teloa_task_runs set role_skills=jsonb_set(role_skills,'{0,content}','\"tampered\"'::jsonb) where id=$1",[run.id])
@@ -771,7 +772,7 @@ test('合法12/30员工引用进入真实Run固定快照，幂等恢复不漏原
   const f=await fixture(),ids=Array.from({length:count},()=>randomUUID()),rows=ids.map(id=>knowledge(id)),service=new TaskRunService(pool,identity,f.inspect)
   await pool.query("update teloa_roles set definition=jsonb_set(definition,'{knowledge}',$2::jsonb) where id=$1",[f.role.id,JSON.stringify(ids)])
   const run=await service.prepare(f.owner,f.command,undefined,async()=>rows)
-  assert.deepEqual(run.knowledge,rows);assert.deepEqual(JSON.parse(run.inputText).knowledge.contents,rows)
+  assert.deepEqual(run.knowledge,rows);assert.deepEqual(JSON.parse(run.inputText).knowledge.contents,runKnowledgeCatalog(rows))
   assert.deepEqual(await service.prepare(f.owner,f.command,undefined,async()=>{throw Error('不能重读固定引用')}),run)
   assert.equal((await service.claim(f.owner,{runId:run.id})).dispatch,true)
   await pool.query("update teloa_task_runs set role_knowledge=jsonb_set(role_knowledge,'{11,text}','\"changed\"'::jsonb) where id=$1",[run.id])
@@ -791,7 +792,7 @@ test('岗位知识固定ID与正文，声明遗漏和持久正文篡改不能放
  const knowledge=[{id,version:1,title:'依据',sourceId:'source',sourceVersion:createHash('sha256').update(text).digest('hex'),scopeIds:['general'],text}]
  await assert.rejects(service.prepare(f.owner,f.command),{code:'teloa/conflict'})
  const run=await service.prepare(f.owner,f.command,undefined,async()=>knowledge)
- assert.deepEqual(run.knowledge,knowledge);assert.deepEqual(JSON.parse(run.inputText).knowledge.contents,knowledge)
+ assert.deepEqual(run.knowledge,knowledge);assert.deepEqual(JSON.parse(run.inputText).knowledge.contents,runKnowledgeCatalog(knowledge))
  assert.deepEqual(await service.prepare(f.owner,f.command,undefined,async()=>{throw Error('不应重读')}),run)
  assert.equal((await service.claim(f.owner,{runId:run.id})).dispatch,true)
  await pool.query("update teloa_task_runs set role_knowledge=jsonb_set(role_knowledge,'{0,text}','\"changed\"'::jsonb) where id=$1",[run.id])
@@ -809,7 +810,7 @@ test('任务知识与岗位默认知识独立加载，按资源身份去重后�
  assert.deepEqual(observedTarget,{taskId:f.task.id,taskVersion:1,sessionId:f.command.sessionId,linkVersion:1,scope:'general'})
  assert.equal((observedRole as {id:string}).id,f.role.id);assert.ok(observedDb)
  assert.deepEqual(run.knowledge,[roleKnowledge[0],roleKnowledge[1],taskKnowledge[1]])
- assert.deepEqual(JSON.parse(run.inputText).knowledge.contents,run.knowledge)
+ assert.deepEqual(JSON.parse(run.inputText).knowledge.contents,runKnowledgeCatalog(run.knowledge))
  assert.deepEqual(await service.prepare(f.owner,f.command,undefined,async()=>{throw Error('恢复不应重读岗位知识')},async()=>{throw Error('恢复不应重读任务知识')}),run)
 })
 
@@ -949,6 +950,14 @@ test('通用会话承载SOC任务可读SOC授权资料，general任务不能借�
   await assert.rejects(resourceService.executionKnowledge({...actor,kind:'agent',scopeIds:['general']},['general'],[resource.id]),{code:'teloa/forbidden'})
   assert.equal(target.scope,'soc')
   assert.deepEqual(saved.allowedTools,[])
+  await runs.claim(f.owner,{runId:saved.id})
+  const readContext=()=>runs.contextSnapshot(f.owner,saved.sessionId,async(db,run,target)=>{
+   const contents=await resourceService.executionKnowledgeInTransaction(db,{ownerId:f.owner,kind:'agent',scopeIds:['soc']},['soc'],run.knowledge.map(item=>item.id),undefined,target.fixedKnowledgeRead)
+   assert.deepEqual(contents,run.knowledge)
+  })
+  assert.equal((await readContext())?.knowledge[0]?.text,'SOC已授权调查依据')
+  await resourceService.withdraw(actor,{resourceId:resource.id,expectedVersion:resource.version})
+  await assert.rejects(readContext(),{code:'teloa/resource-withdrawn'})
  }finally{await rm(root,{recursive:true,force:true})}
 })
 
@@ -1279,4 +1288,38 @@ test('内容映射派生工具只允许原授权子集，新增工具或参数�
   await assert.rejects(invalid.prepare(g.owner,g.command),{code:'teloa/forbidden'})
   assert.equal((await pool.query('select count(*)::int n from teloa_task_runs where owner_id=$1',[g.owner])).rows[0].n,0)
  }
+})
+
+test('16份资料和10个Skill仅目录启动，真实Run保存全快照、恢复及按需权限检查',async t=>{
+ const f=await fixture(),service=new TaskRunService(pool,identity,f.inspect),knowledge=Array.from({length:16},(_,i)=>{const text='# Guide '+i+'\n用途 '+i+'\n\n'+'fixed-body-'+('x'.repeat(8700));return {id:randomUUID(),version:1,title:'Guide '+i,sourceId:'source_'+i,sourceVersion:hash(text),scopeIds:['general'],text}})
+ const skills=Array.from({length:10},(_,i)=>{const content='fixed-method-'+i+' '+('s'.repeat(3080));return {name:'method-'+i,provider:'native',source:'project',description:'适用场景 '+i,content,sha256:hash(content)}})
+ await pool.query("update teloa_roles set definition=jsonb_set(jsonb_set(definition,'{skills}',$2::jsonb),'{knowledge}',$3::jsonb) where id=$1",[f.role.id,JSON.stringify(skills.map(s=>s.name)),JSON.stringify(knowledge.map(k=>k.id))])
+ const run=await service.prepare(f.owner,f.command,async()=>skills,async()=>knowledge),snapshot=JSON.parse(run.inputText)
+ const legacy={...snapshot,skills,knowledge:{...snapshot.knowledge,contents:knowledge}};delete legacy.contextMode;delete legacy.contextNotice
+ t.diagnostic(JSON.stringify({fullInputChars:JSON.stringify(legacy).length,catalogInputChars:run.inputText.length,reduction:1-run.inputText.length/JSON.stringify(legacy).length}))
+ assert.ok(run.inputText.length<JSON.stringify(legacy).length*0.1)
+ assert.doesNotMatch(run.inputText,/fixed-body|fixed-method/)
+ assert.deepEqual(run.skills,skills);assert.deepEqual(run.knowledge,knowledge)
+ await assert.rejects(service.contextSnapshot(f.owner,run.sessionId,async()=>{}),{code:'teloa/forbidden'})
+ await service.claim(f.owner,{runId:run.id})
+ let checked=false
+ const current=await service.contextSnapshot(f.owner,run.sessionId,async(_db,fixed,target)=>{checked=true;assert.deepEqual(target.knowledgeIds,knowledge.map(k=>k.id));assert.deepEqual(fixed.knowledge,knowledge)})
+ assert.equal(current?.id,run.id);assert.equal(checked,true)
+ await assert.rejects(service.contextSnapshot('another-owner',run.sessionId,async()=>{assert.fail('不得读取')}),{code:'teloa/forbidden'})
+ await assert.rejects(service.contextSnapshot(f.owner,run.sessionId,async()=>{throw new WorkError('teloa/resource-withdrawn','已撤回')}),{code:'teloa/resource-withdrawn'})
+ await service.requestStop(f.owner,{runId:run.id})
+ await assert.rejects(service.contextSnapshot(f.owner,run.sessionId,async()=>{assert.fail('停止后不得读取')}),{code:'teloa/forbidden'})
+})
+
+test('旧全文运行仍可读回并领取；新目录的版本或用途被篡改时拒绝',async()=>{
+ const f=await fixture(),service=new TaskRunService(pool,identity,f.inspect),content='legacy exact body',skill={name:'legacy-method',description:'原方法',provider:'native',source:'project',content,sha256:hash(content)}
+ await pool.query("update teloa_roles set definition=jsonb_set(definition,'{skills}',$2::jsonb) where id=$1",[f.role.id,JSON.stringify([skill.name])])
+ const run=await service.prepare(f.owner,f.command,async()=>[skill]),snapshot=JSON.parse(run.inputText)
+ const tampered=structuredClone(snapshot);tampered.skills[0].description='changed'
+ await pool.query('update teloa_task_runs set input_text=$2 where id=$1',[run.id,stable(tampered)])
+ await assert.rejects(service.get(f.owner,{runId:run.id}),{code:'teloa/storage-corrupt'})
+ delete snapshot.contextMode;delete snapshot.contextNotice;snapshot.skills=[skill]
+ await pool.query('update teloa_task_runs set input_text=$2 where id=$1',[run.id,JSON.stringify(snapshot,(key,value)=>key!==''&&value&&typeof value==='object'&&!Array.isArray(value)?Object.fromEntries(Object.entries(value).sort(([a],[b])=>a<b?-1:a>b?1:0)):value)])
+ assert.equal((await service.get(f.owner,{runId:run.id})).contextMode,undefined)
+ assert.equal((await service.claim(f.owner,{runId:run.id})).dispatch,true)
 })

@@ -30,7 +30,7 @@ export async function resolveRoleSkills(names:readonly string[],read:ReadRoleSki
   if(size>largest.bytes)largest={name,bytes:size}
   skills.push(skill)
  }
- // 技能正文整段写进任务提示词，256 KiB 合计是提示词预算；读完全部技能再报，让用户看到合计与最大的一条。
+ // 固定运行快照沿用 256 KiB 存储防护（旧运行也可能全文发送）；按需模式不把此合计当作模型输入大小。
  if(bytes>promptFullTextMaxBytes)throw new WorkError('teloa/invalid-input','员工技能正文合计 '+kib(bytes)+' KiB，超过 '+kib(promptFullTextMaxBytes)+' KiB 上限（最大：'+largest.name+' '+kib(largest.bytes)+' KiB）。请减少本员工绑定的技能。')
  const result:RoleSkillSnapshot[]=[]
  for(const skill of skills){

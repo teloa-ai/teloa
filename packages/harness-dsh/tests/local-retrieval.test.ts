@@ -901,3 +901,27 @@ test('本人界面语义试搜复用主体范围和有界摘录；拒绝自报�
  await assert.rejects(cold.handle('retrieval/search',{query:'报销'}),{code:'teloa/dependency-unavailable'})
  assert.equal(cold.store.of('search').length,0);assert.deepEqual(cold.embedding.prepared,[])
 })
+
+test('按需运行无检索模型时在固定资料中搜索，不触发安装、全库整理或读新版',async t=>{
+ const {createHash}=await import('node:crypto'),body='# Identity\nAAD PIM elevation requires approval.',fixed={id:resourceId,version:1,title:'AAD guide',sourceId:'aad',sourceVersion:createHash('sha256').update(body).digest('hex'),scopeIds:['SOC'],text:body}
+ let checks=0
+ const e=await setup({readTaskPolicy:async()=>({allowedTools:[knowledgeSearchToolName]}),fixedTaskKnowledge:async()=>{checks++;return [fixed]}},{noService:true});t.after(()=>e.ctx.fiber.dispose())
+ const result=await e.call({query:'AAD PIM'})
+ assert.equal(result.isError,false,text(result))
+ const value=readRetrievalSearchResult(JSON.parse(text(result)))
+ assert.equal(value.results[0]!.resourceVersion,1);assert.match(value.results[0]!.excerpt,/approval/);assert.ok(value.results[0]!.citationPath)
+ assert.equal(checks,2);assert.equal(e.store.of('search').length,0);assert.equal(e.store.of('status').length,0);assert.equal(e.embedding.prepared.length,0)
+})
+
+test('固定资料检索拒绝索引中的其他版本，空绑定不回落，撤权后不返回已算片段',async t=>{
+ const {createHash}=await import('node:crypto'),body='AAD original version',fixed={id:resourceId,version:1,title:'AAD',sourceId:'aad',sourceVersion:createHash('sha256').update(body).digest('hex'),scopeIds:['SOC'],text:body}
+ let docs:typeof fixed[]=[fixed],revoked=false
+ const e=await setup({readTaskPolicy:async()=>({allowedTools:[knowledgeSearchToolName]}),fixedTaskKnowledge:async()=>{if(revoked)throw new WorkError('teloa/forbidden','已撤权');return docs}});t.after(()=>e.ctx.fiber.dispose())
+ const result=await e.call({query:'AAD'})
+ assert.equal(result.isError,false,text(result));assert.match(text(result),/original version/);assert.doesNotMatch(text(result),/报销单/)
+ docs=[]
+ const empty=await e.call({query:'AAD'});assert.equal(empty.isError,false);assert.equal(JSON.parse(text(empty)).results.length,0)
+ docs=[fixed]
+ const original=e.embedding.service.embed;e.embedding.service.embed=async(...args)=>{const out=await original(...args);revoked=true;return out}
+ const denied=await e.call({query:'AAD'});assert.equal(denied.isError,true);assert.doesNotMatch(text(denied),/original version/)
+})
