@@ -61,7 +61,7 @@ export type RetrievalSearchHit={
  /** 分块在原文中的字符区间（半开区间，从 0 起）。 */
  chars:[number,number]
  heading:string|null
- /** 余弦相似度。 */
+ /** 语义命中为余弦相似度；固定运行的关键词回退为归一匹配度，见 coverage.note。 */
  score:number
  excerpt:string
 }

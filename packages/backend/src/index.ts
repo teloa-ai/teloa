@@ -92,6 +92,7 @@ export {readRunPlanContext,planContextNotice,planWorkContextNotice,type RunPlanC
 export {type PlanGroupReport} from './work/plan-group-report.ts'
 
 export {readRunSkills,type RunSkill,type ManagedRunSkill,type TaskRunSkillDatabase} from './work/task-run-skills.ts'
+export {runContextMode,runContextNotice,runContextToolNames,runKnowledgeCatalog,runSkillCatalog,readRunKnowledgeSegment,loadRunSkill,searchRunKnowledge} from './work/task-run-context.ts'
 
 export {readRunKnowledge,type RunKnowledge} from './work/task-run-knowledge.ts'
 export {RoleToolGrantService,initializeRoleToolGrants,readRoleToolGrant,type RoleToolGrant} from './work/role-tool-grants.ts'

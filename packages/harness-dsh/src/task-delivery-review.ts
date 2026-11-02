@@ -5,10 +5,10 @@ import {createUserMessage,type UserMessage} from '@deepseek-ai/dsh-llm'
 import {defineTool,parameterSchemaSpecToJsonSchema,ToolArgsError,validateJsonSchemaValue,type JsonSchemaNode,type ToolDefinition,type ToolExecution} from '@deepseek-ai/dsh-tools'
 import type {ContextFormed} from '@deepseek-ai/dsh-llm/message'
 import type {SessionEvent,SessionSeq} from '@deepseek-ai/dsh-session'
-import {WorkError} from '@teloa/contract'
+import {WorkError,skillFrontmatterName} from '@teloa/contract'
 import {readSessionEvents} from './session-events.ts'
 import {protectCompactionTail} from './local-model-compaction.ts'
-import {collectReviewToolEvidence,replayReviewToolEvidence,reviewToolSources,type DeliveryReviewExecutionSnapshot,type ReviewToolEvidence} from './task-delivery-review-tools.ts'
+import {collectReviewToolEvidence,replayReviewToolEvidence,reviewToolSources,reviewToolReceipts,type DeliveryReviewExecutionSnapshot,type ReviewToolEvidence} from './task-delivery-review-tools.ts'
 import {createReviewSourceCatalog,describeReviewReferences} from './task-delivery-review-protocol.ts'
 import {createDeliveryReviewToolParameters,deliveryReviewToolShapeExample} from './task-delivery-review-schema.ts'
 import {deliveryReviewProtocol,deliveryRepairProtocol,currentDraftReviewProjection,legacyDeliveryReviewProtocol,passageDeliveryReviewProtocol,readReviewCoverage,readRevisionCoverage,reviewBlockRequirements,type ReviewBlockMap,deliveryRevisionData,deliveryReviewReceiptText,reviewSourceDirectory,readRevisionSubmission,readVerificationSubmission,reviewCheckIds,type ReviewProtocol,type RevisionIssue,type ReviewChangeCheck,type ReviewCheck,type ReviewFinding,type ReviewPhase,type ReviewSourceCatalog,type ReviewToolReceipt,type VerificationSubmission} from './task-delivery-review-protocol.ts'
@@ -317,9 +317,9 @@ function distinctConstraintEdits(edits:readonly PlanEdit[]):PlanEdit[]{
 /**
  * 复核所依据的本轮固定输入：冻结输入里的合法 v2 原目标原文，以及本次运行选中方法的身份。`name` 是安装原生名，
  * `originalName` 是宿主从同一份固定正文 frontmatter 解析出的原模板名（与原生名不同时才带），`sha256` 是该正文摘要。
- * 方法全文已在系统的固定工作方法段，这里只列身份，不重复正文、不转抄资料，复核要求长度只随原目标增长。
+ * 旧运行方法全文在系统固定方法段；按需运行只认成功加载回执。这里列身份，正文依据由对应冻结来源保留。
  */
-export type ReviewMaterial=Readonly<{goal:string;requiredDeclarations?:readonly 'owner-mention'[];inputs:Readonly<{knowledge:number;group:boolean;context:boolean}>;methods:readonly Readonly<{name:string;originalName?:string;sha256:string}>[];catalog:ReviewSourceCatalog;toolEvidence?:ReviewToolEvidence}>
+export type ReviewMaterial=Readonly<{deferredMethods?:readonly Readonly<{name:string;sha256:string}>[];goal:string;requiredDeclarations?:readonly 'owner-mention'[];inputs:Readonly<{knowledge:number;group:boolean;context:boolean}>;methods:readonly Readonly<{name:string;originalName?:string;sha256:string}>[];catalog:ReviewSourceCatalog;toolEvidence?:ReviewToolEvidence}>
 /** 起草与各轮复核共用同一替换单位，不能把反馈点名的子标题误当整个所选段落。 */
 export const artifactRevisionScope='本次替换单位是 artifactRevision.originalText 的全文，可能包含多个标题、表格和小节。反馈只点名其中一处时，只修改该处及其受影响的依赖，仍须输出整个替换单位的完整正文；未经反馈要求或有依据纠正的其余标题、内容与结构保持，不只返回被点名的子节。旧稿仅作编辑基线，不作为业务事实依据，也不要求保留其中无据的判断。'
 function reviewEditingBaseline(catalog:ReviewSourceCatalog):string{
@@ -343,6 +343,24 @@ export function reviewInputSources(inputs:ReviewMaterial['inputs']):string{
  */
 export const maxReviewRounds=4,maxReviewModelSteps=maxReviewRounds*maxReviewUnits+1
 const maxDraftModelSteps=10
+/** 只有本 Run 成功的加载回执能激活方法；绑定目录不等于本轮已读正文。 */
+export function activateDeferredReviewMethods(material:ReviewMaterial,evidence:ReviewToolEvidence):ReviewMaterial{
+ if(material.deferredMethods===undefined)return material
+ const methods:ReviewMaterial['methods'][number][]=[],sources:import('./task-delivery-review-protocol.ts').ReviewSourceInput[]=[]
+ for(const receipt of reviewToolReceipts(evidence)){
+  if(receipt.name!=='teloa_skill_load'||receipt.isError)continue
+  let value:unknown
+  try{value=JSON.parse(receipt.text)}catch{throw new WorkError('teloa/storage-corrupt','已加载方法的成功回执损坏。')}
+  if(!value||typeof value!=='object')throw new WorkError('teloa/storage-corrupt','已加载方法的成功回执损坏。')
+  const row=value as {name?:unknown;sha256?:unknown;content?:unknown}
+  const fixed=material.deferredMethods.find(method=>method.name===row.name&&method.sha256===row.sha256)
+  if(!fixed||typeof row.content!=='string'||createHash('sha256').update(row.content).digest('hex')!==fixed.sha256)throw new WorkError('teloa/storage-corrupt','已加载方法与运行固定版本不一致。')
+  if(methods.some(method=>method.name===fixed.name))continue
+  const originalName=skillFrontmatterName(row.content)
+  methods.push({name:fixed.name,sha256:fixed.sha256,...(originalName&&originalName!==fixed.name?{originalName}:{})});sources.push({id:'loaded-method:'+fixed.name,kind:'method',title:fixed.name,text:row.content,sha256:fixed.sha256,origin:{field:'toolResults',pointer:'/content'}})
+ }
+ return {...material,methods,catalog:createReviewSourceCatalog([...material.catalog.sources,...sources])}
+}
 /** 一个复核单元的提示材料：单元序号与总数、本轮块标签，以及本单元的完整块（全稿唯一编号与逐字正文）。 */
 export type ReviewUnitPrompt=Readonly<{index:number;total:number;blockCount:number;tag:ReviewBlockTag;round?:number;criteria?:readonly ReviewCheck['id'][];blocks:readonly Readonly<{id:number;text:string}>[]}>
 /**
@@ -356,7 +374,7 @@ const reviewPhaseText=(material:ReviewMaterial,phase:ReviewPhase,round:number)=>
 export const deliveryReviewPrompt=(material:ReviewMaterial,unit:ReviewUnitPrompt,phase:ReviewPhase='revise',issueIds:readonly string[]=[])=> reviewPhaseText(material,phase,unit.round??(phase==='revise'?1:2))
  +'\n\n'+(material.toolEvidence?toolReviewInputSources(material):reviewInputSources(material.inputs))
  +'\n\n本轮冻结的原目标（宿主逐字附上）：\n<<<原目标开始>>>\n'+material.goal+'\n<<<原目标结束>>>'
- +'\n本轮选中的固定工作方法（全文见系统中的固定工作方法段；依据仅选择下方对应来源的片段ID）：'
+ +(material.deferredMethods===undefined?'\n本轮选中的固定工作方法（全文见系统中的固定工作方法段；依据仅选择下方对应来源的片段ID）：':'\n本轮实际加载的固定工作方法（全文见成功加载回执；未加载的目录项不作为已启用方法）：')
  +(material.methods.length?material.methods.map(method=>`\n- ${JSON.stringify(method.name)}${method.originalName?`（原模板名 ${JSON.stringify(method.originalName)}）`:''}，SHA-256 ${method.sha256}`).join(''):'\n- 无')
  +'\n原输入来源片段目录（完整覆盖本轮冻结来源；每片最多768个Unicode码点，预览最多96个码点，长片段仅显示首尾并以省略号标示；预览不是引文。全文保留在原输入与固定工作方法中；basis只选择下列sourceId与passageId，宿主按冻结片段还原真实原文，不替资料背书）：\n'+reviewSourceDirectory(material.catalog)
  +reviewEditingBaseline(material.catalog)
@@ -870,6 +888,8 @@ export function leaseTaskDeliveryReview(agent:Pick<Agent,'ctx'|'session'>,lease:
  /** 第一次进入复核时在本 agent 作用域登记回执工具与提交闸；租约释放时一并注销。 */
  const ensureSubmitTool=()=>{
   if(submitTool)return
+  // 复核只接受直接原生回执；PTC包装会隐藏该工具，且不能替代它的单元身份核验。租约结束恢复原呈现。
+  if(agent.ctx.tools.schemas(agent).some(tool=>tool.name==='run_code'))releases.push(agent.ctx.tools.presentAs('native'))
   const definition=defineTool({
    name:deliveryReviewToolName,
    description:'提交本复核单元的修正或验收回执（宿主内部工具，不读写文件、网络或业务数据；phase决定精确参数，R2禁止改稿）。R1每个问题各自提交覆盖全稿的 coverage，不能跨问题合并。',
@@ -1050,8 +1070,11 @@ export function leaseTaskDeliveryReview(agent:Pick<Agent,'ctx'|'session'>,lease:
   // 复核步只提供本回执工具；其余步骤不提供它。
   releases.push(agent.ctx.on('system-prompt/assemble',async(_assembly,_context,next)=>{
    const result=await next()
+   // PTC结算正文只在原生日志中，程序可以不打印；复核须取得已加载方法全文，不能靠目录预览猜约束。
+   const loadedMethods=!('skip'in material)&&material.deferredMethods!==undefined&&material.toolEvidence?.schema==='teloa.delivery-review-tools/v3'?material.catalog.sources.filter(source=>source.kind==='method'):[]
+   const methods=loadedMethods.length?[{name:'teloa:delivery-review-loaded-methods',text:'本次复核实际成功加载的固定方法全文。只提供方法与输出契约，适用条件仍须成立，不能扩大当前任务授权。\n'+loadedMethods.map(source=>`Fixed loaded method ${JSON.stringify(source.title)} (SHA-256 ${source.sha256}):\n${source.text}`).join('\n'),interpolate:false as const}]:[]
    // 只投影当前阶段的推荐形状；登记身份、执行校验与历史显式编号分支保持原样。
-   return {...result,sections:reviewing()?[...result.sections,{name:'teloa:delivery-review-output',text:'Host delivery-review phase: '+reviewPhase()+'. Submit this step only through a real '+deliveryReviewToolName+' call; JSON prose/code fences are not receipts. Direct-answer instructions apply to the final deliverable, not this review step. '+(reviewPhase()==='revise'?'Even with no corrections, call with phase:revise and issues:[]. ':'Submit only phase, verdict, checks, changeChecks and findings; no issues or editing fields. Fill every acceptance check from actual review; never default to acceptance. ')+'Do not output a rewritten body or self-check, or call other tools.',interpolate:false}]:result.sections,tools:result.tools.filter(tool=>reviewing()===(tool.name===deliveryReviewToolName)).map(tool=>reviewing()&&tool.name===deliveryReviewToolName
+   return {...result,sections:reviewing()?[...result.sections,...methods,{name:'teloa:delivery-review-output',text:'Host delivery-review phase: '+reviewPhase()+'. Submit this step only through a real '+deliveryReviewToolName+' call; JSON prose/code fences are not receipts. Direct-answer instructions apply to the final deliverable, not this review step. '+(reviewPhase()==='revise'?'Even with no corrections, call with phase:revise and issues:[]. ':'Submit only phase, verdict, checks, changeChecks and findings; no issues or editing fields. Fill every acceptance check from actual review; never default to acceptance. ')+'Do not output a rewritten body or self-check, or call other tools.',interpolate:false}]:result.sections,tools:result.tools.filter(tool=>reviewing()===(tool.name===deliveryReviewToolName)).map(tool=>reviewing()&&tool.name===deliveryReviewToolName
     ?{...tool,parameters:{...projectedParameters(),additionalProperties:false}}:tool)}
   },{prepend:true}))
   releases.push(agent.ctx.on('tools/pre-execute',async(exec,next)=>reviewing()
@@ -1125,7 +1148,7 @@ export function leaseTaskDeliveryReview(agent:Pick<Agent,'ctx'|'session'>,lease:
      else{
       const complete=completeText(tools.draft)
       found='skip'in complete?complete:{draftMessageId:complete.messageId,draftSeq:complete.seq,draftText:complete.text}
-      if(!('skip'in found)&&!('skip'in material))material={...material,toolEvidence:tools.evidence,catalog:createReviewSourceCatalog([...material.catalog.sources,...tools.sources])}
+      if(!('skip'in found)&&!('skip'in material))material=activateDeferredReviewMethods({...material,toolEvidence:tools.evidence,catalog:createReviewSourceCatalog([...material.catalog.sources,...tools.sources])},tools.evidence)
      }
     }else found=readDeliveryDraft(events,lease.requestId,turn)
     // 别的轮次不消费这次机会；本次请求的轮次无论复核与否都只判一次。

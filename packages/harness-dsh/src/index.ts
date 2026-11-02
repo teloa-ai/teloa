@@ -295,6 +295,7 @@ import {createBusinessSyncTick} from './business-sync-scheduler.ts'
 import {createMcpSyncSource} from './business-mcp-sync-source.ts'
 import {registerBusinessResultTools} from './business-result-tools.ts'
 import {registerLocalRetrieval,type EmbeddingServiceLike} from './local-retrieval.ts'
+import {registerTaskRunContextTools,type RunContextReader} from './task-run-context-tools.ts'
 import {createPageCreateDraftHandler,pageCreateDraftEndpoints} from './page-create-drafts.ts'
 import {registerPageCreateTools,shareConnectorDirectory} from './page-create-tools.ts'
 import {registerEmployeeTools} from './employee-tools.ts'
@@ -2392,7 +2393,20 @@ async function applyHost(ctx:Context,projectRoot:string):Promise<void> {
   // 本人普通会话在模型就绪后默认可用；受管任务按岗位整工具授权（task-tool-guard 清单闸），主体与目标范围沿 readExecutionKnowledge 同一条 taskKnowledgeAuthorization。
   const retrievalPausePath=resolve(runtimeRoot,'retrieval-auto-paused.json')
   const retrievalModelSelectionPath=resolve(runtimeRoot,'model-selection.json')
+  const readRunContext:RunContextReader=async(sessionId,signal)=>{
+   signal.throwIfAborted()
+   const runs=await runService()
+   const run=await runs.contextSnapshot(owner,sessionId,async(db,fixed,target)=>{
+    signal.throwIfAborted()
+    const current=await readExecutionKnowledge(target,fixed.knowledge.map(item=>item.id),signal,fixed.roleSnapshot?.scopes,db)
+    if(JSON.stringify(current)!==JSON.stringify(fixed.knowledge))throw new WorkError('teloa/version-conflict','运行资料已变化，不能读取其他版本。')
+   })
+   signal.throwIfAborted();return run
+  }
+  const stopRunContextTools=registerTaskRunContextTools(toolRegistrationContext,readRunContext)
+  resources.beforeDatabaseClose(()=>{stopRunContextTools()})
   const localRetrieval=registerLocalRetrieval(toolRegistrationContext,{
+   fixedTaskKnowledge:async(sessionId,signal)=>(await readRunContext(sessionId,signal))?.knowledge??null,
    owner,conversation:id=>service.bySession(owner,id),requestedRoleId:id=>service.requestedRoleId(owner,id),role:roleId=>readRole(owner,roleId),readTaskPolicy:ordinaryTaskPolicy,
    resolveKnowledge:async role=>resolveEmployeeKnowledgeReferences((await resources.database()).pool,owner,role.id,role.knowledge),
    taskAuthorization:async(sessionId,signal)=>{

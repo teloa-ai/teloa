@@ -404,3 +404,23 @@ test('reconcile和stop不能同时改写顶层与快照来提升权限档或新�
   await assert.rejects(api.stop(original),/执行目标快照发生变化/)
  }
 })
+
+test('按需上下文的运行配置接纳固定目录并拒绝与服务端资源版本不符的回包',async()=>{
+ const {runContextMode,runContextNotice}=await import('@teloa/contract')
+ const content='只在加载后出现的正文',sha='a'.repeat(64),skill={name:'method',description:'适用场景',provider:'native',source:'project',content,sha256:sha}
+ const knowledge={id:taskId,version:1,title:'指南',sourceId:'guide',sourceVersion:sha,scopeIds:['general'],text:content}
+ const snapshot={...JSON.parse(row.inputText),contextMode:runContextMode,contextNotice:runContextNotice,skills:[{name:skill.name,description:skill.description,sha256:sha}],knowledge:{notice:'data',contents:[{resourceId:taskId,resourceVersion:1,title:'指南',purpose:'用途',sourceVersion:sha}]}}
+ const lazy={...row,contextMode:runContextMode,skills:[skill],knowledge:[knowledge],inputText:JSON.stringify(snapshot)}
+ const result=(await createTaskRunApi(async()=>[lazy]).list(taskId))[0]!
+ assert.equal(result.skills[0]!.sha256,sha);assert.equal(result.knowledge[0]!.version,1);assert.doesNotMatch(lazy.inputText,/只在加载后出现/)
+ for(const changed of [{...snapshot,contextMode:'future'}, {...snapshot,skills:[{...snapshot.skills[0],sha256:'b'.repeat(64)}]}, {...snapshot,knowledge:{...snapshot.knowledge,contents:[{...snapshot.knowledge.contents[0],resourceVersion:2}]}}])await assert.rejects(createTaskRunApi(async()=>[{...lazy,inputText:JSON.stringify(changed)}]).list(taskId))
+})
+
+test('本人运行使用资料目录投影时仍接受合法来源并拒绝跨业务继承',async()=>{
+ const {runContextMode,runContextNotice}=await import('@teloa/contract')
+ const executor={kind:'owner',grantId:id,grantVersion:1},knowledge={id:taskId,version:1,title:'个人资料',sourceId:'guide',sourceVersion:'a'.repeat(64),scopeIds:['general'],text:'body'}
+ const snapshot={schema:'teloa.task-run-input/v3',contextMode:runContextMode,contextNotice:runContextNotice,executor,allowedTools:[],task:{id:taskId,version:1,title:'调查',goal:'核对证据',scope:'general'},knowledge:[{resourceId:taskId,resourceVersion:1,title:knowledge.title,purpose:'用途',sourceVersion:knowledge.sourceVersion}]}
+ const owner={...row,contextMode:runContextMode,executor,roleId:null,roleVersion:null,skills:[],knowledge:[knowledge],inputText:JSON.stringify(snapshot)}
+ assert.equal((await createTaskRunApi(async()=>[owner]).list(taskId))[0]!.knowledge.length,1)
+ await assert.rejects(createTaskRunApi(async()=>[{...owner,inputText:JSON.stringify({...snapshot,task:{...snapshot.task,scope:'foreign'}})}]).list(taskId))
+})

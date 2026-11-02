@@ -860,3 +860,15 @@ test('显式保留的未列块仍属R2必核依赖，漏验时不能交付',asyn
  const f=await runtime(t,[text('保留的第1块。\n\n需改的第2块。'),submit(revision as unknown as Submission),submit(verify(['r1:u1:i1'],[[2]]))])
  await f.send();assert.equal(readTaskRunGroupResult(f.events(),'rpc'),undefined);assert.equal(ends(f.events()).at(-1),'error')
 })
+
+test('按需交付复核只纳入本Run实际成功加载的方法，不重新注入全部绑定正文',async()=>{
+ const {runContextMode,runContextNotice}=await import('@teloa/contract'),{activateDeferredReviewMethods}=await import('../src/task-delivery-review.ts')
+ const methods=['identity','network'].map(name=>({name,description:name,provider:'native',source:'project',content:name+' METHOD BODY',sha256:createHash('sha256').update(name+' METHOD BODY').digest('hex')}))
+ const inputText=JSON.stringify({schema:'teloa.task-run-input/v2',contextMode:runContextMode,contextNotice:runContextNotice,task:{id:'task',version:1,goal:'调查身份'}})
+ const run={taskId:'task',taskVersion:1,inputText,skills:methods,knowledge:[]} as unknown as TaskRun
+ const material=taskRunReviewMaterial(run);assert.ok(!('skip'in material));assert.equal(material.methods.length,0);assert.ok(!JSON.stringify(material.catalog).includes('METHOD BODY'))
+ const evidence={receipts:[{name:'teloa_skill_load',isError:false,text:JSON.stringify(methods[0])},{name:'teloa_skill_load',isError:true,text:JSON.stringify(methods[1])}]} as unknown as import('../src/task-delivery-review-tools.ts').ReviewToolEvidence
+ const active=activateDeferredReviewMethods(material,evidence)
+ assert.deepEqual(active.methods,[{name:'identity',sha256:methods[0]!.sha256}]);assert.ok(active.catalog.sources.some(s=>s.kind==='method'&&s.text===methods[0]!.content));assert.ok(!JSON.stringify(active.catalog).includes(methods[1]!.content))
+ assert.throws(()=>activateDeferredReviewMethods(material,{...evidence,receipts:[{...evidence.receipts[0]!,text:JSON.stringify({...methods[0],content:'tampered'})}]}),/固定版本/)
+})

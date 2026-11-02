@@ -1,6 +1,6 @@
 {
   "schema": "teloa.data-version/v1",
-  "dataVersion": 2,
-  "compatibleDataVersions": [2],
-  "migrations": [{"from": 1, "to": 2}]
+  "dataVersion": 3,
+  "compatibleDataVersions": [3],
+  "migrations": [{"from": 1, "to": 3}, {"from": 2, "to": 3}]
 }

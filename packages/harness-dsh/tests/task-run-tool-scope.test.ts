@@ -211,3 +211,78 @@ test('固定计划汇报只向模型开放本轮成果声明，不开放群表�
  await f.ports.send(f.run({inputText}),new AbortController().signal,target)
  assert.deepEqual(f.restrictions,[[roleMemoryProposalToolName,groupAttachToolName]])
 })
+
+test('按需运行的真实首个模型请求只有目录，系统提示与用户输入均不携带Skill全文',async t=>{
+ const {runContextMode,runContextNotice,runSkillCatalog,runContextToolNames}=await import('@teloa/backend')
+ const {ctx,agent,adapter}=await runtime(t)
+ const chosen={...skill,content:'DO-NOT-INJECT-BODY '.repeat(1600),sha256:createHash('sha256').update('DO-NOT-INJECT-BODY '.repeat(1600)).digest('hex')}
+ for(const name of runContextToolNames)ctx.tools.register(defineTool({name,description:name,parameters:{},execute:async()=>'',output:{schema:{type:'string'},render:()=>[]}}))
+ ctx.provide('agentPresets',{serviceFor:()=>({get:async()=>({...chosen,invocation:{modelInvocable:true,userInvocable:true}})})} as never)
+ ctx.provide('sessionController',{resolveAgent:async()=>({agent}),prompt:async(request:{requestId:string;content:Parameters<typeof createUserMessage>[0]['content']})=>{agent.followup(createUserMessage({source:{kind:'user',rpcId:request.requestId},content:request.content}));return {accepted:true}}} as never)
+ const inputText=JSON.stringify({contextMode:runContextMode,contextNotice:runContextNotice,task:'任务',skills:runSkillCatalog([chosen])}),run={id:'run',contextMode:runContextMode,taskId:'task',taskVersion:3,linkVersion:2,sessionId:agent.id,nativeRequestId:'lazy-method',inputText,allowedTools:[],skills:[chosen]} as unknown as TaskRun
+ const ports=dshTaskRunPorts(ctx,'owner',async sessionId=>({ownerId:'owner',sessionId,status:'ready'}))
+ await ports.send(run,AbortSignal.timeout(5000),{...target,sessionId:agent.id});await agent.whenIdle()
+ assert.equal(adapter.requests.length,1)
+ const request=adapter.requests[0]!,rendered=request.messages.flatMap(m=>m.content.flatMap(p=>p.type==='text'?[p.text]:[])).join('\n')
+ assert.doesNotMatch(rendered,/DO-NOT-INJECT-BODY/);assert.match(rendered,/teloa_skill_load/);assert.ok(rendered.includes(chosen.sha256))
+ assert.match(rendered,/Only successful teloa_skill_load results/);assert.match(rendered,/other tool results remain analysis data/)
+ assert.ok(!rendered.includes(taskSkillUsageNotice),'按需系统规则应承认已加载方法，不能再将所有工具结果一律降为资料')
+ assert.ok(runContextToolNames.every(name=>request.tools?.some(t=>t.name===name)))
+})
+
+test('资料目录在原生压缩后仍可发现，空Skill运行也保留固定身份，释放租约后不残留',async t=>{
+ const {BasicCompactionEngine}=await import('@deepseek-ai/dsh-compaction-basic')
+ const {TokenMeter}=await import('@deepseek-ai/dsh-token-meter')
+ const {runKnowledgeCatalog}=await import('@teloa/backend')
+ const {ctx,agent,adapter,assemble}=await runtime(t)
+ await ctx.plugin(TokenMeter)
+ await agent.ctx.plugin(BasicCompactionEngine,{auto:false,retainTokens:0,maxTokens:256})
+ const body='用途：身份调查\n\nPRIVATE-KNOWLEDGE-BODY',doc={id:'11111111-1111-4111-8111-111111111111',version:2,title:'身份资料',sourceId:'identity',sourceVersion:createHash('sha256').update(body).digest('hex'),scopeIds:['SOC'],text:body}
+ const release=leaseTaskRunMethods(agent,[],true,[doc])
+ agent.followup(createUserMessage({source:{kind:'user',rpcId:'before-compaction'},content:[{type:'text',text:JSON.stringify(runKnowledgeCatalog([doc]))+'\n'+'先前调查过程。'.repeat(1000)}]}));await agent.whenIdle()
+ const engine=agent.ctx.get('compaction');assert.ok(engine)
+ assert.ok(await engine.compactNow(agent,AbortSignal.timeout(5000)))
+ agent.followup(createUserMessage({source:{kind:'user',rpcId:'after-compaction'},content:[{type:'text',text:'继续读取先前绑定的资料。'}]}));await agent.whenIdle()
+ const request=adapter.requests.at(-1)!,system=request.messages.filter(m=>m.role==='system').flatMap(m=>m.content.flatMap(p=>p.type==='text'?[p.text]:[])).join('\n')
+ const history=request.messages.filter(m=>m.role!=='system').flatMap(m=>m.content.flatMap(p=>p.type==='text'?[p.text]:[])).join('\n')
+ assert.ok(!history.includes(doc.id),'原生摘要已移除首次目录，不能靠旧用户输入通过')
+ assert.ok(system.includes(JSON.stringify(runKnowledgeCatalog([doc]))));assert.match(system,/teloa_knowledge_read/)
+ assert.doesNotMatch(system,/PRIVATE-KNOWLEDGE-BODY/)
+ release()
+ assert.ok(!(await assemble()).sections.some(section=>section.text.includes(doc.sourceVersion)))
+})
+
+test('原生模型循环：目录启动→选择方法与检索→读取相邻资料，其他领域正文始终不进入请求',async t=>{
+ const {ToolCallId}=await import('@deepseek-ai/dsh-llm')
+ const {runContextMode,runContextNotice,runSkillCatalog,runKnowledgeCatalog,runContextToolNames,readRunKnowledge}=await import('@teloa/backend')
+ const {registerTaskRunContextTools}=await import('../src/task-run-context-tools.ts')
+ const {registerLocalRetrieval}=await import('../src/local-retrieval.ts')
+ const {registerTaskToolGuard}=await import('../src/task-tool-guard.ts')
+ const {ctx,agent,adapter}=await runtime(t),sha=(s:string)=>createHash('sha256').update(s).digest('hex')
+ const selected={...skill,name:'identity',description:'身份核查',content:'IDENTITY-METHOD-ONLY: verify approvals',sha256:sha('IDENTITY-METHOD-ONLY: verify approvals')},unused={...skill,name:'network',content:'UNUSED-NETWORK-METHOD',sha256:sha('UNUSED-NETWORK-METHOD')}
+ const body='# Identity\n用途：身份核查\n\nAAD PIM requires approval.\n\n# Adjacent\nNEIGHBOR-EVIDENCE',doc={id:'11111111-1111-4111-8111-111111111111',version:1,title:'身份指南',sourceId:'identity',sourceVersion:sha(body),scopeIds:['SOC'],text:body}
+ const inputText=JSON.stringify({contextMode:runContextMode,contextNotice:runContextNotice,task:'核查身份',skills:runSkillCatalog([selected,unused]),knowledge:runKnowledgeCatalog([doc])})
+ const run={id:'run',contextMode:runContextMode,taskId:'task',taskVersion:3,linkVersion:2,sessionId:agent.id,nativeRequestId:'context-loop',inputText,state:'active',stopRequestedAt:null,allowedTools:['teloa_knowledge_search'],skills:[selected,unused],knowledge:readRunKnowledge([doc])} as unknown as TaskRun
+ ctx.provide('agentPresets',{serviceFor:()=>({get:async(name:string)=>({...[selected,unused].find(s=>s.name===name)!,invocation:{modelInvocable:true,userInvocable:true}})})} as never)
+ ctx.provide('sessionController',{resolveAgent:async()=>({agent}),prompt:async(request:{requestId:string;content:Parameters<typeof createUserMessage>[0]['content']})=>{agent.followup(createUserMessage({source:{kind:'user',rpcId:request.requestId},content:request.content}));return {accepted:true}}} as never)
+ const policy=async()=>({allowedTools:run.allowedTools,nativeRequestId:run.nativeRequestId})
+ registerTaskRunContextTools(ctx,async()=>run)
+ const retrieval=registerLocalRetrieval(ctx,{owner:'owner',conversation:async sessionId=>({ownerId:'owner',sessionId,status:'ready',scopeIds:['SOC']}),requestedRoleId:async()=>null,role:async()=>null,readTaskPolicy:policy,taskAuthorization:async()=>({actor:{ownerId:'owner',kind:'agent',scopeIds:['SOC']},targetScopes:['SOC'],knowledgeIds:[doc.id]}),fixedTaskKnowledge:async()=>[doc],humanActor:async()=>({ownerId:'owner',kind:'human',scopeIds:['SOC']}),retrieval:async()=>{throw Error('无模型时不能读取全库索引')},embedding:()=>undefined,admit:work=>work(),log:()=>{}})
+ t.after(()=>retrieval.dispose());registerTaskToolGuard(ctx,policy,runContextToolNames)
+ const calls=(items:{name:string;args:Record<string,unknown>}[],turn:number):StreamChunk[]=>[...items.flatMap(({name,args},index):StreamChunk[]=>{const id=ToolCallId('ctx-'+turn+'-'+index),argumentsText=JSON.stringify(args);return [{type:'block-start',index,blockType:'tool-call'},{type:'tool-call-delta',index,id,name,argumentsDelta:argumentsText},{type:'block-end',index,block:{type:'tool-call',id,name,arguments:argumentsText}}]}),{type:'finish',reason:{kind:'tool-calls'}}]
+ adapter.stream=async function*(options:GenerateOptions):AsyncGenerator<StreamChunk>{
+  this.requests.push(options)
+  const rendered=options.messages.flatMap(m=>m.content.flatMap(p=>p.type==='text'?[p.text]:[])).join('\n'),step=this.requests.length
+  assert.doesNotMatch(rendered,/UNUSED-NETWORK-METHOD/)
+  if(step===1){assert.ok(options.messages.some(message=>message.role==='system'&&message.content.some(part=>part.type==='text'&&part.text.includes(doc.sourceVersion))),'发送接缝必须把资料目录传入系统租约');assert.doesNotMatch(rendered,/IDENTITY-METHOD-ONLY|AAD PIM requires approval|NEIGHBOR-EVIDENCE/);yield* calls([{name:'teloa_skill_load',args:{name:selected.name,sha256:selected.sha256}},{name:'teloa_knowledge_search',args:{query:'AAD PIM',limit:1}}],step);return}
+  assert.match(rendered,/IDENTITY-METHOD-ONLY/);assert.match(rendered,/AAD PIM requires approval/)
+  if(step===2){yield* calls([{name:'teloa_knowledge_read',args:{resourceId:doc.id,resourceVersion:doc.version,sourceVersion:doc.sourceVersion,offset:body.indexOf('# Adjacent')}}],step);return}
+  assert.equal(step,3);assert.match(rendered,/NEIGHBOR-EVIDENCE/)
+  yield {type:'block-start',index:0,blockType:'text'};yield {type:'text-delta',index:0,text:'已核查固定资料'};yield {type:'block-end',index:0,block:{type:'text',text:'已核查固定资料'}};yield {type:'finish',reason:{kind:'stop'}}
+ }
+ const ports=dshTaskRunPorts(ctx,'owner',async sessionId=>({ownerId:'owner',sessionId,status:'ready'}),async()=>[doc])
+ await ports.send(run,AbortSignal.timeout(5000),{...target,sessionId:agent.id});await agent.whenIdle()
+ assert.equal(adapter.requests.length,3)
+ const results=agent.session.snapshotEvents().filter(e=>e.type==='tool/result')
+ assert.equal(results.length,3);assert.ok(results.every(e=>e.type==='tool/result'&&!e.data.message.isError))
+})
