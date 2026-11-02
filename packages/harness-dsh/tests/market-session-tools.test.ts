@@ -767,7 +767,8 @@ test('八个会话内安装工具都不在岗位授权白名单、不在自授�
   assert.throws(()=>validateReferenceToolRules([{name,allowed:[{scope:'SOC'}]}],[{name,allowed:[{scope:'SOC'}]}]),{code:'teloa/forbidden'},name)
   assert.equal((selfAuthorizedToolNames as readonly string[]).includes(name),false,name)
  }
- assert.deepEqual([...selfAuthorizedToolNames],[roleMemoryProposalToolName,...roleDailyDigestToolNames,groupAttachToolName,groupReactToolName,groupMentionToolName])
+ // 固定运行资料和方法的只读加载可自授权，市场安装工具仍必须排除；清单保持精确核对。
+ assert.deepEqual([...selfAuthorizedToolNames],[roleMemoryProposalToolName,...roleDailyDigestToolNames,groupAttachToolName,groupReactToolName,groupMentionToolName,'teloa_knowledge_read','teloa_skill_load'])
  const ctx=new Context();t.after(()=>ctx.fiber.dispose())
  await ctx.plugin(LlmRuntime);await ctx.plugin(SystemPrompt);await ctx.plugin(ToolRuntime);await ctx.plugin(SessionStore);await ctx.plugin(SessionProjectionRegistry);await ctx.plugin(AgentRegistry);await ctx.plugin(AgentLoop,{agents:[]})
  assert.doesNotThrow(()=>registerTaskToolGuard(ctx,async()=>null,[...selfAuthorizedToolNames]))
