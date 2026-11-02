@@ -20,10 +20,12 @@ export type DeliveryReviewExecutionSnapshot=Readonly<{
 }>
 type FrozenExecution=Omit<DeliveryReviewExecutionSnapshot,'continuationMessageIds'>&{continuationMessageIds:readonly string[]}
 type ToolReceipt=Readonly<{callId:string;name:string;turn:number;step:number;assistantSeq:number;callSeq:number;resultSeq:number;argumentsSha256:string;isError:boolean;text:string;sha256:string}>
+type PtcReceipt=ToolReceipt&Readonly<{parentCallId:string;rootCallId:string}>
 type ContinuationReceipt=Readonly<{messageId:string;seq:number;text:string;sha256:string}>
 type DraftReceipt=Readonly<{messageId:string;seq:number;text:string;sha256:string}>
 type EvidenceBody=Readonly<{execution:FrozenExecution;turn:number;draftMessageId:string;draftSeq:number;receipts:readonly ToolReceipt[];continuations:readonly ContinuationReceipt[];sha256:string}>
-export type ReviewToolEvidence=EvidenceBody&({schema:'teloa.delivery-review-tools/v1';drafts?:never}|{schema:'teloa.delivery-review-tools/v2';drafts:readonly DraftReceipt[]})
+export type ReviewToolEvidence=EvidenceBody&({schema:'teloa.delivery-review-tools/v1';drafts?:never}|{schema:'teloa.delivery-review-tools/v2';drafts:readonly DraftReceipt[]}|{schema:'teloa.delivery-review-tools/v3';drafts:readonly DraftReceipt[];ptcReceipts:readonly PtcReceipt[]})
+export const reviewToolReceipts=(evidence:ReviewToolEvidence):readonly ToolReceipt[]=>evidence.schema==='teloa.delivery-review-tools/v3'?[...evidence.receipts,...evidence.ptcReceipts]:evidence.receipts
 type AssistantEvent=Extract<SessionEvent,{type:'assistant/message'}>
 type Collection={state:'plain'}|{state:'pending';reason:string}|{state:'blocked';reason:string}|{state:'ready';draft:AssistantEvent;evidence:ReviewToolEvidence;sources:readonly ReviewSourceInput[]}
 const sha=(text:string)=>createHash('sha256').update(text,'utf8').digest('hex')
@@ -46,6 +48,7 @@ export function collectReviewToolEvidence(events:readonly SessionEvent[],binding
  const externalCatalog:Extract<SessionEvent,{type:'subagent/catalog'}>[]=[]
  const nativeCatalog:Extract<SessionEvent,{type:'subagent/catalog'}>[]=[]
  const taskBook:Extract<SessionEvent,{type:'team/task'}>[]=[]
+ const ptcEvents:Array<{event:Extract<SessionEvent,{type:'tool/ptc-dispatch-start'|'tool/ptc-dispatch'}>;turn:number|undefined}>=[]
  for(const event of window){
   if(event.type==='turn/start'){currentTurn=event.data.turn;continue}
   if(event.type==='user/message'){
@@ -72,6 +75,7 @@ export function collectReviewToolEvidence(events:readonly SessionEvent[],binding
    if(!ownedTurns.has(event.data.turn)||results.has(event.data.message.toolCallId))return blocked('tool-result-identity')
    results.set(event.data.message.toolCallId,event)
   }
+  if(event.type==='tool/ptc-dispatch-start'||event.type==='tool/ptc-dispatch')ptcEvents.push({event,turn:currentTurn})
   if(event.type==='job/registered'){
    if(event.data.owner!==binding.sessionId||registeredJobs.has(event.data.jobId))return blocked('job-event-identity')
    registeredJobs.set(event.data.jobId,event)
@@ -90,6 +94,7 @@ export function collectReviewToolEvidence(events:readonly SessionEvent[],binding
  }
  if(currentTurn!==binding.turn||!ownedTurns.has(binding.turn))return blocked('foreign-turn')
  if(!calls.size&&!results.size){
+  if(ptcEvents.length)return blocked('ptc-parent')
   if(snapshot.runtimeLinks.some(row=>!(row.kind==='job'&&row.payload.record==='owner'))||snapshot.jobs.length||snapshot.pendingJobCompletion||snapshot.pendingInput||snapshot.children!=='none'||snapshot.flow!=='none')return pending('background')
   return {state:'plain'}
  }
@@ -139,6 +144,23 @@ export function collectReviewToolEvidence(events:readonly SessionEvent[],binding
   receipts.push({callId:id,name:call.data.name,turn:call.data.turn,step:call.data.step,assistantSeq:assistant.seq,callSeq:call.seq,resultSeq:result.seq,argumentsSha256:sha(call.data.arguments),isError:result.data.message.isError,text,sha256:sha(text)})
  }
  if(results.size!==calls.size||assistants.some(event=>event.data.message.content.some(block=>block.type==='tool-call'&&!calls.has(block.id))))return blocked('tool-unmatched')
+ // 只接纳官方桥在同一根 run_code 执行区间内成对记录的子调用，程序打印值不能成为子调用回执。
+ const ptcReceipts:PtcReceipt[]=[],starts=new Map<string,Extract<SessionEvent,{type:'tool/ptc-dispatch-start'}>>(),settled=new Set<string>()
+ for(const {event,turn} of ptcEvents){
+  const data=event.data,parent=receipts.find(receipt=>receipt.callId===data.parentCallId)
+  if(!parent||parent.name!=='run_code'||data.rootCallId!==parent.callId||turn!==parent.turn||typeof data.subCallId!=='string'||!data.subCallId||data.subCallId===parent.callId||!(parent.callSeq<event.seq&&event.seq<parent.resultSeq))return blocked('ptc-parent')
+  if(event.type==='tool/ptc-dispatch-start'){
+   if(starts.has(data.subCallId))return blocked('ptc-duplicate')
+   starts.set(data.subCallId,event);continue
+  }
+  const start=starts.get(data.subCallId)
+  if(!start||settled.has(data.subCallId)||start.seq>=event.seq||start.data.parentCallId!==data.parentCallId||start.data.rootCallId!==data.rootCallId||start.data.name!==data.name||!isDeepStrictEqual(start.data.arguments,data.arguments)||typeof event.data.isError!=='boolean'||event.data.content.some(part=>part.type!=='text'))return blocked('ptc-pair')
+  if(!snapshot.allowedTools.includes(data.name)&&!event.data.isError)return blocked('ptc-authorization')
+  settled.add(data.subCallId)
+  const text=event.data.content.flatMap(part=>part.type==='text'?[part.text]:[]).join('\n')
+  ptcReceipts.push({callId:data.subCallId,parentCallId:data.parentCallId,rootCallId:data.rootCallId,name:data.name,turn:parent.turn,step:parent.step,assistantSeq:parent.assistantSeq,callSeq:start.seq,resultSeq:event.seq,argumentsSha256:sha(JSON.stringify(data.arguments)),isError:event.data.isError,text,sha256:sha(text)})
+ }
+ if(starts.size!==settled.size)return blocked('ptc-unsettled')
  if(!proveNativeReviewChildren(nativeCatalog,receipts.map(row=>({...row,arguments:calls.get(row.callId)!.data.arguments,callTime:calls.get(row.callId)!.time,resultTime:results.get(row.callId)!.time})),binding,snapshot.nativeChildren))return blocked('unproven-native-child')
  if(!proveRunTaskBook(taskBook,receipts.map(row=>({...row,arguments:calls.get(row.callId)!.data.arguments})),binding.sessionId))return blocked('unproven-team-task')
  if(registeredJobs.size!==jobIds.size||settledJobs.size!==jobIds.size)return blocked('job-event-missing')
@@ -154,28 +176,32 @@ export function collectReviewToolEvidence(events:readonly SessionEvent[],binding
  if(!draft||draft.data.turn!==binding.turn||receipts.some(row=>row.resultSeq>=draft.seq))return blocked('tool-final-draft')
  const execution:FrozenExecution={...snapshot,allowedTools:[...snapshot.allowedTools],continuationMessageIds:continuations.map(row=>row.messageId),runtimeLinks:structuredClone(snapshot.runtimeLinks),jobs:structuredClone(snapshot.jobs),...(snapshot.nativeChildren?{nativeChildren:structuredClone(snapshot.nativeChildren)}:{})}
  const drafts=assistants.filter(event=>event.seq<draft.seq).flatMap(event=>{const text=event.data.message.content.flatMap(part=>part.type==='text'?[part.text]:[]).join('\n').trim();return text?[{messageId:event.data.message.id,seq:event.seq,text,sha256:sha(text)}]:[]})
- const body={schema:'teloa.delivery-review-tools/v2' as const,execution,turn:binding.turn,draftMessageId:draft.data.message.id,draftSeq:draft.seq,receipts,continuations,drafts}
+ const common={execution,turn:binding.turn,draftMessageId:draft.data.message.id,draftSeq:draft.seq,receipts,continuations,drafts}
+ const body=ptcReceipts.length?{schema:'teloa.delivery-review-tools/v3' as const,...common,ptcReceipts}:{schema:'teloa.delivery-review-tools/v2' as const,...common}
  const evidence:ReviewToolEvidence={...body,sha256:sha(JSON.stringify(body))}
  return {state:'ready',draft,evidence,sources:reviewToolSources(evidence)}
 }
 
 /** 普通回执和明确错误原样封存；错误不是成功动作，工具内容也不是可执行指令。 */
 export function reviewToolSources(evidence:ReviewToolEvidence):readonly ReviewSourceInput[]{
- return [...evidence.receipts.map((row):ReviewSourceInput=>({id:'tool-result:'+row.resultSeq,kind:'context',title:row.name==='subagent_task'&&!row.isError?'子 Agent 的返回资料（尚待复核，不证明其声称的事实或外部动作）':`工具 ${row.name} 的${row.isError?'错误':'成功'}回执`,text:JSON.stringify({tool:row.name,callId:row.callId,isError:row.isError,text:row.text}),origin:{field:'toolResults',pointer:'/'+row.resultSeq}})),...evidence.continuations.map((row):ReviewSourceInput=>({id:'tool-continuation:'+row.seq,kind:'context',title:'已登记后台续轮的普通回执',text:row.text,origin:{field:'toolResults',pointer:'/'+row.seq}})),...(evidence.drafts??[]).map((row):ReviewSourceInput=>({id:'assistant-draft:'+row.seq,kind:'context',title:'本轮未复核中间稿（仅候选，不证明事实或执行）',text:row.text,origin:{field:'assistantDrafts',pointer:'/'+row.seq}}))]
+ return [...reviewToolReceipts(evidence).map((row):ReviewSourceInput=>({id:'tool-result:'+row.resultSeq,kind:'context',title:row.name==='subagent_task'&&!row.isError?'子 Agent 的返回资料（尚待复核，不证明其声称的事实或外部动作）':`工具 ${row.name} 的${row.isError?'错误':'成功'}回执`,text:JSON.stringify({tool:row.name,callId:row.callId,isError:row.isError,text:row.text}),origin:{field:'toolResults',pointer:'/'+row.resultSeq}})),...evidence.continuations.map((row):ReviewSourceInput=>({id:'tool-continuation:'+row.seq,kind:'context',title:'已登记后台续轮的普通回执',text:row.text,origin:{field:'toolResults',pointer:'/'+row.seq}})),...(evidence.drafts??[]).map((row):ReviewSourceInput=>({id:'assistant-draft:'+row.seq,kind:'context',title:'本轮未复核中间稿（仅候选，不证明事实或执行）',text:row.text,origin:{field:'assistantDrafts',pointer:'/'+row.seq}}))]
 }
 
 /** 冷读只复算宿主冻结草稿以前的原生事件；首次数据和正式交付必须携带同一份证据。 */
 export function replayReviewToolEvidence(events:readonly SessionEvent[],value:ReviewToolEvidence):boolean{
  try{
   const {sha256,...body}=value
-  if(!['teloa.delivery-review-tools/v1','teloa.delivery-review-tools/v2'].includes(value.schema)||sha(JSON.stringify(body))!==sha256)return false
+  if(!['teloa.delivery-review-tools/v1','teloa.delivery-review-tools/v2','teloa.delivery-review-tools/v3'].includes(value.schema)||sha(JSON.stringify(body))!==sha256)return false
   const snapshot={...value.execution,continuationMessageIds:new Set(value.execution.continuationMessageIds)}
   const prefix=events.filter(event=>event.seq<=value.draftSeq),read=collectReviewToolEvidence(prefix,{...snapshot,turn:value.turn},snapshot)
   if(read.state!=='ready')return false
-  if(value.schema==='teloa.delivery-review-tools/v2')return isDeepStrictEqual(read.evidence,value)
+  if(value.schema==='teloa.delivery-review-tools/v3')return isDeepStrictEqual(read.evidence,value)
+  // 历史v1/v2没有嵌套字段；当前仍核验完整原生日志，但不改写已经保存的旧证据形状。
+  const current=(()=>{if(read.evidence.schema!=='teloa.delivery-review-tools/v3')return read.evidence;const {schema:_schema,ptcReceipts:_ptc,sha256:_sha,...legacy}=read.evidence;const body={schema:'teloa.delivery-review-tools/v2' as const,...legacy};return {...body,sha256:sha(JSON.stringify(body))}})()
+  if(value.schema==='teloa.delivery-review-tools/v2')return isDeepStrictEqual(current,value)
   const root=prefix.find(event=>event.type==='user/message'&&event.surfaceOp==='append'&&event.data.source.kind==='user'&&Reflect.get(event.data.source,'rpcId')===snapshot.requestId)
   if(!root||prefix.some(event=>event.seq>=root.seq&&(event.type==='team/task'||event.type==='subagent/catalog'&&event.data.version===0)))return false
-  const {schema:_schema,drafts:_drafts,sha256:_sha256,...legacy}=read.evidence,legacyBody={schema:'teloa.delivery-review-tools/v1' as const,...legacy}
+  const {schema:_schema,drafts:_drafts,sha256:_sha256,...legacy}=current,legacyBody={schema:'teloa.delivery-review-tools/v1' as const,...legacy}
   return isDeepStrictEqual({...legacyBody,sha256:sha(JSON.stringify(legacyBody))},value)
  }catch{return false}
 }

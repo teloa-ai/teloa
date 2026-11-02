@@ -5,7 +5,9 @@ import {createHash} from 'node:crypto'
 import {cp,mkdir,readFile,readdir,rename,stat,writeFile} from 'node:fs/promises'
 import {dirname,join,relative} from 'node:path'
 import {execFileSync} from 'node:child_process'
+import dataVersionMetadata from '../packages/cli/src/data-version.json' with {type:'json'}
 
+const {dataVersion,compatibleDataVersions}=dataVersionMetadata
 const [version,outDir='artifacts/release']=process.argv.slice(2)
 if(!/^\d+\.\d+\.\d+$/.test(version??''))throw Error('需要语义化版本号，例如 0.2.9')
 const root=process.cwd(),stage=join(outDir,'package')
@@ -70,7 +72,7 @@ for(const full of await walk(stage)){
   files.push({path,sha256:await digest(full)})
 }
 files.sort((a,b)=>a.path.localeCompare(b.path))
-await writeFile(join(stage,'release-manifest.json'),JSON.stringify({contactProfile:'community',schema:'teloa.release/v1',version,dshVersion,dataVersion:2,compatibleDataVersions:[2],files},null,2)+'\n')
+await writeFile(join(stage,'release-manifest.json'),JSON.stringify({contactProfile:'community',schema:'teloa.release/v1',version,dshVersion,dataVersion,compatibleDataVersions,files},null,2)+'\n')
 const tgz=join(outDir,`teloa-cli-${version}.tgz`)
 execFileSync('tar',['czf',tgz,'-C',outDir,'package'])
 console.log(JSON.stringify({tgz,files:files.length+2,dshVersion,version}))

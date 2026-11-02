@@ -8,7 +8,7 @@ import type {SessionEvent,SessionSeq} from '@deepseek-ai/dsh-session'
 import {WorkError,skillFrontmatterName} from '@teloa/contract'
 import {readSessionEvents} from './session-events.ts'
 import {protectCompactionTail} from './local-model-compaction.ts'
-import {collectReviewToolEvidence,replayReviewToolEvidence,reviewToolSources,type DeliveryReviewExecutionSnapshot,type ReviewToolEvidence} from './task-delivery-review-tools.ts'
+import {collectReviewToolEvidence,replayReviewToolEvidence,reviewToolSources,reviewToolReceipts,type DeliveryReviewExecutionSnapshot,type ReviewToolEvidence} from './task-delivery-review-tools.ts'
 import {createReviewSourceCatalog,describeReviewReferences} from './task-delivery-review-protocol.ts'
 import {createDeliveryReviewToolParameters,deliveryReviewToolShapeExample} from './task-delivery-review-schema.ts'
 import {deliveryReviewProtocol,deliveryRepairProtocol,currentDraftReviewProjection,legacyDeliveryReviewProtocol,passageDeliveryReviewProtocol,readReviewCoverage,readRevisionCoverage,reviewBlockRequirements,type ReviewBlockMap,deliveryRevisionData,deliveryReviewReceiptText,reviewSourceDirectory,readRevisionSubmission,readVerificationSubmission,reviewCheckIds,type ReviewProtocol,type RevisionIssue,type ReviewChangeCheck,type ReviewCheck,type ReviewFinding,type ReviewPhase,type ReviewSourceCatalog,type ReviewToolReceipt,type VerificationSubmission} from './task-delivery-review-protocol.ts'
@@ -347,11 +347,11 @@ const maxDraftModelSteps=10
 export function activateDeferredReviewMethods(material:ReviewMaterial,evidence:ReviewToolEvidence):ReviewMaterial{
  if(material.deferredMethods===undefined)return material
  const methods:ReviewMaterial['methods'][number][]=[],sources:import('./task-delivery-review-protocol.ts').ReviewSourceInput[]=[]
- for(const receipt of evidence.receipts){
+ for(const receipt of reviewToolReceipts(evidence)){
   if(receipt.name!=='teloa_skill_load'||receipt.isError)continue
   let value:unknown
-  try{value=JSON.parse(receipt.text)}catch{continue}
-  if(!value||typeof value!=='object')continue
+  try{value=JSON.parse(receipt.text)}catch{throw new WorkError('teloa/storage-corrupt','已加载方法的成功回执损坏。')}
+  if(!value||typeof value!=='object')throw new WorkError('teloa/storage-corrupt','已加载方法的成功回执损坏。')
   const row=value as {name?:unknown;sha256?:unknown;content?:unknown}
   const fixed=material.deferredMethods.find(method=>method.name===row.name&&method.sha256===row.sha256)
   if(!fixed||typeof row.content!=='string'||createHash('sha256').update(row.content).digest('hex')!==fixed.sha256)throw new WorkError('teloa/storage-corrupt','已加载方法与运行固定版本不一致。')
@@ -888,6 +888,8 @@ export function leaseTaskDeliveryReview(agent:Pick<Agent,'ctx'|'session'>,lease:
  /** 第一次进入复核时在本 agent 作用域登记回执工具与提交闸；租约释放时一并注销。 */
  const ensureSubmitTool=()=>{
   if(submitTool)return
+  // 复核只接受直接原生回执；PTC包装会隐藏该工具，且不能替代它的单元身份核验。租约结束恢复原呈现。
+  if(agent.ctx.tools.schemas(agent).some(tool=>tool.name==='run_code'))releases.push(agent.ctx.tools.presentAs('native'))
   const definition=defineTool({
    name:deliveryReviewToolName,
    description:'提交本复核单元的修正或验收回执（宿主内部工具，不读写文件、网络或业务数据；phase决定精确参数，R2禁止改稿）。R1每个问题各自提交覆盖全稿的 coverage，不能跨问题合并。',
