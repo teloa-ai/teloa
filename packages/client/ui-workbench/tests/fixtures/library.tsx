@@ -88,7 +88,7 @@ const otherApi={...api,directory:async()=>({drafts:[],resources:[]}),sources:asy
 ;(window as any).__libraryCalls=calls
 createRoot(document.getElementById('root')!).render(<I18nProvider runtime={i18n as any}><App/></I18nProvider>)
 
-;(window as any).__libraryAddHistory=()=>{const nextHash='b'.repeat(64);publishedVersions=[version,{...version,version:2,contentHash:nextHash,markdown:'# 当前正文\n\n这是第二版正文。'}];sources[0]={...sources[0],source:'knowledge:'+docId+'@2',version:nextHash,knowledge:{...sources[0].knowledge,knowledgeVersion:2}};resources=[{...doc,version:2,sourceVersion:nextHash},{...doc,id:'44444444-4444-4444-8444-444444444444',status:'withdrawn'},{...doc,id:'55555555-5555-4555-8555-555555555555',title:'无法追溯资料',sourceVersion:'c'.repeat(64)}];reads.length=0}
+;(window as any).__libraryAddHistory=async()=>{const markdown='# 当前正文\n\n这是第二版正文。',body=new TextEncoder().encode(markdown),nextHash=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',body)),byte=>byte.toString(16).padStart(2,'0')).join('');publishedVersions=[version,{...version,version:2,contentHash:nextHash,bytes:body.length,markdown}];sources[0]={...sources[0],source:'knowledge:'+docId+'@2',version:nextHash,knowledge:{...sources[0].knowledge,knowledgeVersion:2}};resources=[{...doc,version:2,sourceVersion:nextHash},{...doc,id:'44444444-4444-4444-8444-444444444444',status:'withdrawn'},{...doc,id:'55555555-5555-4555-8555-555555555555',title:'无法追溯资料',sourceVersion:'c'.repeat(64)}];reads.length=0}
 ;(window as any).__libraryReads=reads
 
 ;(window as any).__libraryCorruptLocalRequest=()=>{api.localMaterialRequests=createLocalMaterialRegistration(api,{read:()=>'{broken',write:()=>{},clear:()=>{calls.push('discard-local')}})}

@@ -140,3 +140,8 @@
  .canvas textarea,.canvas article[role=tabpanel]{min-height:360px;padding:20px}
  .canvas>section[aria-label]>footer{flex-wrap:wrap}
 }
+
+/* 阅读标题与原导航共用可收缩宽度，不把长名称推到视口外。 */
+.readerIdentity{max-width:100%}.readerIdentity h2{min-width:0;flex:1}
+.canvas:has(>section[aria-label]){padding:0}
+@container teloa-knowledge-document (max-width:760px){.canvas>section[aria-label] textarea,.canvas>section[aria-label] article[role=tabpanel]{min-height:360px;padding:20px}}

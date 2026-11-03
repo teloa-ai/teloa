@@ -11,6 +11,8 @@ import type {PageCreateDraft,PageCreateDraftDirectory,PageCreateDraftPreview} fr
 import type {CreateEntryProps} from '../src/client/CreateEntry.js'
 import type {PageCreateApi} from '../src/client/page-create-api.js'
 import * as presentation from '../src/client/page-create-presentation.ts'
+import * as rolePreview from '../src/client/page-create-role-preview.ts'
+import {staffAvatarComponent} from './staff-avatar-component.ts'
 import {PAGE_CREATE_MESSAGE_ROWS} from '../src/client/i18n/locales/page-create.ts'
 
 const dictionary=new Map<string,string>(PAGE_CREATE_MESSAGE_ROWS.map(row=>[row[0],row[1]]))
@@ -19,7 +21,7 @@ const t=(key:string,params?:Record<string,string|number>)=>{
  return value.replace(/\{(\w+)\}/g,(_,name:string)=>String(params?.[name]??''))
 }
 const stamp='2026-09-17T01:00:00.000Z'
-const draft=(patch:Partial<PageCreateDraft>={}):PageCreateDraft=>({id:'draft-1',ownerId:'owner',requestId:'request-1',entity:'role',body:'{}',bodyHash:'a'.repeat(64),title:'核对账单',status:'draft',createdAt:stamp,updatedAt:stamp,...patch})
+const draft=(patch:Partial<PageCreateDraft>={}):PageCreateDraft=>({id:'draft-1',ownerId:'owner',requestId:'request-1',entity:'role',body:JSON.stringify({name:'核对账单',kind:'employee',scopes:['general'],duty:'核对账单资料',dataScope:'仅本人资料',executionScope:'只准备草稿',skills:[],knowledge:[],responsibility:{triggers:[],autonomousActions:[],confirmationPoints:[],escalationRules:[],deliveryChecks:[]}}),bodyHash:'a'.repeat(64),title:'核对账单',status:'draft',createdAt:stamp,updatedAt:stamp,...patch})
 const directory=(drafts=[draft()]):PageCreateDraftDirectory=>({schema:'teloa.page-create-drafts/v1',entity:'role',readAt:stamp,drafts})
 const preview=(value=draft()):PageCreateDraftPreview=>({schema:'teloa.page-create-draft-preview/v1',draft:value,fields:[{path:'name',value:value.title}],fieldsTruncated:false,consequences:[{kind:'credential',id:'账单来源',required:true}],next:{endpoint:'roles/create',consentKeys:['create.consequence.credential']},computedAt:stamp})
 /** 读取同一草案回包，保留原 id、内容及调用方的取消信号。 */
@@ -97,6 +99,9 @@ function mount(input:Partial<CreateEntryProps>={},revisionPrepare?:((draft:PageC
   if(id.endsWith('ToolbarIconButton.js'))return {ToolbarIconButton:toolbarIconComponent(hooks)}
   if(id.endsWith('provider.js'))return {useI18n:()=>({t})}
   if(id.endsWith('page-create-presentation.js'))return presentation
+  if(id.endsWith('page-create-role-preview.js'))return rolePreview
+  if(id.endsWith('business-scope-context.js'))return {useBusinessScopes:()=>({general:'通用'})}
+  if(id.endsWith('EmployeeAvatar.js')||id.endsWith('TwinAvatar.js'))return staffAvatarComponent
   if(id.endsWith('use-dismissible.js'))return {useDismissible:()=>{}}
   if(id.endsWith('.module.css'))return {default:new Proxy({},{get:(_,key)=>String(key)})}
   throw Error('未声明的组件依赖：'+id)

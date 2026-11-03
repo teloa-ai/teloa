@@ -122,6 +122,7 @@ test('安全动作的丢弃按命令分本，丢一条不影响其他命令',()=
 test('全部暴露恢复错误的客户端接口都提供丢弃入口',async()=>{
  const dir=new URL('../src/client/',import.meta.url)
  const missing:string[]=[]
+
  for(const name of (await readdir(dir)).filter(file=>file.endsWith('.ts'))){
   const text=await readFile(new URL(name,dir),'utf8')
   if(!/recoveryMessage\s*:/.test(text))continue
@@ -143,9 +144,22 @@ test('恢复错误有协议对应的下一步：普通记录可丢弃，分身�
  }
  const delegateText=Object.fromEntries(await Promise.all(Object.entries(delegates).map(async([name,files])=>[name,(await Promise.all(files.map(file=>readFile(new URL(file,dir),'utf8')))).join('\n')])))
  const missing:string[]=[]
+ // 这些原请求协议只允许核对真实回执；不能套用旧单稿的“丢弃再建”路径。
+ // 逐容器核对归属、恢复入口、阻止新写与禁止丢弃，避免仅按文件名豁免。
+ const originalRequestProtocols:Record<string,readonly RegExp[]>={
+  'ProjectConversationContext.tsx':[/pending\?\.endpoint==='bind'&&pending\.input\.sessionId===sessionId/,/runtime\.recover\(value\.project\.id\)/,/copy\.recover/,/disabled=\{busy\|\|!!pending\|\|!!runtime\?\.recoveryError\(\)/],
+  'SkillDerivation.tsx':[/pending\.derivation\.ownerId===binding\.ownerId/,/pending\.derivation\.sourceIdentity===binding\.sourceIdentity/,/contentApi\.recover\(\)/,/copy\.recover/,/if\(!value\|\|busy\|\|blocked\)return/],
+  'TaskOwnerRework.tsx':[/pending\?\.action==='rework'&&pending\.taskId===task\.id&&pending\.expectedVersion===task\.version/,/await api\.recover\(\)/,/taskCompletion\.rework\.check/,/view\.kind!=='eligible'\|\|!!pending\|\|!!api\.recoveryMessage\(\)/],
+  'TaskRunSourceFollowup.tsx':[/api\.sourceFollowup\.pending\(\)\?\.command\.runId===run\.id/,/await api\.sourceFollowup\.recover\(\)/,/text\.recover/,/!!api\.sourceFollowup\.pending\(\)\|\|!!api\.sourceFollowup\.recoveryError\(\)/],
+ }
  for(const name of (await readdir(dir)).filter(file=>file.endsWith('.tsx'))){
   const text=await readFile(new URL(name,dir),'utf8')
   if(!/recoveryMessage\(\)|recoveryError\(/.test(text))continue
+  if(originalRequestProtocols[name]){
+   for(const required of originalRequestProtocols[name]!)assert.match(text,required,name)
+   assert.doesNotMatch(text,/\.discard\(/,name+' 不得丢弃未知原请求')
+   continue
+  }
   // 多稿协议的未知请求不能被清除后重发；保留原请求核对，存储失败则明确保留本页输入。
   // 只为这两个真实多稿容器核对其专属路径，不放宽其他持有 discard 的组件。
   if(name==='GroupTwinDraftComposer.tsx'||name==='TwinDraftWorkspace.tsx'){

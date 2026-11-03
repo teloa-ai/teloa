@@ -1,4 +1,4 @@
-import {emptyWorkbenchNavigationState,readWorkbenchNavigationState,writeWorkbenchNavigationState,type WorkbenchNavigationSnapshot,type WorkbenchNavigationState} from './workbench-navigation-state.js'
+import {parseBusinessTarget,emptyWorkbenchNavigationState,readWorkbenchNavigationState,writeWorkbenchNavigationState,type WorkbenchNavigationSnapshot,type WorkbenchNavigationState} from './workbench-navigation-state.js'
 
 const prefix='#teloa/v1/'
 const historyKey='teloa.object-history/v1'
@@ -10,7 +10,7 @@ const sections=['overview','projects','data','work','analysis','execution','dash
 export type WorkbenchObjectTarget=
  |{kind:'directory';view:typeof views[number];mode?:'directory'|'native'|'groups'}
  |{kind:'task'|'role'|'project'|'conversation'|'role-preview';id:string}
- |{kind:'business';scope:string;section:typeof sections[number]}
+ |({kind:'business';pageId?:string}&ReturnType<typeof parseBusinessTarget>)
  |{kind:'resource';id:string;version:number;sourceVersion:string}
  |{kind:'artifact';id:string;version:number}
 export type WorkbenchObjectRoute={base:WorkbenchObjectTarget;detail?:WorkbenchObjectTarget}
@@ -22,8 +22,10 @@ function parts(target:WorkbenchObjectTarget):string[]{
   return ['directory',target.view,...(target.mode?[target.mode]:[])]
  }
  if(target.kind==='business'){
-  if(!scopeId(target.scope)||!sections.includes(target.section))throw invalid()
-  return ['business',encodeURIComponent(target.scope),target.section]
+  const {kind:_,pageId,...fields}=target,business=parseBusinessTarget(fields)
+  if(!scopeId(business.scope)||!sections.includes(business.section)||pageId!==undefined&&(typeof pageId!=='string'||!pageId.trim()||pageId.length>120||/[\x00-\x1f\x7f]/.test(pageId)))throw invalid()
+  const {scope,section,...extra}=business,details={...extra,...(pageId?{pageId}:{})}
+  return ['business',encodeURIComponent(scope),section,...(Object.keys(details).length?['at',encodeURIComponent(JSON.stringify(details))]:[])]
  }
  if(!uuid.test(target.id))throw invalid()
  if(target.kind==='resource'){
@@ -41,7 +43,7 @@ function targetOf(value:string[]):WorkbenchObjectTarget{
  const [kind,id,version,hash]=value
  let target:WorkbenchObjectTarget
  if(kind==='directory'&&(value.length===2||value.length===3))target={kind,view:id as typeof views[number],...(version?{mode:version as 'native'}:{})}
- else if(kind==='business'&&value.length===3){let scope:string;try{scope=decodeURIComponent(id!)}catch{throw invalid()};target={kind,scope,section:version as typeof sections[number]}}
+ else if(kind==='business'&&(value.length===3||value.length===5&&hash==='at')){let scope:string,details:Record<string,unknown>={};try{scope=decodeURIComponent(id!);if(value.length===5){const parsed=JSON.parse(decodeURIComponent(value[4]!));if(!parsed||typeof parsed!=='object'||Array.isArray(parsed))throw invalid();details=parsed}}catch{throw invalid()};target={kind,scope,section:version as typeof sections[number],...details}}
  else if(kind==='resource'&&value.length===4)target={kind,id:id!,version:Number(version),sourceVersion:hash!}
  else if(kind==='artifact'&&value.length===3)target={kind,id:id!,version:Number(version)}
  else if(['task','role','project','conversation','role-preview'].includes(kind!)&&value.length===2)target={kind:kind as 'task',id:id!}
@@ -56,7 +58,7 @@ export function workbenchObjectHash(route:WorkbenchObjectRoute):string{
 /** 非本应用锚点原样留给原生入口、无障碍跳转和插件；自己的未知版本明确失败。 */
 export function readWorkbenchObjectHash(hash:string):WorkbenchObjectRoute|undefined{
  if(!hash.startsWith('#teloa/'))return undefined
- if(!hash.startsWith(prefix)||hash.length>768||/[?\\\s]/.test(hash))throw invalid()
+ if(!hash.startsWith(prefix)||hash.length>8192||/[?\\\s]/.test(hash))throw invalid()
  const path=hash.slice(prefix.length).split('/'),at=path.indexOf('detail')
  const route={base:targetOf(at<0?path:path.slice(0,at)),...(at<0?{}:{detail:targetOf(path.slice(at+1))})}
  if(workbenchObjectHash(route)!==hash)throw invalid()
@@ -79,7 +81,7 @@ export function describeWorkbenchObject(snapshot:WorkbenchNavigationSnapshot&{ro
  else if(snapshot.view==='spaces'&&snapshot.navigationDirectories.spaces?.businessHome===false){
   const target=snapshot.businessTarget
   if(target.section==='projects'&&target.id&&uuid.test(target.id))base={kind:'project',id:target.id}
-  else if(scopeId(target.scope)&&sections.includes(target.section as typeof sections[number]))base={kind:'business',scope:target.scope,section:target.section as typeof sections[number]}
+  else if(scopeId(target.scope)&&sections.includes(target.section as typeof sections[number]))base={kind:'business',...parseBusinessTarget(target),...(snapshot.navigationDirectories.spaces?.businessPage?.scope===target.scope?{pageId:snapshot.navigationDirectories.spaces.businessPage.pageId}:{})}
  }else if(snapshot.view==='resources'&&refs.resource)base={kind:'resource',...refs.resource}
  let detail:WorkbenchObjectTarget|undefined
  const target=snapshot.detail.open?snapshot.detail.target:null
@@ -88,7 +90,7 @@ export function describeWorkbenchObject(snapshot:WorkbenchNavigationSnapshot&{ro
  else if(target?.kind==='conversation-object'){
   if(target.objectKind!=='business')detail={kind:target.objectKind,id:target.id}
   else if(target.target.section==='projects'&&target.target.id&&uuid.test(target.target.id))detail={kind:'project',id:target.target.id}
-  else if(scopeId(target.target.scope))detail={kind:'business',scope:target.target.scope,section:target.target.section}
+  else if(scopeId(target.target.scope))detail={kind:'business',...parseBusinessTarget(target.target)}
  }
  else if(target?.kind==='directory-object'&&(target.view==='tasks'||target.view==='team'))detail={kind:target.view==='tasks'?'task':'role',id:target.id}
  const route={base,...(detail?{detail}:{})};workbenchObjectHash(route);return route
@@ -112,7 +114,14 @@ export function navigationForWorkbenchObject(route:WorkbenchObjectRoute,local?:W
  else if(target.kind==='role'){saved.view='team';saved.selected.roleId=target.id;saved.directories.team={...saved.directories.team,selectedId:target.id}}
  else if(target.kind==='resource'){saved.view='resources';saved.selected.resourceId=target.id;saved.directories.resources={...saved.directories.resources,selectedId:target.id}}
  else if(target.kind==='conversation'){saved.view='messages';saved.messageMode='native'}
- else if(target.kind==='project'||target.kind==='business')saved.view='spaces'
+ else if(target.kind==='project')saved.view='spaces'
+ else if(target.kind==='business'){
+  saved.view='spaces'
+  const directory={...saved.directories.spaces,businessHome:false}
+  if(target.pageId)directory.businessPage={scope:target.scope,pageId:target.pageId}
+  else if(directory.businessPage?.scope!==target.scope)delete directory.businessPage
+  saved.directories.spaces=directory
+ }
  return saved
 }
 
@@ -185,12 +194,13 @@ export function attachWorkbenchObjectHistory(ports:HistoryPorts){
   observe(nextRevision:number,nextConversation:string|undefined){
    const snapshot=ports.capture(),previous=last;last=snapshot
    if(revision===undefined){revision=nextRevision;conversation=nextConversation;return}
+   const page=snapshot.directories.spaces?.businessPage,previousPage=previous.directories.spaces?.businessPage,businessPageChanged=snapshot.view==='spaces'&&page!==undefined&&(page.scope!==previousPage?.scope||page.pageId!==previousPage?.pageId)
    const explicit=revision!==nextRevision,switched=nextConversation!==undefined&&conversation!==undefined&&conversation!==nextConversation
    const settled=nextConversation!==undefined&&conversation===undefined
    revision=nextRevision;conversation=nextConversation??conversation
    if((pending||unresolved)&&!explicit)return
    // 每次输入只更新当前条目的本地位置，避免 WebKit 的 history 写入频率限制。
-   if(!explicit&&!switched&&!settled){remember(snapshot);return}
+   if(!explicit&&!switched&&!settled&&!businessPageChanged){remember(snapshot);return}
    cancelRestoration();unresolved=false
    const request=++epoch;pending=true
    save(previous)
@@ -198,7 +208,7 @@ export function attachWorkbenchObjectHistory(ports:HistoryPorts){
     if(!live||request!==epoch)return
     const hash=workbenchObjectHash(route)
     if(hash!==win.location.hash){
-     if(settled&&!explicit&&!switched){if(!win.location.hash||win.location.hash.startsWith(prefix))win.history.replaceState(win.history.state,'',hash)}
+     if((settled||businessPageChanged)&&!explicit&&!switched){if(!win.location.hash||win.location.hash.startsWith(prefix))win.history.replaceState(win.history.state,'',hash)}
      else win.history.pushState({...entry(),[historyKey]:undefined},'',hash)
     }
     if(win.location.hash!==hash)return
@@ -209,6 +219,6 @@ export function attachWorkbenchObjectHistory(ports:HistoryPorts){
    }).catch(error=>{if(live&&request===epoch)ports.error(error)}).finally(()=>{if(live&&request===epoch)pending=false})
   },
   retry(){lastLocation='';restore()},
-  dispose(){live=false;epoch++;cancelRestoration();win.removeEventListener('popstate',restore);win.removeEventListener('hashchange',restore);win.removeEventListener('pagehide',pagehide)},
+  dispose(){const value=entry()[historyKey] as {scope?:unknown;hash?:unknown}|undefined;if(!pending&&!unresolved&&value?.scope===ports.scope&&value.hash===win.location.hash)save(ports.capture());live=false;epoch++;cancelRestoration();win.removeEventListener('popstate',restore);win.removeEventListener('hashchange',restore);win.removeEventListener('pagehide',pagehide)},
  }
 }

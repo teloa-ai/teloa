@@ -11,19 +11,19 @@ import {observeTaskRun} from '../src/task-run-observation.ts'
 import {assertSafeTaskRunRetry} from '../src/task-run-retry-proof.ts'
 import type {TaskRunPorts} from '../src/task-run-driver.ts'
 import type {RetryChildInspection} from '../src/task-run-review-retry-proof.ts'
-const answer='37 × 23 = 37 × (20 + 3) = 740 + 111 = 851。'
+const answer='来源原文已保留。'
 const createUserMessageForSuffix=()=>createUserMessage({source:{kind:'user',rpcId:'late-request'},content:[{type:'text',text:'另一条指令'}]})
 const text=(value:string):StreamChunk[]=>[{type:'block-start',index:0,blockType:'text'},{type:'block-end',index:0,block:{type:'text',text:value}},{type:'finish',reason:{kind:'stop'}}]
 const call=(name:string,id:string,args:unknown):StreamChunk[]=>[{type:'block-start',index:0,blockType:'tool-call'},{type:'block-end',index:0,block:{type:'tool-call',name,id:ToolCallId(id),arguments:JSON.stringify(args)}},{type:'finish',reason:{kind:'tool-calls'}}]
 
-test('官方父子Loop纯计算与真实平台拒绝写口：完整原事件可安全重试，未知副作用继续拒绝',{timeout:15000},async t=>{
+test('官方父子Loop原文回传与真实平台拒绝写口：完整原事件可安全重试，未知副作用继续拒绝',{timeout:15000},async t=>{
  const f=await nativeHotSubagentFixture(t,'one-shot',false,true),runId='11111111-1111-4111-8111-111111111111',requestId='22222222-2222-4222-8222-222222222222',registrations:TaskRunSubagent[]=[]
  const noBusiness=async():Promise<never>=>assert.fail('child前置身份拒绝必须先于实际业务读取/写入')
  t.after(registerBusinessResultTools(f.ctx,{owner:'owner',conversation:noBusiness,readTaskPolicy:noBusiness,readBusinessScope:noBusiness,services:noBusiness,scopeIds:noBusiness,recordObjectResult:noBusiness}))
  t.after(registerTaskSubagentTool(f.ctx,{limits:{maxDepth:1,maxPerRun:1},runId:async id=>id===f.parent.id?runId:undefined,reserve:async({reservationId})=>{registrations.push({runId,reservationId,state:'reserved',createdAt:new Date().toISOString()})},bind:async({reservationId,childSessionId,depth})=>{Object.assign(registrations.find(row=>row.reservationId===reservationId)!,{state:'started',childSessionId,depth,startedAt:new Date().toISOString()})},settle:async({childSessionId,stopReason})=>{Object.assign(registrations.find(row=>row.childSessionId===childSessionId)!,{state:'ended',stopReason,endedAt:new Date().toISOString()})},release:noBusiness,abandon:noBusiness}))
- const parent=[call('subagent_task','delegate',{description:'纯算术',prompt:'计算37×23并说明过程'}),text(answer)],child=[call('teloa_business_object_result_record','blocked-write',{result:{value:851}}),text(answer)]
+ const parent=[call('subagent_task','delegate',{description:'原文回传',prompt:'逐字返回固定短句：来源原文已保留。'}),text(answer)],child=[call('teloa_business_object_result_record','blocked-write',{result:{value:851}}),text(answer)]
  f.adapter.stream=async function*(options:GenerateOptions){this.requests.push(options);const script=options.sessionId===f.parent.id?parent.shift():child.shift();assert.ok(script);yield* script}
- await f.send(requestId,'计算37×23并说明过程')
+ await f.send(requestId,'逐字返回固定短句：来源原文已保留。')
  const events=readSessionEvents(f.parent.session),evidence=observeTaskRun(events,requestId);assert.ok(evidence.state==='ended'&&evidence.reason==='completed')
  t.diagnostic('原父会话事件类型：'+[...new Set(events.map(event=>event.type))].join(','))
  const run:TaskRun={id:runId,taskId:'33333333-3333-4333-8333-333333333333',taskVersion:1,roleId:null,roleVersion:null,executor:{kind:'owner',grantId:'44444444-4444-4444-8444-444444444444',grantVersion:1},linkVersion:1,sessionId:f.parent.id,nativeRequestId:requestId,state:'ended',evidence,stopRequestedAt:null,allowedTools:['subagent_task'],skills:[],knowledge:[],memory:[],inputText:'fixed original task',createdAt:new Date().toISOString()}

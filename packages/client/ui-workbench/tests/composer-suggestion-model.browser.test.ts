@@ -1,3 +1,5 @@
+// @ts-expect-error 复用本机可信来源夹具。
+import {setLocalDocument} from './fixtures/local-document.mjs'
 import test,{before,after} from 'node:test'
 import assert from 'node:assert/strict'
 import {mkdtemp,writeFile,rm} from 'node:fs/promises'
@@ -15,17 +17,17 @@ import {ComposerSuggestionDock} from '${client}ComposerSuggestionDock.tsx';
 import {ComposerSuggestionSetting} from '${client}ComposerSuggestionSetting.tsx';
 import {I18nProvider} from '${client}i18n/provider.tsx';import {translateMessage} from '${client}i18n/messages.ts';
 const source=initial=>{let value=initial;const listeners=new Set();return {getSnapshot:()=>value,subscribe:fn=>{listeners.add(fn);return()=>listeners.delete(fn)},set:next=>{value=next;listeners.forEach(fn=>fn())}}};
-const config=window.suggestionMountConfig??{},ids=['session-a','session-b'],events=Object.fromEntries(ids.map(id=>[id,source({entries:[]})])),inputs=Object.fromEntries(ids.map(id=>[id,source({draft:'',focused:false})])),view=source({sessionId:ids[0],docks:config.docks??['primary']}),calls=[],inserts=[];
+const config=window.suggestionMountConfig??{},ids=['session-a','session-b'],events=Object.fromEntries(ids.map(id=>[id,source({entries:[]})])),inputs=Object.fromEntries(ids.map(id=>[id,source({draft:'',focused:false})])),view=source({sessionId:ids[0],docks:config.docks??['primary']}),calls=[],inserts=[],cached=new Map(),checks=[];
 const last=id=>events[id].getSnapshot().entries.filter(row=>row.event.type==='assistant/message').at(-1)?.event;
-const suggest=Object.fromEntries(ids.map(id=>[id,signal=>new Promise((resolve,reject)=>{const call={sessionId:id,seq:last(id)?.seq,signal,aborted:signal?.aborted??false,resolve,reject};signal?.addEventListener('abort',()=>{call.aborted=true},{once:true});calls.push(call)})]));
+const suggest=Object.fromEntries(ids.map(id=>[id,(signal,options)=>{const seq=last(id)?.seq;if(options?.cacheOnly){checks.push({sessionId:id,seq,cacheOnly:true});return Promise.resolve(signal?.aborted?null:cached.get(id+':'+seq)??null)}return new Promise((resolve,reject)=>{const call={sessionId:id,seq,signal,aborted:signal?.aborted??false,resolve,reject};signal?.addEventListener('abort',()=>{call.aborted=true},{once:true});calls.push(call)})}]));
 const fixture={
- calls:()=>calls.map(({sessionId,seq,aborted})=>({sessionId,seq,aborted})),inserts:()=>inserts.slice(),
+ calls:()=>calls.map(({sessionId,seq,aborted})=>({sessionId,seq,aborted})),checks:()=>checks.slice(),inserts:()=>inserts.slice(),
  reply:(id,seq,text)=>{const turn=seq,at=seq*1000,previous=events[id].getSnapshot().entries;events[id].set({entries:[...previous,
   {type:'event',event:{seq:seq-2,time:at-2,type:'user/message',surfaceOp:'append',data:{id:id+'-human-'+seq,role:'user',source:{kind:'user'},content:[{type:'text',text:'继续核对这批材料'}]}}},
   {type:'event',event:{seq,time:at,type:'assistant/message',surfaceOp:'append',data:{turn,step:1,message:{id:id+'-answer-'+seq,role:'assistant',content:[{type:'text',text}]},interrupted:false}}},
   {type:'event',event:{seq:seq+1,time:at+1,type:'turn/end',data:{turn,reason:{kind:'completed'}}}}
  ]})},
- resolve:(index,text)=>{if(!calls[index])throw Error('不存在的模型请求');calls[index].resolve(text)},
+ resolve:(index,text)=>{if(!calls[index])throw Error('不存在的模型请求');if(!calls[index].aborted)cached.set(calls[index].sessionId+':'+calls[index].seq,text);calls[index].resolve(text)},
  reject:index=>{if(!calls[index])throw Error('不存在的模型请求');calls[index].reject(Error('合成模型不可用'))},
  select:id=>view.set({...view.getSnapshot(),sessionId:id}),docks:keys=>view.set({...view.getSnapshot(),docks:keys}),draft:(id,text)=>inputs[id].set({draft:text,focused:false}),
  entries:id=>events[id].getSnapshot().entries,publish:(id,entries)=>events[id].set({entries}),replay:id=>events[id].set({entries:structuredClone(events[id].getSnapshot().entries)}),
@@ -54,8 +56,8 @@ async function mount(t:any,enabled=true,config:{strict?:boolean;docks?:string[];
  const page=await browser.newPage({viewport:{width:1000,height:700}}),errors:string[]=[]
  page.setDefaultTimeout(4000);page.on('pageerror',(error:Error)=>errors.push(error.message))
  t.after(async()=>{await page.close();assert.deepEqual(errors,[])})
- await page.route('**/*',(route:any)=>route.request().url()==='http://suggestion-fixture.test/'?route.fulfill({contentType:'text/html',body:'<!doctype html><html><body><div id="root"></div></body></html>'}):route.abort())
- await page.goto('http://suggestion-fixture.test/')
+ await page.route('**/*',(route:any)=>route.abort())
+ await setLocalDocument(page,'<!doctype html><html><body><div id="root"></div></body></html>')
  await page.evaluate((value:boolean)=>localStorage.setItem('teloa.composer-suggestion.enabled',String(value)),enabled)
  await page.evaluate((value:unknown)=>(window as any).suggestionMountConfig=value,config)
  await page.addStyleTag({content:styles});await page.addScriptTag({content:script});await page.getByRole('textbox',{name:'本人草稿'}).waitFor()
@@ -82,7 +84,7 @@ test('灰字准确使用宿主模型结果，Tab 仅将该结果带入草稿',as
  await page.evaluate(()=>(window as any).suggestionModelFixture.resolve(0,'好'))
  await page.waitForFunction(()=>document.querySelector('[data-composer-suggestion]')?.textContent==='好')
  assert.equal(await page.getByRole('textbox',{name:'本人草稿'}).textContent(),'')
- await page.keyboard.press('Tab');await settle(page)
+ await page.getByRole('textbox',{name:'本人草稿'}).focus();await page.keyboard.press('Tab');await settle(page)
  assert.equal(await page.getByRole('textbox',{name:'本人草稿'}).textContent(),'好')
  assert.deepEqual(await page.evaluate(()=>(window as any).suggestionModelFixture.inserts()),[{sessionId:'session-a',text:'好'}])
  assert.equal(await ghost(page).count(),0)
@@ -153,7 +155,7 @@ test('StrictMode 双 dock 共享一次请求，移除发起 dock 不取消仍在
  assert.equal((await calls(page)).length,1);assert.equal((await calls(page))[0].aborted,false)
  await page.evaluate(()=>(window as any).suggestionModelFixture.resolve(0,'共享模型建议'))
  await page.waitForFunction(()=>document.querySelector('[data-composer-suggestion]')?.textContent==='共享模型建议')
- await page.keyboard.press('Tab');await settle(page)
+ await page.getByRole('textbox',{name:'本人草稿'}).focus();await page.keyboard.press('Tab');await settle(page)
  assert.deepEqual(await page.evaluate(()=>(window as any).suggestionModelFixture.inserts()),[{sessionId:'session-a',text:'共享模型建议'}])
  assert.equal(await ghost(page).count(),0)
 })

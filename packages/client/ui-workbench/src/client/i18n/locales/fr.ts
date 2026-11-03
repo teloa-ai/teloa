@@ -50,7 +50,6 @@ export const frMessages = {
   'task.empty.none': 'Aucune tâche pour le moment',
   'task.empty.noMatch': 'Aucune tâche ne correspond',
   'task.detail.back': 'Retour au répertoire',
-  'task.detail.goal': 'Objectif de la tâche',
   'continuous.directory': 'Automatisation',
   'continuous.tab.plans': 'Plans',
   'continuous.tab.runs': 'Historique des exécutions',

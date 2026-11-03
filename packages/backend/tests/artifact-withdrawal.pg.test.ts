@@ -163,7 +163,11 @@ test('已准入发送持有同一头锁，撤回必须在释放后提交；无�
  }finally{await admission.release()}
  await withdrawing
  assert.equal((await f.service.availability(f.owner,{artifactId:f.first.artifactId})).state,'withdrawn')
- const untouched=await fixture(),empty=await inputs.admitInput(untouched.owner,{sessionId:randomUUID(),references:[]});await empty.release()
+ const untouched=await fixture(),single=new Pool({connectionString:container.getConnectionUri(),max:1,connectionTimeoutMillis:250})
+ try{
+  const empty=await new ArtifactAvailabilityService(single,()=>new Date().toISOString()).admitInput(untouched.owner,{sessionId:randomUUID(),references:[]})
+  try{assert.equal((await single.query('select 1 as available')).rows[0].available,1,'无成果头锁的准入不占住唯一连接等待模型首块')}finally{await empty.release()}
+ }finally{await single.end()}
  assert.equal((await pool.query('select count(*)::int as count from teloa_artifact_input_sources where owner_id=$1',[untouched.owner])).rows[0].count,0)
 })
 

@@ -50,7 +50,6 @@ export const koMessages = {
   'task.empty.none': '아직 작업이 없습니다',
   'task.empty.noMatch': '조건에 맞는 작업이 없습니다',
   'task.detail.back': '목록으로 돌아가기',
-  'task.detail.goal': '작업 목표',
   'continuous.directory': '자동화',
   'continuous.tab.plans': '계획',
   'continuous.tab.runs': '실행 내역',

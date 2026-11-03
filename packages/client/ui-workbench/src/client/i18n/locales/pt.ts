@@ -50,7 +50,6 @@ export const ptMessages = {
   'task.empty.none': 'Ainda não há tarefas',
   'task.empty.noMatch': 'Nenhuma tarefa corresponde aos filtros',
   'task.detail.back': 'Voltar ao diretório',
-  'task.detail.goal': 'Objetivo da tarefa',
   'continuous.directory': 'Automação',
   'continuous.tab.plans': 'Planos',
   'continuous.tab.runs': 'Histórico de execuções',

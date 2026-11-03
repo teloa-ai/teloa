@@ -116,8 +116,9 @@ test('替换官方会话控制器行时组合结果包含浏览器面载体行',
  assert.deepEqual(await compose(rows,{providers:await providers(),runtimeRoot}),patches)
 })
 
-test('标题overlay进入正式compose，真实默认与可选all组合均保留唯一标题provider',async t=>{
+test('显式启用标题后的overlay进入正式compose，可选all组合保留唯一标题provider',async t=>{
  const rows=communityRows(),runtimeRoot=await temporary(t),compat=await providers()
+ const title=findRow(rows,'session-title-llm');assert.ok(title);title.disabled=false
  const final=applyPatches(rows,await compose(rows,{providers:compat,runtimeRoot}))
  const original=findRow(rows,'session-title-llm'),wrapped=findRow(final,'teloa-employee-title')
  assert.ok(original);assert.equal(findRow(final,'session-title-llm')?.disabled,true)

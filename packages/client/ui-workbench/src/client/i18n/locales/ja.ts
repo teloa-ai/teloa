@@ -50,7 +50,6 @@ export const jaMessages = {
   'task.empty.none': 'タスクはまだありません',
   'task.empty.noMatch': '条件に一致するタスクはありません',
   'task.detail.back': '一覧に戻る',
-  'task.detail.goal': 'タスクの目標',
   'continuous.directory': '自動化',
   'continuous.tab.plans': '計画',
   'continuous.tab.runs': '実行履歴',

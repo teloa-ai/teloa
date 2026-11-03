@@ -50,7 +50,6 @@ export const deMessages = {
   'task.empty.none': 'Noch keine Aufgaben',
   'task.empty.noMatch': 'Keine passenden Aufgaben',
   'task.detail.back': 'Zurück zum Verzeichnis',
-  'task.detail.goal': 'Aufgabenziel',
   'continuous.directory': 'Automatisierung',
   'continuous.tab.plans': 'Pläne',
   'continuous.tab.runs': 'Ausführungsverlauf',

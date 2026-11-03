@@ -46,7 +46,10 @@ test('发行只复制匹配摘要的 helper 和支持清单',async()=>{
  const source=join(root,'packages/cli'),stage=join(root,'stage')
  try{
   await mkdir(join(source,'lib'),{recursive:true});await mkdir(join(source,'libexec'))
+  await mkdir(join(source,'src'))
   await writeFile(join(source,'package.json'),JSON.stringify({name:'@teloa/cli',exports:{'.':'./src/index.ts'}}))
+  await writeFile(join(source,'tsconfig.json'),JSON.stringify({compilerOptions:{rootDir:'src',outDir:'lib',module:'ESNext'},include:['src']}))
+  await writeFile(join(source,'src/index.ts'),'export {}')
   await writeFile(join(source,'lib/index.js'),'export {}')
   await writeFile(join(source,'libexec/private-proof.json'),'not for release')
   const support=JSON.parse(await readFile(join(cli,'libexec/support.json'),'utf8'))

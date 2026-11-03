@@ -32,6 +32,7 @@ import {initializeSecurityRequests} from '../src/security/request-journal.ts'
 import {initializeSecurityActions} from '../src/security/actions.ts'
 import {initializeSecurityApprovals} from '../src/security/approvals.ts'
 import {createTaskCompletionVerifiers} from '../../harness-dsh/src/task-completion-verifiers.ts'
+import {insertRoleRun} from './role-work-test-fixture.ts'
 import {testRoleResponsibility} from './role-test-fixture.ts'
 
 let container:StartedPostgreSqlContainer,pool:Pool
@@ -49,12 +50,13 @@ async function fixture(auto=true,system=false,setup?:(owner:string)=>Promise<{id
  let plan
  if(system){const db=await pool.connect();try{await db.query('begin');const created=await plans.createInTransaction(db,owner,{requestId:randomUUID(),fields,source:{kind:'system-digest',roleId:role.id}});plan=await plans.changeInTransaction(db,owner,{planId:created.id,requestId:randomUUID(),expectedVersion:created.version,action:'enable'});await db.query('commit')}catch(error){await db.query('rollback');throw error}finally{db.release()}}
  else{const created=await (auto?plans.createConfirmed.bind(plans):plans.create.bind(plans))(owner,{requestId:randomUUID(),fields,source:{kind:'manual'}});plan=await (auto?plans.changeConfirmed.bind(plans):plans.change.bind(plans))(owner,{planId:created.id,requestId:randomUUID(),expectedVersion:created.version,action:'enable'})}
+ if(system){const sourceTask=await new TaskService(pool,clock).create(owner,{requestId:randomUUID(),fields:{title:'小结工作来源',goal:'核对合成资料',scope:'general'},assignee:{roleId:role.id,expectedVersion:role.version}}),sourceRun=await insertRoleRun(pool,owner,role.id,sourceTask.id);await pool.query('update teloa_task_runs set created_at=$2 where id=$1',[sourceRun,'2026-10-09T00:30:00.000Z'])}
  const occurrences=new PlanOccurrenceService(pool,{id:randomUUID}),first=await occurrences.claim(owner,{planId:plan.id,now:'2026-10-09T01:00:00.000Z'})
  assert.ok(first.occurrence)
  const dispatched=await occurrences.dispatchTask(owner,{claimId:first.occurrence.id,taskRequestId:first.occurrence.taskRequestId,now:'2026-10-09T01:00:01.000Z'}),task=dispatched.task
  const sessionId=randomUUID(),conversationId=randomUUID(),inspect=async()=>({id:conversationId,sessionId,ownerId:owner,status:'ready'})
  await new ObjectConversationService(pool,inspect,identity.now).change(owner,{requestId:randomUUID(),kind:'task',objectId:task.id,expectedObjectVersion:task.version,expectedLinkVersion:0,sessionId,action:'link'})
- const runs=new TaskRunService(pool,clock,inspect),run=await runs.prepare(owner,{requestId:randomUUID(),taskId:task.id,expectedTaskVersion:task.version,roleId:role.id,expectedRoleVersion:role.version,sessionId,expectedLinkVersion:1},undefined,knowledge?async(_target,_role,db)=>knowledge.read(db):undefined)
+ const runs=new TaskRunService(pool,{...clock,now:()=>'2026-10-09T01:00:02.000Z'},inspect),run=await runs.prepare(owner,{requestId:randomUUID(),taskId:task.id,expectedTaskVersion:task.version,roleId:role.id,expectedRoleVersion:role.version,sessionId,expectedLinkVersion:1},undefined,knowledge?async(_target,_role,db)=>knowledge.read(db):undefined)
  await runs.claim(owner,{runId:run.id});const finalRun=await runs.record(owner,{runId:run.id,sessionId,nativeRequestId:run.nativeRequestId,evidence:{state:'ended',turn:0,messageSeq:1,endSeq:2,reason:'completed'}})
  const current=(await new TaskService(pool,identity).list(owner,{})).find(row=>row.id===task.id)!
  const artifacts=new ArtifactService(pool,identity,async(actor,source,db)=>({source:await taskArtifactSource(db,actor,source.id,true),sessionIds:[]})),artifact=await artifacts.create(owner,{requestId:randomUUID(),source:await taskArtifactSource(pool,owner,task.id,false),content:{title:'来源版本小结',sections:[{id:'summary',title:'版本',text:'真实版本摘要'}],snapshotIds:[],note:'固定成果'}})
@@ -124,6 +126,8 @@ test('真实员工小结交付包含候选保存与正式成果；缺候选回�
  // 已提交回执重放不重新核当前日志或重新授权。
  await pool.query("update teloa_role_daily_logs set state='discarded',discarded_at=$3 where owner_id=$1 and id=$2",[f.owner,submitted.log.id,identity.now()])
  assert.equal((await service.complete(f.owner,input)).task.state,'completed')
+ const nextSourceTask=await new TaskService(pool,f.clock).create(f.owner,{requestId:randomUUID(),fields:{title:'第二日工作来源',goal:'核对次日合成资料',scope:'general'},assignee:{roleId:f.role.id,expectedVersion:f.role.version}}),nextSourceRun=await insertRoleRun(pool,f.owner,f.role.id,nextSourceTask.id)
+ await pool.query('update teloa_task_runs set created_at=$2 where id=$1',[nextSourceRun,'2026-10-10T00:30:00.000Z'])
  const second=await f.occurrences.claim(f.owner,{planId:f.plan.id,now:'2026-10-10T01:00:00.000Z'});assert.equal(second.dispatch,true);assert.ok(second.occurrence)
  const next=await f.occurrences.dispatchTask(f.owner,{claimId:second.occurrence.id,taskRequestId:second.occurrence.taskRequestId,now:'2026-10-10T01:00:01.000Z'});assert.notEqual(next.task.id,f.task.id)
  const sessionId=randomUUID(),conversationId=randomUUID(),inspect=async()=>({id:conversationId,sessionId,ownerId:f.owner,status:'ready'}),nextClock={...identity,now:()=>'2026-10-10T01:00:02.000Z'}

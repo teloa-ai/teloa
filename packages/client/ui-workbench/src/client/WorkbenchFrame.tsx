@@ -344,8 +344,8 @@ export function WorkbenchFrame({assistantActivity,assistantChat,sessionDiagnosti
   const workAttention=useWorkAttention(workAttentionApi,attentionIdentity)
   const planDraftConnection=useMemo(()=>({planDraftApi,pageCreateApi,planApi,roleApi,conversationPlans,attentionIdentity}),[planDraftApi,pageCreateApi,planApi,roleApi,conversationPlans,attentionIdentity])
   const [attentionSourceSelection,setAttentionSourceSelection]=useState<{source:WorkAttentionOriginalSource;identity:typeof attentionIdentity;creationConnection?:typeof planDraftConnection}>()
-  // 确认来源固定在打开时的服务身份；旧读取刚返回或旧抽屉已打开时换 API，都不能借新服务重新确认。
-  const attentionOriginalSource=attentionSourceSelection?.identity===attentionIdentity&&(!attentionSourceSelection.creationConnection||attentionSourceSelection.creationConnection===planDraftConnection)?attentionSourceSelection.source:undefined
+  // 草案读取身份固定在原本人连接；确认服务换代保留选择并重新只读核验，旧确认仍由原 connection 守卫隔离。
+  const attentionOriginalSource=attentionSourceSelection?.identity===attentionIdentity&&(!attentionSourceSelection.creationConnection||attentionSourceSelection.creationConnection.pageCreateApi===pageCreateApi)?attentionSourceSelection.source:undefined
   const planDraftEntry=JSON.stringify([state.view,state.detail,state.rolePreview])
   const planDraftFrame=useRef({connection:planDraftConnection,selection:attentionSourceSelection,entry:planDraftEntry})
   planDraftFrame.current={connection:planDraftConnection,selection:attentionSourceSelection,entry:planDraftEntry}
@@ -1788,7 +1788,7 @@ export function WorkbenchFrame({assistantActivity,assistantChat,sessionDiagnosti
   const applyBusinessNav=(signal:BusinessNavSignal)=>{
     const step=businessNavStep(businessNavSeen.current,signal)
     businessNavSeen.current=step.seen
-    if(step.home!==null)actions.rememberDirectory('spaces',{businessHome:step.home})
+    if(step.home!==null){if(signal.kind==='back-home')actions.navigate('spaces');else actions.rememberDirectory('spaces',{businessHome:step.home})}
   }
   // 显式打开先于视图观察消费，外部对象卡与 Frame 内入口共用 store 请求。
   useEffect(()=>{applyBusinessNav({kind:'open-request',request:state.businessOpenRequest})},[state.businessOpenRequest])
@@ -2252,9 +2252,8 @@ export function WorkbenchFrame({assistantActivity,assistantChat,sessionDiagnosti
     })
   }
   const readLatestConversationRole=(roleId:string)=>readCurrentRoleForConversation(async()=>{
-    const rows=await roleApi.list()
-    if(!roleConnectionCurrent())throw Object.assign(Error(),{code:'teloa/source-unavailable'})
-    mergeRoles(rows)
+    const rows=await readRoleDirectory()
+    if(!rows||!roleConnectionCurrent())throw Object.assign(Error(),{code:'teloa/source-unavailable'})
     return rows.map(row=>tasksRef.current.roles.find(role=>role.id===row.id&&role.storage==='persistent')!).filter(Boolean)
   },roleId)
   const roleCreationOpening=useRef(new Set<string>())
@@ -2486,7 +2485,7 @@ export function WorkbenchFrame({assistantActivity,assistantChat,sessionDiagnosti
             return {scope:result.project.scope as CollaborationScope,section:'projects' as const,id:target.id}
           }else if(target.kind==='business'){
             if(!(await businessScopeApi.list()).some(row=>row.scope===target.scope))throw unavailable()
-            return {scope:target.scope as CollaborationScope,section:target.section}
+            const {kind:_,pageId:_page,...business}=target;return business
           }else if(target.kind==='resource'){
             const row=(await resourceApi.directory()).resources.find(row=>row.id===target.id&&row.status==='active')
             if(!row)throw unavailable()

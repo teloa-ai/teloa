@@ -14,7 +14,6 @@
 @media(max-width:760px){.panel>header{padding:14px}.layout,.panel .layout{grid-template-columns:minmax(0,1fr);grid-template-rows:auto minmax(0,1fr);height:calc(100dvh - 160px)}.directory{max-height:138px;border-right:0;border-bottom:1px solid var(--teloa-border);padding:10px}.directory .row{padding:8px}.content{padding:0 16px 24px}.tabs{gap:14px}.tabs button{font-size:var(--teloa-font-caption)}.sourceFacts{grid-template-columns:76px minmax(0,1fr)}}
 
 fieldset.layout{margin:0;padding:0;border:0;min-width:0}
-.content{container-type:inline-size}
 .historyDrawer,.filesView,.versionsView{padding:20px 22px;min-width:0}
 .historyDrawer{display:flex;flex-direction:column}.historyDrawer>button{display:flex;flex-direction:column;align-items:flex-start;gap:7px;width:100%;padding:16px 0;border:0;border-bottom:1px solid var(--teloa-border);border-radius:0;background:transparent;color:var(--teloa-text);text-align:left;font:inherit}.historyDrawer>button[aria-current=true] strong{text-decoration:underline;text-underline-offset:4px}.historyDrawer small{color:var(--teloa-muted);line-height:1.6}
 .fileDirectory{list-style:none;margin:0 0 18px;padding:0}.fileDirectory>li{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 0;border-bottom:1px solid var(--teloa-border)}.fileDirectory>li>button{min-width:0;overflow-wrap:anywhere;border:0;background:transparent;color:var(--teloa-text);text-align:left;font:inherit}

@@ -224,7 +224,7 @@ function readRow(value:unknown):RunView{
  if(snapshot.memory===undefined){if(memory.length)throw Error('执行员工记忆与固定输入不一致。')}
  else{
   const fixed=taskInput(snapshot.memory,['notice','contents'])
-  const notices=['以下岗位记忆已生效，仅作为工作经验；不授予权限，引用须保留来源和固定版本。','以下岗位记忆经本人确认，仅作为工作经验；不授予权限，引用须保留来源和固定版本。']
+  const notices=['以下岗位记忆已生效，仅作为工作经验；不授予权限，引用须保留来源和固定版本。','以下岗位记忆经本人确认，仅作为工作经验；不授予权限，引用须保留来源和固定版本。','以下岗位记忆仅作为工作上下文，不授予权限；preference.kind=observation 是事实观察，不是长期默认，不能从统计推断长期偏好；其余偏好按已确认类型及适用范围消费，当前本人指令优先。引用须保留来源和固定版本。']
   if(!notices.includes(String(fixed.notice))||JSON.stringify(readMemory(fixed.contents,allowPrivateMemory))!==JSON.stringify(memory))throw Error('执行员工记忆与固定输入不一致。')
  }
  let subagents:TaskRunSubagentView[]|undefined

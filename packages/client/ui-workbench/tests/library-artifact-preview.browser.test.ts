@@ -34,6 +34,7 @@ test('资料目录直接打开已保存成果不依赖任务缓存，固定版�
  const snapshot={locale:'zh-CN',dshLocale:'zh',revision:1},runtime={getSnapshot:()=>snapshot,subscribe:()=>()=>{},t:(key,params)=>translateMessage('zh-CN',key,params)};
  function App(){
   const [state,setState]=useState({...emptyTaskPreview(),tasks:[]}),[target,setTarget]=useState(null);
+  const artifactReadIntent=React.useRef(0),libraryArtifactLocation=React.useRef({view:'resources'}),latestState=React.useRef({view:'resources'}),artifactRevisionConnection=React.useRef({artifactApi});
   const mergeArtifacts=rows=>setState(current=>({...current,artifacts:[...current.artifacts.filter(row=>!rows.some(next=>next.id===row.id)),...rows]}));
   const openArtifacts=(source,artifact)=>setTarget({source,artifact});
   window.libraryArtifact={calls,changes,taskCount:()=>state.tasks.length};

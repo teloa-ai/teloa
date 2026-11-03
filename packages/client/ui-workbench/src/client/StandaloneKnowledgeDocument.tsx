@@ -33,7 +33,7 @@ export function StandaloneKnowledgeDocument({navigation,api,ownerId,source,title
   return value
  }
  useEffect(()=>{
-  const token=++generation.current;setLoading(true);setBusy(false);setBlocked(false);setInspectorOpen(false);setEditing(false)
+  const token=++generation.current;setLoading(true);setBusy(false);setBlocked(false);setInspectorOpen(false)
   void (async()=>{
    const rows=await api.listKnowledgeVersions(id)
    if(rows.some(row=>row.ownerId!==ownerId||row.knowledgeId!==id))throw Object.assign(Error(),{code:'teloa/invalid-host-response'})
@@ -44,7 +44,7 @@ export function StandaloneKnowledgeDocument({navigation,api,ownerId,source,title
    const value=await checkedVersion(version,rows)
    if(!saved&&value.contentHash!==source.version)throw Object.assign(Error(),{code:'teloa/version-conflict'})
    if(!current(token))return
-   setVersions(rows);setSelected(value);setBaseline(value.markdown);setMarkdown(value.markdown);setDraft(saved);setStorageWarning(journal.warning())
+   setVersions(rows);setSelected(value);setBaseline(value.markdown);setMarkdown(saved?.markdown??value.markdown);setDraft(saved);setEditing(previous=>!!saved?.pending||!!saved&&previous);setStorageWarning(journal.warning())
    if(saved&&!saved.pending&&rows.some(row=>row.version>saved.base.version))onError(localizeWorkError(locale,{code:'teloa/version-conflict'}))
   })().catch(error=>{if(current(token)){setBlocked(true);onError(localizeWorkError(locale,error))}}).finally(()=>{if(current(token))setLoading(false)})
   return()=>{generation.current++}
@@ -81,7 +81,7 @@ export function StandaloneKnowledgeDocument({navigation,api,ownerId,source,title
   try{const value=await checkedVersion(version,versions);if(current(token)){setSelected(value);setMarkdown(value.markdown);setBaseline(value.markdown)}}catch(error){if(current(token))onError(localizeWorkError(locale,error))}finally{if(current(token))setLoading(false)}
  }
  return <section className={css.document} aria-label={t('knowledge.ui.013')}>
-  <LibraryReaderHeader navigation={navigation} title={title}><button type="button" disabled={!selected||loading||blocked} onClick={()=>downloadLibraryText(markdown,title)}><Download size={15}/>{reader.download}</button>{editing?<><button type="button" disabled={busy} onClick={()=>{setEditing(false);setMarkdown(baseline)}}>{reader.cancel}</button><button className={css.save} type="button" disabled={busy||loading||blocked||pending?.kind==='restore'||!pending&&(historical||!dirty||!markdown.trim())} onClick={()=>void submit('revise')}>{busy?t('knowledge.ui.043'):reader.version}</button></>:<button type="button" disabled={!selected||historical||blocked||loading} onClick={()=>{setMarkdown(draft?.markdown??baseline);setEditing(true)}}><Pencil size={15}/>{reader.edit}</button>}<button type="button" ref={infoButton} aria-label={reader.info} aria-expanded={inspectorOpen} onClick={()=>setInspectorOpen(value=>!value)}><Info size={16}/></button></LibraryReaderHeader>
+  <LibraryReaderHeader navigation={navigation} title={title}><button type="button" disabled={!selected||loading||blocked} onClick={()=>downloadLibraryText(markdown,title)}><Download size={15}/>{reader.download}</button>{editing?<><button type="button" disabled={busy} onClick={()=>{setEditing(false);setMarkdown(baseline)}}>{reader.cancel}</button><button className={css.save} type="button" disabled={busy||loading||blocked||pending?.kind==='restore'||!pending&&(historical||!dirty||!markdown.trim())} onClick={()=>void submit('revise')}>{busy?t('knowledge.ui.043'):pending?t('employeeKnowledge.recover'):reader.version}</button></>:<button type="button" disabled={!selected||historical&&!draft||blocked||loading} onClick={()=>{setMarkdown(draft?.markdown??baseline);setEditing(true)}}><Pencil size={15}/>{reader.edit}</button>}<button type="button" ref={infoButton} aria-label={reader.info} aria-expanded={inspectorOpen} onClick={()=>setInspectorOpen(value=>!value)}><Info size={16}/></button></LibraryReaderHeader>
   <p className={css.versionNotice}>{t('roleDelegation.savedKnowledgeNext')}</p>{onPrepare&&<button type="button" disabled={busy||loading||blocked||dirty||!!pending} onClick={onPrepare}>{t('roleDelegation.prepareKnowledge')}</button>}
   <KnowledgeCopyOrigin api={api} knowledgeId={id}/>
 {storageWarning&&<p role="status">{t('library.draftStorage')}</p>}

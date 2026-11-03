@@ -345,7 +345,8 @@ for(const originalCase of ['completed','error','error-recovery-chain','unpublish
   assert.equal((await r.runs.get(f.owner,{runId:prepared.id})).id,prepared.id,'本新Run自己的正常模型reservation不能令原取消历史变坏/无法读取')
   ;(await r.runs.executionAdmission(f.owner,prepared.id)).assertCurrent()
   const extra=await budgets.reserve(f.owner,{budgetAccountId:prepared.lineage!.budgetAccountId,controlGeneration:prepared.lineage!.controlGeneration,modelRequestId:'unrelated:'+randomUUID(),kind:'retry',tokens:1,rounds:0})
-  await assert.rejects(r.runs.get(f.owner,{runId:prepared.id}),{code:'teloa/conflict'},'其它未收口预算不能冒充本新Run')
+  assert.equal((await r.runs.get(f.owner,{runId:prepared.id})).id,prepared.id,'只读历史保持可读，不产生发送许可')
+  await assert.rejects(r.runs.executionAdmission(f.owner,prepared.id),{code:'teloa/conflict'},'其它未收口预算不能冒充本新Run的发送许可')
   await budgets.releaseUnaccepted(f.owner,{reservationId:extra.id});assert.equal((await r.runs.get(f.owner,{runId:prepared.id})).id,prepared.id)
   if(originalCase==='unpublished-recovery-own-unknown'){
    await budgets.markDispatched(f.owner,{reservationId:ownReservation.id})

@@ -64,7 +64,6 @@ export const BUSINESS_BUILDER_MESSAGE_ROWS = [
   ['business.builder.unconfigured','原预约指向尚无正式配置的旧业务，无法继续。重新创建会保留旧业务资料。','原預約指向尚無正式設定的舊業務，無法繼續。重新建立會保留舊業務資料。','This reservation points to a legacy business without a saved configuration. Start a new business; the old business data stays in place.'],
  ].map(([key,cn,tw,en])=>[key!,cn!,tw!,en!,en!,en!,en!,en!,en!,en!,en!] as const),
  ['business.builder.previewStatus','草案预览状态','草案預覽狀態','Draft preview status'],
- ['business.builder.originalResponse','查看原始回复','查看原始回覆','View original response'],
  ['business.builder.preview.saved','草案预览已更新。请在预览面板查看字段与约束；尚未采用业务或授予连接权限。','草案預覽已更新。請在預覽面板查看欄位與限制；尚未採用業務或授予連接權限。','Draft preview updated. Review fields and constraints in the preview panel; the business has not been applied or connections authorized.'],
  ['business.builder.preview.failed','这次预览未能完成。原草案已保留，请查看预览后调整说明。','這次預覽未能完成。原草案已保留，請查看預覽後調整說明。','Preview could not be completed. Your draft is preserved; review it before adjusting your request.'],
  ['business.builder.preview.unknown','尚未确认预览保存结果。请刷新原草案核对，先不要重复发送。','尚未確認預覽儲存結果。請重新整理原草案核對，先不要重複傳送。','Preview save is unconfirmed. Refresh the original draft before sending again.'],

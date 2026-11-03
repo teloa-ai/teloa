@@ -848,7 +848,7 @@ private async readVerified(db:PoolClient,owner:string,row:Record<string,unknown>
    if(options.deferSettlement||options.settleDeferred){
     if(!run.lineage)throw new WorkError('teloa/conflict','缺少终态记账的原工作控制。')
     const ids=[...new Set([run.lineage.roundControlId,run.lineage.definitionControlId].filter((id):id is string=>id!==null))].sort()
-    const controls=(await db.query('select c.id,c.state,p.unknown_operation_ids from teloa_work_controls c left join teloa_work_control_progress p on p.owner_id=c.owner_id and p.control_id=c.id and p.generation=c.generation where c.owner_id=$1 and c.id=any($2::uuid[]) order by c.id for share of c',[owner,ids])).rows
+    const controls=(await db.query('select c.id,c.state,coalesce(p.unknown_operation_ids,array[]::text[]) as unknown_operation_ids from teloa_work_controls c left join teloa_work_control_progress p on p.owner_id=c.owner_id and p.control_id=c.id and p.generation=c.generation where c.owner_id=$1 and c.id=any($2::uuid[]) order by c.id for share of c',[owner,ids])).rows
     if(controls.length!==ids.length||controls.some(control=>!Array.isArray(control.unknown_operation_ids)||control.unknown_operation_ids.length||options.settleDeferred&&control.state!=='active')||options.deferSettlement&&!controls.some(control=>control.state==='pausing'||control.state==='paused')||options.deferSettlement&&controls.some(control=>!['active','pausing','paused'].includes(control.state)))throw new WorkError('teloa/conflict','原工作控制尚不允许这次终态记账或结算。')
    }
    if(options.settleDeferred&&(run.state!=='ended'||evidence.state!=='ended'||!isTaskRunReconcileEndReason(evidence.reason)||evidence.reason!=='completed'&&run.stopRequestedAt!==null))throw new WorkError('teloa/conflict','没有可接续的固定终态。')

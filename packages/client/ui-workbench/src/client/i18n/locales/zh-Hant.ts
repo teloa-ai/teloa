@@ -50,7 +50,6 @@ export const zhHantMessages = {
   'task.empty.none': '目前還沒有任務',
   'task.empty.noMatch': '找不到符合條件的任務',
   'task.detail.back': '返回目錄',
-  'task.detail.goal': '任務目標',
   'continuous.directory': '自動化',
   'continuous.tab.plans': '計畫',
   'continuous.tab.runs': '執行記錄',

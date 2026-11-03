@@ -4,6 +4,11 @@ const messages={
  stopped:['原交办已停止。可以返回原会话核对记录，不会自动继续。','原交辦已停止。可以返回原對話核對紀錄，不會自動繼續。','The original request is stopped. Return to review its records; work will not resume automatically.'],
  unavailable:['暂时无法核对原交办来源，请重试。原任务、失败记录和输入均保留。','暫時無法核對原交辦來源，請再試一次。原工作、失敗紀錄和輸入均保留。','Could not verify the original request. Try again. The task, failed run and input are preserved.'],
  config:['请返回原交办核对运行配置，再从原交办卡重试。','請返回原交辦核對執行設定，再從原交辦卡重試。','Review the run configuration and retry from the original request card.'],
+ recoveryIdentity:['原来源任务的恢复身份不可核对。','無法核對原來源工作的恢復身分。','Could not verify the original task recovery identity.'],
+ recoveryOwner:['工作控制不属于原任务。','工作控制不屬於原工作。','The work control does not belong to the original task.'],
+ recoveryPending:['原工作尚未收口，请先核对。','原工作尚未完成處理，請先核對。','Review the original work before continuing.'],
+ recoveryCandidates:['请先核对原执行的恢复候选。','請先核對原執行的恢復選項。','Review the original run recovery options first.'],
+ restrictedText:['受限文本工作：仅处理已确认的固定资料，不执行工具。','受限文字工作：僅處理已確認的固定資料，不執行工具。','Restricted text work: fixed approved materials, no tool execution.'],
 } as const
 export const taskRunOriginCopy=(locale:string,key:keyof typeof messages)=>messages[key][locale==='zh-CN'?0:locale.startsWith('zh')?1:2]
 export function requiresOriginalTaskRequest(error:unknown):boolean{

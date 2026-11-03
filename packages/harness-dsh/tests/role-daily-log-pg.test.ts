@@ -57,9 +57,7 @@ async function world(){
   values($1,$2,$3,$4,$5,$6,'silent',$7,1,'SOC',1,1,'active',null,null,$8,$8)`,
   [randomUUID(),owner,randomUUID(),JSON.stringify({fields:{...definition,expectedRoleVersion:1},source}),JSON.stringify(definition),JSON.stringify(source),employee.id,nowIso])
  // 证据第 3 类（交办文案）：本人直接建、不经持续计划领取的任务。
- for(const shift of [0,-1])await pool.query(`insert into teloa_tasks(id,owner_id,request_id,request_spec,definition,version,state,created_at,updated_at)
-  values($1,$2,$3,'{}'::jsonb,$4,1,'ready',$5,$5)`,
-  [randomUUID(),owner,randomUUID(),JSON.stringify({title:'核对处置记录',goal:'核对处置记录，需要写验收标准。',scope:'SOC',groupId:null,skills:[]}),noonUtc(singaporeDay(shift))])
+ for(const shift of [0,-1])await new TaskService(pool,{id:randomUUID,now:()=>noonUtc(singaporeDay(shift))}).create(owner,{requestId:randomUUID(),fields:{title:'核对处置记录',goal:'核对处置记录，需要写验收标准。',scope:'SOC'}})
  const logs=new RoleDailyLogService(pool,identity,new RoleMemoryService(pool,identity))
  const habits=new AutoDreamHabitService(pool,identity,logs,readAutoDreamSetting)
  // 与正式宿主同形接线：目录读口先取岗位，分身才惰性生成当天那一条。

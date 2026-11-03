@@ -1,3 +1,6 @@
+// @ts-expect-error 本机可信文档夹具为 MJS 模块。
+import {setLocalDocument} from './fixtures/local-document.mjs'
+import {openArtifactReaderDrawer,closeArtifactReaderDrawer} from './fixtures/artifact-reader-navigation.ts'
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import {mkdtemp,writeFile,rm} from 'node:fs/promises'
@@ -25,7 +28,7 @@ for(const initialAction of ['prepare',undefined] as const)test(initialAction==='
  const now='2026-10-28T14:30:14.561Z',taskId='10000000-0000-4000-8000-000000000001',sessionId='task-run-original',artifactId='12345678-1234-4234-8234-123456789012',source={kind:'task',id:taskId},calls=[];
  const initial=changeTaskPreview(emptyTaskPreview(),{type:'create',id:taskId,title:'七段完整调查报告',goal:'固定告警只读调查',scope:'general',now});initial.tasks[0].storage='persistent';
  const report=${JSON.stringify(report)},message={sessionId,messageId:'original-final-report',seq:62,role:'assistant',at:now,text:report,images:[],interrupted:false,omittedBlocks:0};
- const run={id:'10000000-0000-4000-8000-000000000002',taskId,sessionId,nativeRequestId:'original-request',state:'ended',reason:'completed',stopRequestedAt:null,taskVersion:1,roleVersion:1,goal:'只读调查',roleName:'T1 安全运营分析工程师',createdAt:now,skills:[],knowledge:[]};
+ const run={id:'10000000-0000-4000-8000-000000000002',taskId,sessionId,nativeRequestId:'original-request',state:'ended',reason:'completed',evidence:{state:'ended',reason:'completed',messageSeq:59,endSeq:62},stopRequestedAt:null,taskVersion:1,roleVersion:1,goal:'只读调查',roleName:'T1 安全运营分析工程师',createdAt:now,skills:[],knowledge:[]};
  const native={read:async()=>({sessionId,items:[{...message,messageId:'earlier-progress',seq:60,text:'前期调查进度'},message],nextBeforeSeq:null}),imageUrl:async()=>{throw Error('无图片')}};
  const taskRuns={list:async()=>[run],chatPresentation:async()=>({...run,runId:run.id})},taskSources={list:async()=>[{id:sessionId,title:'本轮原生会话'}],open:async()=>{}};
  const fixedSource={kind:'task',id:taskId,scope:'general',version:'1 · '+now,title:'七段完整调查报告'};let saved;
@@ -45,9 +48,7 @@ for(const initialAction of ['prepare',undefined] as const)test(initialAction==='
  const browser=await loadPlaywright().chromium.launch(launchOptions());t.after(()=>browser.close())
  const page=await browser.newPage({viewport:{width:1440,height:1000}});t.after(()=>page.close());page.setDefaultTimeout(5000)
  const errors:string[]=[],requests:string[]=[];page.on('pageerror',(error:Error)=>errors.push(error.message));await page.route('**/*',(route:any)=>{requests.push(route.request().url());return route.abort()})
- await page.setContent('<!doctype html><html lang="zh-CN"><body style="margin:0"><div id="root"></div></body></html>');await page.addStyleTag({content:bundle.output.flatMap(item=>item.type==='asset'&&item.fileName.endsWith('.css')?[String(item.source)]:[]).join('\n')});await page.addScriptTag({content:bundle.output.find(item=>item.type==='chunk')!.code})
- // about:blank 不提供安全上下文 UUID；只为离线夹具补齐浏览器入口依赖。
- await page.evaluate(()=>{let id=0;if(!crypto.randomUUID)Object.assign(crypto,{randomUUID:()=>`00000000-0000-4000-8000-${String(++id).padStart(12,'0')}`})})
+ await setLocalDocument(page,'<!doctype html><html lang="zh-CN"><body style="margin:0"><div id="root"></div></body></html>');await page.addStyleTag({content:bundle.output.flatMap(item=>item.type==='asset'&&item.fileName.endsWith('.css')?[String(item.source)]:[]).join('\n')});await page.addScriptTag({content:bundle.output.find(item=>item.type==='chunk')!.code})
  const panel=page.getByRole('dialog',{name:'工作成果',exact:true})
  await panel.getByRole('button',{name:/引用消息与图片.*T1.*第1部分/}).click()
  const save=panel.getByRole('button',{name:'保存工作成果',exact:true}),download=panel.getByRole('link',{name:'下载',exact:true}),content=panel.locator('article').first()
@@ -69,7 +70,7 @@ for(const initialAction of ['prepare',undefined] as const)test(initialAction==='
  }
  assert.equal(decodeURIComponent((await download.getAttribute('href'))!).split(',').slice(1).join(','),report)
  await save.click()
- await panel.getByRole('button',{name:'版本与反馈',exact:true}).waitFor()
+ await openArtifactReaderDrawer(page,'advanced');await page.getByRole('dialog',{name:'版本与反馈',exact:true}).waitFor();await closeArtifactReaderDrawer(page)
  const saved=await page.evaluate(()=>(window as any).longReportFixture.getSaved())
  assert.ok(saved.content.sections.length<=40);assert.equal(saved.content.sections.map((section:{text:string})=>section.text).join('\n\n'),report)
  assert.deepEqual(saved.content.messageSnapshotIds,['a'.repeat(64)])

@@ -21,14 +21,14 @@ test('资料页在 2K、缩放桌面及窄屏下对齐，添加菜单与完整�
   const context=await browser.newContext({viewport:{width:size.width,height:size.height}}),page=await context.newPage(),errors:string[]=[]
   page.setDefaultTimeout(8000);page.on('pageerror',(error:Error)=>errors.push(error.message))
   const rect=async(locator:any)=>{const value=await locator.boundingBox();assert.ok(value);return value as {x:number;y:number;width:number;height:number}}
-  const reachable=async(locator:any)=>assert.equal(await locator.evaluate((node:HTMLElement)=>{const r=node.getBoundingClientRect();return node.contains(document.elementFromPoint(r.x+r.width/2,r.y+r.height/2))}),true,'控件不能被裁切或覆盖')
+  const reachable=async(locator:any)=>{const state=await locator.evaluate((node:HTMLElement)=>{const r=node.getBoundingClientRect(),hit=document.elementFromPoint(r.x+r.width/2,r.y+r.height/2);return {reachable:node.contains(hit),label:node.innerText,rect:r.toJSON(),hit:hit?.outerHTML.slice(0,160),scrollY}});assert.equal(state.reachable,true,'控件不能被裁切或覆盖：'+JSON.stringify(state))}
   try{
    await page.route('**/*',(route:any)=>new URL(route.request().url()).origin==='http://127.0.0.1:3199'?route.fulfill({contentType:'text/html',body:html}):route.abort())
    await page.goto('http://127.0.0.1:3199/library-test?layout-stress&root-page')
    if(size.dark)await page.getByRole('button',{name:'切换主题',exact:true}).click()
-   const directory=page.locator('[data-teloa-pane="directory"]'),content=page.locator('main[data-teloa-pane="detail"]')
+   const directory=page.locator('[data-teloa-pane="directory"]'),content=page.locator('section[data-teloa-pane="detail"]')
    const search=directory.locator('..').getByRole('searchbox'),add=directory.locator('..').getByRole('button',{name:'添加资料',exact:true})
-   await directory.locator('summary[data-teloa-entry="root"]').waitFor()
+   await directory.getByRole('navigation',{name:'资料文件树',exact:true}).getByRole('button',{name:'个人空间',exact:true}).waitFor()
    const searchBounds=await rect(search.locator('..')),addBounds=await rect(add)
    assert.equal(addBounds.height,searchBounds.height,'搜索框与添加按钮等高');assert.equal(addBounds.width,addBounds.height,'添加按钮为方形');assert.equal(addBounds.y,searchBounds.y)
    await add.click()
@@ -41,17 +41,19 @@ test('资料页在 2K、缩放桌面及窄屏下对齐，添加菜单与完整�
    await directory.getByRole('button',{name:title,exact:true}).click()
    const heading=content.getByRole('heading',{name:title,exact:true}),document=heading.locator('xpath=../../..')
    await heading.waitFor();await content.getByText('帮助用户更简单地完成工作。',{exact:true}).waitFor()
-   const documentBounds=await rect(document),toolbar=content.getByRole('button',{name:'返回列表',exact:true}).locator('..'),toolbarBounds=await rect(toolbar),breadcrumbs=content.getByRole('navigation'),breadcrumbBounds=await rect(breadcrumbs)
+   const documentBounds=await rect(document),toolbar=document.locator(':scope>header'),toolbarBounds=await rect(toolbar)
    assert.ok(Math.abs(toolbarBounds.x-documentBounds.x)<1&&Math.abs(toolbarBounds.width-documentBounds.width)<1,'顶部操作与正文共用宽度和左边线')
-   assert.ok(Math.abs(breadcrumbBounds.x-documentBounds.x)<1,'面包屑与标题对齐')
-   const hint=content.getByText('该资料尚未绑定员工；请先在员工能力中选择这份资料。',{exact:true}).locator('..')
-   assert.ok(Math.abs((await rect(hint)).x-documentBounds.x)<1,'员工提示与正文对齐')
-   const buttons=await toolbar.getByRole('button').all();assert.equal(buttons.length,4,'保留返回、检索、跨业务及任务入口')
+   await toolbar.getByRole('button',{name:'返回列表',exact:true}).waitFor()
+   for(const label of ['下载','修改','文件信息'])await toolbar.getByRole('button',{name:label,exact:true}).waitFor()
+   const buttons=await toolbar.getByRole('button').all()
    const buttonBounds=[]
    for(const button of buttons){const bounds=await rect(button);buttonBounds.push(bounds);assert.ok(bounds.x>=documentBounds.x-1&&bounds.x+bounds.width<=documentBounds.x+documentBounds.width+1);await reachable(button)}
-   for(let i=2;i<buttonBounds.length;i++){const previous=buttonBounds[i-1]!,current=buttonBounds[i]!;if(Math.abs(previous.y-current.y)<1)assert.ok(current.x-previous.x-previous.width<=12,'操作按钮集中排列，不能按整行均分')}
+   await toolbar.getByLabel('更多知识操作',{exact:true}).click()
+   const use=toolbar.getByRole('button',{name:'用于任务',exact:true});await reachable(use)
+   assert.equal(await use.isEnabled(),true,'折叠的任务入口仍可操作')
+   await toolbar.getByLabel('更多知识操作',{exact:true}).click()
    const headerBounds=await rect(document.locator(':scope>header')),titleBounds=await rect(heading)
-   assert.ok(titleBounds.x>=headerBounds.x&&titleBounds.x+titleBounds.width<=headerBounds.x+headerBounds.width+1,'长标题不挤出操作区')
+   assert.ok(titleBounds.x>=headerBounds.x&&titleBounds.x+titleBounds.width<=headerBounds.x+headerBounds.width+1,'长标题不挤出操作区：'+JSON.stringify({headerBounds,titleBounds}))
    assert.equal(await content.evaluate((node:HTMLElement)=>node.scrollWidth<=node.clientWidth),true,'正文区不能产生横向溢出')
    assert.equal(await page.evaluate(()=>window.document.documentElement.scrollWidth<=innerWidth),true,'页面不能产生横向溢出')
    await page.screenshot({path:join(report,`${size.width}-${size.dark?'dark':'light'}-document.png`)})

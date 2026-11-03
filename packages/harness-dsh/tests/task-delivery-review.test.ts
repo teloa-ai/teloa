@@ -604,7 +604,7 @@ const goalSnapshot=JSON.stringify({schema:'teloa.task-run-input/v2',task:{id:'ta
 test('任务运行把冻结原目标与本次运行的方法身份交给复核，进入时把草稿节点换成未确认草稿数据，同一轮只判定一次；正文写计划仅得一次同轮补交提醒；无合法原目标明确跳过；v2 身份损坏仍是存储损坏',async()=>{
  const f=fakeSend({withNewInput:(async(_agent:unknown,_message:UserMessage,_context:unknown,submit:()=>void)=>{submit()}) as never})
  await f.ports.send(f.run({skills:[skill],roleSnapshot:undefined,inputText:goalSnapshot}),new AbortController().signal,target)
- const [stopping]=f.listeners.get('agent/turn-stopping')??[],[preStep]=f.listeners.get('agent/pre-step')??[]
+ const [stopping]=f.listeners.get('agent/turn-stopping')??[],preStep=f.listeners.get('agent/pre-step')?.at(-1)
  assert.ok(stopping&&preStep)
  const stop=stopping as (payload:{turn:number;signal:AbortSignal})=>Promise<void>,enter=preStep as (payload:{step:number;messages:UserMessage[];signal:AbortSignal},next:()=>Promise<unknown>)=>Promise<unknown>
  f.setEvents(draftTurn,[1,2])

@@ -53,7 +53,7 @@ test('42项已安装技能的实际应用目录浏览、搜索与返回不逐项
  await directory.getByRole('button',{name:/^内部沟通稿/}).click();const detail=page.getByRole('dialog',{name:'技能',exact:true});await detail.getByRole('heading',{name:'内部沟通稿',exact:true}).waitFor();t.diagnostic(JSON.stringify({openedDialog:await detail.getByRole('heading',{level:2}).innerText(),item:await detail.getByRole('heading',{name:'内部沟通稿',exact:true}).innerText()}));await page.keyboard.press('Escape')
  const query=directory.getByRole('searchbox',{name:'在应用和技能中搜索',exact:true});await query.fill('官方远程');await directory.getByRole('button',{name:/^官方远程连接器/}).waitFor();await query.fill('')
  await directory.getByRole('button',{name:'我的应用 42',exact:true}).click()
- const installed=directory.locator('li').filter({has:page.getByRole('button',{name:/^directory-skill-0\s/})});await installed.getByRole('button',{name:'已安装',exact:true}).waitFor()
+ const installed=directory.locator('li').filter({has:page.getByRole('button',{name:/^directory-skill-0\s/})});await installed.getByText('已安装',{exact:true}).waitFor()
  assert.equal(await directory.getByText('已安装并可用',{exact:true}).count(),0,'安装记录不能代替运行可用性核验')
  await page.evaluate(()=>(window as any).marketDirectoryPerformance.setVisible(false));await directory.waitFor({state:'hidden'});await page.evaluate(()=>(window as any).marketDirectoryPerformance.setVisible(true));await directory.getByRole('button',{name:'我的应用 42',exact:true}).waitFor()
  assert.deepEqual(await page.evaluate(()=>{const f=(window as any).marketDirectoryPerformance;return {observe:f.observed.length,get:f.availability.length,writes:f.writes}}),{observe:0,get:0,writes:[]})

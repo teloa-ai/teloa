@@ -22,7 +22,7 @@ test('BindingStatus 就绪态去重，范围与核验说明回归知识与能力
   const source=await readFile(new URL('../src/client/Capabilities.tsx',import.meta.url),'utf8')
   const bindingStatus=source.slice(source.indexOf('export function BindingStatus'),source.indexOf('export function CapabilitiesToolCard'))
   assert.doesNotMatch(bindingStatus,/conversationStatus\.workScope/)
-  assert.match(bindingStatus,/if\(state\.status==='ready'&&pendingAttachments===0\)return null/)
+  assert.match(bindingStatus,/if\(state\.status==='ready'\)return null/)
   const capabilitiesSection=source.slice(source.indexOf('export function Capabilities('),source.indexOf('function ConnectionCatalog'))
   assert.match(capabilitiesSection,/t\('conversationStatus\.capabilityScope'\)/)
 })

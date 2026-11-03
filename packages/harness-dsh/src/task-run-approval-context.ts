@@ -7,6 +7,7 @@ import type {TaskRun} from '@teloa/backend'
 import {WorkError} from '@teloa/contract'
 import {observeTaskRunTimeline} from './task-run-observation.ts'
 import {readSessionEvents} from './session-events.ts'
+import {taskRunToolUsageContextReceipt} from './task-run-tool-usage.ts'
 
 type RunIdentity=Pick<TaskRun,'id'|'sessionId'|'nativeRequestId'>
 type Boundary={team?:ReadonlySet<string>|undefined;goal?:Parameters<typeof observeTaskRunTimeline>[4]}
@@ -134,9 +135,10 @@ export function leaseTaskRunApprovalContext(agent:Agent,run:RunIdentity,readBoun
    if(candidates.length===1&&lastStep?.type==='step/start'&&lastStep.data.turn===issuance.turn&&lastStep.data.step===issuance.step){
     const event=candidates[0]!
     if(event.type==='user/message'){
-     const expectedSource={kind:'runtime-context',form:'snapshot',sections:[{name:taskRunApprovalContextName,text:issuance.text}]},expectedContent=[{type:'text',text:'Current runtime context. This snapshot supersedes earlier runtime-context snapshots.\n\n'+issuance.text}]
+     const usage=taskRunToolUsageContextReceipt(agent,run),sections=[{name:taskRunApprovalContextName,text:issuance.text},...usage?[usage]:[]]
+     const expectedSource={kind:'runtime-context',form:'snapshot',sections},expectedContent=[{type:'text',text:'Current runtime context. This snapshot supersedes earlier runtime-context snapshots.\n\n'+sections.map(section=>section.text).join('\n\n')}]
      const before=fresh.filter(row=>row.seq<event.seq),prompts=before.filter(row=>row.type==='user/message'),prompt=prompts[0],header=fresh.find(row=>row.seq>event.seq&&row.type==='request/header')
-     // 该窄接缝只允许本次唯一提示与单一审批 section；其它 runtime 资料保留并使隔离失败。
+     // 只接纳本次唯一提示、审批事实及同 Run 租约签出的工具计数；其它 runtime 资料仍使隔离失败。
      if(event.surfaceOp==='append'&&event.sourceEventSeqs===undefined&&session.isOwnSeq(event.seq)&&prompts.length===1&&prompt?.type==='user/message'&&before.every(row=>row.type==='system/message'||row===prompt)&&header?.type==='request/header'&&isDeepStrictEqual(event.data.source,expectedSource)&&isDeepStrictEqual(event.data.content,expectedContent)&&request.messages.filter(message=>message.id===event.data.id&&isDeepStrictEqual(message,event.data)).length===1&&request.messages.some(message=>message.id===prompt.data.id&&isDeepStrictEqual(message,prompt.data))){
       receipts.set(event.seq,{key,seq:event.seq,id:event.data.id,turn:issuance.turn,step:issuance.step,promptSeq:prompt.seq,promptId:prompt.data.id,headerSeq:header.seq,stepStartSeq:lastStep.seq,event:structuredClone(event),header:structuredClone(header),prompt:structuredClone(prompt),stepStart:structuredClone(lastStep)})
      }

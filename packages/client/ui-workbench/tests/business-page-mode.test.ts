@@ -37,7 +37,7 @@ test('真实业务模式按 B3 在概览直接呈现对象台账，目录与详�
  assert.equal(businessPageSurface({mode:'real',section:'analysis',scope:'SOC'}),'real-section')
  assert.doesNotMatch(pageSource,/function BusinessCurrent/)
  assert.match(pageSource,/const ledgerVisible=target\.section==='overview'\|\|target\.section==='data'/)
- assert.match(pageSource,/ledgerVisible&&<BusinessLedgerSurface/)
+ assert.match(pageSource,/ledgerVisible&&ledgerSurface/)
 })
 
 test('正式业务页只呈现真实目录，示例状态没有产品入口',()=>{

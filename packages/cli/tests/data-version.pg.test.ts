@@ -226,11 +226,23 @@ test('真实隔离 PG：数据1/2备份迁到3，未知提交保留，1/2/3恢�
    assert.deepEqual((await pool.query('select * from teloa_business_task_sources order by owner_id,task_id')).rows,sourceBefore)
    assert.deepEqual((await pool.query('select * from teloa_task_runs where owner_id=$1 and id=$2',[unknownOwner,unknownRunId])).rows[0],unknown)
   }finally{await pool.end()}
-  const legacyRoot=process.env.TELOA_TEST_LEGACY_V3_CLI_ROOT
-  assert.ok(legacyRoot,'数据4迁移必须实际核对冻结的数据3命令包，不能跳过')
-  const metadata=JSON.parse(await readFile(join(legacyRoot,'packages/cli/lib/data-version.json'),'utf8'))
-  assert.equal(metadata.dataVersion,3,'必须传真实已安装数据3候选')
-  const legacy=await import(pathToFileURL(join(legacyRoot,'packages/cli/lib/database.js')).href)
+  let legacyDirectory:string,legacyEntry:string
+  if(process.env.TELOA_TEST_LEGACY_V3_CLI_ROOT){
+   legacyDirectory=join(process.env.TELOA_TEST_LEGACY_V3_CLI_ROOT,'packages/cli/lib');legacyEntry='database.js'
+  }else{
+   // CI 自带公开历史源码；不依赖操作者本机旧安装，也不以当前读者冒充旧版本。
+   const fixture=new URL('./fixtures/data3-cli-source/',import.meta.url),proof=JSON.parse(await readFile(new URL('provenance.json',fixture),'utf8'))
+   assert.equal(proof.sourceCommit,'0faa942d7f29cb4808d54584b46ff15332f512d0');assert.equal(proof.dataVersion,3)
+   legacyDirectory=join(root,'frozen-data3-cli');legacyEntry='database.ts'
+   await mkdir(legacyDirectory);await writeFile(join(legacyDirectory,'package.json'),JSON.stringify({type:'module'}))
+   for(const file of proof.files){
+    const bytes=await readFile(new URL(file.path,fixture));assert.equal(bytes.length,file.bytes);assert.equal(createHash('sha256').update(bytes).digest('hex'),file.sha256)
+    await writeFile(join(legacyDirectory,file.outputPath),bytes)
+   }
+  }
+  const metadata=JSON.parse(await readFile(join(legacyDirectory,'data-version.json'),'utf8'))
+  assert.equal(metadata.dataVersion,3,'必须使用冻结的数据3读者')
+  const legacy=await import(pathToFileURL(join(legacyDirectory,legacyEntry)).href)
   await assert.rejects(legacy.prepareDatabase(current),/数据版本尚不支持/)
   assert.equal(await legacy.inspectDatabase(current),'unavailable')
   assert.deepEqual(await marker(future),[{id:old.id,data_version:4}])

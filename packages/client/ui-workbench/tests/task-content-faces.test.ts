@@ -34,7 +34,7 @@ const i18nErrorsModule={localizeWorkError:(_locale:string,cause:unknown)=>cause 
 
 function transpile(absPath:string):string{
  const source=readFileSync(absPath,'utf8')
- return ts.transpileModule(source,{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.React,esModuleInterop:true}}).outputText
+ return ts.transpileModule(source,{fileName:absPath,compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.React,esModuleInterop:true}}).outputText
 }
 
 function resolveSibling(fromAbsPath:string,specifier:string):string{
@@ -212,10 +212,9 @@ test('TaskExecutions 不传 face：仍渲染 <h3> 标题（回归保护），不
 // ── 源码断言：只读回调与导出键表 ──────────────────────────────
 const read=(file:string)=>readFileSync(join(clientDir,file),'utf8')
 
-test('TaskExecutions.tsx 导出 taskRunPhaseKeys/taskRunReasonKeys，模块内 phases/reasons 别名保留',()=>{
+test('TaskExecutions.tsx 保留公开状态键表与内容面只读回调',()=>{
  const source=read('TaskExecutions.tsx')
  assert.match(source,/export \{taskRunPhaseKeys,taskRunReasonKeys\} from '\.\/task-run-presentation.js'/)
- assert.match(source,/const phases=taskRunPhaseKeys,reasons=taskRunReasonKeys/)
  assert.match(source,/onRunsRef\.current\?\.\(rows,loaded&&!busy&&!error\)/)
  assert.match(source,/face\?:'timeline'/)
 })

@@ -191,6 +191,7 @@ test('持久切换记录恢复后从远程继续，不重新用本机模型；�
 
 test('任务选视觉模型时图片经原生附件存储进同一请求，不受部署默认纯文本模型影响',async t=>{
  const {agent,adapter,ports,task,target}=await runPorts(t)
+ ports.isReplyRun=async()=>false
  const png=Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4//8/AAX+Av4N70a4AAAAAElFTkSuQmCC','base64')
  const file={kind:'attachment',id:'image-one',mime:'image/png',name:'test.png',bytes:png.length,width:1,height:1}
  task.groupContext={files:[file]} as NonNullable<TaskRun['groupContext']>

@@ -86,6 +86,8 @@ export class BindingClient {
     const controller=new AbortController();this.directoryAbort=controller
     const directorySignal=signal?AbortSignal.any([controller.signal,signal]):controller.signal
     const abort=()=>controller.abort(signal?.reason)
+    const restore=()=>{if(this.directoryAbort===controller&&listing===this.listing){const settled=this.directorySettled;this.directory=settled.loadingMore||settled.refreshing?{...settled,loadingMore:false,refreshing:false}:settled;this.directorySettled=this.directory;this.publish({})}}
+    controller.signal.addEventListener('abort',restore,{once:true})
     signal?.addEventListener('abort',abort,{once:true})
     const current=()=>listing===this.listing&&!controller.signal.aborted
     this.directory={...this.directory,generation:listing,signal:directorySignal,status:this.directoryReady?'ready':'loading',error:undefined,refreshing:true};this.publish({})
@@ -109,10 +111,8 @@ export class BindingClient {
     }catch(error){if(current()){this.directory={...this.directory,status:'failed',loadingMore:false,refreshing:false,error};this.directorySettled=this.directory;this.publish({})}}
     finally{
       signal?.removeEventListener('abort',abort)
-      if(this.directoryAbort===controller){
-        this.directoryAbort=undefined
-        if(controller.signal.aborted){this.directory={...this.directorySettled,generation:listing,signal:directorySignal,loadingMore:false,refreshing:false};this.publish({})}
-      }
+      controller.signal.removeEventListener('abort',restore)
+      if(this.directoryAbort===controller)this.directoryAbort=undefined
     }
   }
   async readConversationById(conversationId:string,signal?:AbortSignal):Promise<Conversation|undefined> {

@@ -9,6 +9,10 @@ import {twinDraftCopy} from '../src/client/i18n/locales/twin-drafts.ts'
 
 /** 旧消息/输入夹具保留真实投影；成果呈现由 group-work-results.browser.test.ts 真浏览器单独覆盖。 */
 export function groupResultFixtureModule(id:string):unknown{
+ // 原工作能力恢复由 group-text-work-recovery.browser.test.ts 覆盖；旧消息夹具未提供恢复端口。
+ if(id==='./GroupTextWorkRecovery.js')return {GroupTextWorkRecovery:()=>{throw Error('未接恢复端口的旧消息夹具不应打开能力恢复面板')}}
+ // 来源读取另由 group-message-sources.browser.test.ts 覆盖，旧消息夹具未提供来源端口。
+ if(id==='./GroupMessageSources.js')return {GroupMessageSources:()=>{throw Error('未接来源端口的旧消息夹具不应打开来源面板')}}
  if(id==='./i18n/locales/twin-drafts.js')return {twinDraftCopy}
  if(id==='./group-message-window.js')return groupMessageWindow
  if(id==='./group-content-loading.js')return groupContentLoading

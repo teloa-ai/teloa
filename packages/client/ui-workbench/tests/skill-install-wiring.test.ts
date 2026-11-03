@@ -4,6 +4,7 @@ import {readFile} from 'node:fs/promises'
 import ts from 'typescript'
 import {createSkillInstallApi,skillUninstallBlockers} from '../src/client/skill-install-api.ts'
 import type {SkillInstallationRecord} from '../src/client/skill-install-api.ts'
+import {createRejectedWorkRpcCall} from '../src/client/work-rpc-result.ts'
 import {mergeSkillInstallation,uniqueSkillInstallations} from '../src/client/skill-install-state.ts'
 
 test('真实Skill安装只挂持久原子内容和未跳过行业Skill，并与演示安装状态分离',async()=>{
@@ -118,6 +119,6 @@ test('正式工作台卸载回包保留已选版本和历史运行保护原因',
  const visit=(node:ts.Node)=>{if(ts.isVariableDeclaration(node)&&ts.isIdentifier(node.name)&&node.name.text==='skillInstallApi')initializer=node.initializer;ts.forEachChild(node,visit)};visit(file)
  assert.ok(initializer,'读取实际工作台装配，不替代其错误回包处理')
  const input={requestId:'22222222-2222-4222-8222-222222222222',installationId:'33333333-3333-4333-8333-333333333333',expectedVersion:2,expectedBundleHash:'c'.repeat(64),confirm:true as const},details={reason:'skill-in-use',blockers:['selected','run-history']}
- const api=new Function('createSkillInstallApi','callWithReceipt','journal','return ('+initializer.getText(file)+')')(createSkillInstallApi,async(method:string,payload:unknown)=>{assert.equal(method,'skill-installations/uninstall');assert.deepEqual(payload,input);return {ok:false,error:{code:'teloa/conflict',message:'技能仍被当前选择与历史运行引用。',details}}},()=>undefined) as ReturnType<typeof createSkillInstallApi>
+ const api=new Function('createSkillInstallApi','skillInstallCall','journal','createSkillSelectionApi','return ('+initializer.getText(file)+')')(createSkillInstallApi,createRejectedWorkRpcCall(async(method:string,payload:unknown)=>{assert.equal(method,'skill-installations/uninstall');assert.deepEqual(payload,input);return {ok:false,error:{code:'teloa/conflict',message:'技能仍被当前选择与历史运行引用。',details}}}),()=>undefined,()=>undefined) as ReturnType<typeof createSkillInstallApi>
  await assert.rejects(api.uninstall(input),(error:unknown)=>{assert.deepEqual(skillUninstallBlockers(error),['selected','run-history']);assert.equal((error as {code:string}).code,'teloa/conflict');assert.equal((error as {rejected:boolean}).rejected,true);return true})
 })

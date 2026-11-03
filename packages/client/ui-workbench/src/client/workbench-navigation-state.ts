@@ -70,7 +70,7 @@ function businessMatchOf(section:BusinessSection,objectType:string|undefined,val
  return {field:match.field,value:match.value}
 }
 
-function parseBusinessTarget(value:unknown){
+export function parseBusinessTarget(value:unknown){
  const target=record(value,'业务详情目标')
  exact(target,['scope','section','id','objectType','dashboardId','match','recordReference'],'业务详情目标')
  const scope=businessScope(target.scope)

@@ -1,5 +1,5 @@
 import {sha256Digest} from '@teloa/contract'
-import {createGroupDeliveryRecoveryApi,type GroupDeliveryRecoveryJournal} from './group-delivery-recovery-api.js'
+import {createGroupDeliveryRecoveryApi,type GroupDeliveryRecoveryJournal} from './group-delivery-recovery-api.ts'
 import {groupAgentGrantChangeInput,groupAgentGrantGetInput,groupTaskCreateInput,groupChangeInput,groupCreateInput,groupListInput,groupMessageListInput,groupResourceGetInput,groupResourceListInput,groupResourceSaveInput,groupResourceWithdrawInput,groupSendInput,isGroup,isGroupAgentGrant,isGroupAgentGrantRead,isGroupTaskSource,isGroupMember,isGroupMessage,isGroupResource,isGroupResourceVersion,type Group,type GroupAgentGrant,type GroupMention,type GroupTaskSource,type WorkTask,type GroupAgentGrantRead,type GroupChangeFields,type GroupCreateInput,type GroupMember,type GroupMessage,type GroupResource,type GroupResourceVersion,type GroupSendInput,type MessageReference} from '@teloa/contract'
 import {groupMentionsInput,readGroupAttention,readGroupMentionsPage} from '@teloa/contract'
 import {recoveryStorageError} from './recovery-error.ts'

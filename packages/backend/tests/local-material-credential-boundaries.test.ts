@@ -24,7 +24,8 @@ test('逐资料前后核验保留本人/范围/撤回、正文改版、读取期
  t.after(()=>pool.end())
  t.mock.method(client,'query',async(sql:unknown,values?:unknown[])=>{
   let rows:unknown[]
-  if(sql==='select * from teloa_resources where id=$1 for share')rows=values?.[0]===resourceId?[resource]:[]
+  if(sql==="select to_regclass('teloa_employee_knowledge_source_retirements') as present")rows=[{present:null}]
+  else if(sql==='select * from teloa_resources where id=$1 for share')rows=values?.[0]===resourceId?[resource]:[]
   else if(sql==='select * from teloa_authorized_local_materials where owner_id=$1 and id=$2')rows=values?.[0]===owner&&values[1]===sourceId?[material]:[]
   else throw Error('未预期的 SQL；本例不能写数据库')
   return {rows,command:'SELECT',rowCount:rows.length,oid:0,fields:[]}

@@ -36,6 +36,7 @@ test('真实目录与资料服务保留27业务末项的登记、完整列表、
  const query=async(sql:unknown,values?:unknown[])=>{
   const s=String(sql),v=values??[];let rows:unknown[]=[]
   if(['begin','commit','rollback'].includes(s)||s.startsWith('select pg_advisory_xact_lock')){}
+  else if(["select to_regclass('teloa_employee_knowledge_source_retirements') as present","select to_regclass('teloa_roles') as present"].includes(s))rows=[{present:null}]
   else if(s==='select * from teloa_authorized_local_material_requests where owner_id=$1 and request_id=$2')rows=requests.filter(r=>r.owner_id===v[0]&&r.request_id===v[1])
   else if(s==='select * from teloa_authorized_local_materials where owner_id=$1 and workspace_key=$2 and relative_path=$3')rows=materials.filter(r=>r.owner_id===v[0]&&r.workspace_key===v[1]&&r.relative_path===v[2])
   else if(s.startsWith('insert into teloa_authorized_local_materials('))materials.push({id:v[0],owner_id:v[1],title:v[2],relative_path:v[3],scope_ids:JSON.parse(String(v[4])),workspace_root:v[5],workspace_key:v[6],created_at:v[7]})
@@ -44,7 +45,7 @@ test('真实目录与资料服务保留27业务末项的登记、完整列表、
   else if(s==='select * from teloa_authorized_local_materials where owner_id=$1 and workspace_key=$2 order by created_at,id')rows=materials.filter(r=>r.owner_id===v[0]&&r.workspace_key===v[1])
   else if(s==='select * from teloa_authorized_local_materials where owner_id=$1 and workspace_root=$2 order by id')rows=materials.filter(r=>r.owner_id===v[0]&&r.workspace_root===v[1])
   else if(s==='select * from teloa_resource_drafts where owner_id=$1 order by created_at desc,id'){}
-  else if(s==='select * from teloa_resources where owner_id=$1 order by created_at desc,id')rows=resources.filter(r=>r.owner_id===v[0])
+  else if(s.startsWith('select r.* from teloa_resources r where r.owner_id=$1 and not exists(')&&s.includes('teloa_employee_knowledge_source_retirements')&&s.endsWith('order by r.created_at desc,r.id'))rows=resources.filter(r=>r.owner_id===v[0])
   else if(s==='select * from teloa_resources where id=$1 for share')rows=resources.filter(r=>r.id===v[0])
   else throw Error('未声明的SQL传输：'+s)
   return {rows,command:'SELECT',rowCount:rows.length,oid:0,fields:[]}

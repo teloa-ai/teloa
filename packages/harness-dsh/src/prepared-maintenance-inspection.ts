@@ -8,6 +8,7 @@ import * as JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-j
 import {Session,SessionId,SessionLogOffset} from '@deepseek-ai/dsh-session'
 import {foldGoal} from '@deepseek-ai/dsh-goal'
 import {WorkError} from '@teloa/contract'
+import {readSessionEvents} from './session-events.ts'
 const hash=(value:Uint8Array|string)=>createHash('sha256').update(value).digest('hex')
 const canonical=(value:unknown):unknown=>Array.isArray(value)?value.map(canonical):value&&typeof value==='object'?Object.fromEntries(Object.entries(value).sort(([a],[b])=>a.localeCompare(b)).map(([key,item])=>[key,canonical(item)])):value
 const denied=()=>new WorkError('teloa/conflict','完整原生记录仍有待办、未结清活动或身份不明，维护保持停止。')
@@ -40,7 +41,7 @@ export async function inspectPreparedMaintenanceNative(input:{dshHome:string;exp
    const {meta,events,inherited}=await officialRead(root,path,physicalMeta.id)
    if(!isDeepStrictEqual(meta,physicalMeta)||inherited!==inheritedEventCount||events.length!==records.length)throw denied()
    const session=Session.create(SessionId(meta.id),events,meta,SessionLogOffset(inherited))
-   const restored=session.snapshotEvents()
+   const restored=readSessionEvents(session)
    // 官方 codec 可在内存补 end-seed；它不属于冷文件证明，也不参与原检查点摘要。
    if(restored.length<events.length||events.some((event,index)=>!isDeepStrictEqual(restored[index],event))||restored.slice(events.length).some(event=>event.type!=='session/end-seed'||Object.keys(event.data).length!==0))throw denied()
    const inbox:Record<string,unknown[]>={'next-turn':[],'next-step':[]},tools=new Set<string>(),jobs=new Set<string>(),commands=new Set<string>();let running=false

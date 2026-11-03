@@ -220,7 +220,7 @@ export async function writeSourceFollowup(db:PoolClient,owner:string,run:TaskRun
 export async function assertSourceFollowupDispatch(db:PoolClient,owner:string,run:TaskRun):Promise<void>{
  if(!run.sourceFollowup)return
  const original=await verifySourceFollowup(db,owner,run)
- if(original&&(original.state==='withdrawn'||recoveryKind(run.sourceFollowup.kind)))await sourceFollowupCandidate(db,owner,readStoredTaskRun(original),run.taskVersion,run.sourceFollowup)
+ if(original)await sourceFollowupCandidate(db,owner,readStoredTaskRun(original),run.taskVersion,run.sourceFollowup)
  // 本人paused单次证明与预算发送闸分开；error分支不能跳过typed根的unknown/foreign检查。
  const root=(await sourceFollowupOriginal(db,owner,run.sourceFollowup)).root
  if(root.state==='withdrawn')await verifyUnpublished(db,owner,readStoredTaskRun(root),run.sourceFollowup,'dispatch')

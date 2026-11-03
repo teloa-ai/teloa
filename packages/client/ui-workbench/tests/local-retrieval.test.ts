@@ -59,7 +59,7 @@ test('原件变版明确提示重新核对，不伪装为自动等待整理',()=
  const changed={...index,items:[{...index.items[0],sourceChanged:true}]}
  assert.deepEqual(readRetrievalStatus(changed),changed)
  const html=renderIndex({status:changed})
- assert.match(html,/固定版本已失效，请核对当前版本与可用范围/);assert.doesNotMatch(html,/等待整理|请核对并确认新版本/)
+ assert.match(html,/所选版本已不可用，请核对当前版本与可用资料/);assert.doesNotMatch(html,/等待整理|请核对并确认新版本/)
  for(const item of [{...changed.items[0],sourceChanged:false},{...changed.items[0],state:'ready'},{...changed.items[0],chunkCount:7}])assert.throws(()=>readRetrievalStatus({...index,items:[item]}))
 })
 

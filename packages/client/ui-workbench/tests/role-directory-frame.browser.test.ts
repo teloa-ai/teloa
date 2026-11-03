@@ -101,13 +101,14 @@ test('真实 Frame 编辑及同版本同时间资料回执不被旧列表覆盖'
 
 test('真实 Frame 后发空快照优先；迟到关联查找列表不能重新并回成员',async t=>{
  const page=await mount(t)
- await page.evaluate(()=>{const f=(window as any).frameFixture;f.holdRoles=true;f.talk=f.directory.talk('missing-role')});await settle(page)
+ await page.evaluate(()=>{const f=(window as any).frameFixture;f.holdRoles=true;f.talk=f.directory.talk('missing-role').catch((error:{code?:string})=>{if(!['teloa/not-found','teloa/source-unavailable'].includes(error.code??''))throw error;f.talkRejected=error.code})});await settle(page)
  await page.waitForFunction(()=>(window as any).frameFixture.roleRequests.length===1)
  await page.evaluate(()=>{const f=(window as any).frameFixture;f.nextRows=[]});await reload(page)
  await page.waitForFunction(()=>(window as any).frameFixture.roleRequests.length===2)
  await page.evaluate(()=>(window as any).frameFixture.roleRequests[1].resolve());await settle(page)
  assert.deepEqual(await ids(page),[])
  await page.evaluate(async()=>{const f=(window as any).frameFixture;f.roleRequests[0].resolve();await f.talk});await settle(page)
+ assert.equal(await page.evaluate(()=>(window as any).frameFixture.talkRejected),'teloa/source-unavailable')
  assert.deepEqual(await ids(page),[])
 })
 

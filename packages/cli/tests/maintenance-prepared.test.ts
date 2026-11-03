@@ -4,11 +4,13 @@ import {parseArguments} from '../src/bin.ts'
 import {assertPreparedExitWindow,readPreparedMaintenancePause,assertPreparedMaintenanceData,assertPreparedRunReservation,assertCompletedPreparedMaintenance,publishPreparedMaintenanceCycle,assertCompletedPreparedDatabase} from '../src/maintenance-prepared.ts'
 import type {ReleaseManifest} from '../src/contracts.ts'
 import {assertMaintenanceDatabase,assertPreparedMaintenanceDatabase} from '../src/maintenance.ts'
+import {dataVersionMetadata} from '../src/data-version.ts'
 
-test('prepared维护仅匹配已声明源和目标数据：保留历史边并显式支持10/12→13及13→14，降级/未知版本拒绝',()=>{
+test('prepared维护仅匹配已声明源和目标数据：保留历史边及当前迁移，降级/未知版本拒绝',()=>{
  const release=(dataVersion:number,compatibleDataVersions=[dataVersion]):ReleaseManifest=>({schema:'teloa.release/v1',version:'0.2.65',dshVersion:'0.2.1-rc.2',dataVersion,compatibleDataVersions,files:[]})
  for(const [source,target] of [[4,4],[4,5],[5,5],[4,9],[9,9],[4,10],[9,10],[10,10],[10,11],[10,13],[12,13],[13,14]])assert.doesNotThrow(()=>assertPreparedMaintenanceData(release(source!),release(target!)))
- for(const [source,target] of [[5,4],[6,5],[14,15],[10,9],[11,10],[3,5]])assert.throws(()=>assertPreparedMaintenanceData(release(source!),release(target!)))
+ for(const {from,to} of dataVersionMetadata.migrations.filter(row=>row.from>=4))assert.doesNotThrow(()=>assertPreparedMaintenanceData(release(from),release(to)))
+ for(const [source,target] of [[5,4],[6,5],[dataVersionMetadata.dataVersion,dataVersionMetadata.dataVersion+1],[10,9],[11,10],[3,5]])assert.throws(()=>assertPreparedMaintenanceData(release(source!),release(target!)))
  assert.throws(()=>assertPreparedMaintenanceData(release(5,[]),release(5)))
  assert.throws(()=>assertPreparedMaintenanceData(release(4),release(5,[4])))
 })

@@ -21,7 +21,7 @@ test('执行记录把「停止中」做成可刷新的状态，并在等待期�
  const source=await readFile(new URL('../src/client/TaskExecutions.tsx',import.meta.url),'utf8')
  assert.match(source,/const stopWait=taskRunStopWaitSeconds\(row,now\)/)
  assert.match(source,/t\('taskExecution\.phase\.stopping',\{seconds:stopWait\}\)/)
- assert.match(source,/includes\('stop'\)&&<button type="button" disabled=\{busy\|\|stopWait!==undefined\}/)
+ assert.match(source,/includes\('stop'\)\|\|row\.state==='submitting'&&row\.submissionRecovery==='not-published'\)&&<button type=\"button\" disabled=\{busy\|\|stopWait!==undefined\}/)
 })
 
 test('首屏拉取依赖任务状态，空列表也排一次重读，挂载时为空不再永远空着',async()=>{

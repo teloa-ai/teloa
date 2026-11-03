@@ -108,3 +108,14 @@ test('切群后旧内容不能落入新群；身份失败不展示提前回来�
  await assert.rejects(readGroupContentPart(Promise.reject(Error('forbidden')),Promise.resolve('无权消息'),()=>true,value=>shown.push(value)),/forbidden/)
  assert.deepEqual([...shown],[])
 })
+
+
+test('分批目录取消尚未返回的后一页时立即保留已核验行并停止加载提示',async()=>{
+ const next=deferred<import('@teloa/contract').ConversationDirectoryPage>(),signal=new AbortController()
+ const port:WorkPort={list:async()=>[],listPage:input=>input.cursor?next.promise:Promise.resolve({items:[row('A')],nextCursor:'next'}),read:async id=>row(id),ensure:async id=>row(id),isNativeChild:()=>false,catalog:async()=>{throw Error()},block:()=>{},create:async()=>{throw Error()},adopt:async id=>id,open:()=>{},current:()=>undefined}
+ const work=new BindingClient(port),reading=work.refreshDirectory(signal.signal);await turn()
+ assert.equal(work.getDirectorySnapshot().rows[0]?.sessionId,'A');assert.equal(work.getDirectorySnapshot().loadingMore,true)
+ signal.abort();const settled=work.getDirectorySnapshot()
+ assert.equal(settled.status,'ready');assert.equal(settled.loadingMore,false);assert.equal(settled.refreshing,false);assert.equal(settled.rows[0]?.sessionId,'A')
+ next.resolve({items:[row('B')]});await reading;assert.equal(work.getDirectorySnapshot(),settled)
+})

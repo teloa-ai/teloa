@@ -96,7 +96,7 @@ function App(){
   <TemplateShareProvider value={{storage:localStorage,bridge:publisher?publisherBridge:undefined,publisher:'验收作者',receive:()=>setReceive(true),openDraft:()=>{}}}>
    <EmployeeTemplateShare role={source} open={share} close={()=>setShare(false)} storage={localStorage} bridge={publisher?publisherBridge:undefined}/>
   </TemplateShareProvider>
-  <TemplateShareReceive open={receive} close={()=>setReceive(false)} intent={intent} bridge={intent?(hostedPreview?publisherBridge:previewBridge):undefined} accept={(value,choice,currentIntent)=>acceptance.accept(value,choice,currentIntent)} openRole={id=>setOpened('role:'+id)} configure={id=>setOpened('load:'+id)}/>
+  <TemplateShareReceive open={receive} close={()=>setReceive(false)} intent={intent} bridge={intent?(hostedPreview?publisherBridge:previewBridge):undefined} accept={(value,choice,currentIntent)=>acceptance.accept(value,choice,currentIntent)} savedChoice={value=>acceptance.choice(value)} openRole={id=>setOpened('role:'+id)} configure={id=>setOpened('load:'+id)}/>
   </div></div>
  </div>
 }

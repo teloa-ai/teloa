@@ -1,3 +1,5 @@
+// @ts-expect-error 本机可信文档夹具为 MJS 模块。
+import {setLocalDocument} from './fixtures/local-document.mjs'
 import test,{before,after,type TestContext} from 'node:test'
 import assert from 'node:assert/strict'
 import {readFile} from 'node:fs/promises'
@@ -33,6 +35,7 @@ before(async()=>{
  const record=owner=>({taskId:base.id,taskVersion:4,artifactId:'artifact-'+owner,artifactVersion:1,note:owner+' 的结项记录',completedAt:'2026-10-16T02:00:00Z'});
  const taskApis=[0,1].map(owner=>({completion:async()=>{if(owner===0&&f.holdRead){f.readWaiting=true;await new Promise(resolve=>f.releaseRead=resolve)}return record(owner)},pendingFields:()=>undefined,recoveryMessage:()=>undefined}));
  const artifacts=[0,1].map(()=>({list:async()=>[stale,artifact]})),transitions=[0,1].map(owner=>({pending:()=>undefined,recoveryMessage:()=>undefined,change:async(id,version,action,delivery)=>{f.completedCalls.push({owner,id,version,action,delivery});if(f.holdComplete){f.completeWaiting=true;await new Promise(resolve=>f.releaseComplete=resolve)}return {id,state:'completed',version:version+1}}}));
+ const workControlApi={};
  function App(){const [connection,setConnection]=useState(0),[opened,setOpened]=useState(false),[task,setTask]=useState(location.hash==='#completed'?{...base,state:'completed',version:4}:base),[revision,refreshTaskState]=useState(0);
   f.switchConnection=()=>setConnection(1);const artifactApi=artifacts[connection],taskApi=taskApis[connection],taskTransitions=transitions[connection];
   const mergeSavedTasks=rows=>{f.merges.push({opened,revision,rows});setTask(current=>({...current,...rows[0]}))};
@@ -49,7 +52,7 @@ after(async()=>{await browser?.close()})
 async function mount(t:TestContext,completed=false){
  const page=await browser.newPage();page.setDefaultTimeout(5000);const errors:string[]=[]
  page.on('pageerror',(error:Error)=>errors.push(error.message));t.after(async()=>{await page.close();assert.deepEqual(errors,[])})
- await page.route('**/*',(route:any)=>route.abort());await page.setContent('<html lang="zh-CN"><div id="root"></div></html>');if(completed)await page.evaluate(()=>location.hash='completed');await page.addScriptTag({content:script});return page
+ await page.route('**/*',(route:any)=>route.abort());await setLocalDocument(page,'<html lang="zh-CN"><div id="root"></div></html>');if(completed)await page.evaluate(()=>location.hash='completed');await page.addScriptTag({content:script});return page
 }
 
 test('真实Frame端口包装重渲染：核对成果抽屉关闭后保原版本与结项说明，不自动提交',async t=>{

@@ -323,7 +323,7 @@ test('成果图片窄读口只按本人固定版本与快照事实读取，版�
  assert.equal(file.kind,'artifact')
  assert.deepEqual(await readRunGroupArtifactImageBytes(pool,f.owner,file),content)
  await assert.rejects(readRunGroupArtifactImageBytes(pool,randomUUID(),file),{code:'teloa/forbidden'})
- await assert.rejects(readRunGroupArtifactImageBytes(pool,f.owner,{...file,version:2}),{code:'teloa/forbidden'})
+ await assert.rejects(readRunGroupArtifactImageBytes(pool,f.owner,{...file,version:2}),{code:'teloa/source-unavailable'})
  await assert.rejects(readRunGroupArtifactImageBytes(pool,f.owner,{...file,sha256:'0'.repeat(64)}),{code:'teloa/storage-corrupt'})
  await assert.rejects(readRunGroupArtifactImageBytes(pool,f.owner,{...file,name:'别的图.png'}),{code:'teloa/storage-corrupt'})
  await assert.rejects(readRunGroupArtifactImageBytes(pool,f.owner,{...file,mime:'image/jpeg'}),{code:'teloa/storage-corrupt'})

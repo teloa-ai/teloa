@@ -12,6 +12,7 @@ import {
  hirePresetExtraSkills, hirePresetFields, hirePresetLabel, hirePresetRecommendedSkills,
  type HireAction, type HireLevel,
 } from '../src/client/role-hire-presets.ts'
+import {roleEditCopy} from '../src/client/role-edit-copy.ts'
 import {runtimeConfigCanSave} from '../src/client/role-runtime-config.ts'
 
 // .tsx 组件不能被 node 直接类型剥离，走 tsc 产物；CSS Modules 换成类名代理，断言只看结构不看样式
@@ -182,7 +183,7 @@ test('role===undefined（招一位新同事）：步骤条是四项，标题走 
  }
 })
 
-test('role 非空（编辑既有岗位）：步骤条仍是五项，标题走 team.form.step.*',()=>{
+test('现有岗位编辑以说明为主，身份、业务边界、职责、能力和运行设置按需展开',()=>{
  const role={
   name:'安全分析师',kind:'employee',scopes:['general'],state:'active',version:2,
   duty:'负责安全告警的初筛与结论输出。',
@@ -192,14 +193,12 @@ test('role 非空（编辑既有岗位）：步骤条仍是五项，标题走 te
   responsibility:{triggers:[],autonomousActions:[],confirmationPoints:[],escalationRules:[],deliveryChecks:[]},
  }
  const html=renderForm(role)
- assert.equal(stepButtonCount(html),5,'编辑时应保持五步')
- for(const key of ['team.form.step.identity','team.form.step.scope','team.form.step.capabilities','team.form.step.runtime','team.form.step.review']){
-  assert.ok(hasStepTitle(html,key),`步骤条应包含 ${key}`)
- }
- for(const key of ['team.hire.step.identity','team.hire.step.job','team.hire.step.limit','team.hire.step.badge']){
-  assert.ok(!hasStepTitle(html,key),`编辑步骤条不应出现入职态标题 ${key}`)
- }
+ assert.equal(stepButtonCount(html),0,'既有岗位编辑不重新运行入职向导')
+ for(const title of [roleEditCopy('zh-CN','identity'),zh('team.form.step.scope'),roleEditCopy('zh-CN','responsibility'),roleEditCopy('zh-CN','capabilities'),roleEditCopy('zh-CN','runtime')])assert.ok(html.includes('<summary>'+title+'</summary>'),'原岗位设置仍有独立入口：'+title)
+ for(const value of [role.name,role.duty,role.dataScope,role.executionScope])assert.ok(html.includes(value),'编辑保留原岗位字段：'+value)
+ assert.ok(html.includes(zh('team.form.editRole')))
 })
+
 
 test('L4：执行边界逐句返回数组，拼接分隔符由调用方按语言给出，纯函数里不留中文分号',async()=>{
  const base=hirePresetFields('investigate',zh,'安全运营')

@@ -19,6 +19,13 @@ export type TaskRunToolUsage={
 type Binding=Pick<TaskRun,'nativeRequestId'|'allowedTools'>
 type Call={seq:number;name:string;id:string;turn:number;step:number;returned?:boolean;isError?:boolean}
 const contextName='teloa:run-mcp-tool-usage'
+type ContextReceipt={key:string;session:Agent['session'];section?:{name:string;text:string};read?:()=>string}
+const contextReceipts=new WeakMap<Agent,ContextReceipt>()
+/** 只返回当前同一 Run 租约实际渲染的宿主上下文，不从日志或同名 section 猜测来源。 */
+export function taskRunToolUsageContextReceipt(agent:Agent,run:Pick<TaskRun,'id'|'sessionId'|'nativeRequestId'>){
+ const receipt=contextReceipts.get(agent)
+ return receipt?.session===agent.session&&receipt.key===JSON.stringify([run.id,run.sessionId,run.nativeRequestId])&&receipt.section?{...receipt.section}:undefined
+}
 const empty=():Counts=>({requested:0,returned:0,succeeded:0,failed:0,pending:0})
 // 只识别已冻结的完整公开名；不拆 server/raw 名，不用目录或参数正文扩大清单。
 const externalMcpName=(name:string)=>name.startsWith('mcp__')&&name!==referenceReadTool&&!name.startsWith('mcp__playwright-mcp__')
@@ -87,9 +94,16 @@ export type TaskRunToolUsagePorts={
 /** 同 Run 的 pre-step 只更新快照；持久 runtime-context 由官方 provider 投影，不伪造事件或新增模型步。 */
 export function leaseTaskRunToolUsage(agent:Agent,run:Pick<TaskRun,'id'|'sessionId'|'nativeRequestId'|'allowedTools'>,ports:TaskRunToolUsagePorts={}):()=>void{
  const session=agent.session
+ let receipt=contextReceipts.get(agent)
+ if(!receipt){
+  const slot:ContextReceipt={key:'',session};contextReceipts.set(agent,slot);receipt=slot
+  agent.ctx.systemPrompt.context({name:contextName,order:130,required:true,interpolate:false,text:context=>context.agent===agent&&agent.session===slot.session?slot.read?.()??'':''})
+ }
+ receipt.key=JSON.stringify([run.id,run.sessionId,run.nativeRequestId]);receipt.session=session;delete receipt.section
  let active=true,snapshot:TaskRunToolUsage|undefined
  const render=()=>snapshot?'Host-verified MCP tool usage for this Run (counts are requests/returns, not external HTTP calls; returned includes errors). succeeded means native isError:false returns only; it does not prove business-payload success, complete evidence, non-empty results or issue resolution. Payload timeouts, invalid requests, empty/truncated results and other evidence gaps must still be reported from their actual receipts; do not call all evidence collection successful from these counts. failed means native isError:true returns. Counts cover only the fixed root session and proven native PTC calls. Partial coverage is not an all-Run or child-Agent total. Use the latest snapshot when reporting calls made in THIS Run; it is not evidence about referenced historical Runs and must not replace their verified figures. The observedWindow contains host log event times, not per-evidence collection times; never estimate individual collection times. Without a verified exact evidence time, use this Run observation range with that label or omit the time; do not apply this range to historical evidence. This snapshot grants no permissions and does not enforce a natural-language budget.\n'+JSON.stringify(snapshot):''
- const removeContext=agent.ctx.systemPrompt.context({name:contextName,order:130,required:true,interpolate:false,text:context=>active&&context.agent===agent&&agent.session===session?render():''})
+ const current=receipt,reader=()=>{if(!active)return '';const text=render();if(text)current.section={name:contextName,text};else delete current.section;return text}
+ current.read=reader
  const removeStep=agent.ctx.on('agent/pre-step',async(payload,next)=>{
   const decision=await next()
   if(decision.kind==='reject'||payload.agent!==agent||!active)return decision
@@ -108,5 +122,5 @@ export function leaseTaskRunToolUsage(agent:Agent,run:Pick<TaskRun,'id'|'session
   }catch(error){if(payload.signal.aborted)throw error;snapshot=unavailable(events,'invalid-events')}
   return decision
  })
- return ()=>{active=false;snapshot=undefined;removeStep();removeContext()}
+ return ()=>{active=false;snapshot=undefined;if(current.read===reader){delete current.read;delete current.section}removeStep()}
 }

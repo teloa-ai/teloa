@@ -598,7 +598,7 @@ test('15秒真实依赖超时后自然退避，新连接与观察器只补发合
   const service=new TaskRunService(connection,clock,async()=>({id:randomUUID(),sessionId:f.run.sessionId,ownerId:f.owner,status:'ready'}),{allowedTools:[]})
   const messages=new GroupRunMessageService(connection,clock,ports.ports),saved=new GroupRunResultManifestService(connection)
   const publish=createTaskRunGroupPublisher({post:input=>{calls.push(input);return messages.post(f.owner,input)},run:(sessionId,nativeRequestId)=>saved.read(f.owner,{sessionId,nativeRequestId}),failure:(run,code)=>messages.failure(f.owner,{runId:run.id,nativeRequestId:run.nativeRequestId,code}),report:()=>assert.fail('暂时依赖故障不能被当成授权拒绝')})
-  return {service,driver:new TaskRunDriver(service,{check:async()=>assert.fail('恢复不重新检查或启动模型'),send:async()=>assert.fail('恢复不发新模型请求'),stop:async()=>assert.fail('恢复不停止原结束 Run'),events:async()=>nativeEvents,publishGroupResult:publish})}
+  return {service,driver:new TaskRunDriver(service,{controlState:async()=>'active',check:async()=>assert.fail('恢复不重新检查或启动模型'),send:async()=>assert.fail('恢复不发新模型请求'),stop:async()=>assert.fail('恢复不停止原结束 Run'),events:async()=>nativeEvents,publishGroupResult:publish})}
  }
  const connection={connectionString:container.getConnectionUri(),max:2,connectionTimeoutMillis:5000,statement_timeout:15000},first=new Pool(connection)
  let closeFirst=true
@@ -639,7 +639,7 @@ test('15秒真实依赖超时后自然退避，新连接与观察器只补发合
  assert.equal((await f.groups.messages(f.owner,{groupId:f.group.id})).filter(m=>'runId' in m).length,1)
  assert.deepEqual(await counts(f.owner),{snapshots:2,versions:1,attachments:0})
  assert.deepEqual(await restarted.service.outstanding(f.owner),[]);assert.deepEqual(reports,[])
- assert.equal(calls.length,3,'一次真实超时、一次观察器成功、一次同结果幂等核对')
+ assert.equal(calls.length,2,'一次真实超时、一次观察器成功；已送达的原终态不重复调用发布器')
  assert.ok(calls.every(c=>c.requestId===f.run.nativeRequestId&&c.runId===f.run.id&&c.text===text&&JSON.stringify(c.files)===JSON.stringify(claims)))
  const after=(await pool.query('select * from teloa_task_runs where owner_id=$1 and id=$2',[f.owner,f.run.id])).rows[0]
  assert.deepEqual(after,{...before,group_publication:null,group_publication_next_at:null},'恢复只清待发布回执，不改原 Run 及其结束证据')

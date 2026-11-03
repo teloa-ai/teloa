@@ -31,8 +31,18 @@ jobs:
           - name: bindings 4/4
             suite: bindings
             shard: 4
-          - name: native
+          - name: native 1/4
             suite: native
+            shard: 1
+          - name: native 2/4
+            suite: native
+            shard: 2
+          - name: native 3/4
+            suite: native
+            shard: 3
+          - name: native 4/4
+            suite: native
+            shard: 4
           - name: work
             suite: work
     steps:
@@ -60,6 +70,27 @@ jobs:
         if: matrix.suite == 'checks'
       - run: pnpm test:sdk
         if: matrix.suite == 'checks'
+      - name: Install locked Playwright WebKit and Firefox
+        if: matrix.suite == 'bindings'
+        run: |
+          node --input-type=module <<'JS'
+          import {readdirSync} from 'node:fs'
+          import {createRequire} from 'node:module'
+          import {dirname,resolve} from 'node:path'
+          import {spawnSync} from 'node:child_process'
+          const require=createRequire(resolve('package.json'))
+          const name=process.env.TELOA_TEST_PLAYWRIGHT??'playwright'
+          let manifest
+          try{manifest=require.resolve(name+'/package.json')}catch{
+            const store=resolve('node_modules/.pnpm')
+            const installed=readdirSync(store).find(entry=>entry.startsWith('playwright@'))
+            if(!installed)throw Error('The current worktree has no locked Playwright installation.')
+            manifest=resolve(store,installed,'node_modules/playwright/package.json')
+          }
+          const result=spawnSync(process.execPath,[resolve(dirname(manifest),'cli.js'),'install','--with-deps','webkit','firefox'],{stdio:'inherit'})
+          if(result.error)throw result.error
+          if(result.status!==0)process.exit(result.status??1)
+          JS
       - name: Run bindings shard ${{ matrix.shard }}/4
         if: matrix.suite == 'bindings'
         timeout-minutes: 25
@@ -81,6 +112,8 @@ jobs:
         if: matrix.suite == 'checks'
       - run: pnpm test:native
         if: matrix.suite == 'native'
+        env:
+          NODE_OPTIONS: --test-shard=${{ matrix.shard }}/4
       - run: pnpm test:work
         if: matrix.suite == 'work'
   check:

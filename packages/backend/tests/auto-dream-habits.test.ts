@@ -250,7 +250,7 @@ test('丢弃观察日志后未提升条目无法再提升；已提升记忆保�
  assert.equal(after.state,'candidate');assert.equal(after.sourceAvailable,false);assert.deepEqual(after.content,kept.content)
 })
 
-test('分身私有记忆确认满 30 条后，第 31 条（来自习惯观察提升）确认抛 teloa/conflict',async()=>{
+test('分身30条普通私有记忆上限不计日报观察，新增普通记忆仍拒绝',async()=>{
  const f=await world()
  await systemPlan(f.owner,f.employee.id,'active')
  const task=await new TaskService(pool,identity).create(f.owner,{requestId:randomUUID(),fields:{title:'核对',goal:'核对来源',scope:'SOC'},assignee:{roleId:f.employee.id,expectedVersion:f.employeeVersion}})
@@ -261,7 +261,9 @@ test('分身私有记忆确认满 30 条后，第 31 条（来自习惯观察提
  const fillers=[]
  for(let index=0;index<30;index++)fillers.push(await f.memory.create(f.human,{requestId:randomUUID(),roleId:f.twin.id,expectedRoleVersion:1,title:`偏好 ${index}`,markdown:`固定偏好 ${index}`,source:{kind:'self-feedback',id:randomUUID(),version:1},visibility:{kind:'private',scopeIds:[]}}))
  for(const filler of fillers)await f.memory.confirm(f.human,{requestId:randomUUID(),memoryId:filler.id,expectedStateVersion:1})
- await assert.rejects(f.memory.confirm(f.human,{requestId:randomUUID(),memoryId:promoted.id,expectedStateVersion:1}),{code:'teloa/conflict',message:'分身私有记忆最多确认 30 条；请先撤回不再适用的记忆。'})
+ await f.memory.confirm(f.human,{requestId:randomUUID(),memoryId:promoted.id,expectedStateVersion:1})
+ const extra=await f.memory.create(f.human,{requestId:randomUUID(),roleId:f.twin.id,expectedRoleVersion:1,title:'第31条普通偏好',markdown:'固定普通偏好',source:{kind:'self-feedback',id:randomUUID(),version:1},visibility:{kind:'private',scopeIds:[]}})
+ await assert.rejects(f.memory.confirm(f.human,{requestId:randomUUID(),memoryId:extra.id,expectedStateVersion:1}),{code:'teloa/conflict',message:'分身私有记忆最多确认 30 条；请先撤回不再适用的记忆。'})
 })
 
 test('并发两次惰性生成当天只落一条日志，均正常返回，没有未翻译的原生异常',async()=>{

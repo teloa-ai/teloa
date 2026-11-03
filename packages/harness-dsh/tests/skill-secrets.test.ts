@@ -188,7 +188,7 @@ test('L-6 宿主接线：代发可见性与声明解析都核对胜出者为受�
  const visible=source.slice(source.indexOf('skillVisible:(exec,name,signal)=>availabilitySync.stable(async()=>{'),source.indexOf('readForUse:name=>skillSecretStore.readForUse(name)'))
  assert.match(visible,/isManagedSkillWinner\(await skills\.get\(name,\{cwd:agent\.session\.header\.cwd,scope:agent,signal\}\),managedFiles\.path\(selected\.installationId\)\)/)
  assert.match(visible,/selected\.availability==='disabled'/)
- const resolver=source.slice(source.indexOf('const skillSecretsFor='),source.indexOf('const skillSecretStore=createSkillSecretStore('))
+ const resolver=source.slice(source.indexOf('const catalogSkillSecretsFor='),source.indexOf('const catalogSkillSecretStore=createSkillSecretStore('))
  assert.match(resolver,/declaredSkillSecretsResolver\(officialCatalogForMcp/);assert.match(resolver,/const declaredSkillSecrets=skillSecretsFor\(\)/)
  assert.match(resolver,/isManagedSkillWinner\(/);assert.match(resolver,/managedFiles\.path\(selected\.installationId\)/);assert.match(resolver,/cwd:workspaceRoot/)
  assert.match(resolver,/},availabilitySync\.stable\)/,'生产声明解析必须接入与安装维护相同的稳定读取队列')

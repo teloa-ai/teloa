@@ -30,7 +30,7 @@ import {AUTO_DREAM_MESSAGE_ROWS} from '../src/client/i18n/locales/auto-dream.ts'
 const expectedKeys = [...MESSAGE_KEYS].sort()
 
 test('本轮白话词条保留隐私、结果未知与额度边界，未定稿语言继续英文回退',()=>{
- const keys=['templateShare.excluded','roleDelegation.status.pausing','roleDelegation.status.ending','roleDelegation.pending','planWork.checkBoundary','planWork.budget.boundary','knowledge.local.unavailable'] as const
+ const keys=['templateShare.excluded','roleDelegation.status.pausing','roleDelegation.status.ending','roleDelegation.pending','planWork.checkBoundary','planWork.budget.boundary'] as const
  for(const locale of MAIN_LOCALES.filter(value=>!['zh-CN','zh-Hant','en'].includes(value))){
   for(const key of keys)assert.equal(translateMessage(locale,key),translateMessage('en',key),`${locale}:${key} 保留现有回退合同`)
  }
@@ -353,7 +353,7 @@ test('第一批核心页面词条在十套主语言中提供人工翻译与变�
 
   assert.equal(translateMessage('zh-Hant', 'navigation.newConversation' as never), '新增工作對話')
   assert.equal(translateMessage('ja', 'team.empty.unconfigured' as never), "まだ従業員が設定されていません")
-  assert.equal(translateMessage('ko', 'task.detail.goal' as never), '작업 목표')
+  assert.equal(translateMessage('ko', 'task.detail.back' as never), '목록으로 돌아가기')
   assert.equal(translateMessage('vi', 'continuous.tab.runs' as never), 'Lịch sử chạy')
   assert.equal(translateMessage('es', 'settings.document.open' as never), 'Abrir documento')
   assert.equal(translateMessage('fr', 'profile.title' as never), 'Profil personnel')

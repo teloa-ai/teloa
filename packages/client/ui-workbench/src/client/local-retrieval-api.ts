@@ -47,7 +47,7 @@ export const retrievalEnrollmentOutcome=(error:unknown)=>error!==null&&typeof er
 export function createLocalRetrievalApi(call:(endpoint:string,payload:unknown,signal?:AbortSignal)=>Promise<unknown>){
  const model=async(endpoint:string,signal?:AbortSignal,providerId?:EmbeddingProviderId)=>readRetrievalModelStatus(await call(endpoint,providerId?{providerId}:{},signal))
  const index=async(endpoint:string,payload:unknown,signal?:AbortSignal)=>readRetrievalStatus(await call(endpoint,payload,signal))
- const sourceBatch=(sourceIds:readonly string[])=>{const ids=[...new Set(sourceIds)];if(!ids.length||ids.length>retrievalLimits.maxEnrollments||ids.some(id=>typeof id!=='string'||!/^[a-zA-Z0-9_-]{1,128}$/.test(id)))throw new WorkError('teloa/invalid-input','请选择有效的资料来源。');return {sourceIds:ids}}
+ const sourceBatch=(sourceIds:readonly string[])=>{const ids=[...new Set(sourceIds)];if(!ids.length||ids.length>retrievalLimits.maxEnrollmentBatch||ids.some(id=>typeof id!=='string'||!/^[a-zA-Z0-9_-]{1,128}$/.test(id)))throw new WorkError('teloa/invalid-input','请选择有效的资料来源。');return {sourceIds:ids}}
  return {
   modelStatus:(signal?:AbortSignal,providerId?:EmbeddingProviderId)=>model('retrieval-model/status',signal,providerId),
   /** source 缺省时载荷只带 expected（即官方来源）。 */

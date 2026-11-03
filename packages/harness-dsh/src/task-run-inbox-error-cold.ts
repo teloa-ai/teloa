@@ -10,6 +10,7 @@ import type {SessionHandle,SessionPersistence} from '@deepseek-ai/dsh-session-pe
 import {taskRunEvidenceProofEnd,type TaskRun,type AcceptedInboxFailureEvidence} from '@teloa/backend'
 import {WorkError} from '@teloa/contract'
 import {acceptedInboxErrorEvidence,canSealAcceptedInboxInterruption} from './task-run-inbox-error.ts'
+import {readSessionEvents} from './session-events.ts'
 
 type Candidate={sessionId:string;header:SessionHeader;events:readonly SessionEvent[];inheritedEventCount:number;signal:AbortSignal}
 type AtomicPersistence=SessionPersistence&{resolveCurrentLog:(id:SessionId,signal?:AbortSignal)=>Promise<string|undefined>;openWithAdmission:(id:SessionId,admit:(candidate:Candidate)=>Promise<Readonly<{assertCurrent:()=>void}>>,options:{signal:AbortSignal})=>Promise<SessionHandle>}
@@ -87,7 +88,7 @@ async function withOwnedWriter<T>(persistence:SessionPersistence,run:TaskRun,sig
    // 与官方AgentLoopFactory.resumeWith完全相同的公开prepare路径；不enter/announce，不创建或运行Agent。
    const preparation=SessionPreparation.create(recovery.sessions.prepare(id,{seed:[...observed.events,...closers],meta:structuredClone(handle.header),inheritedEventCount:handle.inheritedEventCount,eventState:observed.eventState}))
    try{
-    const full=preparation.session.snapshotEvents(),suffix=full.slice(observed.events.length),seal=suffix[1]
+    const full=readSessionEvents(preparation.session),suffix=full.slice(observed.events.length),seal=suffix[1]
     if(suffix.length!==2||!isDeepStrictEqual(suffix[0],closers[0])||seal?.type!=='session/end-seed'||Object.keys(seal.data).length!==0||!acceptedInboxErrorEvidence(run,full))throw denied()
     alive();before.assertCurrent();await handle.append(suffix);await handle.flush();alive()
     const locked=await physical(),after=await handle.read(0,undefined,{signal});locked.assertCurrent()

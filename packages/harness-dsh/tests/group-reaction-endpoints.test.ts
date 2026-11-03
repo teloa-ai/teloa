@@ -41,8 +41,8 @@ function stand(){
 }
 
 test('表情和路由五个端点保持原服务，增加全文只读入口不改变原读写分发',async()=>{
- assert.equal(groupEndpoints.length,22)
- for(const endpoint of ['groups/messages/page','groups/messages/search','groups/reading/get','groups/reading/mark','groups/attention','groups/mentions/list'])assert.ok((groupEndpoints as readonly string[]).includes(endpoint),endpoint)
+ assert.equal(groupEndpoints.length,23)
+ for(const endpoint of ['groups/messages/page','groups/messages/search','groups/messages/sources','groups/reading/get','groups/reading/mark','groups/attention','groups/mentions/list'])assert.ok((groupEndpoints as readonly string[]).includes(endpoint),endpoint)
  assert.deepEqual(groupEndpoints.slice(-5),['groups/reactions/list','groups/reactions/toggle','groups/routing/list','groups/routing/status','groups/routing/retry'])
  // 服务对象按 GroupOperations 类型传进 createGroupHandler：这里再钉一次键数，少一个或多一个都判红。
  const {handler,calls,service}=stand()

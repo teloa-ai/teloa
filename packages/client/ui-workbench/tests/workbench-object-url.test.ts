@@ -90,7 +90,7 @@ test('冷地址等待本人读取时不运行真实 Home effect，绑定回填�
  const address='http://localhost:3241/'+hash('conversation',B),ui=await initialFrameStore(hash('conversation',B)),web=browser(address),f=await framePorts(ui,web.window)
  const frame=ts.createSourceFile('WorkbenchFrame.tsx',await readFile(new URL('../src/client/WorkbenchFrame.tsx',import.meta.url),'utf8'),ts.ScriptTarget.Latest,true,ts.ScriptKind.TSX)
  let homeEffect:ts.Expression|undefined
- const visit=(node:ts.Node)=>{if(ts.isCallExpression(node)&&node.expression.getText(frame)==='useEffect'&&node.arguments[0]?.getText(frame).includes('prepareHomeSession(controller.signal)'))homeEffect=node.arguments[0];ts.forEachChild(node,visit)};visit(frame);assert.ok(homeEffect)
+ const visit=(node:ts.Node)=>{if(ts.isCallExpression(node)&&node.expression.getText(frame)==='useEffect'&&node.arguments[0]?.getText(frame).includes('recoverHomeNativeInput(prepareHomeSession,controller.signal)'))homeEffect=node.arguments[0];ts.forEachChild(node,visit)};visit(frame);assert.ok(homeEffect)
  let homePreparations=0
  const source=ts.transpileModule('const effect='+homeEffect.getText(frame),{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.CommonJS}}).outputText
  new Function('state','prepareHomeSession',source+';effect()')(ui.getSnapshot(),()=>{homePreparations++})
@@ -118,7 +118,7 @@ test('对象地址只包含稳定身份与固定版本，复制时移除认证 q
  const legacy:Route={base:{kind:'business',scope:'安全运营',section:'overview'}}
  assert.deepEqual(readWorkbenchObjectHash(workbenchObjectHash(legacy)),legacy)
  assert.equal(workbenchObjectHash(legacy),'#teloa/v1/business/'+encodeURIComponent('安全运营')+'/overview')
- assert.throws(()=>workbenchObjectHash({base:{kind:'business',scope:'/Users/max/private',section:'overview'}}))
+ assert.throws(()=>workbenchObjectHash({base:{kind:'business',scope:'/Users/test-user/private',section:'overview'}}))
  const link=workbenchObjectLink('https://user:password@example.com/app?access_token=secret&code=grant#other',{base:{kind:'task',id:A}})
  assert.equal(link,'https://example.com/app'+hash('task'))
  for(const path of ['#teloa/v2/task/'+A,'#teloa/v1/task/title','#teloa/v1/task/'+A+'?start=true','#teloa/v1/resource/'+A+'/7/'+'b'.repeat(63),'#teloa/v1/task/'+A+'/detail/directory/tasks','#teloa/v1/business/私密业务正文/overview','#teloa/v1/task/'+A+'/extra'])assert.throws(()=>readWorkbenchObjectHash(path),path)
@@ -473,4 +473,40 @@ test('历史 CID 本人读取迟到遇新导航取消时，不打开旧 SID 或�
  await tick();current=false;controller.abort();await restoring;release(f.history);await tick()
  assert.equal(f.counts.open,0);assert.equal(f.counts.normalRead,0);assert.equal(f.counts.nativeRead,0);assert.equal(f.counts.list,0)
  assert.equal(f.work.getSnapshot().sessionId,'default');assert.equal(f.mainSession.getSnapshot(),'default');assert.equal(f.listeners.size,0)
+})
+
+
+test('业务对象地址与真实恢复保留看板、筛选、固定记录及范围内页签',async()=>{
+ const f=await framePorts(),scope=f.project.scope
+ const targets=[
+  {scope,section:'dashboards' as const,dashboardId:'review'},
+  {scope,section:'data' as const,objectType:'customer',match:{field:'name',value:'甲:乙／丙'}},
+  {scope,section:'data' as const,objectType:'customer',id:'customer-one',recordReference:{scope,type:'customer',id:'customer-one',version:3,snapshotHash:'b'.repeat(64)}},
+ ]
+ for(const target of targets){
+  f.ui.actions.openBusiness(target)
+  const route=describeWorkbenchObject(f.ui.getSnapshot(),{}),parsed=readWorkbenchObjectHash(workbenchObjectHash(route))!
+  assert.deepEqual(parsed.base,{kind:'business',...target})
+  await f.ports.restore(parsed,emptyWorkbenchNavigationState(),()=>true)
+  assert.deepEqual(f.ui.getSnapshot().businessTarget,target)
+ }
+ const target={scope,section:'overview' as const}
+ f.ui.actions.openBusiness(target);f.ui.actions.rememberDirectory('spaces',{businessPage:{scope,pageId:'review'}})
+ const route=readWorkbenchObjectHash(workbenchObjectHash(describeWorkbenchObject(f.ui.getSnapshot(),{})))!
+ assert.equal(route.base.kind==='business'&&route.base.pageId,'review')
+ await f.ports.restore(route,emptyWorkbenchNavigationState(),()=>true)
+ assert.deepEqual(f.ui.getSnapshot().navigationDirectories.spaces?.businessPage,{scope,pageId:'review'})
+ const recordBase=readWorkbenchObjectHash(workbenchObjectHash({base:{kind:'business',...targets[2]!}}))!.base
+ assert.ok(recordBase.kind==='business')
+ assert.throws(()=>workbenchObjectHash({base:{...recordBase,recordReference:{...recordBase.recordReference!,scope:'another'}}}),/一致|无效/)
+})
+
+test('已落定的市场筛选在历史适配器重挂前写回同本人条目，不丢仅记在内存的位置',async()=>{
+ const f=fixture();await tick();f.observe();f.ui.actions.navigate('market');f.observe();await tick()
+ f.ui.actions.rememberDirectory('market',{category:'apps',query:'原市场筛选'});f.observe()
+ f.adapter.dispose()
+ let received:WorkbenchNavigationState|undefined
+ const adapter=attachWorkbenchObjectHistory({window:f.web.window,scope:'owner-installation-A',capture:()=>captureWorkbenchNavigationState(f.ui.getSnapshot()),describe:async()=>describeWorkbenchObject(f.ui.getSnapshot(),{}),restore:async(_route,local)=>{received=local},error:error=>{throw error}})
+ await tick();assert.equal(received?.directories.market?.category,'apps');assert.equal(received?.directories.market?.query,'原市场筛选')
+ adapter.dispose()
 })

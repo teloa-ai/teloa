@@ -43,7 +43,7 @@ export class ArtifactAvailabilityService{
  /** 最终发送持有此准入直到 provider 已开始返回或迭代结束；失败/取消也必须 release。
   * 来源绑定保守保留：未知外发不能因没有响应而被误当从未进入该会话。
   */
- async bindInputInTransaction(db:PoolClient,owner:string,input:{sessionId?:string;references:readonly {artifactId:string;version:number}[];artifactIds?:readonly string[];groupMessageIds?:readonly string[];revisionRequestIds?:readonly string[]}):Promise<void>{
+ async bindInputInTransaction(db:PoolClient,owner:string,input:{sessionId?:string;references:readonly {artifactId:string;version:number}[];artifactIds?:readonly string[];groupMessageIds?:readonly string[];revisionRequestIds?:readonly string[]}):Promise<number>{
   ownerInput(owner);const row=artifactInput(input,['sessionId','references','artifactIds','groupMessageIds','revisionRequestIds']),sessionId=row.sessionId
   if(sessionId!==undefined&&(typeof sessionId!=='string'||!/^[-\w]{1,128}$/.test(sessionId))||!Array.isArray(row.references)||row.references.length>1024)throw new WorkError('teloa/invalid-input','成果输入的会话或固定来源不正确。')
   const ids=(value:unknown):string[]=>{if(value===undefined)return [];if(!Array.isArray(value)||value.length>1024||value.some(id=>!uuid(id)))throw new WorkError('teloa/invalid-input','成果输入的间接来源不正确。');return [...new Set(value.map(id=>(id as string).toLowerCase()))]}
@@ -87,12 +87,15 @@ export class ArtifactAvailabilityService{
     await assertArtifactAvailable(db,owner,reference.artifactId,reference.version)
     if(typeof sessionId==='string')await db.query('insert into teloa_artifact_input_sources(owner_id,session_id,artifact_id,created_at) values($1,$2,$3,$4) on conflict do nothing',[owner,sessionId,reference.artifactId,this.now()])
    }
+   return unique.length
  }
  async admitInput(owner:string,input:{sessionId?:string;references:readonly {artifactId:string;version:number}[];artifactIds?:readonly string[];groupMessageIds?:readonly string[];revisionRequestIds?:readonly string[]}):Promise<{release:()=>Promise<void>}>{
   ownerInput(owner);const db=await this.pool.connect()
   try{
    await db.query('begin')
-   await this.bindInputInTransaction(db,owner,input)
+   const locked=await this.bindInputInTransaction(db,owner,input)
+   // 已核对显式、历史与间接来源；没有成果头锁时不跨模型首块占用连接。
+   if(locked===0){await db.query('commit');db.release();return {release:async()=>{}}}
    let released:Promise<void>|undefined
    return {release:()=>released??=(async()=>{try{await db.query('commit')}finally{db.release()}})()}
   }catch(error){await db.query('rollback');db.release();throw error}

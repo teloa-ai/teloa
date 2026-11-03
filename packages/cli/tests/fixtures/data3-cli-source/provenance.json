@@ -1,0 +1,65 @@
+{
+  "schema": "teloa.frozen-cli-source-fixture/v1",
+  "dataVersion": 3,
+  "license": "Apache-2.0",
+  "sourceCommit": "0faa942d7f29cb4808d54584b46ff15332f512d0",
+  "source": "Public Community CLI source and its local module dependencies; byte-exact historical source, executed with Node native TypeScript support. No installed-package or full legacy acceptance claim.",
+  "files": [
+    {
+      "path": "database.ts.txt",
+      "sourcePath": "packages/cli/src/database.ts",
+      "outputPath": "database.ts",
+      "bytes": 10603,
+      "sha256": "c7de9fb35a293119971872bc2930b85864b3bcc6924d600b5703b389182f1887"
+    },
+    {
+      "path": "state.ts.txt",
+      "sourcePath": "packages/cli/src/state.ts",
+      "outputPath": "state.ts",
+      "bytes": 4313,
+      "sha256": "d4094ac4a458acd2c60b29a771333b6de8fca3b9b54c3c5d26c90aadabf2b6bf"
+    },
+    {
+      "path": "process.ts.txt",
+      "sourcePath": "packages/cli/src/process.ts",
+      "outputPath": "process.ts",
+      "bytes": 1124,
+      "sha256": "1bc8e6804bf47250becaeffdc40a2373847f73ff3f924a20abb4aa4bbda9b126"
+    },
+    {
+      "path": "releases.ts.txt",
+      "sourcePath": "packages/cli/src/releases.ts",
+      "outputPath": "releases.ts",
+      "bytes": 9278,
+      "sha256": "cdaa4ee55eb56912f96ef0a4d82cb4e10bc97b59f2cebe1f20f596d84116d52d"
+    },
+    {
+      "path": "layout.ts.txt",
+      "sourcePath": "packages/cli/src/layout.ts",
+      "outputPath": "layout.ts",
+      "bytes": 2145,
+      "sha256": "84c5b4f3723add1978248ed4bbeb47ea97185bb68c2faf14dd16c522d391e926"
+    },
+    {
+      "path": "contracts.ts.txt",
+      "sourcePath": "packages/cli/src/contracts.ts",
+      "outputPath": "contracts.ts",
+      "bytes": 1025,
+      "sha256": "445e51e01b035a2ed5741997760e403e09e278e42b968c6e4a3cd18478337bf3"
+    },
+    {
+      "path": "data-version.ts.txt",
+      "sourcePath": "packages/cli/src/data-version.ts",
+      "outputPath": "data-version.ts",
+      "bytes": 995,
+      "sha256": "ce34c1219359bfdb140a644f6773b1961f566c1cb45be78ec02a0256ecf7c012"
+    },
+    {
+      "path": "data-version.json",
+      "sourcePath": "packages/cli/src/data-version.json",
+      "outputPath": "data-version.json",
+      "bytes": 155,
+      "sha256": "b6ba0bf92af6a0b12580ed2f0242e13111c2c38addc776c246cc13282f12021e"
+    }
+  ]
+}

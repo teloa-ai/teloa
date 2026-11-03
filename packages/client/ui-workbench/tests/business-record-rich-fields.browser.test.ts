@@ -1,3 +1,5 @@
+// @ts-expect-error 本机可信文档夹具为 MJS 模块。
+import {setLocalDocument} from './fixtures/local-document.mjs'
 import assert from 'node:assert/strict'
 import {test,before,after} from 'node:test'
 import {mkdtemp,writeFile,rm,mkdir} from 'node:fs/promises'
@@ -50,7 +52,7 @@ test('多选值超过规范串长度时保留合法选择并提示，不抛事�
  const page=await browser.newPage({viewport:{width:390,height:1000}}),errors:string[]=[]
  page.setDefaultTimeout(5000);page.on('pageerror',(error:Error)=>errors.push(error.message));await page.route('**/*',(route:any)=>route.abort())
  t.after(async()=>{await page.close();assert.deepEqual(errors,[])})
- await page.setContent('<!doctype html><html lang="zh-CN"><body><div id="root"></div></body></html>');await page.addStyleTag({content:styles});await page.addScriptTag({content:script})
+ await setLocalDocument(page,'<!doctype html><html lang="zh-CN"><body><div id="root"></div></body></html>');await page.addStyleTag({content:styles});await page.addScriptTag({content:script})
  const values=Array.from({length:32},(_,index)=>String(index).padStart(2,'0')+'x'.repeat(78))
  await page.evaluate((values:string[])=>(window as any).richFixture.changeOptions(values),values)
  await page.getByRole('button',{name:'新增第一条',exact:true}).click();await page.getByRole('textbox',{name:/^记录标题/}).fill('长多选记录')
@@ -69,7 +71,7 @@ for(const locale of ['zh-CN','en'])for(const width of [390,1400])test(locale+'/'
  const page=await browser.newPage({viewport:{width,height:1000}});page.setDefaultTimeout(5000);const errors:string[]=[],requests:string[]=[]
  page.on('pageerror',(error:Error)=>errors.push(error.message));await page.route('**/*',(route:any)=>{requests.push(route.request().url());return route.abort()})
  t.after(async()=>{await page.close();assert.deepEqual(errors,[]);assert.deepEqual(requests,[])})
- await page.setContent('<!doctype html><html lang="'+locale+'"><body><div id="root"></div></body></html>')
+ await setLocalDocument(page,'<!doctype html><html lang="'+locale+'"><body><div id="root"></div></body></html>')
  await page.addStyleTag({content:':root{--teloa-font-section:18px;--teloa-font-body:14px;--teloa-font-caption:12px;--teloa-font-control:14px;--teloa-weight-heading:600;--teloa-weight-medium:500;--teloa-leading-heading:1.4;--teloa-border:#ddd;--teloa-surface:#fff;--teloa-subtle:#f5f5f2;--teloa-text:#252823;--teloa-muted:#646a62;--teloa-accent:#9e4226;--teloa-on-accent:#fff}body{font-family:system-ui;margin:16px}'+styles})
  await page.addScriptTag({content:script});await page.getByRole('heading',{level:2}).waitFor()
  assert.deepEqual(await page.evaluate(()=>(window as any).richFixture.calls),[]);assert.equal(await page.getByRole('button').count(),0)

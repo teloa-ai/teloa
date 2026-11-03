@@ -19,7 +19,6 @@ export const TASK_DETAIL_MESSAGE_ROWS = [
   ['task.detail.repeatPrompt','创建一项新任务，重新完成「{title}」。\n\n目标：\n{goal}\n\n核对本次所需资料、负责人和交付条件，先给出任务草稿。','建立一項新任務，重新完成「{title}」。\n\n目標：\n{goal}\n\n核對本次所需資料、負責人和交付條件，先提供任務草稿。','Create a new task to do "{title}" again.\n\nGoal:\n{goal}\n\nCheck the materials, assignee, and delivery requirements for this task, then prepare a task draft.'],
   ["task.detail.summary", "任务概要", "任務概要", "Task summary", "タスク概要", "작업 개요", "Tóm tắt nhiệm vụ", "Resumen de la tarea", "Résumé de la tâche", "Aufgabenübersicht", "Resumo da tarefa"],
   ["task.detail.activity", "活动记录", "活動記錄", "Activity", "アクティビティ", "활동 기록", "Hoạt động", "Actividad", "Activité", "Aktivität", "Atividade"],
-  ["task.detail.context", "资料与关联会话", "資料與關聯會話", "Resources and conversations", "資料と関連会話", "자료 및 연결된 대화", "Tài liệu và hội thoại", "Recursos y conversaciones", "Ressources et conversations", "Materialien und Gespräche", "Recursos e conversas"],
   ["task.detail.configuration", "任务信息", "任務資訊", "Task details", "実行設定とタスク情報", "실행 설정 및 작업 정보", "Cấu hình và thông tin nhiệm vụ", "Configuración y detalles", "Configuration et détails", "Konfiguration und Aufgabendetails", "Configuração e detalhes"],
   ["task.detail.creator", "创建者", "建立者", "Created by", "作成者", "작성자", "Người tạo", "Creado por", "Créé par", "Erstellt von", "Criado por"],
   ["task.detail.createdTime", "创建时间", "建立時間", "Created", "作成日時", "생성 시간", "Thời gian tạo", "Fecha de creación", "Date de création", "Erstellt am", "Criado em"],

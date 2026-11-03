@@ -39,7 +39,7 @@ function paint(mode:'tasks'|'attention',locale:'zh-CN'|'zh-TW'|'en'='zh-CN',unkn
 test('实际任务页把原生审批显示为可点击需要你入口，执行状态仍是进行中',()=>{
  const html=paint('tasks')
  assert.match(html,/>进行中<\/span>/)
- assert.match(html,/<td><button[^>]*class="tableLink"[^>]*>审批<\/button><\/td>/)
+ assert.match(html,/<td[^>]*><button[^>]*class="tableLink"[^>]*>审批<\/button><\/td>/)
  assert.doesNotMatch(html,/<td>—<\/td>/)
 })
 

@@ -1,4 +1,4 @@
-import {resolveProductLocale} from './i18n/locale.js'
+import {resolveProductLocale} from './i18n/locale.ts'
 
 const copy={
  'zh-CN':'该员工同适用主题的记忆重复或冲突。请在员工记忆中编辑或撤回相关条目后重试。',

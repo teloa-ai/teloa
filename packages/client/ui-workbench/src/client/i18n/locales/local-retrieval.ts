@@ -33,7 +33,7 @@ export const LOCAL_RETRIEVAL_MESSAGE_ROWS = [
  ['retrieval.trial.coverage','已检索 {searched} 项，另有 {pending} 项尚未就绪。','已檢索 {searched} 項，另有 {pending} 項尚未就緒。','Searched {searched} items; {pending} items are not ready.'],
  ['retrieval.trial.empty','未取得命中片段，请核对加入范围和索引状态，或换用其他关键词。','未取得命中片段，請核對加入範圍和索引狀態，或改用其他關鍵字。','No excerpts returned. Check enrollment and index status, or try a different query.'],
  ['retrieval.trial.lines','第 {start}–{end} 行','第 {start}–{end} 行','Lines {start}–{end}'],
- ['retrieval.index.sourceChanged','固定版本已失效，请核对当前版本与可用范围','固定版本已失效，請核對目前版本與可用範圍','Fixed version unavailable; review the current version and allowed materials'],
+ ['retrieval.index.sourceChanged','所选版本已不可用，请核对当前版本与可用资料','所選版本已無法使用，請核對目前版本與可用資料','Fixed version unavailable; review the current version and allowed materials'],
  ['retrieval.index.historical','历史版本，保留追溯；当前版本已确认','歷史版本，保留追溯；目前版本已確認','Historical version retained for reference; current version confirmed'],
  ['retrieval.citation.sources','来源','來源','Sources'],
  ['retrieval.citation.unavailable','此引用来源暂不可用，请返回原会话重新核对。','此引用來源暫時無法使用，請返回原對話重新核對。','This source is unavailable. Return to the original conversation to check it.'],

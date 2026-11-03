@@ -1,4 +1,4 @@
-import {resolveProductLocale} from './i18n/locale.js'
+import {resolveProductLocale} from './i18n/locale.ts'
 
 const copy={
  'zh-CN':{empty:'请输入显示名称。',email:'显示名称不能使用邮箱，请填写姓名或昵称。',tooLong:'显示名称最多 40 个字符，请缩短后再保存。'},

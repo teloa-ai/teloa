@@ -98,7 +98,7 @@ test('真实WorkHome到需要你原草案，settle成功才关闭来源并打开
  await page.evaluate(()=>(window as any).frameFixture.attention.releaseSettle())
  await page.waitForFunction(()=>(window as any).frameFixture.state().rolePreview?.id==='created-10000000-0000-4000-8000-000000000001')
  const created=page.getByRole('dialog',{name:'资料研究员甲',exact:true});await created.waitFor()
- await created.getByText('核对本轮资料',{exact:true}).waitFor()
+ await created.getByRole('complementary',{name:'员工档案',exact:true}).getByText('核对本轮资料',{exact:true}).waitFor()
  assert.equal((await calls(page,'page-create-drafts/settle')).length,1)
  assert.equal((await calls(page,'page-create-drafts/settle'))[0].input.expectedBodyHash,'a'.repeat(64))
  assert.equal(await page.getByRole('button',{name:'打开对象 原草案甲',exact:true}).count(),0)

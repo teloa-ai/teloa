@@ -1,3 +1,5 @@
+// @ts-expect-error 本机可信文档夹具为 MJS 模块。
+import {setLocalDocument} from './fixtures/local-document.mjs'
 import assert from 'node:assert/strict'
 import {test,before,after} from 'node:test'
 import {mkdtemp,writeFile,rm,mkdir} from 'node:fs/promises'
@@ -72,7 +74,7 @@ async function fixture(t:any,locale='zh-CN',width=1400){
 
  await page.route('**/*',(route:any)=>{requests.push(route.request().url());return route.abort()})
  t.after(async()=>{await page.close();assert.deepEqual(errors,[]);assert.deepEqual(requests,[])})
- await page.setContent('<!doctype html><html lang="'+locale+'"><body><div id="root"></div></body></html>')
+ await setLocalDocument(page,'<!doctype html><html lang="'+locale+'"><body><div id="root"></div></body></html>')
  await page.addStyleTag({content:':root{--teloa-font-section:18px;--teloa-font-body:14px;--teloa-font-caption:12px;--teloa-font-control:14px;--teloa-weight-heading:600;--teloa-weight-medium:500;--teloa-leading-label:1.5;--teloa-leading-heading:1.4;--teloa-border:#ddd;--teloa-surface:#fff;--teloa-subtle:#f5f5f2;--teloa-text:#252823;--teloa-muted:#646a62;--teloa-warn-bg:#fff5d9;--teloa-focus:#4076db;--teloa-accent:#9e4226}body{font-family:system-ui;margin:16px;color:var(--teloa-text)}'+styles})
  await page.addScriptTag({content:script})
  await page.locator('[data-view-pie]').waitFor()

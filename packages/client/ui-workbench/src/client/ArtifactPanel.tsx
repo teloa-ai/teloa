@@ -199,7 +199,10 @@ export function ArtifactPanel({ messageAuthor, taskSources, taskRuns, recovery, 
         source = resolveArtifactSource(state, artifact?.source || target.source, conversation);
     }
     catch (error) {
-        sourceError = localizeWorkError(locale,error);
+        // 资料库直接读取本人固定成果时不物化任务目录；来源快照只供展示和准备新输入。
+        // 提交仍重新读取成果、可用状态及当前原任务，不以历史快照授予执行权限。
+        if(artifact?.storage==='persistent'&&version&&version.number===versionNumber&&sourceKey(version.source.ref)===sourceKey(artifact.source))source=version.source;
+        else sourceError = localizeWorkError(locale,error);
     }
     const key = artifact && version ? artifactDraftKey(artifact.id, version.number, section?.id??'files') : newDraftKey;
     const initial: Draft = { ...blank, title: source?.title || '', body: section?.text || '', stamp: source ? sourceStamp(source) : '' };
@@ -357,7 +360,7 @@ export function ArtifactPanel({ messageAuthor, taskSources, taskRuns, recovery, 
       {source && (draft.stamp !== sourceStamp(source) || fileDraft.stamp !== sourceStamp(source)) && <section className={base.block}><p>{t("artifact.panel.text.119")}</p><button type="button" onClick={() => { patch({ stamp: sourceStamp(source) }); patchFiles({ stamp: sourceStamp(source) }); }}>{t("artifact.panel.text.120")}</button></section>}
     </article>
         {!(showList&&rows.length>0)&&!artifact&&(previewBody||fileDraft.files.length>0)&&<footer className={css.createActions}>
-          {source&&(previewBody.trim()||fileDraft.files.length>0)&&<button type="button" aria-label={t('artifact.panel.text.041')} title={t('artifact.panel.text.041')} onClick={async()=>{const id=crypto.randomUUID();const saved=await act({type:'create',id,source:target.source,expectedSource:draft.stamp,title:draft.title||source.title,body:previewBody,files:fileDraft.files,...(draft.messages?{messages:draft.messages}:{}),now:new Date().toISOString()});if(saved){clearDraft();clearFiles();setShowList(false);setSelected(typeof saved==='string'?saved:id);setVersion(1);setSection('')}}}><Save size={16} aria-hidden/>{t('artifact.panel.text.041')}</button>}
+          {source&&(previewBody.trim()||fileDraft.files.length>0)&&<button type="button" aria-label={t('artifact.panel.text.041')} title={t('artifact.panel.text.041')} disabled={newResultDisabled} onClick={async()=>{if(newResultDisabled)return;const id=crypto.randomUUID();const saved=await act({type:'create',id,source:target.source,expectedSource:draft.stamp,title:draft.title||source.title,body:previewBody,files:fileDraft.files,...(draft.messages?{messages:draft.messages}:{}),now:new Date().toISOString()});if(saved){clearDraft();clearFiles();setShowList(false);setSelected(typeof saved==='string'?saved:id);setVersion(1);setSection('')}}}><Save size={16} aria-hidden/>{t('artifact.panel.text.041')}</button>}
           {previewBody&&<a aria-label={t('artifactFiles.download')} title={t('artifactFiles.download')} download={(source?.title||'teloa-result').replace(/[\/:*?"<>|]/g,'_')+'.md'} href={'data:text/markdown;charset=utf-8,'+encodeURIComponent(previewBody)}><Download size={16} aria-hidden/>{t('artifactFiles.download')}</a>}
         </footer>}
     </fieldset>

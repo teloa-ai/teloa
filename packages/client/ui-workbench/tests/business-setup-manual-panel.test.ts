@@ -1,3 +1,5 @@
+// @ts-expect-error 本机可信文档夹具为 MJS 模块。
+import {setLocalDocument} from './fixtures/local-document.mjs'
 import assert from 'node:assert/strict'
 import {test,before,after} from 'node:test'
 import {mkdtemp,writeFile,rm,mkdir} from 'node:fs/promises'
@@ -24,6 +26,9 @@ let draft={ownerId:'self',id,scope:'sales',revision:1,baseVersion:1,status:'draf
 const binding={kind:'builder',draftId:id,requestId:'12345678-1234-4234-8234-123456789020',sessionId:'original',scope:'sales',title:'客户服务',createdAt:stamp,updatedAt:stamp};
 let plan={format:'teloa.business-setup-plan/v1',draftId:id,scope:'sales',revision:1,configurationRevision:1,configurationHash:hash,contentId:'12345678-1234-4234-8234-123456789021',contentHash:hash,title:'客户服务',description:'原说明',resources:[],roleEdits:[],rejected:[],state:'draft',updatedAt:stamp};
 const api={bySession:async()=>binding,draft:async()=>draft,setupPlan:async()=>plan,setupManual:async()=>{if(plan?.state==='applied')throw Error('已采用方案必须建立新草案');return ({draftId:id,revision:plan?.revision??0,configurationRevision:draft.revision,configurationHash:draft.hash,candidate:draft.candidate,description:plan?.description??'原说明',roleEdits:plan?.roleEdits??[],employees:[{roleId,expectedVersion:1,name:'质检员',duty:'核对工单',responsibility,state:'paused'}]})},setupEdit:async input=>{f.calls.push('edit');f.saved=input;draft={...draft,candidate:input.candidate,revision:draft.revision+1,hash:'b'.repeat(64)};plan={...plan,revision:plan.revision+1,configurationRevision:draft.revision,configurationHash:draft.hash,description:input.description,roleEdits:input.roleEdits};return plan},setupPreview:async input=>{f.calls.push('preview');plan={...plan,revision:plan.revision+1};return {draftId:id,revision:plan.revision,digest:hash,receipt:hash,configurationReceipt:hash,configurationRevision:draft.revision,baseVersion:1,changes:[],rejected:[],blocked:false}},setupHistory:async input=>{if(f.historyHold){f.historyHolds??={};return new Promise(resolve=>{f.historyHolds[input.scope]=()=>resolve({scope:input.scope,currentVersion:2,beforeVersion:null,items:[{version:1,hash,title:input.scope+' old',pages:1,createdAt:stamp}]})})}return {scope:input.scope,currentVersion:2,beforeVersion:null,items:[{version:2,hash,title:'当前版',pages:1,createdAt:stamp},{version:1,hash:'b'.repeat(64),title:'旧版',pages:1,createdAt:stamp}]} }};
+// 手工编辑仍恢复原绑定及固定草案版本，生成模式不会另建草案。
+api.generationMode=async({sessionId,draftId})=>{if(sessionId!==binding.sessionId||draftId!==draft.id)throw Error('Unknown generation draft');return {sessionId,draftId,revision:draft.revision,mode:'preview'}};
+api.setGenerationMode=async()=>{throw Error('Manual editing must not change generation mode')};
 const make=()=>new BusinessBuilderFlow({api,work:{},storage:{getItem:key=>storage.get(key)??null,setItem:(key,value)=>{if(f.quota)throw Error('quota');storage.set(key,value)},removeItem:key=>storage.delete(key)},journalKey:'personal-space/self',id:()=> '12345678-1234-4234-8234-123456789099',refreshScopes:async()=>{},switching:{read:()=>({mainSessionId:'original',bindingSessionId:'original',bindingReady:true,input:{draft:'',phase:'plain',attachmentIds:[],occurrences:[],queue:[]},pendingSubmissions:[]})}});
 let flow=make(),scope='sales',registered=false;
 const controllerState={api,namespace:'personal-space/self',flow:null,checkedSessionId:null,sessionKind:null};
@@ -47,7 +52,7 @@ before(async()=>{
 after(async()=>{await browser?.close();if(temp)await rm(temp,{recursive:true,force:true})})
 test('数值字段的整数与下限控件保留原草案，切换字段类型移除数值声明',async t=>{
  const page=await browser.newPage({viewport:{width:1000,height:900}});page.setDefaultTimeout(3000);t.after(()=>page.close());await page.route('**/*',(route:any)=>route.abort())
- await page.setContent('<html lang="zh-CN"><body><div id="root"></div></body></html>');await page.addStyleTag({content:styles});await page.addScriptTag({content:script})
+ await setLocalDocument(page,'<html lang="zh-CN"><body><div id="root"></div></body></html>');await page.addStyleTag({content:styles});await page.addScriptTag({content:script})
  await page.getByRole('combobox').first().selectOption('number')
  await page.locator('input[name="integer"]').check();await page.locator('input[name="minimum"]').fill('0')
  await page.getByRole('button',{name:'关闭并保留输入',exact:true}).click();await page.getByRole('button',{name:'Open editor',exact:true}).click()
@@ -60,7 +65,7 @@ test('数值字段的整数与下限控件保留原草案，切换字段类型�
 })
 for(const locale of ['zh-CN','en'])test(locale+' 手动编辑普通控件、刷新恢复、额度失败保留输入，保存仅生成预览',async t=>{
  const page=await browser.newPage({viewport:{width:390,height:900}});page.setDefaultTimeout(5000);t.after(()=>page.close());page.on('pageerror',(e:Error)=>process.stderr.write('MANUAL_PAGE_ERROR '+e.message+'\n'));await page.route('**/*',(route:any)=>route.abort())
- await page.setContent('<html lang="'+locale+'"><body><div id="root"></div></body></html>');await page.addStyleTag({content:styles});await page.addScriptTag({content:script})
+ await setLocalDocument(page,'<html lang="'+locale+'"><body><div id="root"></div></body></html>');await page.addStyleTag({content:styles});await page.addScriptTag({content:script})
  const en=locale==='en',label=(cn:string,english:string)=>page.getByLabel(en?english:cn,{exact:true}),button=(cn:string,english:string)=>page.getByRole('button',{name:en?english:cn,exact:true})
  await label('业务说明','Business description').fill('本人手动说明')
  await label('选项（每行一项）','Options (one per line)').fill('普通\n紧急');await label('选项（每行一项）','Options (one per line)').press('End');await label('选项（每行一项）','Options (one per line)').press('Enter');await label('选项（每行一项）','Options (one per line)').pressSequentially('立即')
@@ -81,7 +86,7 @@ for(const locale of ['zh-CN','en'])test(locale+' 手动编辑普通控件、刷�
 })
 test('历史切业务后旧load不会释放新flight；只回调固定版本和摘要',async t=>{
  const page=await browser.newPage();page.setDefaultTimeout(5000);t.after(()=>page.close());page.on('pageerror',(e:Error)=>process.stderr.write('MANUAL_PAGE_ERROR '+e.message+'\n'));await page.route('**/*',(route:any)=>route.abort())
- await page.setContent('<html lang="zh-CN"><body><div id="root"></div></body></html>');await page.addStyleTag({content:styles});await page.addScriptTag({content:script});await page.getByLabel('业务说明',{exact:true}).waitFor()
+ await setLocalDocument(page,'<html lang="zh-CN"><body><div id="root"></div></body></html>');await page.addStyleTag({content:styles});await page.addScriptTag({content:script});await page.getByLabel('业务说明',{exact:true}).waitFor()
  await page.evaluate(()=>{const f=(window as any).manualFixture;f.historyHold=true;f.history('sales')});await page.waitForFunction(()=>(window as any).manualFixture.historyHolds?.sales)
  await page.evaluate(()=>(window as any).manualFixture.history('support'));await page.waitForFunction(()=>(window as any).manualFixture.historyHolds?.support)
  await page.evaluate(()=>(window as any).manualFixture.release('sales'));await page.waitForTimeout(30)
@@ -92,7 +97,7 @@ test('历史切业务后旧load不会释放新flight；只回调固定版本和�
 
 test('未保存关闭并切会话后复用第二页原草案与输入，start始终一次',async t=>{
  const page=await browser.newPage();page.setDefaultTimeout(5000);t.after(()=>page.close());await page.route('**/*',(route:any)=>route.abort())
- await page.setContent('<html lang="zh-CN"><body><div id="root"></div></body></html>');await page.addStyleTag({content:styles});await page.addScriptTag({content:script});await page.getByLabel('业务说明',{exact:true}).waitFor()
+ await setLocalDocument(page,'<html lang="zh-CN"><body><div id="root"></div></body></html>');await page.addStyleTag({content:styles});await page.addScriptTag({content:script});await page.getByLabel('业务说明',{exact:true}).waitFor()
  await page.evaluate(()=>(window as any).manualFixture.workspace());await page.getByRole('dialog').waitFor();await page.getByLabel('业务说明',{exact:true}).fill('未保存的原草案输入')
  await page.getByRole('button',{name:'关闭并保留输入',exact:true}).click();await page.getByRole('dialog').waitFor({state:'detached'})
  await page.evaluate(()=>{const f=(window as any).manualFixture;f.switchSession();f.reopenWorkspace()})
@@ -103,7 +108,7 @@ test('未保存关闭并切会话后复用第二页原草案与输入，start始
 
 test('刚采用后原Flow草案状态尚未刷新，手动编辑建立新候选而不读已采用稿',async t=>{
  const page=await browser.newPage();page.setDefaultTimeout(5000);t.after(()=>page.close());await page.route('**/*',(route:any)=>route.abort())
- await page.setContent('<html lang="zh-CN"><body><div id="root"></div></body></html>');await page.addStyleTag({content:styles});await page.addScriptTag({content:script});await page.getByLabel('业务说明',{exact:true}).waitFor()
+ await setLocalDocument(page,'<html lang="zh-CN"><body><div id="root"></div></body></html>');await page.addStyleTag({content:styles});await page.addScriptTag({content:script});await page.getByLabel('业务说明',{exact:true}).waitFor()
  await page.evaluate(()=>(window as any).manualFixture.adoptedWorkspace())
  await page.getByRole('dialog').getByLabel('业务说明',{exact:true}).waitFor()
  assert.equal(await page.evaluate(()=>(window as any).manualFixture.startCount),1)

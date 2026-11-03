@@ -16,6 +16,7 @@ async function fixture(t:TestContext,scopes:readonly string[][],texts:readonly s
  const catalog=new ReferenceCatalog(directory,rows.map(row=>({id:row.spec.sourceId,title:row.spec.title,file:row.spec.sourceId+'.md'})))
  const locks:string[]=[],reads:{id:string;actorScopes:readonly string[]|undefined;resourceScopes:readonly string[]|undefined}[]=[]
  const client={query:async(sql:string,params:unknown[])=>{
+  if(sql==="select to_regclass('teloa_employee_knowledge_source_retirements') as present")return {rows:[{present:null}]}
   assert.match(sql,/^select \* from teloa_resources where id=\$1 for share$/)
   const id=String(params[0]);locks.push(id);return {rows:rows.filter(row=>row.id===id)}
  }} as unknown as PoolClient

@@ -62,7 +62,8 @@ test('宿主入口注册目录接口，写命令进入可恢复请求表',async(
  assert.match(source,/marketCatalogEndpoints as readonly string\[\]\)\.includes\(endpoint\)\?await marketCatalogHandler/)
  // AI 同事建岗不带 requestId（后端派生幂等身份），不能被待恢复命令的请求身份检查挡住
  assert.match(source,/const catalogRoleAdd=\(endpoint:string,payload:unknown\)=>endpoint==='market-catalog\/add'&&isRecord\(payload\)&&payload\.kind==='role'/)
- assert.match(source,/if\(!isPendingRequestEndpoint\(endpoint\)\|\|catalogRoleAdd\(endpoint,payload\)\)return dispatchTeloaEndpoint/)
+ assert.match(source.split('\n').find(line=>line.includes('const dispatch=()=>'))??'',/:dispatchTeloaEndpoint\(endpoint,payload,signal\)$/)
+ assert.match(source,/if\(!isPendingRequestEndpoint\(endpoint\)\|\|catalogRoleAdd\(endpoint,payload\)\)return dispatch\(\)/)
  assert.match(source,/isPendingRequestEndpoint\(endpoint\)&&!catalogRoleAdd\(endpoint,payload\)\?\{receipt:/)
  const pending=await readFile(new URL('../../contract/src/pending-requests.ts',import.meta.url),'utf8')
  assert.match(pending,/'market-catalog\/add'/);assert.match(pending,/'market-content\/import-github-skill'/)

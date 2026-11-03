@@ -36,7 +36,7 @@ test('派生技能声明许可经真实RPC解码与PostgreSQL保存，丢回包�
   assert.equal((await pool.query('select count(*)::int as count from teloa_market_contents')).rows[0].count,1)
   const restored=createMarketContentApi(call,persistence,()=>{throw Error('recovery must not allocate a request')})
   const item=await restored.recover()
-  assert.equal(journal,null);assert.equal(imports,1);assert.equal(item.license,'Apache-2.0');assert.deepEqual(item.trust?.license,{status:'declared',value:'Apache-2.0'});assert.deepEqual(item.trust?.signature,{status:'unverified',signer:null});assert.equal(item.trust?.review.conclusion,'needs-review');assert.equal(item.author,'My independent copy')
+  assert.equal(journal,null);assert.equal(imports,1);assert.equal(item.license,'Apache-2.0');assert.deepEqual(item.trust?.license,{status:'declared',value:'Apache-2.0'});assert.deepEqual(item.trust?.signature,{status:'unverified',signer:null});assert.equal(item.trust?.review.conclusion,'needs-review');assert.equal(item.author,'本人导入');assert.equal(item.author,item.trust?.publisher)
   const actual=await store.get(actor,{contentId:item.contentStorage!.contentId})
   assert.deepEqual(actual.trust.license,{status:'declared',value:'Apache-2.0'});assert.deepEqual(actual.files.map(file=>({path:file.path,bytes:file.bytes})),[...files].sort((a,b)=>a.path<b.path?-1:a.path>b.path?1:0))
   assert.deepEqual(actual.metadata.modelDependencies,[dependency]);assert.deepEqual(item.atomicSkill?.modelDependencies,[dependency])

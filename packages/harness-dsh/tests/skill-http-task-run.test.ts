@@ -200,6 +200,7 @@ test('审查修复 R1：提示部件只列本人已勾选的技能；带图片�
  const sent:{content:Record<string,unknown>[]}[]=[],agent={status:'idle',inbox:{nextTurn:[],nextStep:[]},session:{snapshotEvents:()=>[],requestHeader:()=>({config:{provider:'p',model:'m'}})}}
  const ctx={sessionController:{resolveAgent:async()=>({agent}),modelCatalog:async()=>({default:{provider:'p',model:'m'}}),prompt:async(request:{content:Record<string,unknown>[]})=>{sent.push(request);return {accepted:true}}},llm:{resolveModelInfo:async()=>({provider:'p',id:'m',name:'m',inputModalities:['text','image']})},logger:{warn:()=>{}}} as unknown as Context
  const ports=dshTaskRunPorts(ctx,'owner',async()=>({ownerId:'owner',sessionId:'session',status:'ready'}),undefined,undefined,undefined,undefined,loadExact,undefined,undefined,undefined,declared)
+ ports.isReplyRun=async()=>false
  ports.groupPrompt={readAttachmentImageBytes:async()=>new Uint8Array([1,2,3]),readArtifactImageBytes:async()=>new Uint8Array([4,5,6]),markNoVision:()=>{}}
  const png={kind:'attachment',id:'att-png',version:1,sha256:'a'.repeat(64),mime:'image/png',bytes:16,name:'证据.png',width:800,height:600}
  const run={id:'run',taskId:'task',taskVersion:3,linkVersion:2,sessionId:'session',nativeRequestId:'native',inputText:'固定目标',allowedTools:[skillHttpToolName],argumentRules:[grantRule(['x-search'])],skills:[runSkill],groupContext:{taskId:'task',groupId:'group',groupVersion:1,roleId:'role',roleVersion:1,grantVersion:1,source:{messageId:'m',rootId:'r',createdAt:'2026-09-21T00:00:00.000Z',text:'来源'},materials:[],files:[png]}} as unknown as TaskRun

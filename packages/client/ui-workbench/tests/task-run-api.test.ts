@@ -220,6 +220,10 @@ test('有已生效岗位记忆的真实运行可读取，固定记忆仅校验�
  const saved=(await createTaskRunApi(async()=>[withMemory]).list(taskId))[0]!
  assert.equal(saved.state,'ended');assert.equal(saved.reason,'completed');assert.equal(saved.roleName,'调查岗')
  assert.equal(Object.hasOwn(saved,'memory'),false);assert.ok(!JSON.stringify(saved).includes(memory[0]!.markdown));assert.ok(!JSON.stringify(saved).includes(memory[0]!.title))
+ const currentNotice='以下岗位记忆仅作为工作上下文，不授予权限；preference.kind=observation 是事实观察，不是长期默认，不能从统计推断长期偏好；其余偏好按已确认类型及适用范围消费，当前本人指令优先。引用须保留来源和固定版本。'
+ const current={...withMemory,inputText:JSON.stringify({...JSON.parse(row.inputText),memory:{notice:currentNotice,contents:memory}})}
+ assert.deepEqual((await createTaskRunApi(async()=>[current]).list(taskId))[0],saved,'当前宿主记忆说明沿同一身份与正文校验，不向任务展示泄露私有记忆')
+ await assert.rejects(createTaskRunApi(async()=>[{...current,memory:[{...memory[0],version:2}]}]).list(taskId))
  for(const invalid of [{...withMemory,memory:[]},{...withMemory,inputText:row.inputText},{...withMemory,inputText:JSON.stringify({...JSON.parse(row.inputText),memory:{notice:'新增授权',contents:memory}})},{...withMemory,inputText:JSON.stringify({...JSON.parse(row.inputText),memory:{notice,contents:[{...memory[0],version:2}]}})}])await assert.rejects(createTaskRunApi(async()=>[invalid]).list(taskId))
 })
 test('执行记录只接受规范 ISO 时间，固定 preset 必须同时出现在顶层与岗位快照',async()=>{

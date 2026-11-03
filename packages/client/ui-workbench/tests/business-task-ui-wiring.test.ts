@@ -13,7 +13,7 @@ test('真实业务对象详情只通过正式创建接口创建调查任务',asy
  assert.match(page,/actionId/)
  assert.match(page,/persistentBusinessTaskAssignees/)
  assert.match(page,/BusinessTaskRecovery/)
- assert.match(page,/ledgerVisible&&<BusinessLedgerSurface/)
+ assert.match(page,/ledgerVisible&&ledgerSurface/)
  assert.doesNotMatch(page,/businessTasksForMode/)
  assert.match(frame,/createBusinessSavedTask/)
  assert.match(frame,/mergeSavedTasks\(\[result\.task\]\)/)

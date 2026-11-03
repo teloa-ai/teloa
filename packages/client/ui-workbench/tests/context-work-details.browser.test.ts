@@ -1,3 +1,5 @@
+// @ts-expect-error 本机可信文档夹具为 MJS 模块。
+import {setLocalDocument} from './fixtures/local-document.mjs'
 import assert from 'node:assert/strict'
 import test,{type TestContext} from 'node:test'
 import {mkdtemp,readFile,writeFile,rm} from 'node:fs/promises'
@@ -23,7 +25,7 @@ async function fixture(t:TestContext,source:string,frame=false){
  const page=await browser.newPage({viewport:{width:1440,height:960}});t.after(()=>page.close());page.setDefaultTimeout(3000)
  const errors:string[]=[],requests:string[]=[];page.on('pageerror',(error:Error)=>errors.push(error.stack??error.message))
  if(frame){const server=createServer((_request,response)=>{response.setHeader('Content-Type','text/html');response.end('<!doctype html><html lang="zh-CN"><body style="margin:0"><div id="root"></div></body></html>')});await new Promise<void>(done=>server.listen(0,'127.0.0.1',done));t.after(()=>new Promise<void>(done=>server.close(()=>done())));const origin='http://127.0.0.1:'+((server.address() as {port:number}).port);await page.route('**/*',(route:any)=>{if(new URL(route.request().url()).origin===origin)return route.continue();requests.push(route.request().url());return route.abort()});await page.goto(origin)}
- else {await page.route('**/*',(route:any)=>{requests.push(route.request().url());return route.abort()});await page.setContent('<!doctype html><html lang="zh-CN"><body><div id="root"></div></body></html>')}
+ else {await page.route('**/*',(route:any)=>{requests.push(route.request().url());return route.abort()});await setLocalDocument(page,'<!doctype html><html lang="zh-CN"><body><div id="root"></div></body></html>')}
  await page.addStyleTag({content:bundle.output.flatMap(item=>item.type==='asset'&&item.fileName.endsWith('.css')?[String(item.source)]:[]).join('\n')});await page.addScriptTag({content:bundle.output.find(item=>item.type==='chunk')!.code})
  return {page,errors,requests}
 }
@@ -102,10 +104,10 @@ test('实际 Frame 员工预览重绘保草稿，旧关闭不清新员工；明�
  const {page,errors,requests}=await employeeFrameFixture(t);await page.waitForFunction(()=>!!(window as any).frameFixture)
  await page.evaluate(()=>{const f=(window as any).frameFixture;f.actions.openTask('10000000-0000-4000-8000-000000000001')})
  const owner=page.getByRole('button',{name:'原姓名',exact:true});await owner.click();let employee=page.getByRole('dialog',{name:'原姓名',exact:true});await employee.waitFor();assert.equal(Math.round((await employee.boundingBox())!.width),432);assert.equal(await employee.locator(':scope > header h2').count(),0,'嵌入入口与目录共用单一身份区')
- await employee.getByRole('button',{name:'更多员工操作',exact:true}).click();await employee.getByRole('button',{name:'交给它一件事',exact:true}).click();await page.getByRole('textbox',{name:'任务名称',exact:true}).fill('原员工派活草稿')
- await page.evaluate(()=>(window as any).frameFixture.rememberDirectory('tasks',{scrollTop:321}));assert.equal(await page.getByRole('textbox',{name:'任务名称',exact:true}).inputValue(),'原员工派活草稿');await page.keyboard.press('Escape')
+ await employee.getByRole('button',{name:'更多员工操作',exact:true}).click();await employee.getByRole('button',{name:'编辑资料',exact:true}).click();await page.getByRole('textbox',{name:'员工名称',exact:true}).fill('原员工资料草稿')
+ await page.evaluate(()=>(window as any).frameFixture.rememberDirectory('tasks',{scrollTop:321}));assert.equal(await page.getByRole('textbox',{name:'员工名称',exact:true}).inputValue(),'原员工资料草稿');await page.keyboard.press('Escape')
  await page.evaluate(()=>{const f=(window as any).frameFixture,old=f.state().rolePreview.request;f.actions.previewRole('r-other');f.actions.closeRolePreview(old)})
- employee=page.getByRole('dialog',{name:'另一员工',exact:true});await employee.waitFor();await page.keyboard.press('Escape');await owner.click();await page.getByRole('dialog',{name:'原姓名',exact:true}).waitFor();await page.getByRole('button',{name:'更多员工操作',exact:true}).click();await page.getByRole('button',{name:'交给它一件事',exact:true}).click();assert.equal(await page.getByRole('textbox',{name:'任务名称',exact:true}).inputValue(),'原员工派活草稿');await page.keyboard.press('Escape')
+ employee=page.getByRole('dialog',{name:'另一员工',exact:true});await employee.waitFor();await page.keyboard.press('Escape');await owner.click();await page.getByRole('dialog',{name:'原姓名',exact:true}).waitFor();await page.getByRole('button',{name:'更多员工操作',exact:true}).click();await page.getByRole('button',{name:'编辑资料',exact:true}).click();assert.equal(await page.getByRole('textbox',{name:'员工名称',exact:true}).inputValue(),'原员工资料草稿');await page.keyboard.press('Escape')
  await page.evaluate(()=>{const f=(window as any).frameFixture;f.actions.openArtifacts({kind:'task',id:'original-artifacts'});f.actions.openDirectory()})
  assert.equal(await page.locator('dialog[open]').count(),0);assert.deepEqual(await page.evaluate(()=>{const s=(window as any).frameFixture.state();return [s.view,s.rolePreview,s.detail.target.source.id]}),['settings',null,'original-artifacts'])
  await page.evaluate(()=>{const f=(window as any).frameFixture;f.actions.closeSettings();f.actions.previewRole('r-profile');f.actions.openMessages('native')});assert.equal(await page.locator('dialog[open]').count(),0)
