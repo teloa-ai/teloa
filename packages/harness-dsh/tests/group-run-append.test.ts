@@ -48,6 +48,14 @@ test('带新资料或原 Run 已收敛的追加不进入活动 Run（不热扩�
  assert.deepEqual(w.submits,[])
 })
 
+test('原Run处置为提交未知且没有追加回执：不能推断未受理并转为自动续办',async()=>{
+ const w=world();w.ports.submit=async(_s,id)=>{w.submits.push(id)}
+ assert.equal(await deliverGroupRunAppend('owner',w.item(),w.ports,AbortSignal.timeout(1000)),'pending')
+ w.setRun('submission_unknown')
+ assert.equal(await deliverGroupRunAppend('owner',w.item(),w.ports,AbortSignal.timeout(1000)),'pending')
+ assert.equal(w.read().state,'unknown');assert.equal(w.submits.length,1)
+})
+
 test('运行观察：登记过的追加 rpcId 属于本 Run；未登记的本人输入仍切断续接资格',()=>{
  const events=[turn(0,'turn/start',0),user(1,runRequest),turn(2,'turn/end',0),turn(3,'turn/start',1),user(4,appendId)]
  assert.equal(observeTaskRunTimeline(events,runRequest,new Set([groupRunAppendKey(appendId)])).authorized,true)

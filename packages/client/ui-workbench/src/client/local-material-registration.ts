@@ -1,4 +1,4 @@
-import {isSourceReference,resourceId,resourceScopes,resourceTitle,taskInput,type ResourceDraft,type ResourceSpec,type SourceReference} from '@teloa/contract'
+import {WorkError,isSourceReference,resourceId,resourceScopes,resourceTitle,taskInput,type ResourceDraft,type ResourceSpec,type SourceReference} from '@teloa/contract'
 import {recoveryStorageError} from './recovery-error.ts'
 export type LocalMaterialRegistrationInput={requestId:string;title:string;path:string;scopeIds:string[]}
 type Fields=Omit<LocalMaterialRegistrationInput,'requestId'>
@@ -11,7 +11,8 @@ export const isAdoptedMaterialSourceId=(id:string)=>id.startsWith('adopted_')&&r
 export const isIndustryMaterialSourceId=(id:string)=>/^industry_[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}_[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id)
 export function readLocalMaterialInput(value:unknown):LocalMaterialRegistrationInput{
  const row=taskInput(value,['requestId','title','path','scopeIds'])
- if(!resourceId(row.requestId)||!resourceTitle(row.title)||row.title!==row.title.trim()||!resourceScopes(row.scopeIds)||typeof row.path!=='string'||!row.path||row.path!==row.path.trim()||row.path.length>4096||row.path.startsWith('/')||row.path.includes('\\')||row.path.includes('\0')||/^[a-z]:/i.test(row.path)||row.path.split('/').some(part=>!part||part==='.'||part==='..')||!(/\.(md|markdown)$/i.test(row.path)))throw Error('本机文件登记输入格式不正确。')
+ if(!resourceId(row.requestId)||!resourceTitle(row.title)||row.title!==row.title.trim()||!resourceScopes(row.scopeIds)||typeof row.path!=='string'||!row.path||row.path!==row.path.trim()||row.path.length>4096||row.path.startsWith('/')||row.path.includes('\\')||row.path.includes('\0')||/^[a-z]:/i.test(row.path)||row.path.split('/').some(part=>!part||part==='.'||part==='..'))throw Error('本机文件登记输入格式不正确。')
+ if(!(/\.(md|markdown)$/i.test(row.path)))throw new WorkError('teloa/invalid-input','本机原件只支持 Markdown 格式。',{reason:'local-material-format-unsupported'})
  return row as LocalMaterialRegistrationInput
 }
 export function isLocalMaterialReference(value:unknown,input:LocalMaterialRegistrationInput):value is SourceReference{

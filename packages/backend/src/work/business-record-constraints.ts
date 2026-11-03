@@ -1,7 +1,7 @@
 import type {PoolClient} from 'pg'
 import {WorkError,readBusinessObjectTypeDefinitionVersioned,type BusinessObjectTypeDefinition,type BusinessObjectTypeDefinitionV2,type BusinessObjectSnapshot,type BusinessConfigurationCandidate,type BusinessConfigurationCandidateV2} from '@teloa/contract'
 import {readBusinessObjectSnapshot,businessObjectSnapshotHash} from './business-data.ts'
-import {assertBusinessRecordUniqueState} from './business-record-values.ts'
+import {assertBusinessRecordFieldValue,assertBusinessRecordUniqueState} from './business-record-values.ts'
 
 type Definition=BusinessObjectTypeDefinition|BusinessObjectTypeDefinitionV2
 const corrupt=()=>new WorkError('teloa/storage-corrupt','本地业务记录的当前版本、来源或固定快照损坏，已停止检查。')
@@ -37,10 +37,15 @@ export async function assertBusinessConfigurationUniqueRecords(db:PoolClient,own
  for(const item of candidate.definitions){
   if(item.kind!=='object-type')continue
   const definition=readBusinessObjectTypeDefinitionVersioned(item.definition)
-  if(!hasBusinessRecordUniqueConstraints(definition))continue
+  const numeric=definition.fields.filter(field=>field.type==='number'&&(field.integer||field.minimum!==undefined||field.decimalScale!==undefined))
+  if(!hasBusinessRecordUniqueConstraints(definition)&&!numeric.length)continue
   signal?.throwIfAborted()
   const records=await readBusinessRecordConstraintState(db,ownerId,candidate.scope,definition,signal)
-  try{assertBusinessRecordUniqueState(definition,records)}catch(error){
+  try{
+   assertBusinessRecordUniqueState(definition,records)
+   for(const record of records)if(record.deletedAt===undefined)for(const field of numeric)assertBusinessRecordFieldValue(field,record.fields.find(value=>value.label===field.from)?.value)
+  }catch(error){
+   if(error instanceof WorkError&&error.code==='teloa/invalid-input')throw new WorkError('teloa/conflict','配置的数值约束与现存记录不兼容，需要先处理数据。')
    if(error instanceof WorkError&&error.code==='teloa/storage-corrupt')throw new WorkError('teloa/conflict','配置的唯一字段与现存记录不兼容，需要先处理数据。')
    throw error
   }

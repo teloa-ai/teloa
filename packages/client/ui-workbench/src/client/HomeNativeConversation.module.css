@@ -18,7 +18,7 @@
 .homeConversation :global([data-content-phase="hero"]){overflow:visible}
 /* 首页只由外层滚动，候选菜单可以越过输入区；正文会话仍由原生滚动器拥有。 */
 .home .homeConversation :global([data-conversation-region=chat]) :global([data-conversation-scroll]){overflow:visible;scrollbar-gutter:auto}
-.homeConversation :global([data-composer-card] div:has(>[role=listbox])){max-height:var(--teloa-home-menu-height,200px)!important}
+.homeConversation :global([data-composer-card] div:has(>[role=listbox])){max-height:var(--native-menu-height,var(--teloa-home-menu-height,200px))!important}
 .home:global([data-teloa-home-menu-side=below]) :global([data-composer-card] div:has(>[role=listbox])){top:var(--teloa-home-card-height);bottom:auto}
 
 .homeConversation[hidden],.body[hidden]{display:none}

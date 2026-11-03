@@ -116,6 +116,25 @@ test('替换官方会话控制器行时组合结果包含浏览器面载体行',
  assert.deepEqual(await compose(rows,{providers:await providers(),runtimeRoot}),patches)
 })
 
+test('显式启用标题后的overlay进入正式compose，可选all组合保留唯一标题provider',async t=>{
+ const rows=communityRows(),runtimeRoot=await temporary(t),compat=await providers()
+ const title=findRow(rows,'session-title-llm');assert.ok(title);title.disabled=false
+ const final=applyPatches(rows,await compose(rows,{providers:compat,runtimeRoot}))
+ const original=findRow(rows,'session-title-llm'),wrapped=findRow(final,'teloa-employee-title')
+ assert.ok(original);assert.equal(findRow(final,'session-title-llm')?.disabled,true)
+ assert.deepEqual(wrapped,{...structuredClone(original),id:'teloa-employee-title',name:'@teloa/harness-dsh/employee-mention-title'})
+ const boot=await import(pathToFileURL(require.resolve('@deepseek-ai/dsh-app-boot')).href)
+ const dshRequire=createRequire(createRequire(join(projectRoot,'package.json')).resolve('@deepseek-ai/dsh/package.json'))
+ const optionalPath=dshRequire.resolve('@deepseek-ai/dsh-experimental-session-titles-bundle/package.json')
+ const optional=JSON.parse(await readFile(optionalPath,'utf8'))
+ const optionalPatches=boot.bundlePatchPaths(dirname(optionalPath),optional.dsh.bundle).flatMap((path:string)=>boot.loadOverlayPatches('dsh',path))
+ const optionalRows=applyPatches(rows,optionalPatches)
+ assert.equal(findRow(optionalRows,'session-title-llm')?.disabled,true)
+ const optionalFinal=applyPatches(optionalRows,await compose(optionalRows,{providers:compat,runtimeRoot}))
+ assert.equal(findRow(optionalFinal,'teloa-employee-title'),undefined)
+ assert.deepEqual(findRow(optionalFinal,'optional-session-title-all-prompts'),findRow(optionalRows,'optional-session-title-all-prompts'))
+})
+
 test('二次替换提供方后载体仍在',async t=>{
  const rows=communityRows(),runtimeRoot=await temporary(t),hostRoot=await temporary(t)
  const patches=await compose(rows,{providers:await providers(),runtimeRoot}),composed=applyPatches(rows,patches)

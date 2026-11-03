@@ -50,7 +50,6 @@ export const viMessages = {
   'task.empty.none': 'Chưa có nhiệm vụ nào',
   'task.empty.noMatch': 'Không tìm thấy nhiệm vụ phù hợp',
   'task.detail.back': 'Quay lại danh mục',
-  'task.detail.goal': 'Mục tiêu nhiệm vụ',
   'continuous.directory': 'Tự động hóa',
   'continuous.tab.plans': 'Kế hoạch',
   'continuous.tab.runs': 'Lịch sử chạy',

@@ -21,11 +21,11 @@ const deny=(message:string)=>new WorkError('teloa/forbidden',message)
  */
 export async function readGroupTaskBusinessGrant(db:Pick<PoolClient,'query'>,owner:string,sessionId:string,admission?:(runId:string)=>Promise<{assertCurrent:()=>void}>):Promise<GroupTaskBusinessGrant>{
  // 采用事务先按 岗位→Run→Task 的既有顺序取得执行准入，再加共享锁读其余事实，不反转锁序。
- const hint=admission?(await db.query("select id from teloa_task_runs where owner_id=$1 and session_id=$2 order by (state not in ('ended','withdrawn','configuration_failed')) desc,created_at desc,id desc limit 1",[owner,sessionId])).rows[0]:undefined
+ const hint=admission?(await db.query("select id from teloa_task_runs where owner_id=$1 and session_id=$2 order by (state not in ('ended','withdrawn','configuration_failed','submission_unknown')) desc,created_at desc,id desc limit 1",[owner,sessionId])).rows[0]:undefined
  if(admission&&!hint)throw deny('这项工作已结束或已要求停止，不能再修改业务记录。')
  const lease=admission?await admission(String(hint.id)):undefined
  const run=(await db.query(`select id,task_id,task_state_version,role_id,state,stop_requested_at,native_request_id from teloa_task_runs where owner_id=$1 and session_id=$2
-  order by (state not in ('ended','withdrawn','configuration_failed')) desc,created_at desc,id desc limit 1 for share`,[owner,sessionId])).rows[0]
+  order by (state not in ('ended','withdrawn','configuration_failed','submission_unknown')) desc,created_at desc,id desc limit 1 for share`,[owner,sessionId])).rows[0]
  if(!run||!['accepted','active'].includes(String(run.state))||run.stop_requested_at!==null)throw deny('这项工作已结束或已要求停止，不能再修改业务记录。')
  if(hint&&String(hint.id)!==String(run.id))throw deny('原工作运行已变化，不能修改业务记录。')
  const sourceRow=(await db.query('select group_id,message_id,source_snapshot,snapshot_digest from teloa_group_task_sources where owner_id=$1 and task_id=$2 for share',[owner,run.task_id])).rows[0]

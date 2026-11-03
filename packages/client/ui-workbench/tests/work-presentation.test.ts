@@ -13,6 +13,14 @@ test('最近工作以绑定身份关联真实标题，按活动时间排序且�
   assert.equal(result[0]?.conversation,rows[0])
 })
 
+test('自动工作只显示可信任务或业务名称，普通本人聊天仍采用原生标题',()=>{
+ const task={...row('task-run-a'),purpose:'task-run' as const,title:'逐条告警持续研判'},chat=row('chat'),native=[{id:task.sessionId,title:'{"schema":"teloa.task-run-input/v2"}',running:false,blank:false,updatedAt:2},{id:chat.sessionId,title:'本人修改的 JSON 讨论',running:false,blank:false,updatedAt:1}]
+ const before=JSON.stringify([task,chat,native]),titles=new Map([[task.sessionId,'告警 A']])
+ assert.equal(presentConversations([task],native)[0]?.title,'逐条告警持续研判','未取得业务元数据也不得暴露原生结构化输入标题')
+ assert.deepEqual(presentConversations([task,chat],native,'','all',undefined,titles).map(item=>item.title),['告警 A','本人修改的 JSON 讨论'])
+ assert.equal(JSON.stringify([task,chat,native]),before,'显示名不改写原绑定或原生摘要')
+})
+
 test('搜索显示标题和原始身份，按实际运行状态筛选而非标题推断',()=>{
   const rows=[row('a'),row('b')],native=[{id:'a',title:'AppSec 核对',running:true,blank:false,updatedAt:1},{id:'b',title:'正在运行的说明',running:false,blank:false,updatedAt:2}]
   assert.deepEqual(presentConversations(rows,native,'  APPSEC  ').map(item=>item.conversation.id),['work-a'])

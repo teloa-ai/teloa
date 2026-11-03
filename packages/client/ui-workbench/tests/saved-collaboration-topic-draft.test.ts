@@ -117,6 +117,7 @@ function mount(initial:Props,options?:{draftStore?:SavedCollaborationDraftStore;
   if(id==='@deepseek-ai/dsh-client-ui-primitives')return markdownPrimitivesStub
   // 本夹具未接工作关联端口；新组件边界另有源渲染与浏览器用例，不应进入此旧消息测试。
   if(id==='./GroupLinkedWork.js')return {GroupLinkedWork:()=>{throw Error('未接工作关联端口的消息夹具不应渲染关联组件')}}
+  if(id==='./GroupTextWorkRecovery.js')return {GroupTextWorkRecovery:()=>{throw Error('未接文本恢复端口的消息夹具不应渲染恢复组件')}}
   // 此夹具没有模板资料端口；保留真实引用合并，意外渲染资料组件时直接失败。
   if(id==='./industry-team-materials.js')return industryTeamMaterials
   if(id==='./group-work-resources.js')return groupWorkResources

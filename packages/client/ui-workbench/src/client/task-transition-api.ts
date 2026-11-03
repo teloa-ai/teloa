@@ -1,7 +1,7 @@
 import {taskInput} from '@teloa/contract'
 import {readSavedTask,type TaskRequestJournal} from './task-api.ts'
 import {recoveryStorageError} from './recovery-error.ts'
-const states={start:'running',pause:'paused',resume:'running',cancel:'cancelled',complete:'completed'} as const
+const states={start:'running',pause:'paused',resume:'running',cancel:'cancelled',complete:'completed',rework:'ready'} as const
 export type TaskAction=keyof typeof states
 type Request={taskId:string;requestId:string;expectedVersion:number;action:TaskAction;artifact?:{id:string;version:number};note?:string}
 function checked(value:unknown):Request{
@@ -25,6 +25,11 @@ export function createTaskTransitionApi(call:(method:string,payload:unknown)=>Pr
   }catch(cause){if(cause&&typeof cause==='object'&&'rejected' in cause&&cause.rejected===true&&'code' in cause&&['teloa/invalid-input','teloa/forbidden','teloa/conflict','teloa/version-conflict'].includes(String(cause.code))){journal?.clear();request=undefined}throw cause}finally{busy=false}
  }
  return {pending:()=>request?structuredClone(request):undefined,recoveryMessage:()=>error,
+  async reworkCandidate(taskId:string,expectedVersion:number){
+   const row=taskInput(await call('tasks/rework-candidate',{taskId,expectedVersion}),['taskId','taskVersion','available','controlId'])
+   if(row.taskId!==taskId||row.taskVersion!==expectedVersion||typeof row.available!=='boolean'||row.controlId!==null&&(typeof row.controlId!=='string'||!/^([a-f0-9]{8}-[a-f0-9]{4}-[1-5][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12})$/i.test(row.controlId))||row.available&&row.controlId===null)throw Error('任务续办资格与当前版本不一致。')
+   return {taskId,taskVersion:expectedVersion,available:row.available,controlId:row.controlId as string|null}
+  },
   /** 丢弃只清本地恢复记录，不通知服务端（规格 §二 D4）。 */
   discard(){const had=request!==undefined||error!==undefined;try{journal?.clear()}catch{/* 清不掉不该变成第二道墙 */}request=undefined;error=undefined;return had},
   recover:send,

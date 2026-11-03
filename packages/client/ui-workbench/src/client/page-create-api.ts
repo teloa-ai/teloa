@@ -1,5 +1,5 @@
 import {
- pageCreateEntities,pageCreateLimits,readPageCreateBody,
+ pageCreateEntities,pageCreateLimits,readPageCreateBody,roleWriteDefinition,
  type BusinessDefinitionPreview,type PageCreateDraft,type PageCreateDraftDirectory,type PageCreateDraftPreview,type PageCreateEntity,
 } from '@teloa/contract'
 import {validateIndustryManifest} from './industry-manifest.ts'
@@ -90,7 +90,7 @@ export function readPageCreateDraftDirectory(value:unknown,expected?:PageCreateD
  * 预览三块。第二期预览复用注入的真实读取器；尚未接入时明确拒收，不能把只有 schema 的对象伪装成完整预览。
  */
 export function readPageCreateDraftPreview(value:unknown,readers:PageCreateResponseReaders={}):PageCreateDraftPreview{
- const row=exact(value,['schema','draft','fields','fieldsTruncated','consequences','next','computedAt'],['businessPreview'])
+ const row=exact(value,['schema','draft','fields','fieldsTruncated','consequences','next','computedAt'],['businessPreview','roleReferences'])
  if(row.schema!=='teloa.page-create-draft-preview/v1')throw invalid()
  const record=draft(row.draft,readers)
  if(!Array.isArray(row.fields)||row.fields.length>pageCreateLimits.fieldRows||typeof row.fieldsTruncated!=='boolean')throw invalid()
@@ -120,10 +120,18 @@ export function readPageCreateDraftPreview(value:unknown,readers:PageCreateRespo
   if(record.entity!=='business-definition'||!readers.businessPreview)throw invalid()
   try{businessPreview=readers.businessPreview(row.businessPreview)}catch{throw invalid()}
  }
+ let roleReferences:PageCreateDraftPreview['roleReferences']|undefined
+ if(row.roleReferences!==undefined){
+  if(record.entity!=='role')throw invalid()
+  const references=exact(row.roleReferences,['knowledge','skills']),role=roleWriteDefinition(JSON.parse(record.body))
+  const names=(value:unknown,length:number):(string|null)[]=>{if(!Array.isArray(value)||value.length!==length||value.some(name=>name!==null&&!text(name,240)))throw invalid();return [...value]}
+  roleReferences={knowledge:names(references.knowledge,role.knowledge.length),skills:names(references.skills,role.skills.length)}
+ }
  return {
   schema:'teloa.page-create-draft-preview/v1',draft:record,fields,fieldsTruncated:row.fieldsTruncated,consequences,
   next:{endpoint:next.endpoint,consentKeys:[...next.consentKeys as string[]]},
   ...(businessPreview===undefined?{}:{businessPreview}),
+  ...(roleReferences===undefined?{}:{roleReferences}),
   computedAt:row.computedAt,
  }
 }

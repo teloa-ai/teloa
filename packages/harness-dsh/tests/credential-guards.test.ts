@@ -1,11 +1,33 @@
 import test,{type TestContext} from 'node:test'
 import assert from 'node:assert/strict'
-import {mkdir,readFile,symlink,writeFile} from 'node:fs/promises'
+import {realpathSync} from 'node:fs'
+import {mkdir,readFile,symlink,unlink,writeFile} from 'node:fs/promises'
 import {join} from 'node:path'
 import {Context} from '@deepseek-ai/cordis'
 import {guardDecision,protectedRootsFor,redactContent,redactRunMessage,redactToolDecision,registerCredentialGuards} from '../src/credential-guards.ts'
 import TeloaCredentialProvider,{type ProviderDeps} from '../src/credentials/provider.ts'
 import {memoryKeyring,rand,tempHome} from './fixtures/credentials.ts'
+
+test('同次保护根解析共用已存在祖先，后续调用不沿用旧符号链接或不存在尾段的位置',async t=>{
+ const base=await tempHome(t),a=join(base,'a'),b=join(base,'b'),alias=join(base,'source')
+ await mkdir(a);await mkdir(b);await symlink(a,alias)
+ const native=realpathSync.native;let ancestorReads=0
+ t.mock.method(realpathSync,'native',((...args:Parameters<typeof native>)=>{
+  if(args[0]===alias)ancestorReads++
+  return Reflect.apply(native,realpathSync,args)
+ }) as typeof native)
+ const input={providerPaths:['one.md','two.md','three.md'].map(name=>join(alias,'missing',name)),runtimeRoot:join(base,'runtime'),env:{}}
+ const roots=protectedRootsFor(input)
+ assert.equal(ancestorReads,1,'同一同步调用不为三个不存在的尾段反复解析同一祖先')
+ const decide=(path:string,roots:readonly string[])=>guardDecision({file_path:path},{toolName:'read',cwd:base,roots,known:[],env:{},home:base})
+ assert.ok(decide(join(a,'missing','one.md'),roots));assert.equal(decide(join(b,'missing','one.md'),roots),undefined)
+ await unlink(alias);await symlink(b,alias)
+ const changed=protectedRootsFor(input)
+ assert.equal(ancestorReads,2,'下一次安全边界必须重新解析，不能跨调用缓存祖先')
+ assert.ok(decide(join(b,'missing','one.md'),changed));assert.equal(decide(join(a,'missing','one.md'),changed),undefined)
+ await mkdir(join(b,'missing'));await writeFile(join(b,'missing','one.md'),'本轮合成凭据位置')
+ assert.ok(decide(join(b,'missing','one.md'),protectedRootsFor(input)),'原先不存在的受保护文件变为实体后仍拒绝')
+})
 
 test('路径、通配、相对路径与 ..、变量展开、符号链接、递归祖先、标记词都拒绝；普通工作区操作与 DSH_HOME 合法读取放行',async t=>{
  const base=await tempHome(t),runtime=join(base,'.runtime'),dsh=join(runtime,'dsh'),workspace=join(runtime,'workspace')

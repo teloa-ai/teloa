@@ -79,7 +79,8 @@ export async function databasePool(state:InstallState):Promise<any>{
  pool.on('error',()=>{})
  return pool
 }
-export async function prepareDatabase(state:InstallState,options:{initialize?:boolean;migrationBackup?:string}={}):Promise<{configPath:string}>{
+export async function prepareDatabase(state:InstallState,options:{initialize?:boolean;migrationBackup?:string;submissionMaintenance?:true;preparedMaintenance?:true}={}):Promise<{configPath:string}>{
+ if(options.submissionMaintenance&&options.preparedMaintenance)throw Error('数据库数据版本迁移不能混用维护证明。')
  const release=await verifyRelease(state.layout.releaseRoot)
  if(release.version!==state.version||!canUseData(release,release.dataVersion))throw Error('数据库数据版本尚不支持，拒绝初始化或接管；请使用匹配发行。')
  if(state.database.kind==='docker')await prepareDocker(state)
@@ -106,7 +107,11 @@ export async function prepareDatabase(state:InstallState,options:{initialize?:bo
    if(!canUseData(release,previousVersion)){
     if(!supportedDataVersion(previousVersion)||!canUpgradeData(release,previousVersion))throw Error('数据库数据版本尚不支持，拒绝初始化或接管；请使用匹配版本恢复。')
     if(options.initialize===false||state.phase!=='maintenance'||!options.migrationBackup)throw Error('数据库数据版本需要先备份迁移；请停止原安装并通过 teloa upgrade 显式升级。')
-    const {verifyBackup}=await import('./maintenance.ts'),backup=await verifyBackup(options.migrationBackup)
+    const backup=options.preparedMaintenance
+     ?await (await import('./maintenance-prepared.ts')).verifyPreparedMaintenanceMigration(state,options.migrationBackup)
+     :options.submissionMaintenance
+     ?await (await import('./maintenance-submission.ts')).verifySubmissionMaintenanceMigration(state,options.migrationBackup)
+     :await (await import('./maintenance.ts')).verifyBackup(options.migrationBackup)
     const source=await verifyRelease(join(state.layout.home,'releases',backup.version))
     if(backup.installId!==state.id||backup.dataVersion!==previousVersion||source.version!==backup.version||!canUseData(source,previousVersion)||backup.version===state.version)throw Error('数据库数据版本迁移备份与原安装或发行不符，拒绝初始化。')
    }

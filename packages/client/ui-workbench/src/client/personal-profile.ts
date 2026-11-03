@@ -1,4 +1,5 @@
 import {applicationPresentation} from './application-presentation.ts'
+import {WorkError} from '@teloa/contract'
 import {usablePersonalName} from './personal-identity.ts'
 import {createPersonalProfileSync} from './personal-profile-sync.ts'
 export {personalDisplayName,personalAvatarInitials} from './personal-identity.ts'
@@ -9,10 +10,10 @@ export const defaultPersonalDisplayName=''
 
 export function normalizePersonalDisplayName(value:string):string{
   const name=value.trim().replace(/\s+/g,' ')
-  if(!name)throw Error('用户名不能为空。')
-  if(/[@＠]/u.test(name))throw Error('显示名称不能使用邮箱。')
-  if(!usablePersonalName(name))throw Error('用户名不能为空。')
-  if([...name].length>40)throw Error('用户名不能超过 40 个字符。')
+  if(!name)throw new WorkError('teloa/invalid-input','用户名不能为空。',{reason:'profile-name-empty'})
+  if(/[@＠]/u.test(name))throw new WorkError('teloa/invalid-input','显示名称不能使用邮箱。',{reason:'profile-name-email'})
+  if(!usablePersonalName(name))throw new WorkError('teloa/invalid-input','用户名不能为空。',{reason:'profile-name-empty'})
+  if([...name].length>40)throw new WorkError('teloa/invalid-input','用户名不能超过 40 个字符。',{reason:'profile-name-too-long'})
   return name.normalize('NFC')
 }
 

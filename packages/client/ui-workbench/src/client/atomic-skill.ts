@@ -1,5 +1,5 @@
 import {sha256Digest} from '@teloa/contract'
-import {localizedMetadata,skillFrontmatterName,type LocalizedMetadata} from '@teloa/contract'
+import {localizedMetadata,skillFrontmatterName,industryResourceModelDependencies,type IndustryModelDependency,type LocalizedMetadata} from '@teloa/contract'
 import { readIndustryFiles, type IndustryContent, type IndustryFileInput } from './industry-directory.ts'
 
 export type AtomicSkillMetadata = {
@@ -8,6 +8,7 @@ export type AtomicSkillMetadata = {
   version: string
   categories: string[]
   localized?: {title?: LocalizedMetadata}
+  modelDependencies?: IndustryModelDependency[]
 }
 
 export type AtomicSkillContent = AtomicSkillMetadata & {
@@ -53,7 +54,7 @@ export function validateAtomicSkillMetadata(metadata: AtomicSkillMetadata): Atom
       localized.title=value
     }
   }
-  return { id, title, version, categories, ...(localized?{localized}:{}) }
+  return { id, title, version, categories, ...(localized?{localized}:{}), ...industryResourceModelDependencies('skill',metadata.modelDependencies) }
 }
 
 /** 仅静态读取所选单一目录，保留每个文件的原字节；不执行目录内容。 */

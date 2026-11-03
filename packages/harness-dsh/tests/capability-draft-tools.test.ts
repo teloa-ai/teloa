@@ -1,5 +1,9 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
+import {createServer} from 'node:http'
+import {mkdtemp,readdir,rm} from 'node:fs/promises'
+import {tmpdir} from 'node:os'
+import {join} from 'node:path'
 import {WorkError} from '@teloa/contract'
 
 test('静态模板原稿可以在原会话预览，预览不会创建员工或发布分享',async()=>{
@@ -23,6 +27,8 @@ import {registerMarketSessionTools,marketSessionToolNames} from '../src/market-s
 import {createMarketContentHandler} from '../src/market-content.ts'
 import {createSkillInstallationsHandler} from '../src/skill-installations.ts'
 import {customMcpDefinitionHash,readCustomMcpDefinition} from '../src/custom-mcp-definition.ts'
+import {createManagedMcpConnectionHandler} from '../src/managed-mcp-connections.ts'
+import {memoryCredentialPort} from '../src/managed-mcp-credentials.ts'
 
 const owner='local:teloa-owner',draftId='11111111-1111-4111-8111-111111111111',contentId='22222222-2222-4222-8222-222222222222',installationId='33333333-3333-4333-8333-333333333333',bodyHash='a'.repeat(64)
 const skill={id:'content-review',title:'内容核对',version:'1.0.0',categories:[],files:[{path:'SKILL.md',base64:Buffer.from('---\nname: content-review\ndescription: Review supplied drafts.\n---\nCheck facts.\n').toString('base64')}]}
@@ -54,7 +60,7 @@ test('可读技能预览不接受超限正文或跨实体技能结构',async()=>
  await assert.rejects(()=>app.preview({draftId}),{code:'teloa/invalid-input'})
 })
 
-async function runtime(ports:Record<string,unknown>={},subagent=false,beforeTools?:(ctx:Context)=>void){
+async function runtime(ports:Record<string,unknown>={},subagent=false,beforeTools?:(ctx:Context)=>void,customMcpHandler?:Parameters<typeof registerCustomMcpTools>[1]['handler']){
  const ctx=new Context();await ctx.plugin(LlmRuntime);await ctx.plugin(SystemPrompt);await ctx.plugin(ToolRuntime);await ctx.plugin(SessionStore);await ctx.plugin(SessionProjectionRegistry);await ctx.plugin(AgentRegistry);await ctx.plugin(AgentLoop,{agents:[]})
  const {agent}=await ctx.agents.create({sessionId:SessionId('capability-draft-session'),...(subagent?{meta:{origin:'subagent' as const,delegationDepth:1}}:{}),agentOptions:{provider:'test',model:'test'}})
  agent.session.append('turn/start',{turn:1});agent.session.append('user/message',createUserMessage({source:{kind:'user',rpcId:'owned-request'},content:[{type:'text',text:'帮我创建技能并配置本人 MCP'}]}),{surfaceOp:'append'})
@@ -62,7 +68,7 @@ async function runtime(ports:Record<string,unknown>={},subagent=false,beforeTool
  const base={owner,conversation:async(sessionId:string)=>({ownerId:owner,sessionId,status:'ready' as const}),readTaskPolicy:async()=>null,...ports}
  beforeTools?.(ctx)
  registerCapabilityDraftTools(ctx,{...base,preview:async()=>({schema:'teloa.page-create-draft-preview/v1',draft,fields:[],fieldsTruncated:false,consequences:[],next:{endpoint:'skill-installations/install',consentKeys:[]},computedAt:draft.updatedAt}),apply:async input=>{calls.push({endpoint:'apply',payload:input});return {schema:'teloa.capability-draft-result/v1',draft:{...draft,status:'applied',appliedRef:'skill:'+installationId},appliedRef:'skill:'+installationId,readiness:'installed',next:'可加载。'}}})
- registerCustomMcpTools(ctx,{...base,handler:async(endpoint,payload)=>{calls.push({endpoint,payload});return {id:installationId,catalogId:'custom.test',serverName:'test',status:'saved',createdAt:draft.createdAt,updatedAt:draft.updatedAt}}})
+ registerCustomMcpTools(ctx,{...base,handler:customMcpHandler??(async(endpoint,payload)=>{calls.push({endpoint,payload});return {id:installationId,catalogId:'custom.test',serverName:'test',status:'saved',createdAt:draft.createdAt,updatedAt:draft.updatedAt}})})
  return {ctx,agent,calls,call:(name:string,args:unknown,callId='call')=>ctx.tools.execute({agent,name,arguments:args,callId:ToolCallId(callId),signal:AbortSignal.timeout(5000)})}
 }
 
@@ -111,6 +117,39 @@ test('MCP工具固定路由，保存同调用重试身份稳定，多调用不�
  assert.match(description,/任意主机的 HTTP 或 HTTPS/);assert.doesNotMatch(description,/远程地址使用 HTTPS|回环可用 HTTP/)
  assert.equal((await e.call('teloa_mcp_preview',{definition})).isError,false)
  assert.deepEqual(e.calls.at(-1),{endpoint:'mcp-connections/preview-custom',payload:{definition}})
+})
+
+test('MCP 预览经正式受管 handler 返回未保存定义；非法输入及非本人会话不能保存或连接',{timeout:15000},async t=>{
+ let requests=0,credentialWrites=0
+ const server=createServer((_req,res)=>{requests++;res.writeHead(500).end()})
+ await new Promise<void>(resolve=>server.listen(0,'127.0.0.1',resolve))
+ t.after(()=>new Promise<void>(resolve=>server.close(()=>resolve())))
+ const address=server.address();assert.ok(address&&typeof address!=='string')
+ const root=await mkdtemp(join(tmpdir(),'teloa-tool-mcp-preview-'));t.after(()=>rm(root,{recursive:true,force:true}))
+ const credentials=memoryCredentialPort(),modify=credentials.modifyRecord
+ credentials.modifyRecord=async(...args)=>{credentialWrites++;return modify(...args)}
+ let managed!:ReturnType<typeof createManagedMcpConnectionHandler>,currentOwner=owner,handlerCalls=0
+ const e=await runtime({conversation:async(sessionId:string)=>({ownerId:currentOwner,sessionId,status:'ready'})},false,ctx=>{
+  Reflect.set(ctx,'credentials',credentials);managed=createManagedMcpConnectionHandler(ctx,root,()=>undefined)
+ },async(endpoint,payload)=>{handlerCalls++;return managed.handler(endpoint,payload)})
+ t.after(()=>{managed.dispose();return e.ctx.fiber.dispose()})
+ const definition={schema:'teloa.mcp-server/v1',serverName:'preview_only',title:'本人待确认连接',transport:'streamable-http',url:`http://127.0.0.1:${address.port}/mcp`}
+ const schemas=e.ctx.tools.schemas(e.agent).map(tool=>tool.name),events=e.agent.session.snapshotEvents().length
+ const result=await e.call('teloa_mcp_preview',{definition})
+ assert.equal(result.isError,false,JSON.stringify(result))
+ const preview=JSON.parse(result.content.find(part=>part.type==='text')!.text)
+ assert.equal(preview.schema,'teloa.mcp-preview/v1');assert.deepEqual(preview.definition,definition)
+ assert.match(preview.definitionHash,/^[a-f0-9]{64}$/);assert.equal(preview.authorizationConfigured,false);assert.equal(preview.readiness,'unsaved')
+ assert.equal('connection' in preview,false);assert.equal(handlerCalls,1)
+ const secret='synthetic-preview-secret-never-return'
+ for(const args of [{definition,ownerId:'other'},{definition:{...definition,credentials:{token:secret}}},{definition:{...definition,auth:{kind:'headers',headers:[{name:'Authorization',value:secret}]}}},{definition:{...definition,url:`http://name:${secret}@127.0.0.1:${address.port}/mcp`}}]){
+  const rejected=await e.call('teloa_mcp_preview',args);assert.equal(rejected.isError,true);assert.doesNotMatch(JSON.stringify(rejected),new RegExp(secret))
+ }
+ currentOwner='other'
+ assert.equal((await e.call('teloa_mcp_preview',{definition})).isError,true);assert.equal(handlerCalls,1)
+ assert.deepEqual(await managed.handler('mcp-connections/list',{}),{items:[]})
+ assert.deepEqual(await readdir(root),[]);assert.equal(credentialWrites,0);assert.equal(requests,0)
+ assert.deepEqual(e.ctx.tools.schemas(e.agent).map(tool=>tool.name),schemas);assert.equal(e.agent.session.snapshotEvents().length,events)
 })
 
 test('既有目录与自定义 MCP 工具在同一 Context 注册，保持各自连接参数',async t=>{

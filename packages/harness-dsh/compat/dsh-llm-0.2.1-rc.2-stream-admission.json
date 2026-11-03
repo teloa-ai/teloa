@@ -3,17 +3,17 @@
   "package": "@deepseek-ai/dsh-llm",
   "version": "0.2.1-rc.2",
   "upstreamCommit": "687f282e8625c6b8d11ff58211a90524be2e4317",
-  "patchSha256": "4436ded586141b3445289536ac32b37f04b93cbe749c7f183ee02c33260d7df4",
+  "patchSha256": "c2640802067fd6ce03d74ad3c3b5bee294de3590607c979ad270adf058e8c9ec",
   "files": [
     {
       "path": "lib/index.js",
       "beforeSha256": "d18d8ae4c8d961e628708c1e4698e09716a0ebb80e55a672e0bde1029bec1155",
-      "afterSha256": "ac4d5c50fce3f2cd413266b77626f9e9c5d2e8ae85c6058e046f8996088a9548"
+      "afterSha256": "eeb769f84d683562257727699d8637f9bb0ce1b07ef617c52ffdd96b230fc6c1"
     },
     {
       "path": "lib/types/index.d.ts",
       "beforeSha256": "895a2d357b3da2d2ec18eada1271274d43169acaa6591d57bb6e84878e1b88fe",
-      "afterSha256": "0a45e3e0a015d3f8ba875f28feb14e1f0738954b2d72fe1ed11a4e21c9622a26"
+      "afterSha256": "c5fc2e60d80c2072f652b2d67a563481a57465544588fe7ac620296d8e943722"
     }
   ],
   "api": [
@@ -22,7 +22,8 @@
     "LlmRuntime.installStreamAdmission",
     "LlmRuntime.installStreamProjection",
     "LlmStreamProjection",
-    "LlmStreamDispatched"
+    "LlmStreamDispatched",
+    "LlmStreamStarted"
   ],
   "scope": {
     "admission": "Synchronous original GenerateOptions check after exact-model resolution and projection, immediately before adapter stream dispatch and each iterator.next",
@@ -33,6 +34,6 @@
       "Provider resolution may complete before this dispatch gate; failed admission starts no adapter stream",
       "Already started effects are not rolled back; cancellation and stream cleanup retain official behavior"
     ],
-    "projection": "Trusted immutable provider-envelope projection before file/image/tool projection. Original frozen request remains the exact admission identity; provider route, controls and tool schemas cannot change. Captured prepared adapter dispatch is retained. Dispatch notification occurs after adapter iterator construction and before first iteration, with final admission rechecked after awaiting it. Notification receives both the admitted envelope and the exact SDK-projected adapter envelope for source/hash audit; Free without notification has no new await."
+    "projection": "Trusted immutable provider-envelope projection preserves route and tools. Async pre-dispatch validation precedes iterator construction; final admission is rechecked. Optional started notification runs once after first iterator.next is attempted, before consumption, even on zero-delta failure. Its failure aborts the call, queues iterator cleanup without blocking on an uncooperative adapter, and remains a host error; it is not a remote delivery receipt. Free without started notification retains its original signal."
   }
 }

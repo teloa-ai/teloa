@@ -82,6 +82,7 @@ function navigationMenu(){
   './EmployeeAvatar.js':{EmployeeAvatar:()=>null},
   './CapabilityNotice.js':{useApplicationCapability:()=>true},
   './work-presentation.js':{presentConversations:()=>[]},
+  './task-run-chat-presentation.js':{useTaskRunConversationTitles:()=>new Map()},
   './WorkbenchNavigationChrome.js':{WorkbenchNavigationBrand:()=>null,WorkbenchNavigationItems:()=>null},
   './use-personal-profile.js':{usePersonalProfile:()=>({displayName:'Alice',initials:'A'})},
   './application-presentation.js':presentationModule,
@@ -118,6 +119,7 @@ type Registration={name:string;id:string|undefined}
 async function settingsSections(){
  const exported:Record<string,any>={}
  const require=(id:string)=>{
+  if(id==='./ThemeSettingsSaveFeedback.js')return {installThemeSettingsSaveFeedback:()=>()=>{}}
   if(id==='./application-presentation.js')return presentationModule
   if(id==='./workspace-management.js')return {WorkspaceManagement:class{dispose(){}}}
   if(id==='./main-session.js')return {mainSessionSource:()=>({})}

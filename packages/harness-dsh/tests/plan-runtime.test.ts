@@ -46,7 +46,8 @@ async function fixture(){
   loadKnowledge:async(target,ids,signal)=>{signal.throwIfAborted();assert.deepEqual(ids,[knowledge.id]);calls.knowledge.push(target);return [knowledge]},
   send:async run=>{calls.sends++;started.add(run.sessionId)},stop:async()=>{},events:async()=>[],
  }
- const getRunService=async():Promise<TaskRunService>=>{await beforeRunService?.();return new TaskRunService(pool,identity,(actor,id)=>conversations.bySession(actor,id),{allowedTools:['bash'],runReservation:(actor,id)=>conversations.isTaskRunReserved(actor,id),planContext:(db,actor,taskId)=>runtime.executionContext(db,actor,taskId)})}
+ // 调度时刻由测试输入固定；TaskRun 与生产 runtime 创建的 Task 使用同一真实持久化时钟。
+ const getRunService=async():Promise<TaskRunService>=>{await beforeRunService?.();return new TaskRunService(pool,{id:randomUUID,now:()=>new Date().toISOString()},(actor,id)=>conversations.bySession(actor,id),{allowedTools:['bash'],runReservation:(actor,id)=>conversations.isTaskRunReserved(actor,id),planContext:(db,actor,taskId)=>runtime.executionContext(db,actor,taskId)})}
  const runtime=createPlanRuntime({owner,getPool:async()=>pool,conversations,getRunService,runPorts})
  return {owner,plan,plans,role,controls,conversations,runtime,runPorts,calls,setNow:(value:string)=>{now=value},setBeforeRunService:(value:(()=>Promise<void>)|undefined)=>{beforeRunService=value},getRunService}
 }

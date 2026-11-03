@@ -103,6 +103,63 @@ test('凭据键按子串拦截：嵌套 credentials、*_TOKEN、privateKey 等�
  assert.deepEqual(await service.list(owner),[])
 })
 
+const completionPolicy={kind:'verified',verifier:'system-digest',verifierVersion:1,authorizationVersion:1} as const
+const planInput=()=>({requestId:randomUUID(),planId:randomUUID(),expectedVersion:7,expectedConfigVersion:3,action:'update',fields:{title:'每日合成小结',goal:'整理本岗位当天的合成证据',dataScope:'当天本岗位',delivery:'私有日志',trigger:{kind:'schedule',cadence:'daily',weekday:1,time:'09:00',timezone:'Asia/Singapore'},notificationPolicy:'silent',completionPolicy}})
+
+test('计划完成策略版本按既有契约冻结：幂等恢复、预览与成功收讫保留原值',async()=>{
+ const {owner,service}=fixture()
+ for(const endpoint of ['plans/create','plans/change'] as const)for(const verifier of ['system-digest','material-version-summary'] as const){
+  const base=planInput(),fields={...base.fields,completionPolicy:{...completionPolicy,verifier}}
+  const request=endpoint==='plans/create'?{requestId:base.requestId,fields:{...fields,scope:'SOC',roleId:randomUUID(),expectedRoleVersion:5},source:{kind:'manual'}}:{...base,fields}
+  await service.reserve(owner,endpoint,request,now)
+  await service.reserve(owner,endpoint,{...request,requestId:request.requestId.toUpperCase()},now)
+  const frozen=(await pool.query("select request_spec,encode(sha256(convert_to(request_spec::text,'UTF8')),'hex') as digest from teloa_pending_request_registry where owner_id=$1 and request_id=$2",[owner,request.requestId])).rows[0]!
+  assert.deepEqual(frozen.request_spec,request,'持久原spec不能因类型校验被重写')
+  const recovered=await service.readForRecovery(owner,request.requestId)
+  assert.equal(recovered.endpoint,endpoint);assert.deepEqual(recovered.payload,request)
+  assert.deepEqual((await service.preview(owner,request.requestId)).payload,request)
+  assert.equal((await pool.query('select count(*)::int as count from teloa_pending_request_registry where owner_id=$1 and request_id=$2',[owner,request.requestId])).rows[0].count,1)
+  await assert.rejects(service.reserve(owner,endpoint,{...request,fields:{...request.fields,completionPolicy:{...request.fields.completionPolicy,authorizationVersion:2}}},now),{code:'teloa/conflict'})
+  await service.markResponseReady(owner,request.requestId,now)
+  assert.ok((await service.list(owner)).some(row=>row.requestId===request.requestId),'回包可恢复，未收讫不能消失')
+  assert.deepEqual((await service.readForRecovery(owner,request.requestId)).payload,request)
+  const afterRecovery=(await pool.query("select encode(sha256(convert_to(request_spec::text,'UTF8')),'hex') as digest from teloa_pending_request_registry where owner_id=$1 and request_id=$2",[owner,request.requestId])).rows[0]!
+  assert.equal(afterRecovery.digest,frozen.digest,'list、preview、recover和结果就绪不得改变冻结spec摘要')
+  await service.acknowledge(owner,request.requestId,now);await service.acknowledge(owner,request.requestId,now)
+  await assert.rejects(service.readForRecovery(owner,request.requestId),{code:'teloa/not-found'})
+ }
+ assert.deepEqual(await service.list(owner),[])
+})
+
+test('完成策略例外只认正式计划精确对象，坏版本、额外键、数组与其它路径仍拒绝',async()=>{
+ const {owner,service}=fixture(),request=planInput()
+ const badPolicies=[
+  ...[0,-1,1.5,Number.MAX_SAFE_INTEGER+1,'1','Bearer synthetic',null,true,{},[]].map(authorizationVersion=>({...completionPolicy,authorizationVersion})),
+  {...completionPolicy,verifierVersion:'1'}, {...completionPolicy,verifier:'unknown'},
+  {...completionPolicy,credentials:'synthetic'}, {...completionPolicy,Authorization:'synthetic'},
+  {kind:'manual',authorizationVersion:1}, [completionPolicy],
+ ]
+ for(const policy of badPolicies)await assert.rejects(service.reserve(owner,'plans/change',{...request,fields:{...request.fields,completionPolicy:policy}},now),{code:'teloa/invalid-input'})
+ await assert.rejects(service.reserve(owner,'roles/create',request,now),{code:'teloa/invalid-input'})
+ await assert.rejects(service.reserve(owner,'plans/change',{...request,fields:{metadata:{completionPolicy}}},now),{code:'teloa/invalid-input'})
+ await assert.rejects(service.reserve(owner,'plans/change',{...request,completionPolicy,fields:{}},now),{code:'teloa/invalid-input'})
+ for(const key of ['Authorization','credentials','accessToken','EXA_API_KEY','authorizationVersion'])for(const value of [1,'synthetic'])
+  await assert.rejects(service.reserve(owner,'plans/change',{...request,fields:{...request.fields,[key]:value}},now),{code:'teloa/invalid-input'})
+ assert.deepEqual(await service.list(owner),[])
+})
+
+test('恢复再次校验完成策略的真实endpoint和类型，不把旧目录任意对象当成安全元数据',async()=>{
+ const {owner,service}=fixture(),request=planInput()
+ for(const [endpoint,payload]of [
+  ['roles/create',request],
+  ['plans/change',{...request,fields:{...request.fields,completionPolicy:{...completionPolicy,authorizationVersion:'1'}}}],
+ ] as const){
+  const id=randomUUID(),stored={...payload,requestId:id}
+  await pool.query("insert into teloa_pending_request_registry(owner_id,request_id,endpoint,request_spec,state,created_at,updated_at) values($1,$2,$3,$4,'pending',$5,$5)",[owner,id,endpoint,JSON.stringify(stored),now])
+  await assert.rejects(service.readForRecovery(owner,id),{code:'teloa/invalid-input'})
+ }
+})
+
 test('初始化清除旧版登记的 im/channels/save 行（请求体含凭据原值）',async()=>{
  const {owner,service}=fixture()
  await pool.query("insert into teloa_pending_request_registry(owner_id,request_id,endpoint,request_spec,state,created_at,updated_at) values($1,$2,'im/channels/save',$3,'pending',$4,$4)",[owner,randomUUID(),JSON.stringify({credentials:{TELEGRAM_BOT_TOKEN:'x'}}),now])

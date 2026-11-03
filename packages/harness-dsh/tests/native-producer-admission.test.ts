@@ -13,6 +13,24 @@ import {scheduleFixture,until} from './fixtures/native-schedule-admission.ts'
 
 const forbidden={code:'teloa/forbidden'},signal=new AbortController().signal
 
+test('真实Controller保留上下文变化需重述任务的稳定原因，不误报忙碌或发布新输入',async t=>{
+ const f=await controllerAdmissionFixture(t)
+ let failure:WorkError|undefined
+ const policies=createNativeProducerAdmissions({async withNewInput(_agent,_message,_binding,dispatch){if(failure)throw failure;dispatch()}})
+ f.controller.requireInputAdmission();f.controller.installInputAdmission(policies.controller)
+ await f.controller.prompt(promptRequest(f.agent,'context-seed'),signal)
+ const original=f.agent.inbox.nextTurn[0]!,before=f.agent.session.snapshotEvents()
+ for(const reason of ['employee-context-goal-required','detached-project-goal-required']){
+  failure=new WorkError('teloa/invalid-input','秘密服务端正文',{reason})
+  for(const invoke of [()=>f.controller.prompt(promptRequest(f.agent,'context-denied-'+reason,'继续'),signal),()=>f.controller.updateQueue(queueRequest(f.agent,original.id,'继续'))]){
+   await assert.rejects(invoke(),error=>{
+    const remote=remoteErrorOf(error);assert.ok(remote);assert.equal(remote.code,'teloa/invalid-input');assert.deepEqual(remote.details,{reason});assert.doesNotMatch(remote.message,/秘密/);return true
+   })
+   assert.deepEqual(f.agent.session.snapshotEvents(),before);assert.equal(f.agent.inbox.nextTurn[0],original)
+  }
+ }
+})
+
 test('Goal 通用 producer 缺持久业务准入时拒绝，不能凭 producer 标签绕票据',()=>{
  let calls=0
  const admission=createNativeProducerAdmissions({async withNewInput(){calls++}})

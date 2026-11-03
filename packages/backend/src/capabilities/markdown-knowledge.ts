@@ -268,7 +268,7 @@ export class MarkdownKnowledgeService{
   const {initialMarkdown,markdown,...fields}=input
   return this.createPasteWithTransaction(actor,{...fields,markdown:initialMarkdown},within,normalizePasteMarkdown(markdown))
  }
- private async createPasteWithTransaction<T>(actor:ResourceActor,input:unknown,within:(client:PoolClient,value:PasteKnowledge)=>Promise<T>,forkMarkdown?:string):Promise<{knowledge:PasteKnowledge;value:T}>{
+ async createPasteWithTransaction<T>(actor:ResourceActor,input:unknown,within:(client:PoolClient,value:PasteKnowledge,replayed:boolean)=>Promise<T>,forkMarkdown?:string):Promise<{knowledge:PasteKnowledge;value:T}>{
   const row=exact(input,['requestId','title','category','topics','scopeIds','markdown','parentId','expectedDirectoryRevision','position'])
   if(!resourceId(row.requestId)||typeof row.title!=='string'||!row.title.trim()||row.title.length>200||!knowledgeCategories.includes(row.category as KnowledgeCategory)||!resourceScopes(row.scopeIds))throw bad()
   const hasDirectory=row.parentId!==undefined||row.expectedDirectoryRevision!==undefined||row.position!==undefined
@@ -287,7 +287,7 @@ export class MarkdownKnowledgeService{
     const item=itemRow(existing),summary=versionRow(existing),path=existing.markdown_path
     if(item.workspaceId!==this.workspaceId||summary.sourceId!==item.sourceId||typeof path!=='string'||path!==this.relative(item.id,summary.contentHash))throw corrupt()
     const saved=stored(existing,await this.readContent(path,summary.contentHash,summary.bytes))
-    const knowledge={item:saved.item,version:saved.version},value=await within(client,knowledge)
+    const knowledge={item:saved.item,version:saved.version},value=await within(client,knowledge,true)
     commitStarted=true;await client.query('commit');return {knowledge,value}
    }
    const knowledgeId=this.identity.id(),sourceId=this.identity.id(),now=this.identity.now(),relative=this.relative(knowledgeId,contentHash)
@@ -303,7 +303,7 @@ export class MarkdownKnowledgeService{
     await client.query('insert into teloa_knowledge_versions values($1,$2,$3,2,$4,$5,$6,$7)',[actor.ownerId,knowledgeId,sourceId,forkHash,forkBytes.length,forkRelative,now])
     await client.query('update teloa_knowledge_items set current_version=2 where owner_id=$1 and id=$2',[actor.ownerId,knowledgeId])
    }
-   const result=stored((await this.byRequest(client,actor.ownerId,row.requestId))!,forkMarkdown??markdown),knowledge={item:result.item,version:result.version},value=await within(client,knowledge)
+   const result=stored((await this.byRequest(client,actor.ownerId,row.requestId))!,forkMarkdown??markdown),knowledge={item:result.item,version:result.version},value=await within(client,knowledge,false)
    commitStarted=true;await client.query('commit');return {knowledge,value}
   }catch(error){await client.query('rollback').catch(()=>{});if(forkPublished&&!commitStarted)await this.cleanupPublished(forkPublished);if(published&&!commitStarted)await this.cleanupPublished(published);if(error instanceof WorkError)throw error;throw unavailable()}finally{if(forkPublished)await this.closeAnchors(forkPublished.anchors);if(published)await this.closeAnchors(published.anchors);client.release()}
  }
@@ -389,8 +389,14 @@ export class MarkdownKnowledgeService{
   const values=rows.map(value=>itemRow(value,true))
   return values.filter(item=>item.scopeIds.every(scope=>actor.scopeIds.includes(scope)))
  }
- private async archived(client:PoolClient,owner:string,knowledgeId:string):Promise<boolean>{return (await client.query("select to_regclass('teloa_employee_knowledge_archives') as present")).rows[0]?.present!=null&&!!(await client.query('select 1 from teloa_employee_knowledge_archives where owner_id=$1 and knowledge_id=$2',[owner,knowledgeId])).rowCount}
- private async item(client:PoolClient,actor:ResourceActor,knowledgeId:string,lock=false,allowArchived=false):Promise<KnowledgeItem>{
+ /** 指定知识只读核对；复用完整归属/范围/head校验，逐项检索不再反复枚举本人目录。 */
+ async get(actor:ResourceActor,input:unknown):Promise<KnowledgeItem>{
+  authorizeResourceActor(actor);const row=exact(input,['knowledgeId']);if(!resourceId(row.knowledgeId))throw bad()
+  try{return await this.item(this.pool,actor,row.knowledgeId as string)}
+  catch(error){if(error instanceof WorkError)throw error;throw unavailable()}
+ }
+ private async archived(client:Pick<PoolClient,'query'>,owner:string,knowledgeId:string):Promise<boolean>{return (await client.query("select to_regclass('teloa_employee_knowledge_archives') as present")).rows[0]?.present!=null&&!!(await client.query('select 1 from teloa_employee_knowledge_archives where owner_id=$1 and knowledge_id=$2',[owner,knowledgeId])).rowCount}
+ private async item(client:Pick<PoolClient,'query'>,actor:ResourceActor,knowledgeId:string,lock=false,allowArchived=false):Promise<KnowledgeItem>{
   if(!allowArchived&&await this.archived(client,actor.ownerId,knowledgeId))throw new WorkError('teloa/not-found','该知识历史已在重新导入包时清空。')
   let row:Record<string,unknown>|undefined
   if(lock){

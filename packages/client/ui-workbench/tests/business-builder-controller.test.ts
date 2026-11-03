@@ -19,6 +19,7 @@ function fixture(){
  const api=createBusinessBuilderApi(async(endpoint,payload)=>{
   calls.push(endpoint);const p=payload as Record<string,any>
   if(endpoint==='business-setup-plan/read')return null
+  if(endpoint==='business-configuration/generation-mode')return {sessionId:p.sessionId,draftId:p.draftId,revision:drafts.get(p.draftId)!.revision,mode:p.mode??'preview'}
   if(endpoint==='business-conversations/recent-daily')return [...bindings.values()].find(b=>b.kind==='daily'&&b.scope===p.scope)??null
   if(endpoint==='business-conversations/reserve'){
    if(p.kind==='daily'){const b={...p,createdAt:stamp,updatedAt:stamp} as BusinessConversationBinding;bindings.set(b.requestId,b);return b}
@@ -34,7 +35,7 @@ function fixture(){
   throw Error('unexpected '+endpoint)
  })
  const port:WorkPort={list:async()=>[...conversations.values()],read:async id=>conversations.get(id)!,ensure:async id=>conversations.get(id)!,isNativeChild:()=>false,catalog:async()=>{throw Error('not requested')},block:()=>{},current:()=>selected,open:id=>{selected=id;calls.push('open')},adopt:async id=>id,create:async p=>{calls.push('create');const existing=[...conversations.values()].find(row=>row.requestId===p.requestId);if(existing)return existing;const row:Conversation={id:randomUUID(),ownerId:'self',title:p.title!,version:1,status:'ready',sessionId:randomUUID(),requestedSessionId:'request',requestId:p.requestId,scopeIds:['general'],createdAt:stamp,...(p.workspaceId?{requestedWorkspaceId:p.workspaceId}:{})};conversations.set(row.sessionId,row);return row}}
- const controller=new BusinessBuilderController({api,work:new BindingClient(port),storage:{getItem:key=>rows.get(key)??null,setItem:(key,value)=>{rows.set(key,value)},removeItem:key=>{rows.delete(key)}},identity:async()=>space,switching:source,subscribeNative:listener=>{listeners.add(listener);return()=>listeners.delete(listener)},contextCall:async(endpoint,payload)=>{const p=payload as any;if(endpoint==='work-context/read')return {sessionId:p.sessionId,scopeId:'sales',roleId:null,version:1,locked:false};throw Error(endpoint)},block:(id,reason)=>blocks.set(id,reason),watch:()=>()=>{},id:randomUUID})
+ const controller=new BusinessBuilderController({api,work:new BindingClient(port),storage:{get length(){return rows.size},key:index=>[...rows.keys()][index]??null,getItem:key=>rows.get(key)??null,setItem:(key,value)=>{rows.set(key,value)},removeItem:key=>{rows.delete(key)}},identity:async()=>space,switching:source,subscribeNative:listener=>{listeners.add(listener);return()=>listeners.delete(listener)},contextCall:async(endpoint,payload)=>{const p=payload as any;if(endpoint==='work-context/read')return {sessionId:p.sessionId,scopeId:'sales',roleId:null,version:1,locked:false};throw Error(endpoint)},block:(id,reason)=>blocks.set(id,reason),watch:()=>()=>{},id:randomUUID})
  controller.configure({location:()=>location,refreshScopes:async()=>{refreshes++}})
  return {port,changeInput:(next:BusinessBuilderSwitchSnapshot['input'])=>{input=next;for(const listener of listeners)listener()},notify:()=>{for(const listener of listeners)listener()},controller,calls,blocks,bindings,drafts,conversations,rows,source,space:()=>space,changeSpace:()=>space=randomUUID(),selected:()=>selected,select:(id:string|undefined)=>{selected=id},navigate:(value:string)=>location=value,location:()=>location,refreshes:()=>refreshes}
 }
@@ -205,7 +206,7 @@ test('销毁立即使负责人旧实例失效；晚回包保留journal，同gene
  await assert.rejects(api.read({scope:'sales'}));assert.equal(calls.length,1,'重接不能复活旧实例')
  const restored=createBusinessResponsibilityApi(async method=>{calls.push(method);return receipt},{storage,personalSpaceId:f.space(),isCurrent:()=>f.controller.getSnapshot().namespace===next.namespace&&f.controller.getSnapshot().api===next.api})
  assert.equal(restored.pending('sales')?.requestId,input.requestId)
- assert.deepEqual(await restored.reconcile({scope:'sales'}),receipt);assert.equal(f.rows.size,0)
+ assert.deepEqual(await restored.reconcile({scope:'sales'}),receipt);assert.equal([...f.rows.keys()].filter(key=>key.includes('/records/')).length,0)
  assert.deepEqual(calls,['business-responsibility/set','business-responsibility/receipt','business-responsibility/read'])
  f.changeInput(undefined);assert.equal(f.controller.getSnapshot().nativeReady,false,'重接必须恢复真实native就绪订阅')
  f.controller.dispose()
@@ -359,7 +360,17 @@ test('生产record装配在同本人刷新后核对原request；不同空间和�
  assert.equal(f.controller.createRecordFlow(api).forTarget('sales','other').getSnapshot().phase,'idle')
  f.changeSpace();await f.controller.connect({id:3});assert.equal(f.controller.createRecordFlow(api).forTarget('sales','ticket').getSnapshot().phase,'idle')
  await restored.recover();assert.equal(restored.getSnapshot().phase,'saved')
- assert.deepEqual(requests,['business-records/create:'+request,'business-records/receipt:'+request]);assert.equal(f.rows.size,0)
+ assert.deepEqual(requests,['business-records/create:'+request,'business-records/receipt:'+request]);assert.equal([...f.rows.keys()].filter(key=>key.includes('/records/')).length,0)
+})
+
+test('业务记录未提交草稿沿已核验本人 namespace 恢复；切换本人不读取原草稿',async()=>{
+ const f=fixture();await f.controller.connect({id:1});let requests=0
+ const api=createBusinessRecordApi(async()=>{requests++;throw Error('未提交草稿不能调用记录服务')})
+ const definition={format:'teloa.business-object-type/v1' as const,domain:'sales',id:'ticket',version:'1.0.0',sourceId:'records',title:'工单',unit:'条',lead:'工单记录',fields:[{name:'note',label:'备注',from:'备注',type:'text' as const,required:false}]}
+ const base={scope:'sales',type:'ticket',id:'record-a',version:1,snapshotHash:hash,title:'告警A',summary:'',source:'本地记录',observedAt:stamp,receivedAt:stamp,quality:'complete' as const,fields:[]}
+ const original=f.controller.createRecordFlow(api).forTarget('sales','ticket');original.configure(definition,{create:true,edit:true,archive:false});original.edit(base);original.change('summary','A的未提交输入');original.cancel()
+ await f.controller.connect({id:2});const restored=f.controller.createRecordFlow(api).forTarget('sales','ticket');restored.configure(definition,{create:true,edit:true,archive:false});restored.edit(base);assert.equal(restored.getSnapshot().form?.summary,'A的未提交输入')
+ f.changeSpace();await f.controller.connect({id:3});const other=f.controller.createRecordFlow(api).forTarget('sales','ticket');other.configure(definition,{create:true,edit:true,archive:false});other.edit(base);assert.equal(other.getSnapshot().form?.summary,'');assert.equal(requests,0)
 })
 
 test('官方MutableSessionEventSource成功revise结果只刷新一次；继承历史、其它工具、失败结果不刷新',async()=>{
@@ -537,4 +548,14 @@ test('R2 当前builder重开仍核unknown/pending/真实binding，核对和adopt
   if(mode==='unknown')assert.equal(checks,1)
   f.controller.dispose()
  }
+})
+
+test('host无工具预览在原生turn/end完成或失败后回读，历史基线/补页/重复seq不重放',async()=>{
+ const {MutableSessionEventSource}=await import(new URL('./types/client/contract/events.js',import.meta.resolve('@deepseek-ai/dsh-api-session-controller/client')).href)
+ const {watchBusinessBuilderRevisions}=await import('../src/client/business-builder-controller.ts')
+ const end=(seq:number,kind:string)=>({type:'event',event:{type:'turn/end',seq,time:0,data:{turn:1,reason:{kind}},surfaceOp:'none'}} as any)
+ const source=new MutableSessionEventSource();source.replace([end(2,'completed')],false);let reads=0;const off=watchBusinessBuilderRevisions(source,()=>reads++)
+ source.prepend([end(1,'completed')],false);assert.equal(reads,0)
+ source.append(end(3,'completed'));assert.equal(reads,1);source.replace(source.getSnapshot().entries,false);assert.equal(reads,1)
+ source.append(end(4,'error'));assert.equal(reads,2);source.append(end(4,'error'));assert.equal(reads,2);off()
 })

@@ -17,8 +17,11 @@ import {RoleService} from '../../backend/src/work/roles.ts'
 import {RoleMemoryService} from '../../backend/src/work/role-memory.ts'
 import {testRoleResponsibility} from '../../backend/tests/role-test-fixture.ts'
 import {TaskService} from '../../backend/src/work/tasks.ts'
+import {roleFixture} from '../../backend/tests/role-work-test-fixture.ts'
 import {TaskRunService} from '../../backend/src/work/task-runs.ts'
+import {TaskRunSubmissionService} from '../../backend/src/work/task-run-submission.ts'
 import {ObjectConversationService} from '../../backend/src/work/object-conversations.ts'
+import {WorkLineageService} from '../../backend/src/work/work-lineage.ts'
 
 const backendRequire=createRequire(new URL('../../backend/package.json',import.meta.url))
 const repository=fileURLToPath(new URL('../../',import.meta.url))
@@ -43,7 +46,7 @@ async function releaseFixture(root:string,version:string,dataVersion:number,fail
 }
 async function marker(state:InstallState){const pool=await databasePool(state);try{return (await pool.query('select id,data_version from teloa_installation')).rows}finally{await pool.end()}}
 
-test('真实隔离 PG：旧记忆迁到数据3、新读写、1/3备份恢复及旧候选拒绝', {timeout:240_000},async t=>{
+test('真实隔离 PG：数据1/2备份迁到3，未知提交保留，1/2/3恢复及旧候选拒绝', {timeout:300_000},async t=>{
  const root=await mkdtemp(join(tmpdir(),'teloa-data-version-')),home=join(root,'home'),owned=new Set<string>()
  // 仅创建随机安装身份的本轮 Docker 资源；不连接任何已有用户 home、端口或数据库。
  t.after(async()=>{
@@ -72,7 +75,7 @@ test('真实隔离 PG：旧记忆迁到数据3、新读写、1/3备份恢复及�
  const backup1=join(root,'backup-1'),v1=await createBackup(old,backup1)
  assert.equal(v1.dataVersion,1);assert.equal(v1.installId,old.id)
  const next:InstallState={...old,version:'0.2.4',phase:'maintenance',layout:await resolveLayout({home,workspace:layout.workspaceRoot,version:'0.2.4'})}
- await releaseFixture(next.layout.releaseRoot,next.version,3)
+ await releaseFixture(next.layout.releaseRoot,next.version,2)
  await t.test('无备份的普通初始化/恢复准备拒绝迁移，原数据版本和旧约束保持',async()=>{
   for(const options of [{},{initialize:false}])await assert.rejects(prepareDatabase(next,options),/需要先备份迁移/)
   assert.deepEqual(await marker(next),[{id:old.id,data_version:1}])
@@ -87,13 +90,13 @@ test('真实隔离 PG：旧记忆迁到数据3、新读写、1/3备份恢复及�
   await writeFile(join(wrong,'backup-manifest.json'),JSON.stringify({...v1,installId:randomUUID()}),{mode:0o600})
   await assert.rejects(prepareDatabase(next,{migrationBackup:wrong}),/备份与原安装/)
   const failing:InstallState={...next,version:'0.2.4-testfail',layout:await resolveLayout({home,workspace:layout.workspaceRoot,version:'0.2.4-testfail'})}
-  await releaseFixture(failing.layout.releaseRoot,failing.version,3,true)
+  await releaseFixture(failing.layout.releaseRoot,failing.version,2,true)
   await assert.rejects(prepareDatabase(failing,{migrationBackup:backup1}),/初始化失败/)
   assert.deepEqual(await marker(next),[{id:old.id,data_version:1}]);assert.equal((await verifyBackup(backup1)).dataVersion,1)
  })
- await t.test('受控备份迁移成功后才标记3，本人可编辑且旧正文与原来源保留',async()=>{
+ await t.test('受控备份迁移成功后才标记2，本人可编辑且旧正文与原来源保留',async()=>{
   await prepareDatabase(next,{migrationBackup:backup1})
-  assert.deepEqual(await marker(next),[{id:old.id,data_version:3}])
+  assert.deepEqual(await marker(next),[{id:old.id,data_version:2}])
   pool=await databasePool(next)
   try{
    const service=new RoleMemoryService(pool,identity)
@@ -105,7 +108,7 @@ test('真实隔离 PG：旧记忆迁到数据3、新读写、1/3备份恢复及�
   }finally{await pool.end()}
   await prepareDatabase(next)
  })
- await t.test('数据3不允许旧发行准备/备份/降级候选，身份不同仍不可接管',async()=>{
+ await t.test('数据2不允许旧发行准备/备份/降级候选，身份不同仍不可接管',async()=>{
   await assert.rejects(prepareDatabase(old),/数据库数据版本尚不支持/)
   await assert.rejects(createBackup(old,join(root,'wrong-v1-backup')),/数据库数据版本尚不支持/)
   await prepareDatabase(next,{initialize:false})
@@ -113,13 +116,54 @@ test('真实隔离 PG：旧记忆迁到数据3、新读写、1/3备份恢复及�
   assert.equal(canUseData({dataVersion:1,compatibleDataVersions:[1,2]} as never,2),false)
   await writeInstall({...next,phase:'stopped'})
   await assert.rejects(upgradeInstall({...next,phase:'stopped'},old.version,async()=>old.layout.releaseRoot),/数据兼容性/)
-  assert.deepEqual(await marker(next),[{id:old.id,data_version:3}])
+  assert.deepEqual(await marker(next),[{id:old.id,data_version:2}])
  })
- const backup3=join(root,'backup-3'),v3=await createBackup({...next,phase:'stopped'},backup3)
- assert.equal(v3.dataVersion,3);assert.equal(v3.version,next.version)
- await t.test('恢复必须精确匹配发行与数据版本；两版备份各自恢复并保持本人/旧正文',async()=>{
-  await assert.rejects(restoreBackup(backup3,join(root,'mismatch'),{kind:'docker'},old.layout.releaseRoot),/完全匹配/)
-  for(const [archive,source,version,contentVersion] of [[backup1,old,1,1],[backup3,next,3,2]] as const){
+ const backup2=join(root,'backup-2'),v2=await createBackup({...next,phase:'stopped'},backup2)
+ assert.equal(v2.dataVersion,2);assert.equal(v2.version,next.version)
+ const current:InstallState={...next,version:'0.2.10',phase:'maintenance',layout:await resolveLayout({home,workspace:layout.workspaceRoot,version:'0.2.10'})}
+ await releaseFixture(current.layout.releaseRoot,current.version,3)
+ await t.test('2→3只接受原安装数据2备份；成功后旧数据2发行在初始化前拒绝',async()=>{
+  await assert.rejects(prepareDatabase(current),/先备份迁移/)
+  await assert.rejects(prepareDatabase(current,{migrationBackup:backup1}),/备份与原安装/)
+  assert.deepEqual(await marker(current),[{id:old.id,data_version:2}])
+  await prepareDatabase(current,{migrationBackup:backup2})
+  assert.deepEqual(await marker(current),[{id:old.id,data_version:3}])
+  await assert.rejects(prepareDatabase(next),/数据版本尚不支持/)
+  await prepareDatabase(current)
+ })
+ let unknown:Record<string,unknown>,unknownOwner:string,unknownRunId:string
+ await t.test('通过正式本人处置服务写入未知；原身份、停发审计随数据3保存',async()=>{
+  pool=await databasePool(current)
+  try{
+   const {owner,role,taskId}=await roleFixture(pool,'employee'),sessionId='version3-'+randomUUID(),conversationId=randomUUID()
+   const db=await pool.connect();try{await db.query('begin');await new WorkLineageService(pool,identity).bindTask(db,owner,{taskId,source:{kind:'owner-task',taskId}});await db.query('commit')}finally{db.release()}
+   await pool.query("update teloa_roles set state='active' where id=$1",[role.id])
+   const inspect=async()=>({id:conversationId,ownerId:owner,sessionId,status:'ready'})
+   const link=await new ObjectConversationService(pool,inspect,identity.now).change(owner,{requestId:randomUUID(),kind:'task',objectId:taskId,expectedObjectVersion:1,sessionId,expectedLinkVersion:0,action:'link'})
+   const runs=new TaskRunService(pool,identity,inspect),prepared=await runs.prepare(owner,{requestId:randomUUID(),taskId,expectedTaskVersion:1,roleId:role.id,expectedRoleVersion:role.version,sessionId,expectedLinkVersion:link.version},undefined,undefined,undefined,async()=> 'teloa-standard')
+   const run=(await runs.claim(owner,{runId:prepared.id})).run,service=new TaskRunSubmissionService(pool),runtimeId=randomUUID()
+   await service.begin(owner,run,runtimeId);await runs.requestStop(owner,{runId:run.id})
+   const closed=await service.disposeUnknown(owner,{requestId:randomUUID(),runId:run.id,acknowledgeUnknown:true},runs,{runId:run.id,sessionId:run.sessionId,nativeRequestId:run.nativeRequestId,inputSha256:createHash('sha256').update(run.inputText).digest('hex'),runtimeId,logCut:0,logSha256:'a'.repeat(64),assertCurrent(){}})
+   assert.equal(closed.state,'submission_unknown');assert.equal(closed.evidence,null)
+   unknownOwner=owner;unknownRunId=run.id
+   unknown=(await pool.query('select * from teloa_task_runs where owner_id=$1 and id=$2',[owner,run.id])).rows[0]
+  }finally{await pool.end()}
+ })
+ await t.test('已安装旧数据2命令包拒绝真实数据3，不运行旧初始化器',{skip:!process.env.TELOA_TEST_LEGACY_CLI_ROOT},async()=>{
+  const legacyRoot=process.env.TELOA_TEST_LEGACY_CLI_ROOT!,metadata=JSON.parse(await readFile(join(legacyRoot,'packages/cli/lib/data-version.json'),'utf8'))
+  assert.equal(metadata.dataVersion,2,'必须传真实旧数据2命令包')
+  const legacy=await import(pathToFileURL(join(legacyRoot,'packages/cli/lib/database.js')).href)
+  await assert.rejects(legacy.prepareDatabase(next),/数据版本尚不支持/)
+  assert.equal(await legacy.inspectDatabase(next),'unavailable')
+  assert.deepEqual(await marker(current),[{id:old.id,data_version:3}])
+  pool=await databasePool(current)
+  try{assert.deepEqual((await pool.query('select * from teloa_task_runs where owner_id=$1 and id=$2',[unknownOwner,unknownRunId])).rows[0],unknown)}finally{await pool.end()}
+ })
+ const backup3=join(root,'backup-3'),v3=await createBackup({...current,phase:'stopped'},backup3)
+ assert.equal(v3.dataVersion,3)
+ await t.test('恢复必须精确匹配发行与数据版本；三版备份保留原数据且1可直接迁到3',async()=>{
+  await assert.rejects(restoreBackup(backup2,join(root,'mismatch'),{kind:'docker'},old.layout.releaseRoot),/完全匹配/)
+  for(const [archive,source,version,contentVersion] of [[backup1,old,1,1],[backup2,next,2,2],[backup3,current,3,2]] as const){
    const targetHome=join(root,'restore-'+version)
    // 即使恢复中途失败也登记随机目标身份，仅清理此次创建且标签一致的资源。
    let restored:Awaited<ReturnType<typeof restoreBackup>>
@@ -130,9 +174,80 @@ test('真实隔离 PG：旧记忆迁到数据3、新读写、1/3备份恢复及�
    await prepareDatabase(restored,{initialize:false})
    assert.deepEqual(await marker(restored),[{id:restored.id,data_version:version}])
    pool=await databasePool(restored)
-   try{const memory=(await new RoleMemoryService(pool,identity).list(human,{roleId:created.id}))[0]!;assert.equal(memory.ownerId,owner);assert.equal(memory.content.version,contentVersion);assert.deepEqual(memory.source,candidate.source)}finally{await pool.end()}
+   try{
+    const memory=(await new RoleMemoryService(pool,identity).list(human,{roleId:created.id}))[0]!;assert.equal(memory.ownerId,owner);assert.equal(memory.content.version,contentVersion);assert.deepEqual(memory.source,candidate.source)
+    if(version===3)assert.deepEqual((await pool.query('select * from teloa_task_runs where owner_id=$1 and id=$2',[unknownOwner,unknownRunId])).rows[0],unknown,'未知不是完成；恢复保留同一Run与完整处置审计')
+   }finally{await pool.end()}
+   if(version===1){
+    const {credentials:_,...restoredState}=restored
+    const archive=join(root,'restored-1-backup');await createBackup(restoredState,archive)
+    const direct:InstallState={...restoredState,version:'0.2.10',phase:'maintenance',layout:await resolveLayout({home:targetHome,workspace:restored.layout.workspaceRoot,version:'0.2.10'})}
+    await releaseFixture(direct.layout.releaseRoot,direct.version,3)
+    await prepareDatabase(direct,{migrationBackup:archive})
+    assert.deepEqual(await marker(direct),[{id:restored.id,data_version:3}])
+   }
    await stopDatabase(restored)
   }
+ })
+ await t.test('3→4必须先备份，同源核验账本新增后才推进marker，旧命令包拒绝接管',async()=>{
+  const future:InstallState={...current,version:'0.2.16',phase:'maintenance',layout:await resolveLayout({home,workspace:layout.workspaceRoot,version:'0.2.16'})}
+  await releaseFixture(future.layout.releaseRoot,future.version,4)
+  await prepareDatabase(current,{initialize:false})
+  pool=await databasePool(current)
+  let budgetBefore:unknown[],sourceUpdatesBefore:unknown[],sourceBefore:unknown[],runsBefore:unknown[],linksBefore:unknown[]
+  try{
+   // 本轮自有数据3夹具显式没有新账本，不能仅靠换marker声称已迁移。
+   await pool.query('drop table if exists teloa_task_run_source_followups')
+   budgetBefore=(await pool.query('select * from teloa_work_budget_reservations order by id')).rows
+   sourceUpdatesBefore=(await pool.query('select * from teloa_business_task_source_updates order by id')).rows
+   sourceBefore=(await pool.query('select * from teloa_business_task_sources order by owner_id,task_id')).rows
+   runsBefore=(await pool.query('select * from teloa_task_runs order by id')).rows
+   linksBefore=(await pool.query('select * from teloa_task_run_runtime_links order by owner_id,run_id,kind,native_id')).rows
+  }finally{await pool.end()}
+  const archive=join(root,'before-data4'),saved=await createBackup({...current,phase:'stopped'},archive)
+  assert.equal(saved.dataVersion,3)
+  await assert.rejects(prepareDatabase(future),/先备份迁移/)
+  await assert.rejects(prepareDatabase(future,{migrationBackup:backup2}),/备份与原安装/)
+  assert.deepEqual(await marker(current),[{id:old.id,data_version:3}])
+  const failing:InstallState={...future,version:'0.2.16-testfail',layout:await resolveLayout({home,workspace:layout.workspaceRoot,version:'0.2.16-testfail'})}
+  await releaseFixture(failing.layout.releaseRoot,failing.version,4,true)
+  await assert.rejects(prepareDatabase(failing,{migrationBackup:archive}),/初始化失败/)
+  assert.deepEqual(await marker(current),[{id:old.id,data_version:3}],'initializer失败不能提前声明数据4')
+  await prepareDatabase(future,{migrationBackup:archive})
+  assert.deepEqual(await marker(future),[{id:old.id,data_version:4}])
+  pool=await databasePool(future)
+  try{
+   assert.equal((await pool.query("select to_regclass('teloa_task_run_source_followups') as relation")).rows[0].relation,'teloa_task_run_source_followups')
+   assert.equal((await pool.query('select count(*)::integer count from teloa_task_run_source_followups')).rows[0].count,0,'不为旧Run补造本人确认')
+   assert.deepEqual((await pool.query('select * from teloa_task_runs order by id')).rows,runsBefore)
+   assert.deepEqual((await pool.query('select * from teloa_task_run_runtime_links order by owner_id,run_id,kind,native_id')).rows,linksBefore,'迁移不得改写原运行归属')
+   assert.deepEqual((await pool.query('select * from teloa_work_budget_reservations order by id')).rows,budgetBefore)
+   assert.deepEqual((await pool.query('select * from teloa_business_task_source_updates order by id')).rows,sourceUpdatesBefore)
+   assert.deepEqual((await pool.query('select * from teloa_business_task_sources order by owner_id,task_id')).rows,sourceBefore)
+   assert.deepEqual((await pool.query('select * from teloa_task_runs where owner_id=$1 and id=$2',[unknownOwner,unknownRunId])).rows[0],unknown)
+  }finally{await pool.end()}
+  let legacyDirectory:string,legacyEntry:string
+  if(process.env.TELOA_TEST_LEGACY_V3_CLI_ROOT){
+   legacyDirectory=join(process.env.TELOA_TEST_LEGACY_V3_CLI_ROOT,'packages/cli/lib');legacyEntry='database.js'
+  }else{
+   // CI 自带公开历史源码；不依赖操作者本机旧安装，也不以当前读者冒充旧版本。
+   const fixture=new URL('./fixtures/data3-cli-source/',import.meta.url),proof=JSON.parse(await readFile(new URL('provenance.json',fixture),'utf8'))
+   assert.equal(proof.sourceCommit,'0faa942d7f29cb4808d54584b46ff15332f512d0');assert.equal(proof.dataVersion,3)
+   legacyDirectory=join(root,'frozen-data3-cli');legacyEntry='database.ts'
+   await mkdir(legacyDirectory);await writeFile(join(legacyDirectory,'package.json'),JSON.stringify({type:'module'}))
+   for(const file of proof.files){
+    const bytes=await readFile(new URL(file.path,fixture));assert.equal(bytes.length,file.bytes);assert.equal(createHash('sha256').update(bytes).digest('hex'),file.sha256)
+    await writeFile(join(legacyDirectory,file.outputPath),bytes)
+   }
+  }
+  const metadata=JSON.parse(await readFile(join(legacyDirectory,'data-version.json'),'utf8'))
+  assert.equal(metadata.dataVersion,3,'必须使用冻结的数据3读者')
+  const legacy=await import(pathToFileURL(join(legacyDirectory,legacyEntry)).href)
+  await assert.rejects(legacy.prepareDatabase(current),/数据版本尚不支持/)
+  assert.equal(await legacy.inspectDatabase(current),'unavailable')
+  assert.deepEqual(await marker(future),[{id:old.id,data_version:4}])
+  const final=await createBackup({...future,phase:'stopped'},join(root,'backup-data4'))
+  assert.equal(final.dataVersion,4)
  })
  assert.equal(databaseName(old),'teloa-'+old.id)
  await t.test('数据2正常备份迁到3，旧Run逐字保留、新Run按需；旧2启动/备份/降级均拒绝3',async()=>{

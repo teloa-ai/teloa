@@ -1,5 +1,5 @@
-import {WorkError,parseBooleanValue,parseDurationSeconds,readBusinessRichFieldValue,businessRecordUniqueKeys,businessRecordValueLimits,businessRecordDatetimeFormat,businessRecordDatetimeExample,type BusinessObjectFieldDefinition,type BusinessRichFieldDefinition,type BusinessObjectTypeDefinition,type BusinessObjectTypeDefinitionV2} from '@teloa/contract'
-export type BusinessRecordConstraintState={id:string;fields:readonly {label:string;value:string}[];deletedAt?:string}
+import {WorkError,parseBooleanValue,parseDurationSeconds,parseBusinessNumberValue,readBusinessRichFieldValue,businessRecordUniqueKeys,businessRecordValueLimits,businessRecordDatetimeFormat,businessRecordDatetimeExample,type BusinessFieldValue,type BusinessObjectFieldDefinition,type BusinessRichFieldDefinition,type BusinessObjectTypeDefinition,type BusinessObjectTypeDefinitionV2} from '@teloa/contract'
+export type BusinessRecordConstraintState={id:string;fields:readonly {label:string;value:BusinessFieldValue}[];deletedAt?:string}
 /** 当前记录或完整批次后态共用；每个字段独立占用，多关联每位成员分别占用。 */
 export function assertBusinessRecordUniqueState(definition:BusinessObjectTypeDefinition|BusinessObjectTypeDefinitionV2,records:readonly BusinessRecordConstraintState[]):void{
  const occupied=new Map<string,string>()
@@ -23,22 +23,34 @@ export function assertBusinessRecordUniqueState(definition:BusinessObjectTypeDef
   }
  }
 }
-/** 保留快照原始字符串；只验证，不做投影转换或关系解析。 */
-export function assertBusinessRecordFieldValue(field:BusinessObjectFieldDefinition|BusinessRichFieldDefinition,value:string|undefined):void{
+/** 保留快照原始类型及旧字符串；只验证，不做推断转换或关系解析。 */
+export function assertBusinessRecordFieldValue(field:BusinessObjectFieldDefinition|BusinessRichFieldDefinition,value:BusinessFieldValue|undefined):void{
  const invalid=()=>new WorkError('teloa/invalid-input','字段「'+field.label+'」的值不符合声明。',{field:field.name})
  if('format' in field){
+  if(value!==undefined&&typeof value!=='string')throw invalid()
   try{readBusinessRichFieldValue(field,value)}catch(error){if(error instanceof WorkError&&error.code==='teloa/invalid-input')throw invalid();throw error}
   return
  }
  if(value===undefined||value===''){if(field.required)throw invalid();return}
+ if(typeof value==='number'){if(field.type!=='number'||parseBusinessNumberValue(value,field)===undefined)throw invalid();return}
+ if(typeof value==='boolean'){if(field.type!=='boolean')throw invalid();return}
  if(typeof value!=='string'||value!==value.trim())throw invalid()
  if(value.length>businessRecordValueLimits.field)throw new WorkError('teloa/invalid-input','字段「'+field.label+'」长度为 '+value.length+'，最多 '+businessRecordValueLimits.field+'（按 UTF-16 代码单元计）。',{reason:'field-value-too-long',field:field.name,actualLength:value.length,maxLength:businessRecordValueLimits.field,lengthUnit:'utf16-code-units'})
  switch(field.type){
   case 'text':case 'reference':return
-  case 'number':if(!/^[+-]?(?:\d+(?:\.\d+)?|\.\d+)(?:[eE][+-]?\d+)?$/.test(value)||!Number.isFinite(Number(value))||Math.abs(Number(value))>1e15)throw invalid();return
+  case 'number':if(parseBusinessNumberValue(value,field)===undefined)throw invalid();return
   case 'enum':if(!field.values?.includes(value))throw invalid();return
   case 'datetime':if(!Number.isFinite(Date.parse(value))||new Date(value).toISOString()!==value)throw new WorkError('teloa/invalid-input','字段「'+field.label+'」必须使用规范 UTC 日期时间，含3位毫秒并以 Z 结尾；格式 '+businessRecordDatetimeFormat+'，例如 '+businessRecordDatetimeExample+'。',{reason:'datetime-format',field:field.name,format:businessRecordDatetimeFormat,example:businessRecordDatetimeExample});return
   case 'duration':if(parseDurationSeconds(value)===undefined)throw invalid();return
   case 'boolean':if(parseBooleanValue(value)===undefined)throw invalid();return
  }
+}
+
+/** 只用于新修改草稿的后态；按声明转换，不改历史快照、富字段或文本中的数字。 */
+export function normalizeBusinessRecordFieldValue(field:BusinessObjectFieldDefinition|BusinessRichFieldDefinition,value:BusinessFieldValue|undefined):BusinessFieldValue|undefined{
+ assertBusinessRecordFieldValue(field,value)
+ if(typeof value!=='string'||value===''||'format' in field)return value
+ if(field.type==='number')return parseBusinessNumberValue(value,field)!
+ if(field.type==='boolean')return parseBooleanValue(value)!
+ return value
 }

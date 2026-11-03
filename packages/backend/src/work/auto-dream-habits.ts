@@ -1,7 +1,8 @@
 import {createHash} from 'node:crypto'
 import type {Pool,PoolClient} from 'pg'
-import {WorkError,type DigitalRole,type RoleDailyLog,type RoleDailyLogEvidence,type ScheduleTrigger} from '@teloa/contract'
+import {WorkError,savedArtifactSource,type DigitalRole,type RoleDailyLog,type RoleDailyLogEvidence,type ScheduleTrigger} from '@teloa/contract'
 import {roleDailyLogEvidenceLimit,roleDailyLogMarkdownBytes,type RoleDailyLogService} from './role-daily-logs.ts'
+import {readArtifactRunSources} from './artifact-run-sources.ts'
 
 /**
  * C1 四类可观察操作的内部标记。与 `RoleDailyLogEvidence.kind`（落库枚举）不是同一件事——
@@ -80,6 +81,34 @@ function fitMarkdownBytes(body:string,maxBytes:number):string{
  return candidate+note
 }
 
+type HabitRevision={artifact_id:string;number:number;versions:number}
+/** C1 的只读来源核对；观察生成与原来源对账共用，不读取修订正文。 */
+export async function readHabitRevisionEvidence(db:PoolClient,ownerId:string,from:Date,to:Date):Promise<HabitRevision[]>{
+ const revisionCandidates=(await db.query(`select v.artifact_id,max(v.number) as number,count(*)::int as versions,f.source as first_source
+ from teloa_artifact_versions v
+ join teloa_artifact_versions f on f.owner_id=v.owner_id and f.artifact_id=v.artifact_id and f.number=1
+ where v.owner_id=$1 and v.created_at>=$2 and v.created_at<$3 and v.number>1 and v.source->>'kind'<>'run'
+ and not exists(select 1 from teloa_artifact_withdrawals w where w.owner_id=v.owner_id and w.artifact_id=v.artifact_id)
+ and not exists(select 1 from teloa_artifact_revision_producers p join teloa_task_runs r on r.owner_id=p.owner_id and r.id=p.run_id
+  where p.owner_id=v.owner_id and p.artifact_id=v.artifact_id and p.number=v.number and r.role_id is not null)
+ and (f.source->>'kind'='run' or (f.source->>'kind'='task' and v.source->>'kind'='task'
+  and v.source->>'id'=f.source->>'id' and v.source->>'scope'=f.source->>'scope'))
+ group by v.artifact_id,f.source order by v.artifact_id`,[ownerId,from,to])).rows
+ if(!revisionCandidates.length)return []
+ const firstSources=revisionCandidates.map(row=>savedArtifactSource(row.first_source))
+ const originRuns=(await db.query(`select r.id,r.role_id,r.role_version,p.version as current_role_version,p.definition->>'kind' as role_kind,t.definition->>'scope' as scope
+  from teloa_task_runs r join teloa_tasks t on t.owner_id=r.owner_id and t.id=r.task_id
+  left join teloa_roles p on p.owner_id=r.owner_id and p.id=r.role_id
+  where r.owner_id=$1 and (r.id::text=any($2::text[]) or r.task_id::text=any($3::text[]))`,[ownerId,
+  firstSources.filter(source=>source.kind==='run').map(source=>source.id),firstSources.filter(source=>source.kind==='task').map(source=>source.id)])).rows
+ // 复用正式历史谱系：task 保存版本/时刻、精确生产回执优先，未来 Run 和输入引用均不能倒推初版生产者。
+ const sources=await readArtifactRunSources(db,ownerId,originRuns.map(row=>row.id as string))
+ return revisionCandidates.filter((row,index)=>{
+  const first=firstSources[index]!,runs=sources.filter(source=>source.artifactId===row.artifact_id&&source.version===1).map(source=>originRuns.find(run=>run.id===source.runId)!)
+  return runs.length>0&&new Set(runs.map(run=>run.role_id)).size===1&&runs.every(run=>run.role_kind==='employee'&&run.scope===first.scope&&Number.isSafeInteger(run.role_version)&&run.role_version>0&&run.role_version<=run.current_role_version)
+ })
+}
+
 /**
  * C1：服务端按天做一次纯事实汇总，零模型参与，因此模型投毒面为零。
  * 输入集合穷举、封闭：本人的放行/拒绝及理由、本人对员工成果的修订（只记指针不记正文）、
@@ -134,19 +163,16 @@ export class AutoDreamHabitService{
     where a.owner_id=$1 and a.created_at>=$2 and a.created_at<$3 order by a.created_at,a.id`,[ownerId,from,to])).rows)
    for(const row of approvalRows)if(!['approved','rejected'].includes(String(row.decision))||typeof row.reason!=='string'||!row.reason.trim()||typeof row.object_type!=='string'||!row.object_type.trim())throw corrupt()
 
-   // 与 T5 证据第 4 类同一判据，但不按单个岗位过滤：习惯观察看的是本人跨全部员工的修订习惯。
-   const revisionRows=await read(async()=>(await db.query(`select v.artifact_id,max(v.number) as number,count(*)::int as versions
-    from teloa_artifact_versions v
-    where v.owner_id=$1 and v.created_at>=$2 and v.created_at<$3 and v.source->>'kind'<>'run'
-    and exists(select 1 from teloa_artifact_versions f join teloa_task_runs r on r.id::text=f.source->>'id' and r.owner_id=f.owner_id
-     where f.owner_id=v.owner_id and f.artifact_id=v.artifact_id and f.number=1 and f.source->>'kind'='run')
-    group by v.artifact_id order by v.artifact_id`,[ownerId,from,to])).rows)
+   // 观察本人对员工成果的修订；初版及员工代写的新版本不算本人修订。
+   const revisionRows=await read(()=>readHabitRevisionEvidence(db,ownerId,from,to))
    for(const row of revisionRows)if(!Number.isSafeInteger(row.number)||Number(row.number)<1||!Number.isSafeInteger(row.versions)||Number(row.versions)<1)throw corrupt()
 
-   // 交办文案只取本人直接创建、不经持续计划领取的任务：计划自动生成的任务不算本人的交办习惯。
+   // 只统计不可变谱系确认为本人直接创建的任务；同 owner 的员工接力、集成与计划产物不代表本人交办措辞。
    const taskRows=await read(async()=>(await db.query(`select t.definition->>'goal' as goal
     from teloa_tasks t
     where t.owner_id=$1 and t.created_at>=$2 and t.created_at<$3
+    and exists(select 1 from teloa_task_work_lineage w where w.owner_id=t.owner_id and w.task_id=t.id
+     and w.source->>'kind'='owner-task' and w.source->>'taskId'=t.id::text)
     and not exists(select 1 from teloa_plan_task_links l where l.task_id=t.id)
     order by t.created_at,t.id`,[ownerId,from,to])).rows)
    const goals=taskRows.map(row=>{if(typeof row.goal!=='string'||!row.goal.trim())throw corrupt();return row.goal as string})

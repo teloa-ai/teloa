@@ -12,11 +12,11 @@ export type PresentedConversation = {
 export const workStatusLabels:Record<PresentedConversation['status'],string>={pending:'workDirectory.status.pending',running:'workDirectory.status.running',blank:'workDirectory.status.blank',idle:'workDirectory.status.idle',unknown:'workDirectory.status.unknown'}
 
 /** 只投影已获准的工作绑定；原生摘要提供展示信息，不产生新的绑定或授权。 */
-export function presentConversations(rows:readonly Conversation[],native:readonly NativeSummary[],query='',filter:WorkFilter='all',content?:ReadonlyMap<string,string>):PresentedConversation[] {
+export function presentConversations(rows:readonly Conversation[],native:readonly NativeSummary[],query='',filter:WorkFilter='all',content?:ReadonlyMap<string,string>,taskTitles?:ReadonlyMap<string,string>):PresentedConversation[] {
   const summaries=new Map(native.map(item=>[item.id,item])),needle=query.trim().toLocaleLowerCase()
   return rows.map(conversation=>{
     const summary=summaries.get(conversation.sessionId)
-    const title=conversation.purpose==='assistant'?conversation.title:summary?.title?.trim()||conversation.title
+    const title=conversation.purpose==='task-run'?taskTitles?.get(conversation.sessionId)||conversation.title:conversation.purpose==='assistant'?conversation.title:summary?.title?.trim()||conversation.title
     const updatedAt=summary&&Number.isFinite(summary.updatedAt)&&summary.updatedAt>0?summary.updatedAt:Date.parse(conversation.createdAt)
     const status:PresentedConversation['status']=conversation.status==='pending'?'pending':!summary?'unknown':summary.running?'running':summary.blank?'blank':'idle'
     const snippet=needle&&conversation.status==='ready'?content?.get(conversation.sessionId):undefined

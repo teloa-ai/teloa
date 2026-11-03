@@ -1,3 +1,5 @@
+// @ts-expect-error 本机可信文档夹具为 MJS 模块。
+import {setLocalDocument} from './fixtures/local-document.mjs'
 import {test,before,after} from 'node:test'
 import assert from 'node:assert/strict'
 import {mkdtemp,writeFile,rm} from 'node:fs/promises'
@@ -46,7 +48,7 @@ async function mount(t:any){
  page.setDefaultTimeout(3000);page.on('pageerror',(e:Error)=>errors.push(e.message))
  t.after(async()=>{await page.close();assert.deepEqual(errors,[])})
  await page.route('**/*',(route:any)=>route.abort())
- await page.setContent('<!doctype html><html lang="zh-CN"><body><div id="root"></div></body></html>')
+ await setLocalDocument(page,'<!doctype html><html lang="zh-CN"><body><div id="root"></div></body></html>')
  await page.addStyleTag({content:styles});await page.addScriptTag({content:script});await page.locator('[data-teloa-pane=detail]').waitFor({state:'attached'})
  return page
 }
@@ -319,35 +321,39 @@ test('切换员工后恢复各自资料草稿与原版本，不向其他员工�
 })
 
 
-test('在线 1.0 能力平铺真实职责与资料，授权子层关闭后保留工具草稿',async t=>{
+test('在线 1.0 能力按需展开真实职责与资料，授权子层关闭后保留工具草稿',async t=>{
  const page=await mount(t)
  await page.evaluate(()=>(window as any).employeeFixture.updateRole({skills:['日志检索'],knowledge:['assigned-source'],executionScope:'仅限原执行范围；变更先确认',responsibility:{triggers:['原介入条件'],autonomousActions:['原自主处理'],confirmationPoints:['原确认点'],escalationRules:['原升级规则'],deliveryChecks:['原交付检查']}}))
  await page.getByRole('tab',{name:'能力',exact:true}).click()
  const how=page.locator('#role-profile-section-how'),tools=page.locator('#role-profile-section-tools')
  assert.equal(await page.locator('details[id^="role-profile-section-"]').count(),0)
+ await how.locator('summary').filter({hasText:'完整职责'}).click()
  for(const text of ['原介入条件','原自主处理','原交付检查'])assert.equal(await how.getByText(text,{exact:true}).isVisible(),true)
  assert.equal(await tools.getByRole('button',{name:'日志检索',exact:true}).isVisible(),true)
- const permissions=page.getByRole('dialog',{name:'委托与工具授权',exact:true})
- await tools.getByRole('button',{name:'委托与工具授权',exact:true}).click()
+ const permissions=page.getByRole('dialog',{name:'权限',exact:true})
+ const openPermissions=async()=>{await page.getByRole('button',{name:'更多员工操作',exact:true}).click();await page.getByRole('menu').getByRole('button',{name:'权限',exact:true}).click();const toolsSection=permissions.locator('details').filter({has:page.locator('summary').filter({hasText:/^工具$/})});if(await toolsSection.getAttribute('open')===null)await toolsSection.locator(':scope > summary').click()}
+ await openPermissions()
  const draft=permissions.getByRole('textbox',{name:'工具配置草稿',exact:true})
  await draft.fill('保留当前工具配置')
  await page.keyboard.press('Escape')
  assert.equal(await permissions.isVisible(),false)
- await tools.getByRole('button',{name:'委托与工具授权',exact:true}).click()
+ await openPermissions()
  assert.equal(await draft.inputValue(),'保留当前工具配置')
  assert.equal(await page.evaluate(()=>(window as any).employeeFixture.toolMounts),1)
  await page.keyboard.press('Escape')
- for(const text of ['仅限原执行范围；变更先确认','原确认点','原升级规则'])assert.equal(await page.locator('#role-profile-limit').getByText(text,{exact:true}).isVisible(),true)
+ for(const text of ['仅限原执行范围；变更先确认','原确认点','原升级规则'])assert.equal(await page.locator('#role-profile-section-limit').getByText(text,{exact:true}).isVisible(),true)
  await page.setViewportSize({width:430,height:932})
- assert.equal(await page.locator('#role-profile-limit').getByText('仅限原执行范围；变更先确认',{exact:true}).isVisible(),true)
+ assert.equal(await page.locator('#role-profile-section-limit').getByText('仅限原执行范围；变更先确认',{exact:true}).isVisible(),true)
  assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false)
- await tools.getByRole('button',{name:'委托与工具授权',exact:true}).click()
+ await openPermissions()
  assert.equal(await draft.inputValue(),'保留当前工具配置')
  await page.keyboard.press('Escape')
- assert.equal(await page.locator('#role-profile-limit').getByRole('button').count(),0,'权限边界保留说明，不重复资料或连接跳转')
+ assert.equal(await page.locator('#role-profile-section-limit').getByRole('button').count(),0,'权限边界保留说明，不重复资料或连接跳转')
  await tools.getByRole('button',{name:'日志检索',exact:true}).click()
  const reading=page.locator('#role-profile-section-reading'),resources=reading.getByRole('button',{name:'查看资料',exact:true})
+ await reading.getByText('原资料边界',{exact:true}).locator('xpath=ancestor::details[1]').locator(':scope > summary').click()
  assert.equal(await reading.getByText('原资料边界',{exact:true}).isVisible(),true)
+ const originalReference=reading.locator('[data-resource-id="assigned-source"]');await originalReference.waitFor();assert.match(await originalReference.innerText(),/知识项尚未载入/)
  assert.equal(await resources.count(),1);await resources.click()
  assert.deepEqual(await page.evaluate(()=>(window as any).employeeFixture.resourceLinks),['settings','resources'])
  assert.deepEqual(await page.evaluate(()=>(window as any).employeeFixture.edits),[])

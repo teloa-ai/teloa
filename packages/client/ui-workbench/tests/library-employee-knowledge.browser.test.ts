@@ -56,14 +56,14 @@ test('资料库员工知识分组：在岗员工资料可见，退役员工与�
     // 如果分组有 data-teloa-entry 属性，展开并检查资料条目
     const groupEl=group.first()
     if(await groupEl.getAttribute('aria-expanded')==='false')await groupEl.click()
-    await directory.getByRole('button',{name:'员工专项资料甲',exact:true}).waitFor()
-    assert.ok(await directory.getByRole('button',{name:'员工专项资料甲',exact:true}).isVisible(),'员工专项资料甲 应出现在分组内')
-    assert.ok(await directory.getByRole('button',{name:'员工专项资料乙',exact:true}).isVisible(),'员工专项资料乙 应出现在分组内')
+    await directory.locator('details:has(> summary[data-teloa-entry="role-active"])').getByRole('button',{name:'员工专项资料甲',exact:true}).waitFor()
+    assert.ok(await directory.locator('details:has(> summary[data-teloa-entry="role-active"])').getByRole('button',{name:'员工专项资料甲',exact:true}).isVisible(),'员工专项资料甲 应出现在分组内')
+    assert.ok(await directory.locator('details:has(> summary[data-teloa-entry="role-active"])').getByRole('button',{name:'员工专项资料乙',exact:true}).isVisible(),'员工专项资料乙 应出现在分组内')
   } else {
     // 分组可能是展开的列表形式
-    await directory.getByRole('button',{name:'员工专项资料甲',exact:true}).waitFor()
-    assert.ok(await directory.getByRole('button',{name:'员工专项资料甲',exact:true}).isVisible(),'员工专项资料甲 应出现在分组内')
-    assert.ok(await directory.getByRole('button',{name:'员工专项资料乙',exact:true}).isVisible(),'员工专项资料乙 应出现在分组内')
+    await directory.locator('details:has(> summary[data-teloa-entry="role-active"])').getByRole('button',{name:'员工专项资料甲',exact:true}).waitFor()
+    assert.ok(await directory.locator('details:has(> summary[data-teloa-entry="role-active"])').getByRole('button',{name:'员工专项资料甲',exact:true}).isVisible(),'员工专项资料甲 应出现在分组内')
+    assert.ok(await directory.locator('details:has(> summary[data-teloa-entry="role-active"])').getByRole('button',{name:'员工专项资料乙',exact:true}).isVisible(),'员工专项资料乙 应出现在分组内')
   }
 
   // ── 1b. 员工工作成果：分组内分「资料」「工作成果」两段，只读成果目录，不为退役员工或分身请求 ──
@@ -99,13 +99,14 @@ test('资料库员工知识分组：在岗员工资料可见，退役员工与�
   await page.screenshot({path:'/tmp/teloa-walkthrough/library-employee-output-error.png'})
 
   // ── 2. 点击员工资料打开详情预览 ────────────────────────────────────────────
-  await directory.getByRole('button',{name:'员工专项资料甲',exact:true}).click()
-  const detail=page.locator('main[data-teloa-pane=detail]')
+  await directory.locator('details:has(> summary[data-teloa-entry="role-active"])').getByRole('button',{name:'员工专项资料甲',exact:true}).click()
+  const detail=page.locator('section[data-teloa-pane=detail]')
   // 详情区域应显示选中资料的名称
   await detail.getByRole('heading',{name:'员工专项资料甲',exact:true}).waitFor()
   await page.screenshot({path:'/tmp/teloa-walkthrough/library-employee-resource-detail.png'})
 
   // ── 3. 搜索过滤员工知识分组 ─────────────────────────────────────────────────
+  await page.getByRole('button',{name:'返回列表',exact:true}).click()
   const searchInput=page.getByRole('searchbox').or(page.getByPlaceholder(/搜索/))
   if(await searchInput.count()>0){
     await searchInput.first().fill('资料甲')
@@ -118,7 +119,7 @@ test('资料库员工知识分组：在岗员工资料可见，退役员工与�
     await directory.getByRole('button',{name:'新品发布文案',exact:true}).waitFor()
     assert.equal(await directory.getByRole('button',{name:'竞品调研结论',exact:true}).count(),0,'搜索同步过滤工作成果')
     await searchInput.first().fill('')
-    await directory.getByRole('button',{name:'员工专项资料乙',exact:true}).waitFor()
+    await directory.locator('details:has(> summary[data-teloa-entry="role-active"])').getByRole('button',{name:'员工专项资料乙',exact:true}).waitFor()
   }
 
   // ── 4. 完整列表视图包含员工资料 ─────────────────────────────────────────────

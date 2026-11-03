@@ -6,7 +6,7 @@ import {isDeepStrictEqual} from 'node:util'
 import type {Pool,PoolClient} from 'pg'
 import {WorkError,resourceId,resourceScopes,taskInput} from '@teloa/contract'
 import type {ReferenceInfo} from '@teloa/mcp-reference/catalog'
-import type {ResourceActor,ResourceSourceContext} from './resources.ts'
+import {authorizeResourceActor,type ResourceActor,type ResourceSourceContext} from './resources.ts'
 
 export type SourceReference=ReferenceInfo
 export type AuthorizedLocalMaterialPorts={authorize:(actor:ResourceActor,scopeIds:readonly string[],operation:'register'|'read',requestId?:string,client?:PoolClient)=>Promise<{workspaceRoot:string;assertCurrent:()=>void;isProtectedPath:(absolutePath:string)=>boolean}>}
@@ -18,11 +18,13 @@ const invalid=()=>new WorkError('teloa/invalid-input','请指定当前工作文�
 const corrupt=()=>new WorkError('teloa/storage-corrupt','本机资料登记或回执损坏。')
 const rootKey=(path:string,state:BigIntStats)=>sha(path+'\0'+state.dev+'\0'+state.ino)
 const fileKey=(state:BigIntStats)=>[state.dev,state.ino,state.size,state.mtimeNs,state.ctimeNs].join(':')
-const relativeMarkdown=(path:unknown):path is string=>typeof path==='string'&&path.length>0&&path.length<=1024&&!isAbsolute(path)&&!win32.isAbsolute(path)&&!/[\\\x00-\x1f\x7f]/.test(path)&&path.split('/').every(part=>part.length>0&&part!=='.'&&part!=='..'&&!part.startsWith('.'))&&/\.(md|markdown)$/i.test(path)
+const relativeLocalPath=(path:unknown):path is string=>typeof path==='string'&&path.length>0&&path.length<=1024&&!isAbsolute(path)&&!win32.isAbsolute(path)&&!/[\\\x00-\x1f\x7f]/.test(path)&&path.split('/').every(part=>part.length>0&&part!=='.'&&part!=='..'&&!part.startsWith('.'))
+const relativeMarkdown=(path:unknown):path is string=>relativeLocalPath(path)&&/\.(md|markdown)$/i.test(path)
 const assertLease=(value:Pick<ApprovedRoot,'assertCurrent'>)=>{try{if(value.assertCurrent()!==undefined)throw denied()}catch{throw denied()}}
 function principal(value:ResourceSourceContext|undefined):ResourceActor{
  const actor=value?.actor
- if(!actor||typeof actor.ownerId!=='string'||!actor.ownerId.trim()||!['human','agent'].includes(actor.kind)||!resourceScopes(actor.scopeIds))throw denied()
+ if(!actor)throw denied()
+ try{authorizeResourceActor(actor)}catch{throw denied()}
  return actor
 }
 function definition(row:Record<string,unknown>):Definition{
@@ -85,16 +87,23 @@ export class AuthorizedLocalMaterialCatalog{
     if(size>maxBytes)throw denied()
     const bytes=buffer.subarray(0,size),text=new TextDecoder('utf-8',{fatal:true,ignoreBOM:true}).decode(bytes)
     await check()
-    if(fileKey(await handle.stat({bigint:true}))!==fileKey(before)||fileKey(await lstat(path,{bigint:true}))!==fileKey(before))throw denied()
+    if(fileKey(await handle.stat({bigint:true}))!==fileKey(before)||fileKey(await lstat(path,{bigint:true}))!==fileKey(before)){
+     // 安全路径和当前许可仍成立的普通改版单独分类；链接、换根或撤权仍由 check 拒绝。
+     await check()
+     if((await lstat(path,{bigint:true})).size>BigInt(maxBytes))throw denied()
+     assertLease(root)
+     throw new WorkError('teloa/version-conflict','本机资料在读取期间已变化，请核对当前版本后继续。')
+    }
     assertLease(root)
     return {id:'local_material_'+item.id,title:item.title,source:item.path,version:sha(bytes),bytes:size,text}
    }finally{await handle.close()}
-  }catch{throw denied()}
+  }catch(error){if(error instanceof WorkError&&error.code==='teloa/version-conflict')throw error;throw denied()}
  }
  async register(actor:ResourceActor,input:unknown):Promise<SourceReference>{
   principal({actor});if(actor.kind!=='human')throw denied()
   const row=taskInput(input,['requestId','title','path','scopeIds'])
-  if(!resourceId(row.requestId)||typeof row.title!=='string'||!row.title.trim()||row.title.length>200||!relativeMarkdown(row.path)||!resourceScopes(row.scopeIds))throw invalid()
+  if(!resourceId(row.requestId)||typeof row.title!=='string'||!row.title.trim()||row.title.length>200||!relativeLocalPath(row.path)||!resourceScopes(row.scopeIds))throw invalid()
+  if(!relativeMarkdown(row.path))throw new WorkError('teloa/invalid-input','本机原件只支持 Markdown 格式。',{reason:'local-material-format-unsupported'})
   const requestId=row.requestId.toLowerCase(),spec={title:row.title.trim(),path:row.path,scopeIds:[...row.scopeIds].sort()},db=await this.pool.connect()
   try{
    await db.query('begin');await db.query('select pg_advisory_xact_lock(hashtextextended($1,0))',['teloa/local-material/'+actor.ownerId+'/'+requestId])
@@ -109,7 +118,7 @@ export class AuthorizedLocalMaterialCatalog{
    await db.query('select pg_advisory_xact_lock(hashtextextended($1,0))',['teloa/local-material-path/'+actor.ownerId+'/'+root.key+'/'+spec.path])
    const existing=(await db.query('select * from teloa_authorized_local_materials where owner_id=$1 and workspace_key=$2 and relative_path=$3',[actor.ownerId,root.key,spec.path])).rows[0]
    let item:Definition
-   if(existing){item=definition(existing);if(item.title!==spec.title||!isDeepStrictEqual(item.scopes,spec.scopeIds))throw new WorkError('teloa/conflict','原件已登记；请沿现有资料调整显示标题和范围。')}
+   if(existing){item=definition(existing);if(item.title!==spec.title||!isDeepStrictEqual(item.scopes,spec.scopeIds))throw new WorkError('teloa/conflict','原件已登记；请使用原登记名称与范围，再在资料草案中调整显示名称。',{reason:'local-material-registration-mismatch'})}
    else{
     const id=this.identity.id();if(!resourceId(id))throw corrupt()
     item={id,owner:actor.ownerId,title:spec.title,path:spec.path,scopes:spec.scopeIds,root:root.workspaceRoot,rootKey:root.key}
@@ -124,9 +133,31 @@ export class AuthorizedLocalMaterialCatalog{
   const actor=principal(context),root=await this.approve(actor,actor.scopeIds,'read',undefined,context?.client),db=context?.client??this.pool
   const rows=(await db.query('select * from teloa_authorized_local_materials where owner_id=$1 and workspace_key=$2 order by created_at,id',[actor.ownerId,root.key])).rows,references:SourceReference[]=[]
   for(const row of rows){const item=definition(row);if(item.scopes.some(scope=>!actor.scopeIds.includes(scope)||context?.scopeIds&&!context.scopeIds.includes(scope)))continue
-   const lease=await this.approve(actor,item.scopes,'read',undefined,context?.client),{text:_,...info}=await this.load(item,lease);references.push(info)
+   const lease=await this.approve(actor,item.scopes,'read',undefined,context?.client)
+   if(item.root!==root.workspaceRoot||item.rootKey!==root.key||lease.workspaceRoot!==root.workspaceRoot||lease.key!==root.key)throw denied()
+   try{const {text:_,...info}=await this.load(item,lease);references.push(info)}
+   catch(error){
+    // 单个原件失效不拖垮整库；撤权、换根和登记损坏仍整体拒绝，直接读取也保持严格校验。
+    assertLease(root);assertLease(lease)
+    if(!(error instanceof WorkError)||!['teloa/forbidden','teloa/version-conflict'].includes(error.code))throw error
+    const current=await this.approve(actor,actor.scopeIds,'read',undefined,context?.client)
+    if(current.workspaceRoot!==root.workspaceRoot||current.key!==root.key)throw denied()
+    assertLease(current)
+   }
   }
   assertLease(root);return {schema:'teloa.reference-list/v1',references}
+ }
+ /** 宿主文件守卫专用元数据；不读原件正文，不向模型发布其他业务路径。 */
+ async fileBoundaries(actor:ResourceActor):Promise<Array<{path:string;scopeIds:string[]}>>{
+  principal({actor});if(actor.kind!=='human')throw denied()
+  const root=await this.approve(actor,actor.scopeIds,'read')
+  const rows=(await this.pool.query('select * from teloa_authorized_local_materials where owner_id=$1 and workspace_root=$2 order by id',[actor.ownerId,root.workspaceRoot])).rows
+  const result=rows.map(row=>{
+   const item=definition(row)
+   if(item.owner!==actor.ownerId||item.root!==root.workspaceRoot||item.rootKey!==root.key)throw denied()
+   return {path:join(item.root,item.path),scopeIds:[...item.scopes]}
+  })
+  assertLease(root);return result
  }
  private async readCurrent(id:string,context?:ResourceSourceContext):Promise<SourceReference&{text:string}>{
   const actor=principal(context),uuid=id.startsWith('local_material_')?id.slice('local_material_'.length):''

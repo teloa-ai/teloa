@@ -1,5 +1,5 @@
 import type {Pool} from 'pg'
-import {WorkError,isRecord,redactSecrets} from '@teloa/contract'
+import {WorkError,isRecord,redactSecrets,readTaskCompletionPolicy} from '@teloa/contract'
 
 import {pendingRequestEndpoints,isPendingRequestEndpoint,type PendingRequestEndpoint} from '@teloa/contract'
 export {pendingRequestEndpoints,isPendingRequestEndpoint,type PendingRequestEndpoint} from '@teloa/contract'
@@ -23,19 +23,24 @@ const maxRequestBytes=100_000
 
 function invalid(message:string):never{throw new WorkError('teloa/invalid-input',message)}
 function canonical(value:unknown):string{return JSON.stringify(value)}
-function safePayload(value:unknown):Record<string,unknown>{
+function safePayload(endpoint:RecoveryEndpoint,value:unknown):Record<string,unknown>{
  if(!isRecord(value)||!Object.hasOwn(value,'requestId')||!uuid(value.requestId))invalid('待恢复请求必须带有效的请求身份。')
  const json=canonical(value)
  if(json.length>maxRequestBytes)invalid('待恢复请求内容过大。')
- const visit=(current:unknown):void=>{
-  if(Array.isArray(current)){for(const item of current)visit(item);return}
+ const visit=(current:unknown,path:readonly string[]):void=>{
+  if(Array.isArray(current)){current.forEach((item,index)=>visit(item,[...path,String(index)]));return}
   if(!isRecord(current))return
+  // 正式计划的完成策略含授权版本号，不是凭据；只在精确路径复用契约校验，不按键名全局放行。
+  if((endpoint==='plans/create'||endpoint==='plans/change')&&path.length===2&&path[0]==='fields'&&path[1]==='completionPolicy'&&Object.hasOwn(current,'authorizationVersion')){
+   readTaskCompletionPolicy(current)
+   return
+  }
   for(const [key,item] of Object.entries(current)){
    if(sensitiveKey.test(key))invalid('待恢复请求不能保存凭据或口令字段。')
-   visit(item)
+   visit(item,[...path,key])
   }
  }
- visit(value)
+ visit(value,[])
  return {...structuredClone(value),requestId:String(value.requestId).toLowerCase()}
 }
 
@@ -82,7 +87,7 @@ export class PendingRequestService{
  constructor(pool:Pool){this.pool=pool}
  async reserve(ownerId:string,endpoint:PendingRequestEndpoint,payload:unknown,now:string):Promise<void>{
   if(!isPendingRequestEndpoint(endpoint)||typeof ownerId!=='string'||!ownerId.trim()||!stamp(now))invalid('待恢复请求身份或时间无效。')
-  const fixed=safePayload(payload),requestId=fixed.requestId as string,spec=canonical(fixed)
+  const fixed=safePayload(endpoint,payload),requestId=fixed.requestId as string,spec=canonical(fixed)
   const db=await this.pool.connect()
   try{
    await db.query('begin')
@@ -130,7 +135,7 @@ export class PendingRequestService{
   if(!uuid(requestId))invalid('待恢复请求身份无效。')
   const row=(await this.pool.query('select request_id,endpoint,request_spec,created_at,updated_at,last_error_code from teloa_pending_request_registry where owner_id=$1 and request_id=$2 and state=\'pending\'',[ownerId,requestId.toLowerCase()])).rows[0]
   if(!row)throw new WorkError('teloa/not-found','没有待核对的原请求。')
-  const base=read(row as Record<string,unknown>),payload=safePayload(row.request_spec)
+  const base=read(row as Record<string,unknown>),payload=safePayload(base.endpoint,row.request_spec)
   if(payload.requestId!==base.requestId)throw new WorkError('teloa/storage-corrupt','待恢复请求身份已损坏。')
   return {...base,payload}
  }

@@ -1,12 +1,16 @@
 import {isArtifactRevisionProducer} from './artifact-revision-requests.ts'
+import {assertArtifactAvailable} from './artifact-availability.ts'
 import {runEvidence} from './task-run-evidence.ts'
 import {ArtifactService} from './artifacts.ts'
 import type {Pool,PoolClient} from 'pg'
 import {WorkError,taskInput,type WorkTask} from '@teloa/contract'
 import {readStoredTask} from './tasks.ts'
 import {roleWorkOutstanding} from './role-delegations.ts'
+import {ownerTaskReworkBasis} from './owner-task-rework.ts'
+import {WorkLineageService} from './work-lineage.ts'
+import {workAccess,combineWorkAccessLeases,type WorkAccessLease} from './work-access.ts'
 const uuid=(v:unknown):v is string=>typeof v==='string'&&/^[a-f0-9]{8}-[a-f0-9]{4}-[1-5][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i.test(v)
-const targets={start:'running',pause:'paused',resume:'running',cancel:'cancelled',complete:'completed'} as const
+const targets={start:'running',pause:'paused',resume:'running',cancel:'cancelled',complete:'completed',rework:'ready'} as const
 export async function initializeTaskTransitions(pool:Pool){await pool.query(`create table if not exists teloa_task_transitions(
  owner_id text not null,request_id uuid not null,task_id uuid not null references teloa_tasks(id),request_spec jsonb not null,result jsonb not null,created_at timestamptz not null,primary key(owner_id,request_id)
 )`)}
@@ -19,13 +23,13 @@ export async function initializeTaskCompletions(pool:Pool){await pool.query(`
 export class TaskTransitions{
  readonly pool:Pool;readonly identity:{id:()=>string;now:()=>string}
  constructor(pool:Pool,identity:{id:()=>string;now:()=>string}){this.pool=pool;this.identity=identity}
- async change(owner:string,input:unknown):Promise<WorkTask>{
+ async change(owner:string,input:unknown,ownerRework?:WorkAccessLease):Promise<WorkTask>{
   const db=await this.pool.connect()
-  try{await db.query('begin');const result=await this.changeInTransaction(db,owner,input);await db.query('commit');return result}
+  try{await db.query('begin');const result=await this.changeInTransaction(db,owner,input,undefined,ownerRework);await db.query('commit');return result}
   catch(error){await db.query('rollback');throw error}finally{db.release()}
  }
  /** 可信结项复用本人结项的锁、固定成果及唯一回执；调用方负责事务。proof不接受客户端输入。 */
- async changeInTransaction(client:PoolClient,owner:string,input:unknown,proof?:{candidate:unknown;policy:unknown;receiptIds:string[]}):Promise<WorkTask>{
+ async changeInTransaction(client:PoolClient,owner:string,input:unknown,proof?:{candidate:unknown;policy:unknown;receiptIds:string[]},ownerRework?:WorkAccessLease):Promise<WorkTask>{
   if(typeof owner!=='string'||!owner.trim()||owner.length>128)throw new WorkError('teloa/forbidden','需要本人身份。')
   const row=taskInput(input,['taskId','requestId','expectedVersion','action','artifact','note'])
   if(!uuid(row.taskId)||!uuid(row.requestId)||!Number.isSafeInteger(row.expectedVersion)||(row.expectedVersion as number)<1||typeof row.action!=='string'||!Object.hasOwn(targets,row.action))throw new WorkError('teloa/invalid-input','任务状态请求格式不正确。')
@@ -33,6 +37,8 @@ export class TaskTransitions{
   const artifact=row.action==='complete'?taskInput(row.artifact,['id','version']):undefined
   if(artifact&&(!uuid(artifact.id)||!Number.isSafeInteger(artifact.version)||(artifact.version as number)<1||typeof row.note!=='string'||!row.note.trim()||row.note.length>4000))throw new WorkError('teloa/invalid-input','请选择固定成果版本并填写结项说明。')
   const action=row.action as keyof typeof targets,spec=JSON.stringify({...row,...(proof?{verifiedCompletion:proof}:{})})
+  if(action==='rework'&&typeof ownerRework?.assertCurrent!=='function')throw new WorkError('teloa/forbidden','只有本人明确确认才能继续修改后的目标。')
+  if(action==='rework')ownerRework!.assertCurrent()
    await client.query('select pg_advisory_xact_lock(hashtextextended($1,0))',[JSON.stringify(['task-transition',owner,row.requestId])])
    const rows=await client.query('select * from teloa_tasks where owner_id=$1 and id=$2 for update',[owner,row.taskId])
    if(!rows.rows[0])throw new WorkError('teloa/forbidden','任务不存在或不属于本人。')
@@ -45,13 +51,17 @@ export class TaskTransitions{
     return saved
    }
    if(task.version!==row.expectedVersion)throw new WorkError('teloa/version-conflict','任务版本已变化，请刷新后核对。')
-   if((task.assigneeRoleId||task.executor?.kind==='owner')&&action==='cancel'){
+   let reworkLease:WorkAccessLease|undefined
+   if(action==='rework'){
+    if(task.state!=='waiting'||!await ownerTaskReworkBasis(client,owner,task,new WorkLineageService(this.pool,this.identity),true))throw new WorkError('teloa/conflict','只能继续本人已修改目标、且上一轮已完成的原任务。')
+    reworkLease=combineWorkAccessLeases([ownerRework!,await workAccess.authorize({kind:'capability',capability:'people',ownerId:owner,sessionId:null,objectId:task.assigneeRoleId,operation:'edit'})]);reworkLease.assertCurrent()
+   }else if((task.assigneeRoleId||task.executor?.kind==='owner')&&action==='cancel'){
     // 通用取消只收口本任务名下已无执行、子工作、流程与运行时关联的员工任务；任务行锁与 prepare 共用，取消提交后旧执行请求读到 cancelled 即不能开始新工作。
-    if(task.assigneeRoleId?await roleWorkOutstanding(client,owner,task.assigneeRoleId,{taskId:task.id}):(await client.query("select id from teloa_task_runs where owner_id=$1 and task_id=$2 and state not in ('ended','withdrawn','configuration_failed')",[owner,task.id])).rowCount)throw new WorkError('teloa/conflict','员工任务仍有执行或子工作未收口，请先停止本轮执行，结束后再取消。',{reason:'task-work-outstanding'})
+    if(task.assigneeRoleId?await roleWorkOutstanding(client,owner,task.assigneeRoleId,{taskId:task.id}):(await client.query("select id from teloa_task_runs where owner_id=$1 and task_id=$2 and state not in ('ended','withdrawn','configuration_failed','submission_unknown')",[owner,task.id])).rowCount)throw new WorkError('teloa/conflict','员工任务仍有执行或子工作未收口，请先停止本轮执行，结束后再取消。',{reason:'task-work-outstanding'})
    }else if(task.assigneeRoleId||task.executor?.kind==='owner'){
     if(action!=='complete'||task.state!=='waiting')throw new WorkError('teloa/conflict','员工任务须通过执行服务推进；本轮成功后才能验收结项。')
     // 任务行锁与领取/终态投影共用，防止验收与新执行同时推进。
-    const active=await client.query("select id from teloa_task_runs where owner_id=$1 and task_id=$2 and state not in ('ended','withdrawn','configuration_failed')",[owner,task.id])
+    const active=await client.query("select id from teloa_task_runs where owner_id=$1 and task_id=$2 and state not in ('ended','withdrawn','configuration_failed','submission_unknown')",[owner,task.id])
     if(active.rows.length)throw new WorkError('teloa/conflict','仍有未结束的执行，不能结项。')
     const finished=await client.query("select evidence from teloa_task_runs where owner_id=$1 and task_id=$2 and role_id is not distinct from $3::uuid and state='ended' and task_state_version=$4",[owner,task.id,task.assigneeRoleId,task.version-1])
     if(finished.rows.length!==1)throw new WorkError('teloa/conflict','当前任务没有可验收的执行结果。')
@@ -59,17 +69,25 @@ export class TaskTransitions{
     try{evidence=runEvidence(finished.rows[0].evidence)}catch{throw new WorkError('teloa/storage-corrupt','执行结束证据损坏，不能结项。')}
     if(evidence.state!=='ended'||evidence.reason!=='completed')throw new WorkError('teloa/conflict','本轮未正常完成，请先处理执行结果。')
    }
-   const allowed=action==='start'?task.state==='ready':action==='pause'?task.state==='running':action==='resume'?task.state==='paused':action==='complete'?(task.assigneeRoleId||task.executor?.kind==='owner'?task.state==='waiting':task.state==='running'):!['completed','cancelled'].includes(task.state)
+   const allowed=action==='rework'?task.state==='waiting':action==='start'?task.state==='ready':action==='pause'?task.state==='running':action==='resume'?task.state==='paused':action==='complete'?(task.assigneeRoleId||task.executor?.kind==='owner'?task.state==='waiting':task.state==='running'):!['completed','cancelled'].includes(task.state)
    if(!allowed)throw new WorkError('teloa/conflict','当前任务状态不能执行此操作。')
    if(artifact){
+    await assertArtifactAvailable(client,owner,artifact.id as string,artifact.version as number)
     const artifacts=new ArtifactService(this.pool,this.identity,async()=>{throw Error('结项不创建成果')})
     const version=await artifacts.readVersion(client,owner,artifact.id as string,artifact.version as number)
     if(!(await isArtifactRevisionProducer(client,owner,task.id,version,task.version))&&(version.source.kind!=='task'||version.source.id!==task.id||version.source.scope!==task.scope||version.source.version!==`${task.version} · ${task.updatedAt}`))throw new WorkError('teloa/version-conflict','交付成果不属于当前任务版本，请先核对任务并修订成果。')
     await client.query('insert into teloa_task_completions values($1,$2,$3,$4,$5,$6,$7)',[owner,task.id,task.version+1,artifact.id,artifact.version,(row.note as string).trim(),this.identity.now()])
    }
-   const updated=await client.query('update teloa_tasks set state=$3,version=version+1,updated_at=$4 where owner_id=$1 and id=$2 returning *',[owner,task.id,targets[action],this.identity.now()]),saved=readStoredTask(updated.rows[0])
+   reworkLease?.assertCurrent()
+   const updated=await client.query('update teloa_tasks set state=$3,version=version+1,execution_authorization=case when $5 then null else execution_authorization end,updated_at=$4 where owner_id=$1 and id=$2 returning *',[owner,task.id,targets[action],this.identity.now(),action==='rework']),saved=readStoredTask(updated.rows[0])
    await client.query('insert into teloa_task_transitions values($1,$2,$3,$4,$5,$6)',[owner,row.requestId,task.id,spec,JSON.stringify(updated.rows[0]),this.identity.now()])
    return saved
+ }
+ async reworkCandidate(owner:string,input:unknown):Promise<{taskId:string;taskVersion:number;available:boolean;controlId:string|null}>{
+  if(typeof owner!=='string'||!owner.trim()||owner.length>128)throw new WorkError('teloa/forbidden','需要本人身份。')
+  const row=taskInput(input,['taskId','expectedVersion']);if(!uuid(row.taskId)||!Number.isSafeInteger(row.expectedVersion)||(row.expectedVersion as number)<1)throw new WorkError('teloa/invalid-input','原任务版本不正确。')
+  const db=await this.pool.connect()
+  try{await db.query('begin isolation level repeatable read read only');const raw=(await db.query('select * from teloa_tasks where owner_id=$1 and id=$2',[owner,row.taskId])).rows[0];if(!raw)throw new WorkError('teloa/forbidden','任务不属于本人。');const task=readStoredTask(raw);if(task.version!==row.expectedVersion)throw new WorkError('teloa/version-conflict','任务版本已变化。');const basis=await ownerTaskReworkBasis(db,owner,task,new WorkLineageService(this.pool,this.identity));await db.query('commit');return {taskId:task.id,taskVersion:task.version,available:task.state==='waiting'&&basis!==null,controlId:basis?.controlId??null}}finally{await db.query('rollback').catch(()=>{});db.release()}
  }
  private async readCompletion(db:Pick<Pool,'query'>,owner:string,id:string){
   const rows=await db.query('select * from teloa_task_completions where owner_id=$1 and task_id=$2',[owner,id]);if(!rows.rows[0])return null

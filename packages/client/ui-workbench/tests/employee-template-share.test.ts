@@ -1,6 +1,7 @@
 import {test} from 'node:test'
 import assert from 'node:assert/strict'
 import {buildEmployeeTemplate,inspectEmployeeTemplate,createTemplateAcceptance} from '../src/client/employee-template-share.ts'
+import {createShareAcceptance} from '../src/client/template-share-accept.ts'
 import type {IndustryLoadRecord} from '../src/client/industry-load-api.ts'
 const role={id:'source-private',kind:'employee' as const,name:'Researcher',duty:'Verify sources.',dataScope:'Provided documents.',executionScope:'Confirm external writes.',skills:['Research'],knowledge:['private-id'],scopes:['private'],runtimeConfig:{modelAccountId:'private'},responsibility:{triggers:[],autonomousActions:[],confirmationPoints:['Ask before external writes.'],escalationRules:[],deliveryChecks:['Cite sources.']}}
 type AcceptPorts=Parameters<typeof createTemplateAcceptance>[1]
@@ -20,7 +21,11 @@ function industryPorts(over:Partial<AcceptPorts>={}){
 }
 test('a new v1 single-role copy uses the fixed-content industry path and stays resumable after an uncertain role reply',async()=>{
  const {storage,values}=memory(),pkg=buildEmployeeTemplate(role),requests:string[]=[],fake=industryPorts({role:async input=>{requests.push(input.requestId);if(requests.length===1)throw Error('Lost role reply');return {state:'paused',role:{id:'own-role'}}}})
+ const choice=()=>createShareAcceptance(storage,{createRole:fake.ports.createRole,v1:fake.ports}).choice(pkg)
+ assert.equal(await choice(),undefined);assert.equal(values.size,0)
  await assert.rejects(createTemplateAcceptance(storage,fake.ports).accept(pkg),/Lost role reply/)
+ const beforeRead=[...values.entries()]
+ assert.deepEqual(await choice(),{scope:'general',skills:[]});assert.deepEqual([...values.entries()],beforeRead,'读取恢复状态不改写原请求或阶段进度');assert.equal(requests.length,1)
  const saved=JSON.parse([...values.values()][0]!) as {path?:string;roleRequestId:string;load?:IndustryLoadRecord}
  assert.equal(saved.path,'industry');assert.equal(saved.load?.id,fake.loadId)
  const result=await createTemplateAcceptance(storage,fake.ports).accept(pkg)

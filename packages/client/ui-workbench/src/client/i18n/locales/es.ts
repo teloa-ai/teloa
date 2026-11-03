@@ -50,7 +50,6 @@ export const esMessages = {
   'task.empty.none': 'Aún no hay tareas',
   'task.empty.noMatch': 'No hay tareas que coincidan',
   'task.detail.back': 'Volver al directorio',
-  'task.detail.goal': 'Objetivo de la tarea',
   'continuous.directory': 'Automatización',
   'continuous.tab.plans': 'Planes',
   'continuous.tab.runs': 'Historial de ejecuciones',

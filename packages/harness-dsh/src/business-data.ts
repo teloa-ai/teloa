@@ -1,4 +1,4 @@
-import {WorkError,isRecord} from '@teloa/contract'
+import {WorkError,isRecord,type BusinessFieldValue} from '@teloa/contract'
 import type {BusinessDataPage,BusinessDataService} from '@teloa/backend'
 import {createHash} from 'node:crypto'
 
@@ -16,8 +16,8 @@ export function readBusinessDataPage(value:unknown,scope:string,expectedSourceId
  for(const value of row.items){
   const item=exact(value,['scope','type','id','version','title','source','observedAt','receivedAt','quality','summary','fields','snapshotHash'])
   if(item.scope!==scope||!text(item.type,80)||!text(item.id,200)||!Number.isSafeInteger(item.version)||Number(item.version)<1||Number(item.version)>2147483647||!text(item.title,240)||!text(item.source,120)||!stamp(item.observedAt)||!stamp(item.receivedAt)||item.receivedAt<item.observedAt||item.receivedAt>capturedAt||!['complete','missing'].includes(String(item.quality))||!text(item.summary,4000,true)||!Array.isArray(item.fields)||item.fields.length>50||!hash(item.snapshotHash))throw invalid()
-  const fields:Array<{label:string;value:string}>=[]
-  for(const value of item.fields){const field=exact(value,['label','value']);if(!text(field.label,120)||!text(field.value,2000,true))throw invalid();fields.push({label:field.label,value:field.value})}
+  const fields:Array<{label:string;value:BusinessFieldValue}>=[]
+  for(const value of item.fields){const field=exact(value,['label','value']);if(!text(field.label,120)||!(text(field.value,2000,true)||typeof field.value==='number'&&Number.isFinite(field.value)||typeof field.value==='boolean'))throw invalid();fields.push({label:field.label,value:field.value as BusinessFieldValue})}
   if(new Set(fields.map(field=>field.label)).size!==fields.length)throw invalid()
   const snapshot={scope:item.scope,type:item.type,id:item.id,version:item.version,title:item.title,source:item.source,observedAt:item.observedAt,receivedAt:item.receivedAt,quality:item.quality,summary:item.summary,fields}
   if(createHash('sha256').update(JSON.stringify(snapshot)).digest('hex')!==item.snapshotHash)throw invalid()
@@ -34,4 +34,11 @@ export function createBusinessDataHandler(owner:string,get:()=>Promise<BusinessD
   const result=await(await get()).query({ownerId:owner,scopeIds:['SOC']},payload,signal)
   return readBusinessDataPage(result,payload.scope,sourceId)
  }
+}
+
+/** 普通业务工具只接收宿主从当前会话取得的单业务 actor；RPC 的历史来源合同保持独立。 */
+export async function queryBusinessDataForScope(get:()=>Promise<BusinessDataService>,actor:{ownerId:string;scopeIds:string[]},input:unknown,signal:AbortSignal,sourceId='security-alert-http'){
+ if(!isRecord(input)||typeof input.scope!=='string'||!actor.ownerId||actor.scopeIds.length!==1||actor.scopeIds[0]!==input.scope)throw new WorkError('teloa/forbidden','业务数据读取需要当前会话的单业务授权。')
+ signal.throwIfAborted()
+ return readBusinessDataPage(await(await get()).query(actor,input,signal),input.scope,sourceId)
 }

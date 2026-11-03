@@ -26,6 +26,13 @@ const common={
 }
 
 const messages={
+ 'taskExecution.phase.submissionUnknown':fallback('已结束提交 · 结果未知','已結束提交 · 結果未知','Submission closed · outcome unknown'),
+ 'taskExecution.submission.notPublished':fallback('本次提交确定未发送。','本次提交確定未傳送。','This submission was not sent.'),
+ 'taskExecution.submission.recover':fallback('继续原提交','繼續原提交','Continue original submission'),
+ 'taskExecution.submission.dispose':fallback('结束本次未知提交','結束本次未知提交','Close unknown submission'),
+ 'taskExecution.submission.confirm':fallback('确认结束，保留结果未知','確認結束，保留結果未知','Confirm close with outcome unknown'),
+ 'taskExecution.submission.warning':fallback('尚不能确定本次提交是否执行过。结束后会阻止这次提交继续发送，保留原任务和全部记录；不会撤销可能已发生的操作，也不会自动重试。请先核对外部结果，再决定是否继续原任务。','目前無法確定本次提交是否執行過。結束後會阻止這次提交繼續發送，保留原任務與全部記錄；不會撤銷可能已發生的操作，也不會自動重試。請先核對外部結果，再決定是否繼續原任務。','It is not yet known whether this submission ran. Closing it prevents further submission and preserves the original task and records. It does not undo possible actions or retry automatically. Check external results before continuing the original task.'),
+
  'p5.cancel':common.cancel,
  'p5.saving':common.saving,
 
@@ -152,7 +159,7 @@ const messages={
  'planSkip.aria':v('未执行记录','未執行記錄','Skipped runs','未実行の履歴','건너뛴 실행','Lần chạy bị bỏ qua','Ejecuciones omitidas','Exécutions ignorées','Übersprungene Ausführungen','Execuções ignoradas'),
  'planSkip.title':v('未执行记录','未執行記錄','Skipped runs','未実行の履歴','건너뛴 실행','Lần chạy bị bỏ qua','Ejecuciones omitidas','Exécutions ignorées','Übersprungene Ausführungen','Execuções ignoradas'),
  'planSkip.refresh':common.refresh,
- 'planSkip.description':v('记录因上一项仍在处理而未启动的计划执行。','記錄因上一項仍在處理而未啟動的計畫執行。','Runs skipped because previous work was still active.','前の作業が続いていたため開始されなかった実行です。','이전 작업이 진행 중이어서 시작되지 않은 실행입니다.','Các lần chạy bị bỏ qua vì công việc trước vẫn đang diễn ra.','Ejecuciones omitidas porque el trabajo anterior seguía activo.','Exécutions ignorées car le travail précédent était toujours actif.','Ausführungen, die wegen noch laufender Arbeit übersprungen wurden.','Execuções ignoradas porque o trabalho anterior ainda estava ativo.'),
+ 'planSkip.description':fallback('记录未启动的计划执行及跳过原因。','記錄未啟動的計畫執行及略過原因。','Scheduled runs that were not started, with their skip reasons.'),
  'planSkip.retry':common.retry,
  'planSkip.loading':common.loading,
  'planSkip.corrupt':v('{count} 条记录无法读取。','{count} 筆記錄無法讀取。','{count} records couldn’t be read.','{count} 件の記録を読み込めませんでした。','레코드 {count}개를 읽지 못했습니다.','Không thể đọc {count} bản ghi.','No se pudieron leer {count} registros.','Impossible de lire {count} enregistrements.','{count} Datensätze konnten nicht gelesen werden.','Não foi possível ler {count} registos.'),
@@ -257,6 +264,8 @@ const messages={
  'taskExecution.title':v('执行记录','執行記錄','Runs','実行履歴','실행 기록','Lịch sử chạy','Ejecuciones','Exécutions','Ausführungen','Execuções'),
  'taskExecution.refresh':common.refresh,
  'taskExecution.prepareNext':v('准备下一次执行','準備下次執行','Prepare next run','次の実行を準備','다음 실행 준비','Chuẩn bị lần chạy tiếp','Preparar siguiente ejecución','Préparer la prochaine exécution','Nächste Ausführung vorbereiten','Preparar próxima execução'),
+ 'taskExecution.sourceResume.action':fallback('继续接收来源更新','繼續接收來源更新','Resume source updates'),
+ 'taskExecution.sourceResume.hint':fallback('在原任务和会话中继续接收新更新，已结束的执行不会重放。','在原任務與會話中繼續接收新更新，已結束的執行不會重播。','Receive new updates in the original task and session. Finished runs will not be replayed.'),
  'taskExecution.prepare':v('准备执行','準備執行','Prepare run','実行を準備','실행 준비','Chuẩn bị chạy','Preparar ejecución','Préparer l’exécution','Ausführung vorbereiten','Preparar execução'),
  'taskExecution.withdrawThenPrepare':v('撤回，然后准备执行','撤回，然後準備執行','Withdraw, then prepare run','取り下げてから実行を準備','철회한 뒤 실행 준비','Thu hồi rồi chuẩn bị chạy','Retirar y luego preparar ejecución','Retirer puis préparer l’exécution','Zurückziehen und dann Ausführung vorbereiten','Retirar e depois preparar execução'),
  'taskExecution.recoverPrepare':v('核对未完成准备','核對未完成準備','Review pending preparation','未完了の準備を確認','미완료 준비 검토','Kiểm tra chuẩn bị chưa xong','Revisar preparación pendiente','Vérifier la préparation en attente','Offene Vorbereitung prüfen','Rever preparação pendente'),

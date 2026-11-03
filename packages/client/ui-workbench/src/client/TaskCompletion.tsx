@@ -7,8 +7,9 @@ import {localizeWorkError} from './i18n/errors.js'
 import css from './TaskPage.module.css'
 import {ArrowUpRight} from 'lucide-react'
 import light from './light-actions.module.css'
+import type {TaskOwnerReworkPort} from './TaskOwnerRework.js'
 import {taskCompletionVisible} from './task-timeline-events.ts'
-export type TaskCompletionPort={list:(id:string)=>Promise<Artifact[]>;read:(id:string)=>Promise<TaskCompletionRecord|null>;complete:(task:PreviewTask,ref:ArtifactRef,note:string)=>Promise<void>}
+export type TaskCompletionPort={rework?:TaskOwnerReworkPort;list:(id:string)=>Promise<Artifact[]>;read:(id:string)=>Promise<TaskCompletionRecord|null>;complete:(task:PreviewTask,ref:ArtifactRef,note:string)=>Promise<void>}
 export type CompletionOption={key:string;id:string;version:number;title:string}
 /** GRP-02：结项候选只认当前任务版本来源的成果，或明确由本轮任务版本生产的成果。列表与自动选中共用同一判据。 */
 export function completionOptions(rows:readonly Artifact[],task:Pick<PreviewTask,'id'|'version'|'updatedAt'>):CompletionOption[]{

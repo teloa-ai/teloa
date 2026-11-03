@@ -2,6 +2,7 @@ import {
  WorkError,readBusinessConversationReserve,readBusinessConversationBind,readBusinessConversationRequest,readBusinessConversationSession,readBusinessConversationList,readBusinessConversationBinding,readBusinessConversationDirectory,readBusinessConversationRecentDaily,readBusinessConversationRecentDailyResponse,
  readBusinessBuilderRequest,readBusinessConfigurationDraftResponseVersioned as readBusinessConfigurationDraftResponse,readBusinessConfigurationPreviewResponse,readBusinessConfigurationApplyResult,readBusinessConfigurationCurrentResponseVersioned as readBusinessConfigurationCurrentResponse,readBusinessConfigurationPageProjectionVersioned as readBusinessConfigurationPageProjection,
  type BusinessConversationReserve,type BusinessConversationList,type BusinessConfigurationPageRequest,
+ readBusinessBuilderGenerationState,type BusinessBuilderGenerationMode,
 } from '@teloa/contract'
 import {businessSetupUuid,readBusinessSetupPlan,readBusinessSetupPreview,readBusinessSetupAdoption,readBusinessSetupManual,readBusinessSetupHistory,type BusinessSetupManual} from '@teloa/contract'
 type Call=(endpoint:string,input:unknown,signal?:AbortSignal)=>Promise<unknown>
@@ -13,6 +14,14 @@ const invalid=()=>new WorkError('teloa/invalid-host-response','业务搭建回�
 export function createBusinessBuilderApi(call:Call){
  const setupTarget=(input:BusinessBuilderDraftTarget)=>{readBusinessConversationSession({sessionId:input.sessionId});if(!businessSetupUuid(input.draftId))throw invalid();return input}
  return {
+  async generationMode(input:BusinessBuilderDraftTarget,signal?:AbortSignal){
+   const request=readBusinessBuilderRequest('business-configuration/generation-mode',{...input,action:'read'}),result=readBusinessBuilderGenerationState(await call('business-configuration/generation-mode',request,signal))
+   if(result.sessionId!==input.sessionId||result.draftId!==input.draftId)throw invalid();return result
+  },
+  async setGenerationMode(input:BusinessBuilderPreviewInput&{requestId:string;mode:BusinessBuilderGenerationMode},signal?:AbortSignal){
+   const request=readBusinessBuilderRequest('business-configuration/generation-mode',{...input,action:'set'}),result=readBusinessBuilderGenerationState(await call('business-configuration/generation-mode',request,signal))
+   if(result.sessionId!==input.sessionId||result.draftId!==input.draftId||result.mode!==input.mode||result.revision<input.expectedRevision)throw invalid();return result
+  },
   async setupPlans(input:{scope:string},signal?:AbortSignal){
    if(Object.keys(input).length!==1||typeof input.scope!=='string'||!/^[a-zA-Z0-9_-]{1,64}$/.test(input.scope)||input.scope==='general')throw invalid()
    const result=await call('business-setup-plan/list',input,signal)

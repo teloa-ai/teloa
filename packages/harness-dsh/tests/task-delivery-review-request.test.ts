@@ -90,7 +90,7 @@ test('真实Loop的复核专用系统规则使用英文，保留真实工具提�
  await f.ports.send(f.run,f.signal,f.target);await f.agent.whenIdle()
  assert.deepEqual(ends(f.events()),['completed']);assert.equal(f.adapter.requests.length,3)
  const usageSnapshots=f.events().filter(event=>event.type==='user/message'&&event.data.source.kind==='runtime-context'&&event.data.source.form==='snapshot'&&event.data.source.sections.some(section=>section.name==='teloa:run-mcp-tool-usage'))
- assert.equal(usageSnapshots.length,1,'内部复核不改变MCP计数，官方计数快照不能夹入R1/R2尾段')
+ assert.equal(new Set(usageSnapshots.flatMap(event=>event.type==='user/message'&&event.data.source.kind==='runtime-context'&&event.data.source.form==='snapshot'?event.data.source.sections.filter(section=>section.name==='teloa:run-mcp-tool-usage').map(section=>section.text):[])).size,1,'内部复核不改变MCP计数；与审批事实一同物化的宿主计数正文必须逐字相同')
  for(const [index,phase] of (['revise','verify'] as const).entries()){
   const request=f.adapter.requests[index+1]!,system=request.messages.filter(message=>message.role==='system').flatMap(message=>message.content.flatMap(part=>part.type==='text'?[part.text]:[])).join('\n')
   const rule=/Host delivery-review phase:[\s\S]*?Do not output a rewritten body or self-check, or call other tools\./.exec(system)?.[0]

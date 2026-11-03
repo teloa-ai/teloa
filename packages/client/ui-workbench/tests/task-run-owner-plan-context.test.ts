@@ -17,6 +17,14 @@ const snapshot=(context:unknown,lin:unknown=lineage)=>JSON.stringify({schema:'te
 const wire=(context:unknown,lin:unknown=lineage)=>({id,taskId,roleId:null,roleVersion:null,executor,taskVersion:1,linkVersion:1,sessionId:'session',nativeRequestId:id,state:'ended',evidence:{state:'ended',turn:1,messageSeq:8,endSeq:39,reason:'completed'},stopRequestedAt:null,allowedTools:[],skills:[],knowledge:[],memory:[],lineage:lin,inputText:snapshot(context,lin),createdAt:'2026-10-17T19:26:31.117Z'})
 const parse=(context:unknown,lin?:unknown)=>createTaskRunApi(async()=>[wire(context,lin)]).list(taskId)
 
+test('149 显式accepted-inbox-error沿共享reader展示真实失败，不作为user消息或交付成功',async()=>{
+ const evidence={state:'ended',turn:1,messageSeq:6,endSeq:9,reason:'error',inputAnchor:{kind:'accepted-inbox-error',acceptedSeq:6,turnStartSeq:7,consumedSeq:8,messageId:other,payloadSha256:'a'.repeat(64),inputSha256:'b'.repeat(64),prefixSha256:'c'.repeat(64),errorSha256:'d'.repeat(64)}}
+ const row={...wire(planContext),evidence}
+ const [run]=await createTaskRunApi(async()=>[row]).list(taskId)
+ assert.equal(run!.state,'ended');assert.equal(run!.reason,'error');assert.deepEqual(run!.evidence,evidence);assert.equal(run!.deliveryCheck,undefined)
+ for(const bad of [{...evidence,reason:'completed'},{...evidence,messageSeq:7}])await assert.rejects(createTaskRunApi(async()=>[{...row,evidence:bad}]).list(taskId),{code:'teloa/invalid-host-response'})
+})
+
 test('本人方法计划 Run：原成果全文与说明在 methodSource 内，没有顶层 notice 也能读取并保留来源',async()=>{
  const run=(await parse(planContext))[0]!
  assert.deepEqual(run.planContext,{occurrenceId,goal:'核对证据',dataScope:planContext.dataScope,delivery:planContext.delivery,methodSource})

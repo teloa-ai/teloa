@@ -208,6 +208,7 @@
 
 /* 新建以本次工作为主，已有业务、群与负责人只作紧凑上下文；详细选项按需展开。 */
 .form .createContext{margin:0;color:var(--teloa-muted);font-size:var(--teloa-font-caption);overflow-wrap:anywhere}.form .createDescription{min-height:180px;max-height:45dvh;line-height:1.65}.createOptions{border-top:1px solid var(--teloa-border);padding-top:10px}.createOptions summary{cursor:pointer;color:var(--teloa-muted);font-size:var(--teloa-font-control);padding:4px 0}.createOptions>div{display:flex;flex-direction:column;gap:13px;margin-top:12px}
+.progressSummary{margin:0 0 14px;color:var(--teloa-muted);font-size:var(--teloa-font-control);line-height:var(--teloa-leading-body)}.progressSummary p{margin:4px 0}
 
 /* 1.0 一层页头：工作台页签页的大标题只给读屏，视觉上由面包屑与页签承担；任务数与新建动作保留为工具条。 */
 .overviewPage>.pageHeader h1{position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}
@@ -310,3 +311,5 @@
 
 @media(prefers-reduced-motion:no-preference){.alignedPage .layout.hasSelection>.detail{animation:taskDetailEnter .16s ease-out both}}
 @keyframes taskDetailEnter{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:translateY(0)}}
+.taskHeader .secondaryCreate{border:0;background:transparent;color:var(--teloa-muted);padding-inline:6px}
+.taskHeader .secondaryCreate:hover{color:var(--teloa-text)}

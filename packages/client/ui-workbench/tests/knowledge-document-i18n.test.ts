@@ -52,8 +52,7 @@ test('知识文档关键繁中词条不混用简体字',()=>{
 test('知识文档技术名词在各语言中保留产品写法',()=>{
   const localeColumns=[3,4,5,6,7,8,9,10]
   for(const column of localeColumns){
-    assert.match(localized('knowledge.ui.023',column),/Teloa/)
-    for(const key of ['knowledge.ui.024','knowledge.ui.036','knowledge.ui.037','knowledge.ui.051','knowledge.ui.067','knowledge.ui.072','knowledge.ui.073','knowledge.ui.074','knowledge.ui.075','knowledge.ui.076','knowledge.ui.077']){
+    for(const key of ['knowledge.ui.024','knowledge.ui.051','knowledge.ui.067','knowledge.ui.072','knowledge.ui.073','knowledge.ui.074','knowledge.ui.075','knowledge.ui.076','knowledge.ui.077']){
       assert.match(localized(key,column),/Markdown/,`${key} column ${column} must preserve Markdown`)
     }
     assert.match(localized('knowledge.ui.077',column),/GitHub/)

@@ -20,6 +20,22 @@ after(async()=>{await pool?.end();await container?.stop()})
 
 /** 2026-10-12核对统一初始化链与静态DDL的完整表清单；期待不在测试运行时从被测实现推导。 */
 const expectedTables=[
+ // 已接入的来源撤回、复制、维护和续办持久表，仍严格比对完整集合。
+ "teloa_artifact_input_sources",
+ "teloa_artifact_withdrawals",
+ "teloa_business_sync_mapping_migrations",
+ "teloa_group_delivery_recoveries",
+ "teloa_group_delivery_recovery_rejections",
+ "teloa_knowledge_copies",
+ "teloa_local_knowledge_copies",
+ "teloa_prepared_run_maintenance",
+ "teloa_prepared_run_maintenance_cycles",
+ "teloa_role_memory_preference_versions",
+ "teloa_task_run_maintenance_dispositions",
+ "teloa_task_run_source_followups",
+ "teloa_task_run_submissions",
+ "teloa_task_run_unpublished_cancellations",
+
  // 完整业务方案及采用回执、来源固定多稿与记忆正文编辑回执。
  "teloa_business_setup_plans",
  "teloa_business_setup_requests",

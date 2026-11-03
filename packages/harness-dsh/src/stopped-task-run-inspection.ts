@@ -1,10 +1,57 @@
+import {taskRunHasPublicationEvidence} from './task-run-publication.ts'
 import {createHash} from 'node:crypto'
 import {isDeepStrictEqual} from 'node:util'
-import {isAbsolute} from 'node:path'
+import {isAbsolute,join} from 'node:path'
+import {readFile,readdir,lstat,realpath} from 'node:fs/promises'
+import {zstdDecompressSync} from 'node:zlib'
+import {Context} from '@deepseek-ai/cordis'
+import * as JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
 import {Session,SessionId,SessionLogOffset} from '@deepseek-ai/dsh-session'
 import type {SessionPersistence} from '@deepseek-ai/dsh-session-persistence'
 import type {TaskRun,StoppedUnacceptedNativeProof} from '@teloa/backend'
 import {WorkError,taskInput} from '@teloa/contract'
+
+/** 已证明原宿主退出后使用。只读当前v4日志；输入/工具历史的存在不影响unknown，也不证明未发布。 */
+export async function readStoppedSubmissionSnapshot(input:{dshHome:string;expectedCwd:string;run:Pick<TaskRun,'sessionId'|'agentPresetId'>&{nativeRequestId?:string};requireNotPublished?:true}){
+ const denied=()=>new WorkError('teloa/conflict','原会话完整日志或归属无法核对，维护保持停止。')
+ const {run}=input
+ if(!/^[a-zA-Z0-9_-]{1,128}$/.test(run.sessionId)||!isAbsolute(input.dshHome)||!isAbsolute(input.expectedCwd)||!run.agentPresetId)throw denied()
+ const root=await realpath(join(input.dshHome,'sessions')),paths:string[]=[]
+ if((await lstat(root)).isSymbolicLink())throw denied()
+ for(const entry of await readdir(root,{withFileTypes:true})){
+  if(!entry.isDirectory()||entry.isSymbolicLink())continue
+  const directory=join(root,entry.name,run.sessionId)
+  let names:string[]
+  try{if(!(await lstat(directory)).isDirectory()||(await lstat(directory)).isSymbolicLink())throw denied();names=await readdir(directory)}catch(error){if((error as NodeJS.ErrnoException).code==='ENOENT')continue;throw error}
+  for(const name of names)if(/^session\.v\d+\.jsonl(?:\.zstd)?$/.test(name))paths.push(join(directory,name))
+ }
+ if(paths.length!==1||!/[\\/]session\.v4\.jsonl(?:\.zstd)?$/.test(paths[0]!))throw denied()
+ const path=paths[0]!,before=await lstat(path)
+ if(!before.isFile()||before.isSymbolicLink()||before.size===0||before.size>67108864||await realpath(path)!==path)throw denied()
+ const bytes=await readFile(path),decoded=path.endsWith('.zstd')?zstdDecompressSync(bytes,{maxOutputLength:67108864}):bytes
+ const text=new TextDecoder('utf-8',{fatal:true}).decode(decoded)
+ if(!text.endsWith('\n'))throw denied()
+ const records=text.slice(0,-1).split('\n').map(line=>JSON.parse(line)),header=records[0]
+ if(!header||header.type!=='session'||header.version!==4||header.id!==run.sessionId||header.cwd!==input.expectedCwd||header.agentPreset!==run.agentPresetId)throw denied()
+ const ctx=new Context()
+ try{
+  await ctx.plugin(JsonlSessionPersistence,{root,compression:path.endsWith('.zstd')?'zstd':'none'})
+  const persistence=ctx.sessionPersistence,id=SessionId(run.sessionId),resolver=Reflect.get(persistence,'resolveCurrentLog')
+  if(typeof resolver!=='function'||await resolver.call(persistence,id)!==path)throw denied()
+  const handle=await persistence.open(id,'read')
+  try{
+   const {events}=await handle.read(0),meta=handle.header
+   if(handle.id!==id||handle.access!=='read'||meta.id!==run.sessionId||meta.cwd!==input.expectedCwd||meta.agentPreset!==run.agentPresetId)throw denied()
+   if(input.requireNotPublished){
+    if(!run.nativeRequestId)throw denied()
+    if(taskRunHasPublicationEvidence(events,run.nativeRequestId))throw denied()
+   }
+   const after=await lstat(path)
+   if(before.dev!==after.dev||before.ino!==after.ino||before.size!==after.size||before.mtimeMs!==after.mtimeMs||!bytes.equals(await readFile(path))||await resolver.call(persistence,id)!==path)throw denied()
+   return {path,device:after.dev,inode:after.ino,size:after.size,fileSha256:createHash('sha256').update(bytes).digest('hex'),logCut:events.length-1,logSha256:createHash('sha256').update(JSON.stringify(events)).digest('hex'),...(input.requireNotPublished?{notPublished:true as const}:{})}
+  }finally{await handle.close()}
+ }finally{await ctx.fiber.dispose()}
+}
 
 const denied=()=>new WorkError('teloa/conflict','原生会话已有受理、活动或未知记录，不能撤回未准入提交。')
 export type StoppedTaskRunInspectionOptions={persistence:Pick<SessionPersistence,'open'>&{resolveCurrentLog:(id:SessionId,signal?:AbortSignal)=>Promise<string|undefined>};expectedCwd:string;readCompleteLog:(path:string,signal:AbortSignal)=>Promise<Uint8Array>}

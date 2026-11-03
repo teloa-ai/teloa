@@ -70,7 +70,7 @@ function businessMatchOf(section:BusinessSection,objectType:string|undefined,val
  return {field:match.field,value:match.value}
 }
 
-function parseBusinessTarget(value:unknown){
+export function parseBusinessTarget(value:unknown){
  const target=record(value,'业务详情目标')
  exact(target,['scope','section','id','objectType','dashboardId','match','recordReference'],'业务详情目标')
  const scope=businessScope(target.scope)
@@ -231,7 +231,7 @@ export function attachWorkbenchNavigationPersistence(
  return store.subscribe(persist)
 }
 
-type WorkbenchNavigationSnapshot={
+export type WorkbenchNavigationSnapshot={
  view:WorkbenchView;messageMode:'directory'|'native'|'groups';/** 旧字段：独立能力页已退出，快照可不带，记录固定写 catalog。 */capabilityMode?:'catalog'|'bindings';marketMode:'catalog'|'installations'|'industry-resources'
  groupTarget?:{groupId:string;rootId:string}|null;
  taskId:string|null;roleId:string|null;resourceTarget:{id:string}|null;capabilityBindingId:string|null;marketItemId:string|null;marketIntentId:string|null;installationId:string|null

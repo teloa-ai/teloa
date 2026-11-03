@@ -4,6 +4,19 @@ import {createTaskApi} from '../src/client/task-api.ts'
 import {taskAttentionDescription} from '../src/client/task-attention-presentation.ts'
 const fields={title:'调查任务',goal:'核对现有证据',scope:'general',groupId:null,skills:[]},id='12345678-1234-4234-8234-123456789012',at='2026-09-11T00:00:00Z'
 const row={...fields,id,ownerId:'owner',version:1,state:'ready',assigneeRoleId:null,assigneeRoleVersion:null,createdAt:at,updatedAt:at}
+test('进行中的任务可发现原生工具审批，并保留固定执行和会话入口',async()=>{
+ const task={...row,state:'running',assigneeRoleId:id,assigneeRoleVersion:1},nativeApproval={runId:'87654321-1234-4234-8234-123456789012',sessionId:'11111111-1111-4111-8111-111111111111'}
+ const page={items:[{task,attention:null,nativeApproval}]}
+ assert.deepEqual(await createTaskApi(async()=>page).attention(),page)
+ assert.equal((await createTaskApi(async()=>({items:[{task,attention:null,nativeApprovalUnknown:true}]})).attention()).items[0]!.nativeApprovalUnknown,true)
+ for(const invalid of [
+  {...page.items[0],task:{...task,state:'cancelled'}},
+  {...page.items[0],nativeApproval:{...nativeApproval,runId:'invalid'}},
+  {...page.items[0],nativeApproval:{...nativeApproval,sessionId:''}},
+  {...page.items[0],nativeApprovalUnknown:true},
+  {task,attention:null,nativeApprovalUnknown:false},
+ ])await assert.rejects(createTaskApi(async()=>({items:[invalid]})).attention(),/需要你/)
+})
 test('任务目录及需要你快照接受严格完成策略和内容版本，保留历史缺省',async()=>{
  const completionPolicy={kind:'verified' as const,verifier:'material-version-summary' as const,verifierVersion:1,authorizationVersion:2},current={...row,contentVersion:2,completionPolicy}
  assert.deepEqual(await createTaskApi(async()=>[current]).list(),[current])

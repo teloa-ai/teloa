@@ -15,5 +15,35 @@
 @@ -18038 +18038 @@
 -				})] }), (0, react_jsx_runtime.jsx)("div", {
 +				}), (0, react_jsx_runtime.jsx)("div", {
-@@ -19850,0 +19851 @@
+@@ -18782 +18782 @@
+-			const showToast = (0, react.useCallback)((text) => {
++			const showToast = (0, react.useCallback)((text, error) => {
+@@ -18786 +18786,2 @@
+-					text
++					text,
++					error
+@@ -18800 +18801 @@
+-				showToast(error.code === "session/attachment-invalid" || error.code === "subagent/attachment-invalid" ? attachmentErrorText(t, error.details.reason, imageLimits) : `${error.message} (${error.code})`);
++				showToast(error.code === "session/attachment-invalid" || error.code === "subagent/attachment-invalid" ? attachmentErrorText(t, error.details.reason, imageLimits) : `${error.message} (${error.code})`, error);
+@@ -18973,4 +18974 @@
+-			return (0, react_jsx_runtime.jsxs)("div", {
+-				className: clsx(InputBar_module_css_default.root, variant === "hero" && InputBar_module_css_default.hero),
+-				children: [
+-					toast !== null && (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.Toast, {
++			const nativeToast = toast === null ? null : (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.Toast, {
+@@ -18980,0 +18979,11 @@
++					}, toast.seq);
++			return (0, react_jsx_runtime.jsxs)("div", {
++				className: clsx(InputBar_module_css_default.root, variant === "hero" && InputBar_module_css_default.hero),
++				children: [
++					toast !== null && (0, react_jsx_runtime.jsx)(react.Fragment, {
++						children: toast.error === void 0 ? nativeToast : renderSlot("conversation.input.rejection", {
++							error: toast.error,
++							defaultText: toast.text,
++							anchor: cardRef.current,
++							onDone: dismissToast
++						}, { fallback: nativeToast })
+@@ -19850,0 +19860 @@
 +					"conversation.session.header.title": { kind: "single", scope: "session" },
+@@ -19883,0 +19894 @@
++					"conversation.input.rejection": { kind: "single", scope: "session" },

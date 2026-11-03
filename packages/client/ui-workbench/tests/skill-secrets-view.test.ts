@@ -3,7 +3,7 @@ import test from 'node:test'
 import {registerHooks} from 'node:module'
 import {createElement} from 'react'
 import {renderToStaticMarkup} from 'react-dom/server'
-import {mount} from './market-component-harness.ts'
+import {mount,nodes} from './market-component-harness.ts'
 
 registerHooks({
  resolve:(specifier,context,next)=>specifier.endsWith('.module.css')?{url:new URL(specifier,context.parentURL).href,shortCircuit:true}:next(specifier,context),
@@ -81,7 +81,7 @@ test('过期页面只刷新目标并提示，绝不重试旧值；下一次用�
  })
  const fixture=mount('SkillSecretsView.tsx',{'./i18n/provider.js':{useI18n:()=>({t,locale:'zh-CN'})}})
  const props={skill:'x-search',title:'测试技能',api,onBack(){}}
- const renderView=()=>fixture.render('SkillSecretsView',props)
+ const renderView=()=>nodes(fixture.render('SkillSecretsView',props)).find(node=>typeof node.type==='function'&&node.type.name==='SkillSecretsViewPresentation')!
  renderView();fixture.effects[0]!();await new Promise<void>(resolve=>setImmediate(resolve))
  assert.equal(renderView().props.state.binding,state.binding)
  version=1;renderView().props.onSave({XAI_API_KEY:'fake-first-value'})

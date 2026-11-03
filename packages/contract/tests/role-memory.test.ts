@@ -68,3 +68,11 @@ test('岗位记忆键集与键数扩位后一字不变，daily-digest 来源走�
  assert.equal(isRoleMemory(missing),false)
  assert.equal(isRoleMemory({...memory,source:{kind:'habit-digest',id:memory.source.id,version:1}}),true)
 })
+
+
+test('MEM-DEDUP-CORRECTIVE UUID大小写只作身份比较，原source与提出者编码不改写',()=>{
+ const roleId='26057272-ed9d-44a3-abe4-2ab04e056105',at='2026-09-13T01:00:00.000Z',source={kind:'task' as const,id:id.toUpperCase(),version:1}
+ const memory={id,ownerId:'local:owner',roleId,roleVersion:2,title:'合成主题',state:'candidate',stateVersion:1,source,sourceTitle:'合成任务',sourceAvailable:true,visibility:{kind:'role',scopeIds:['SOC']},proposedBy:{kind:'role',roleId:roleId.toUpperCase(),roleVersion:2},content:{version:1,contentHash:hash,bytes:6,markdown:'合成',createdAt:at},candidateAt:at,confirmedAt:null,withdrawnAt:null},before=structuredClone(memory)
+ assert.equal(isRoleMemory(memory),true);assert.deepEqual(roleMemorySource(source),source);assert.deepEqual(memory,before)
+ assert.equal(isRoleMemory({...memory,proposedBy:{...memory.proposedBy,roleId:id}}),false)
+})

@@ -20,6 +20,7 @@ function fixture(){
   retryTaskVersion:async(actor:string,run:TaskRun)=>{assert.equal(actor,owner);assert.equal(run.id,runId);calls.push('definition');return 3},
   preparationTarget:async(_actor:string,input:{taskId:string;expectedTaskVersion:number})=>{assert.equal(input.taskId,taskId);assert.equal(input.expectedTaskVersion,3);return {taskId,taskVersion:3,title:'原任务',roleId:parent.roleId,roleVersion:3}},
   request:async(_actor:string,input:{requestId:string})=>requests.get(input.requestId)??null,
+  sourceContinuation:async()=>null,
   prepare:async(_actor:string,input:{requestId:string;sessionId:string})=>{calls.push('prepare');const value={...failed,id:'55555555-5555-4555-8555-555555555555',taskVersion:3,sessionId:input.sessionId,state:'prepared',evidence:null};history.push(value);newRun=value;requests.set(input.requestId,value);if(loseReply){loseReply=false;throw Error('committed reply lost')}return value},
  }) as TaskRunService
  const ports:TaskRunPorts={resolvePreset:async()=> 'standard',check:async()=>{},send:async()=>{calls.push('send')},stop:async()=>{},events:async()=>events,backgroundState:async()=>({outstanding:false,interrupted:false}),subagentState:async()=> 'none',flowState:async()=> 'none',stopState:async()=>({running:false,settledSeq:null}),goalObservation:async()=>undefined}

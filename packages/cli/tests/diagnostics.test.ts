@@ -26,3 +26,50 @@ test('运行日志脱敏覆盖常见密钥前缀与私钥块',()=>{
  const out=diagnostics.redactLog('x '+token+' AKIA'+'ABCDEFGHIJKLMNOP -----BEGIN '+'RSA PRIVATE KEY-----\nzz\n-----END RSA PRIVATE KEY-----')
  assert.ok(!out.includes(token));assert.ok(!out.includes('AKIAABCD'));assert.ok(!out.includes('zz'))
 })
+
+test('JSON 日志遮蔽嵌套敏感字段，保留普通值与因果身份',()=>{
+ const runId='814779ca-2ea0-4f3c-9b25-720bb19e6678'
+ const input={runId,requestId:'request-114',attempt:2,ok:false,items:[
+  {access_token:'synthetic-access-value',refreshToken:'synthetic-refresh-value',count:3},
+  {nested:{api_key:'synthetic-api-value',password:'synthetic-password-value'},sessionId:'session-114'},
+ ],headers:{Authorization:'Bearer synthetic-header',Cookie:'synthetic-cookie','Set-Cookie':'synthetic-set-cookie'},safe:['relative/file.txt',null,true]}
+ const output=diagnostics.redactLog('INFO '+JSON.stringify(input))
+ assert.equal(output.startsWith('INFO '),true)
+ assert.deepEqual(JSON.parse(output.slice(5)),{...input,items:[
+  {access_token:'[redacted]',refreshToken:'[redacted]',count:3},
+  {nested:{api_key:'[redacted]',password:'[redacted]'},sessionId:'session-114'},
+ ],headers:{Authorization:'[redacted]',Cookie:'[redacted]','Set-Cookie':'[redacted]'}})
+})
+
+test('JSON 敏感值的转义、容器与标量均完整遮蔽，不截断相邻字段',()=>{
+ const input=String.raw`{"api\u005fkey":"synthetic\"quote\\slash\nline","safe":"双引号\"与反斜线\\","token":["synthetic-array",{"value":"synthetic-nested"}],"secret":{"value":"synthetic-object"},"password":12345,"ok":true,"runId":"run-114"}`
+ assert.deepEqual(JSON.parse(diagnostics.redactLog(input)),{api_key:'[redacted]',safe:'双引号"与反斜线\\',token:'[redacted]',secret:'[redacted]',password:'[redacted]',ok:true,runId:'run-114'})
+ const fragment='  "access_token": "synthetic-fragment-value", "attempt": 4'
+ assert.equal(diagnostics.redactLog(fragment),'  "access_token": "[redacted]", "attempt": 4')
+ assert.equal(diagnostics.redactLog('{"access_token":"synthetic-unclosed-value'),'{"access_token":"[redacted]"')
+})
+
+test('JSON 字段随 UTF-8 字节分片并与 stderr 交错时仍保持完整脱敏',()=>{
+ const input=JSON.stringify({access_token:'合成值"与\\转义',nested:[{apiKey:'synthetic-chunked-value'}],runId:'run-114',count:5})+'\n'
+ const output:string[]=[],capture=new diagnostics.RuntimeOutput((line:string)=>output.push(line),()=>{})
+ const bytes=Buffer.from(input)
+ for(let index=0;index<bytes.length;index++){
+  capture.write('stdout',bytes.subarray(index,index+1))
+  if(index===17)capture.write('stderr','ordinary warning\n')
+ }
+ capture.end()
+ assert.equal(output.length,2)
+ assert.equal(output[0],'ordinary warning\n')
+ assert.deepEqual(JSON.parse(output[1]!),{access_token:'[redacted]',nested:[{apiKey:'[redacted]'}],runId:'run-114',count:5})
+})
+
+test('过长 JSON 日志整行省略，下一行的敏感字段仍脱敏',()=>{
+ const output:string[]=[],lines=new diagnostics.LogLines((line:string)=>output.push(line))
+ lines.write('{"padding":"'+'a'.repeat(65536))
+ lines.write('","access_token":"synthetic-long-line-value"}\n')
+ lines.write('{"access_token":"synthetic-next-line-value","count":1}')
+ lines.end()
+ assert.equal(output.length,2)
+ assert.equal(output[0],'[过长日志行已省略]\n')
+ assert.deepEqual(JSON.parse(output[1]!),{access_token:'[redacted]',count:1})
+})

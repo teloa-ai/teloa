@@ -1,5 +1,8 @@
+import {KnowledgeCopyService} from './knowledge-copy.ts'
+import {LocalKnowledgeCopyService} from './local-knowledge-copy.ts'
 import { lstat,mkdir,readFile } from 'node:fs/promises'
 import { Pool } from 'pg'
+import {protectBorrowedDatabaseClients} from '../database-client-errors.ts'
 import { WorkError,isRecord } from '@teloa/contract'
 import { createPublicReferenceCatalog } from '@teloa/mcp-reference/local'
 import { ResourceService,type ResourceSourceCatalog } from './resources.ts'
@@ -25,7 +28,7 @@ export function databaseConnectionAllowed(connectionString:string,deployment?:st
 }
 
 /** `options.deployment`：宿主传入只读启动快照里的 TELOA_DEPLOYMENT（工作区 .env 不能借它放宽主机白名单）；缺省读 process.env 只给脚本用。 */
-export async function openResourceDatabase(path:string,identity:{id:()=>string;now:()=>string},options:{deployment?:string|undefined;localMaterialCatalog?:(pool:Pool)=>Promise<ResourceSourceCatalog>}={deployment:process.env.TELOA_DEPLOYMENT}):Promise<{pool:Pool;dispatchLocks:Pool;close:()=>Promise<void>;service:ResourceService;knowledge:MarkdownKnowledgeService;knowledgeTree:KnowledgeTreeService;knowledgeResources:KnowledgeResourceService;employeeKnowledge:EmployeeKnowledgeService;retrieval:RetrievalIndexService;sources:ReturnType<typeof combineReferenceCatalogs>}>{
+export async function openResourceDatabase(path:string,identity:{id:()=>string;now:()=>string},options:{deployment?:string|undefined;localMaterialCatalog?:(pool:Pool)=>Promise<ResourceSourceCatalog>}={deployment:process.env.TELOA_DEPLOYMENT}):Promise<{pool:Pool;dispatchLocks:Pool;close:()=>Promise<void>;service:ResourceService;knowledge:MarkdownKnowledgeService;knowledgeTree:KnowledgeTreeService;knowledgeCopies:KnowledgeCopyService;localKnowledgeCopies:LocalKnowledgeCopyService;knowledgeResources:KnowledgeResourceService;employeeKnowledge:EmployeeKnowledgeService;retrieval:RetrievalIndexService;sources:ReturnType<typeof combineReferenceCatalogs>}>{
   let config:unknown
   try{
     const entry=await lstat(path)
@@ -54,9 +57,11 @@ export async function openResourceDatabase(path:string,identity:{id:()=>string;n
     throw new WorkError('teloa/storage-unavailable','知识内容仓目录无法准备。')
   }
   const pool=new Pool({...connection,max:6,connectionTimeoutMillis:5000,statement_timeout:15000})
+  protectBorrowedDatabaseClients(pool)
   pool.on('error',()=>{/* 下次业务请求通过显式失败报告，不暴露连接凭据。 */})
   // 锁等待不能占用业务事务的连接额度；Pool在首次借用之前不会建立连接。
   const dispatchLocks=new Pool({...connection,max:2,connectionTimeoutMillis:5000,statement_timeout:15000})
+  protectBorrowedDatabaseClients(dispatchLocks)
   dispatchLocks.on('error',()=>{/* 已借出的锁连接由服务中止lockSignal；空闲连接由pg回收。 */})
   let closing:Promise<void>|undefined
   const close=()=>closing??=(async()=>{try{await dispatchLocks.end()}finally{await pool.end()}})()
@@ -65,7 +70,8 @@ export async function openResourceDatabase(path:string,identity:{id:()=>string;n
   const knowledge=new MarkdownKnowledgeService(pool,knowledgeRoot,'default',identity)
   let localMaterials:ResourceSourceCatalog|undefined
   try{localMaterials=await options.localMaterialCatalog?.(pool)}catch(error){await close();throw error}
-  const sources=combineReferenceCatalogs(createPublicReferenceCatalog(),new IndustryReferenceCatalog(pool,market,loads),new MarkdownKnowledgeCatalog(knowledge),localMaterials,new ResourceAdoptionCatalog(pool))
+  const industry=new IndustryReferenceCatalog(pool,market,loads)
+  const sources=combineReferenceCatalogs(createPublicReferenceCatalog(),industry,new MarkdownKnowledgeCatalog(knowledge),localMaterials,new ResourceAdoptionCatalog(pool))
   const service=new ResourceService(pool,sources,identity)
-  return {pool,dispatchLocks,close,service,knowledge,knowledgeTree:new KnowledgeTreeService(pool,'default',identity),knowledgeResources:new KnowledgeResourceService(pool,knowledge,service),employeeKnowledge:new EmployeeKnowledgeService(pool,knowledge,service,identity),retrieval:new RetrievalIndexService(pool,service,identity),sources}
+  return {pool,dispatchLocks,close,service,knowledge,knowledgeCopies:new KnowledgeCopyService(pool,knowledge,service,industry),localKnowledgeCopies:new LocalKnowledgeCopyService(pool,knowledge,service,sources),knowledgeTree:new KnowledgeTreeService(pool,'default',identity),knowledgeResources:new KnowledgeResourceService(pool,knowledge,service),employeeKnowledge:new EmployeeKnowledgeService(pool,knowledge,service,identity),retrieval:new RetrievalIndexService(pool,service,identity),sources}
 }

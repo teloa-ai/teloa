@@ -9,9 +9,9 @@ const navigate='mcp__playwright-mcp__browser_navigate',close='mcp__playwright-mc
 async function fixture(t,{bind=true}={}){
  const {ctx,create,adapter}=await createRuntime(t),agent=await create('browser-owner'),other=await create('browser-foreign')
  ctx.provide('browserUse',{providerName:'playwright-mcp'})
- const run={id:'run',sessionId:agent.session.id,nativeRequestId:'request'},rows=new Map(),calls=[]
- let stopping=false,grantClose=true,asks=0,failWrite=false,failClose=false,seq=0,policyPause
- const links={list:async input=>[...rows.values()].filter(row=>row.runId===input.runId&&(!input.kind||row.kind===input.kind)),put:async row=>{if(failWrite)throw Error('synthetic storage failure');rows.set(row.nativeId,structuredClone(row))}}
+ const run={id:'run',taskId:'task',taskVersion:1,sessionId:agent.session.id,nativeRequestId:'request'},rows=new Map(),calls=[]
+ let stopping=false,grantClose=true,asks=0,failWrite=false,failClose=false,seq=0,policyPause,writePause
+ const links={list:async input=>[...rows.values()].filter(row=>row.runId===input.runId&&(!input.kind||row.kind===input.kind)),put:async row=>{if(failWrite)throw Error('synthetic storage failure');await writePause?.();rows.set(row.nativeId,structuredClone(row))}}
  const readPolicy=async id=>{await policyPause?.();return id===agent.session.id?{allowedTools:stopping?[]:[navigate,close],nativeRequestId:run.nativeRequestId,stopRequested:stopping,argumentRules:[navigate,...grantClose?[close]:[]].map(name=>({name,anyArguments:true,allowed:[]}))}:null}
  const browser=createTaskRunBrowser(ctx,links,readPolicy);t.after(browser.dispose);if(bind)browser.bind(run)
  registerTaskToolGuard(ctx,readPolicy,[],undefined,undefined,undefined,undefined,browser.cleanup)
@@ -22,7 +22,7 @@ async function fixture(t,{bind=true}={}){
  ctx.on('approval/request',async()=>{asks++;return 'allowed-once'})
  agent.session.append('turn/start',{turn:0});agent.session.append('user/message',createUserMessage({content:[],source:{kind:'user',rpcId:run.nativeRequestId}}),{surfaceOp:'append'})
  const call=(name=navigate,target=agent,args={})=>ctx.tools.execute({agent:target,name,arguments:args,callId:ToolCallId('call-'+ ++seq),signal:AbortSignal.timeout(5000)})
- return {ctx,create,adapter,agent,other,run,rows,links,readPolicy,browser,calls,call,get asks(){return asks},set policyPause(value){policyPause=value},set stopping(value){stopping=value},set grantClose(value){grantClose=value},set failWrite(value){failWrite=value},set failClose(value){failClose=value},stop(){stopping=true;agent.session.append('turn/end',{turn:0,reason:{kind:'aborted',reason:{kind:'user'}}})}}
+ return {ctx,create,adapter,agent,other,run,rows,links,readPolicy,browser,calls,call,get asks(){return asks},set policyPause(value){policyPause=value},set writePause(value){writePause=value},set stopping(value){stopping=value},set grantClose(value){grantClose=value},set failWrite(value){failWrite=value},set failClose(value){failClose=value},stop(){stopping=true;agent.session.append('turn/end',{turn:0,reason:{kind:'aborted',reason:{kind:'user'}}})}}
 }
 
 test('派发先落盘；正常留页不阻塞交付；停止只由 host 清理本会话且不追加假轮次',async t=>{
@@ -177,4 +177,59 @@ test('子级收尾读取策略尚未回包时也阻止 Run 收口；再次取消
  f.stopping=true;child.cancel({kind:'parent'})
  release.resolve();await child.whenIdle()
  assert.equal((await f.browser.state(f.run)).dirty,false)
+})
+
+const completed=run=>({...run,state:'ended',stopRequestedAt:null,evidence:{state:'ended',reason:'completed',turn:0,messageSeq:1,endSeq:2}})
+
+test('同任务已收尾续办释放旧浏览器槽，新Run独立审批且旧Run不能迟到重绑',async t=>{
+ const f=await fixture(t),first=completed(f.run),next={...f.run,id:'next',taskVersion:2,nativeRequestId:'next-request'}
+ assert.throws(()=>f.browser.bind(next),{code:'teloa/storage-corrupt'},'未退役时不能覆盖旧归属')
+ await f.browser.prepareContinuation(first,AbortSignal.timeout(5000))
+ f.browser.bind(next);Object.assign(f.run,next)
+ f.agent.session.append('turn/end',{turn:0,reason:{kind:'completed'}})
+ f.agent.session.append('turn/start',{turn:1});f.agent.session.append('user/message',createUserMessage({content:[],source:{kind:'user',rpcId:next.nativeRequestId}}),{surfaceOp:'append'})
+ assert.throws(()=>f.browser.bind(first),{code:'teloa/conflict'},'旧执行不能夺回会话')
+ assert.throws(()=>f.browser.bind({...next,nativeRequestId:'wrong-request'}),{code:'teloa/storage-corrupt'})
+ assert.equal((await f.call()).isError,false);assert.equal(f.asks,1,'新Run重新经过原工具审批')
+ assert.ok([...f.rows.values()].every(row=>row.runId===next.id&&row.payload.requestId===next.nativeRequestId))
+ await f.browser.prepareContinuation(first,AbortSignal.timeout(5000))
+ assert.equal((await f.browser.state(next)).dirty,true,'旧轮幂等退役不能影响新轮资源')
+})
+
+for(const changed of [{taskId:'other-task'},{taskVersion:1},{nativeRequestId:'request'}])test(`续办拒绝错误任务、版本或请求身份 ${JSON.stringify(changed)}`,async t=>{
+ const f=await fixture(t),first=completed(f.run),next={...f.run,id:'next',taskVersion:2,nativeRequestId:'next-request'}
+ await f.browser.prepareContinuation(first,AbortSignal.timeout(5000))
+ assert.throws(()=>f.browser.bind({...next,...changed}),{code:'teloa/forbidden'})
+ f.browser.bind(next)
+})
+
+test('旧Run非完成、错误原身份或dirty均不得释放浏览器归属',async t=>{
+ const f=await fixture(t),first=completed(f.run),next={...f.run,id:'next',taskVersion:2,nativeRequestId:'next-request'}
+ for(const invalid of [{...first,state:'active'},{...first,taskId:'wrong-task'},{...first,stopRequestedAt:'2026-10-30T00:00:00.000Z'},{...first,evidence:{...first.evidence,reason:'error'}},{...first,nativeRequestId:'wrong-request'}])await assert.rejects(f.browser.prepareContinuation(invalid,AbortSignal.timeout(5000)))
+ await f.call()
+ await assert.rejects(f.browser.prepareContinuation(first,AbortSignal.timeout(5000)),{code:'teloa/conflict'})
+ assert.throws(()=>f.browser.bind(next),{code:'teloa/storage-corrupt'})
+ assert.equal((await f.browser.state(first)).dirty,true,'失败退役保留原页面归属')
+})
+
+test('审批中的旧工具不能越过退役后进入新Run，旧Run策略也不能使用新绑定',async t=>{
+ const f=await fixture(t),first=completed(f.run),next={...f.run,id:'next',taskVersion:2,nativeRequestId:'next-request'},asked=Promise.withResolvers(),answer=Promise.withResolvers()
+ f.ctx.on('approval/request',async()=>{asked.resolve();return answer.promise},{prepend:true})
+ const pending=f.call();await asked.promise
+ await f.browser.prepareContinuation(first,AbortSignal.timeout(5000));f.browser.bind(next)
+ answer.resolve('allowed-once')
+ assert.equal((await pending).isError,true);assert.equal(f.calls.length,0);assert.equal(f.rows.size,0)
+ assert.equal((await f.call()).isError,true,'仍返回旧nativeRequestId的授权读口不能使用新绑定')
+})
+
+test('旧浏览器动作仍在派发落盘时，即使尚无dirty行也不得退役',async t=>{
+ const f=await fixture(t),first=completed(f.run),entered=Promise.withResolvers(),release=Promise.withResolvers()
+ f.writePause=()=>{entered.resolve();return release.promise}
+ const pending=f.call();await entered.promise
+ try{
+  assert.equal(f.rows.size,0)
+  await assert.rejects(f.browser.prepareContinuation(first,AbortSignal.timeout(5000)),{code:'teloa/conflict'})
+ }finally{release.resolve()}
+ assert.equal((await pending).isError,false)
+ assert.equal((await f.browser.state(first)).dirty,true)
 })

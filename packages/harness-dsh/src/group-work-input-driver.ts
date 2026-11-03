@@ -53,7 +53,7 @@ export async function drainGroupWorkInputs(owner:string,ports:GroupWorkInputPort
     await ports.inputs.settle(owner,{requestId:item.requestId,state:'continued',runId,reason:null})
    }
    const run=await ports.readRun(owner,runId,signal)
-   const state=run.state==='prepared'?(await ports.start(owner,runId,signal)).state:delivered(run.state)?run.state:(await ports.reconcile(owner,runId,signal)).state
+   const state=run.state==='prepared'?(await ports.start(owner,runId,signal)).state:delivered(run.state)||run.state==='submission_unknown'?run.state:(await ports.reconcile(owner,runId,signal)).state
    if(delivered(state))await ports.inputs.settle(owner,{requestId:item.requestId,state:'accepted',runId,nativeRequestId:run.nativeRequestId,reason:null})
    else await ports.inputs.settle(owner,{requestId:item.requestId,state:'unknown',runId,reason:'teloa/execution-pending'})
   }catch(error){

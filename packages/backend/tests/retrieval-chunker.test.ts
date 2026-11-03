@@ -8,7 +8,7 @@ const lineSlice=(text:string,[start,end]:[number,number])=>text.split('\n').slic
 
 test('分块器版本串带上全部参数',()=>{
  assert.deepEqual(retrievalChunkerParameters,{target:300,max:450,overlap:60,headingMax:200})
- assert.equal(retrievalChunker,'teloa.chunk.zh/v1;target=300;max=450;overlap=60;heading=200')
+ assert.equal(retrievalChunker,'teloa.chunk.zh/v2;target=300;max=450;overlap=60;heading=200')
 })
 
 test('按标题和空行切段，短段在目标长度内合并，标题之间不合并',()=>{
@@ -87,4 +87,47 @@ test('输入不变时输出确定',()=>{
  const text='# 甲\n'+paragraph(0,25)+'\n\n# 乙\n'+paragraph(40,5)
  assert.deepEqual(chunkRetrievalText(text),chunkRetrievalText(text))
  assert.deepEqual(chunkRetrievalText(text.replaceAll('\n','\r\n')),chunkRetrievalText(text))
+})
+
+test('代码围栏只由同类且足够长的独占行关闭，块内井号不改变标题路径',()=>{
+ const bodies=[
+  '```text\n~~~\n# 代码内容，不是标题\n```',
+  '~~~text\n```\n# 代码内容，不是标题\n~~~',
+  '````text\n```\n# 代码内容，不是标题\n````',
+  '~~~text\n~~~ 不是结束符\n# 代码内容，不是标题\n~~~~\t',
+ ]
+ for(const body of bodies){
+  const text='# 实际标题\n'+body+'\n## 真实小节\n正文。'
+  const chunks=chunkRetrievalText(text)
+  assert.deepEqual(chunks.map(chunk=>chunk.heading),['实际标题','实际标题 > 真实小节'])
+  assert.equal(chunks[0]!.text,'# 实际标题\n'+body.trimEnd())
+  assert.equal(chunks[1]!.text,'## 真实小节\n正文。')
+ }
+ assert.deepEqual(chunkRetrievalText('# 甲\n```text\n# 块内标题\n').map(chunk=>chunk.heading),['甲'])
+ assert.deepEqual(chunkRetrievalText('# 甲\n```a`b\n# 真正标题\n正文').map(chunk=>chunk.heading),['甲','真正标题'])
+})
+
+test('英文段落与混合换行保留精确标题、正文和零起始行号',()=>{
+ const text='# Policy\r\n\r\nKeep the receipt.\r\n\r\nUse the current revision.\r\n\r## Review\r\nAsk the supervisor.\r\n'
+ assert.deepEqual(chunkRetrievalText(text).map(({text,heading,startLine,endLine})=>({text,heading,startLine,endLine})),[
+  {text:'# Policy\n\nKeep the receipt.\n\nUse the current revision.',heading:'Policy',startLine:0,endLine:4},
+  {text:'## Review\nAsk the supervisor.',heading:'Policy > Review',startLine:6,endLine:7},
+ ])
+})
+
+test('大文件与长行分块无正文缺口，中文英文及代理对均可按原区间回读',()=>{
+ const input='# 账簿\r\n'+Array.from({length:10_000},(_,i)=>`第${i}行 Entry ${i} 金额=1.00🙂。`).join('\r\n')+'\r\n\r\n## 长行\r\n'+'甲a🙂'.repeat(5_000)
+ const normalized=normalizeRetrievalText(input),chunks=chunkRetrievalText(input)
+ assert.ok(chunks.length>500)
+ let covered=0
+ for(const chunk of chunks){
+  assert.ok(chunk.end-chunk.start<=450)
+  assert.equal(chunk.text,normalized.slice(chunk.start,chunk.end))
+  assert.equal(normalized.slice(covered,chunk.start).trim(),'','分块之间不得遗漏非空白正文')
+  assert.equal(/^[\uDC00-\uDFFF]|[\uD800-\uDBFF]$/.test(chunk.text),false)
+  assert.equal(chunk.startLine,normalized.slice(0,chunk.start).split('\n').length-1)
+  assert.equal(chunk.endLine,normalized.slice(0,chunk.end-1).split('\n').length-1)
+  covered=Math.max(covered,chunk.end)
+ }
+ assert.equal(normalized.slice(covered).trim(),'')
 })

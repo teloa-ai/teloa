@@ -1,0 +1,16 @@
+{
+  "candidate": {
+    "format": "teloa.business-configuration/v1",
+    "scope": "business_097da8299a6c4422821bfeaafa813596",
+    "title": "新业务",
+    "sources": [
+      {
+        "sourceId": "records-27e0c2a0d7ef41dfbe285de79450a95a",
+        "kind": "local-records"
+      }
+    ],
+    "pages": [],
+    "definitions": []
+  },
+  "raw": "{\n  \"upsertDefinitions\": [\n    {\n      \"kind\": \"object-type\",\n      \"definition\": {\n        \"format\": \"teloa.business-object-type/v1\",\n        \"id\": \"synthetic-inventory\",\n        \"version\": \"1.0.0\",\n        \"domain\": \"business_097da8299a6c4422821bfeaafa813596\",\n        \"title\": \"合成库存\",\n        \"unit\": \"条\",\n        \"lead\": \"记录合成库存的SKU、数量和仓库；数量仅允许非负整数。\",\n        \"sourceId\": \"records-27e0c2a0d7ef41dfbe285de79450a95a\",\n        \"fields\": [\n          {\n            \"name\": \"sku\",\n            \"label\": \"SKU\",\n            \"type\": \"text\",\n            \"required\": true,\n            \"from\": \"SKU\"\n          },\n          {\n            \"name\": \"quantity\",\n            \"label\": \"数量\",\n            \"type\": \"number\",\n            \"required\": true,\n            \"integer\": true,\n            \"minimum\": 0,\n            \"from\": \"数量\"\n          },\n          {\n            \"name\": \"warehouse\",\n            \"label\": \"仓库\",\n            \"type\": \"text\",\n            \"required\": true,\n            \"from\": \"仓库\"\n          }\n        ]\n      }\n    }\n  ],\n  \"upsertPages\": [\n    {\n      \"id\": \"synthetic-inventory-records\",\n      \"title\": \"合成库存\",\n      \"kind\": \"records\",\n      \"objectType\": \"synthetic-inventory\",\n      \"fields\": [\n        \"sku\",\n        \"quantity\",\n        \"warehouse\"\n      ],\n      \"allowCreate\": true,\n      \"allowEdit\": true,\n      \"allowArchive\": true\n    }\n  ],\n  \"pageOrder\": [\n    \"synthetic-inventory-records\"\n  ]\n}"
+}

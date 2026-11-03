@@ -89,8 +89,9 @@ function fixture(t:TestContext){
  let holding=false
  const linksFor=(objectId:string|undefined)=>(sessionId:string):Link[]=>objectId&&sessionId==='A'?[{kind:'role',sessionId,objectId,active:true}]:[]
  let objectApi={bySession:(sessionId:string)=>{calls.push(sessionId);if(!holding)return Promise.resolve(linksFor('alice')(sessionId));return new Promise<Link[]>(resolve=>holds.push({sessionId,resolve}))}}
- const state={directory:{status:'ready' as 'ready'|'loading'|'failed',rows:[conversation('A'),conversation('B')],error:undefined as unknown},managed:{ready:true,baseline:true,workspaces:[],archived:[] as string[],pending:{}},native:{byId:{} as Record<string,unknown>,ids:[] as string[]},roles:[{id:'alice',name:'Alice',kind:'employee',avatarKey:'squirrel-general'}] as {id:string;name:string;kind:string;avatarKey:string}[],current:undefined as string|undefined,selectedGroup:undefined as string|undefined}
- const props=()=>({work:{subscribe:noop,getDirectorySnapshot:()=>state.directory,refreshDirectory:async()=>{},openConversation:async(row:Conversation)=>{opens.push(row.sessionId);return 'opened'}},management:{subscribe:noop,getSnapshot:()=>state.managed},search:{subscribe:noop,getSnapshot:()=>({items:[],hasMore:false}),clear:()=>{},run:async()=>{}},groups:{subscribe:noop,getSnapshot:()=>({status:'ready',items:[]}),refresh:async()=>{}},objectApi,roles:state.roles,useSessions:(select:(value:unknown)=>unknown)=>select(state.native),current:state.current,onOpened:()=>{},openResults:(id:string)=>results.push(id),focusRequest:0,onClose:()=>{},selectedGroup:state.selectedGroup,openGroup:()=>{},createGroup:()=>{}})
+ const state:{directory:{generation?:number|undefined;ownerId?:string|undefined;signal?:AbortSignal|undefined;status:'ready'|'loading'|'failed';rows:Conversation[];error:unknown};managed:{ready:boolean;baseline:boolean;workspaces:never[];archived:string[];pending:Record<string,never>};native:{byId:Record<string,unknown>;ids:string[]};roles:{id:string;name:string;kind:string;avatarKey:string}[];current:string|undefined;selectedGroup:string|undefined}={directory:{generation:undefined as number|undefined,ownerId:undefined as string|undefined,signal:undefined as AbortSignal|undefined,status:'ready' as 'ready'|'loading'|'failed',rows:[conversation('A'),conversation('B')],error:undefined as unknown},managed:{ready:true,baseline:true,workspaces:[],archived:[] as string[],pending:{}},native:{byId:{} as Record<string,unknown>,ids:[] as string[]},roles:[{id:'alice',name:'Alice',kind:'employee',avatarKey:'squirrel-general'}] as {id:string;name:string;kind:string;avatarKey:string}[],current:undefined as string|undefined,selectedGroup:undefined as string|undefined}
+ let work={subscribe:noop,getDirectorySnapshot:()=>state.directory,refreshDirectory:async()=>{},openConversation:async(row:Conversation)=>{opens.push(row.sessionId);return 'opened'}}
+ const props=()=>({work,management:{subscribe:noop,getSnapshot:()=>state.managed},search:{subscribe:noop,getSnapshot:()=>({items:[],hasMore:false}),clear:()=>{},run:async()=>{}},groups:{subscribe:noop,getSnapshot:()=>({status:'ready',items:[]}),refresh:async()=>{}},objectApi,roles:state.roles,useSessions:(select:(value:unknown)=>unknown)=>select(state.native),current:state.current,onOpened:()=>{},openResults:(id:string)=>results.push(id),focusRequest:0,onClose:()=>{},selectedGroup:state.selectedGroup,openGroup:()=>{},createGroup:()=>{}})
  let tree:MarketNode
  const render=()=>{runtime.begin();tree=page.render('WorkDirectory',props());runtime.commit();return tree}
  const rowOf=(sessionId:string)=>nodes(render()).find(node=>node.props['data-session-id']===sessionId)
@@ -101,7 +102,7 @@ function fixture(t:TestContext){
   assert.ok(row,'目录行 '+sessionId);return String(nodes(row).find(node=>node.type==='strong')!.children[0])}
  const visible=()=>nodes(render()).flatMap(node=>typeof node.props['data-session-id']==='string'?[node.props['data-session-id'] as string]:[])
  const control=(predicate:(node:MarketNode)=>boolean)=>{const node=nodes(tree).find(predicate);assert.ok(node,'控件缺失');return node}
- return {state,calls,results,opens,render,titleOf,visible,type:()=>store!.getSnapshot().type,control,replaceApi:(next:typeof objectApi)=>{objectApi=next},
+ return {state,calls,results,opens,render,titleOf,visible,replaceWork:()=>{work={...work}},type:()=>store!.getSnapshot().type,control,replaceApi:(next:typeof objectApi)=>{objectApi=next},
   hold:(value:boolean)=>{holding=value},
   pendingReads:()=>holds.length,
   /** 放行最早（first）或最新（last）挂起的 count 个读取，A 会话应答指定员工。 */
@@ -272,4 +273,35 @@ test('员工目录仅排序变化不重读关联，也不重置已确认分类',
  const before=[...f.calls];assert.equal(f.titleOf('A'),'conversationDirectory.employeeTitle:Alice')
  f.state.roles=[...f.state.roles].reverse();f.render();await settle()
  assert.deepEqual(f.calls,before);assert.equal(f.titleOf('A'),'conversationDirectory.employeeTitle:Alice')
+})
+
+
+test('分页前缀只补读新ID：慢后页未返回时首员工已可见，同代追加不丢已核验身份',async t=>{
+ const f=fixture(t);f.hold(true);f.state.directory={generation:1,ownerId:'owner',status:'ready',rows:[conversation('A')],error:undefined};f.render()
+ f.state.directory={...f.state.directory,rows:[conversation('A'),conversation('B')]};f.render()
+ assert.deepEqual(f.calls,['A','B'],'追加页不能重读已在途首会话')
+ f.release('first',1,'alice');await settle()
+ assert.equal(f.titleOf('A'),'conversationDirectory.employeeTitle:Alice','后页B仍挂起时，首条A身份立即可见')
+ const employee=f.control(node=>node.type==='button'&&node.children.includes(dialogueCopy.dialogueCopy('en','employee')));employee.props.onClick();f.render();assert.deepEqual(f.visible(),['A'])
+ f.state.directory={...f.state.directory,rows:[conversation('A'),conversation('B'),conversation('C')]};f.render()
+ assert.deepEqual(f.calls,['A','B','C']);assert.deepEqual(f.visible(),['A'],'后页C挂起不能摘下首员工')
+ f.release('first',2,'alice');await settle();assert.equal(f.pendingReads(),0)
+})
+
+for(const boundary of ['owner','work','roles','refresh','cancel'] as const)test('显式目录代次身份边界：'+boundary+'变化后旧迟到结果不能回写',async t=>{
+ const f=fixture(t),controller=new AbortController();f.hold(true);f.state.directory={generation:1,ownerId:'owner',signal:controller.signal,status:'ready',rows:[conversation('A')],error:undefined};f.render();assert.deepEqual(f.calls,['A'])
+ if(boundary==='owner')f.state.directory={...f.state.directory,ownerId:'other-owner',rows:[{...conversation('A'),ownerId:'other-owner'}]}
+ if(boundary==='work')f.replaceWork()
+ if(boundary==='roles')f.state.roles=[{...f.state.roles[0]!,name:'Alicia'}]
+ if(boundary==='refresh')f.state.directory={...f.state.directory,generation:2}
+ if(boundary==='cancel')controller.abort()
+ f.render();f.release('first',1,'alice');await settle();assert.equal(f.titleOf('A'),'Chat A','旧边界回包不能冒认员工')
+ if(boundary==='cancel'){assert.deepEqual(f.calls,['A'],'取消不能补发新身份查询');return}
+ assert.deepEqual(f.calls,['A','A']);f.release('first',1,'alice');await settle();assert.equal(f.titleOf('A'),'conversationDirectory.employeeTitle:'+(boundary==='roles'?'Alicia':'Alice'))
+})
+
+test('同代真实空页移除所有行，不伪留旧员工；空岗位表不发读取',async t=>{
+ const f=fixture(t);f.state.directory={generation:1,ownerId:'owner',status:'ready',rows:[conversation('A')],error:undefined};f.render();await settle();assert.equal(f.titleOf('A'),'conversationDirectory.employeeTitle:Alice')
+ f.state.directory={...f.state.directory,generation:2,rows:[]};f.render();assert.deepEqual(f.visible(),[]);assert.deepEqual(f.calls,['A'])
+ f.state.roles=[];f.state.directory={...f.state.directory,generation:3,rows:[conversation('A')]};f.render();await settle();assert.deepEqual(f.calls,['A']);assert.equal(f.titleOf('A'),'Chat A')
 })

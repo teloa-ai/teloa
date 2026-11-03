@@ -1,6 +1,7 @@
 .page{--teloa-library-content-width:1240px;display:flex;flex-direction:column;height:100%;box-sizing:border-box;overflow:hidden;color:var(--teloa-text);background:var(--teloa-background)}
 .page[hidden]{display:none}
 .workspace{position:relative;display:grid;grid-template-columns:256px minmax(0,1fr);flex:1;min-height:0}
+.mainColumn{display:flex;flex-direction:column;min-width:0;min-height:0;overflow:hidden}.mainColumn>.detail{flex:1}
 .directoryColumn{display:flex;flex-direction:column;min-width:0;min-height:0;overflow:hidden;border-right:1px solid var(--teloa-border);background:var(--teloa-panel)}
 .taxonomy{display:flex;flex:1;min-width:0;min-height:0;flex-direction:column;overflow:hidden}
 .detail{min-width:0;min-height:0;overflow:auto;padding:26px 40px 48px;background:var(--teloa-background)}
@@ -69,6 +70,9 @@
 .governanceFacts dt{color:var(--teloa-muted)}
 .governanceFacts dd{min-width:0;margin:0;overflow-wrap:anywhere}
 .emptyDetail{display:grid;place-content:center;min-height:55vh;text-align:center}
+.loadStatus{flex:none;padding:12px 40px;border-bottom:1px solid var(--teloa-border);color:var(--teloa-muted);font-size:var(--teloa-font-caption)}
+.loadStatus h2{margin:0;font:inherit;font-weight:var(--teloa-weight-heading);color:var(--teloa-text)}.loadStatus p{margin:6px 0}
+@media(max-width:720px){.loadStatus{padding:12px 18px}}
 .emptyDetail p,.muted{color:var(--teloa-muted);font-size:var(--teloa-font-caption);line-height:1.65}
 .version{overflow-wrap:anywhere;color:var(--teloa-muted);font-family:inherit;font-size:var(--teloa-font-caption);font-variant-numeric:tabular-nums;}
 .actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:18px}
@@ -95,16 +99,19 @@
 .treeSearch input{width:100%;min-width:0;border:0;outline:0;background:transparent;color:var(--teloa-text);font:inherit;font-size:var(--teloa-font-caption)}
 @media(max-width:760px){.treeSearch{min-height:44px}.treeSearch input{font-size:var(--teloa-font-touch-input)}}
 
+.retrieval{margin:0 0 20px;min-width:0;}
 .librarySearch{display:flex;flex:1;align-items:center;gap:8px;box-sizing:border-box;min-width:0;height:36px;padding:0 10px;border:1px solid var(--teloa-border);border-radius:8px;color:var(--teloa-muted);background:var(--teloa-surface)}
 .librarySearch>svg{flex:none}
 .librarySearch input{width:100%;min-width:0;border:0;outline:0;background:transparent;color:var(--teloa-text);font:inherit;font-size:var(--teloa-font-control)}
 .librarySearch:focus-within{outline:2px solid var(--teloa-focus);outline-offset:2px}
-/* 1.0（设计 09）：快捷视图是目录列里的一组纵向行，无图标；选中用 active 底色。 */
-.views{display:grid;gap:2px;padding:4px 8px 10px;margin:0}
+/* 访问视图使用正文列的完整宽度，不在窄目录列里重新堆叠。 */
+.views{display:flex;flex:none;flex-wrap:nowrap;gap:6px;padding:0 0 10px;margin:22px 40px 0;overflow-x:auto;border-bottom:1px solid var(--teloa-border)}
 .views button{display:flex;align-items:center;gap:7px;min-height:34px;border:0;padding:6px 10px;background:transparent;border-radius:7px;color:var(--teloa-text);text-align:left;font:inherit;font-size:var(--teloa-font-control);cursor:pointer}
 .views button:hover{background:var(--teloa-hover)}.views button[aria-current=page]{background:var(--teloa-active)}
 .views button[aria-current=page]{font-weight:var(--teloa-weight-medium)}
+.views button{flex:none;white-space:nowrap}
 .views svg{display:none}
+@media(max-width:900px){.views{margin-right:22px;margin-left:22px}}@media(max-width:720px){.views{margin:12px 18px 0}.mainColumn{min-height:0}}
 .listTitle{margin:0;font-size:var(--teloa-font-page);line-height:var(--teloa-leading-heading);font-weight:var(--teloa-weight-heading)}
 .listHeader{display:flex;flex-wrap:wrap;align-items:flex-start;justify-content:space-between;gap:12px;min-width:0}.listHeader>h2{min-width:0;overflow-wrap:anywhere}.batchPanel{display:grid;gap:12px;box-sizing:border-box;min-width:0;max-width:100%;padding:4px}.batchPanel.batchPanel label{display:grid;gap:6px;min-width:0;padding:0;cursor:default;background:transparent}.batchPanel select{box-sizing:border-box;width:100%;min-width:0}.batchPanel p{margin:0;color:var(--teloa-muted);font-size:var(--teloa-font-caption)}.batchPanel>button{white-space:normal;text-align:left;justify-content:flex-start;overflow-wrap:anywhere}
 .listCount{margin:6px 0 20px;font-size:var(--teloa-font-body);color:var(--teloa-muted)}
@@ -165,3 +172,11 @@
 .adoption{box-sizing:border-box;max-width:none;max-height:none;overflow:visible;margin:0;padding:24px;border:0;background:transparent}
 .adoption .editor{max-width:none;margin:0;padding:0;gap:20px}.adoption .editor>p{margin:0;line-height:1.7}.adoption details{min-width:0}.adoption summary{padding:8px 0;cursor:pointer}.adoption ul{max-height:32dvh;overflow:auto;padding-left:20px;overflow-wrap:anywhere}.adoption li{margin:8px 0}.adoption select{box-sizing:border-box;width:100%;min-width:0;min-height:40px;padding:9px 12px;font-size:var(--teloa-font-control)}.adoption .actions{position:sticky;bottom:0;display:flex;flex-wrap:wrap;justify-content:flex-end;gap:8px;padding-top:16px;background:var(--teloa-surface)}
 @media(max-width:600px){.adoption{padding:20px}.adoption select{min-height:44px;font-size:var(--teloa-font-touch-input)}}
+/* 阅读保留目录连续性，列表筛选和检索管理不进入正文工作区。 */
+.resourceContent{display:flex;flex:1;min-width:0;min-height:0;flex-direction:column}.resourceContent[hidden],.artifactReaderSeat[hidden]{display:none}.resourceContent>.detail{flex:1}
+.page[data-reading=true] .libraryToolbar{display:none}.page[data-reading=true] .detail{display:flex;flex-direction:column;overflow:hidden;padding:0}.page[data-reading=true][data-tree-open=false] .workspace{grid-template-columns:minmax(0,1fr)}.page[data-reading=true][data-tree-open=false] .directoryColumn{display:none}
+.artifactReaderSeat{display:flex;flex:1;min-height:0;flex-direction:column;overflow:hidden}.artifactReaderSeat>.documentToolbar{flex:none}.artifactReaderSeat>section{flex:1;min-height:0}
+.fileTree{display:grid;align-content:start;gap:2px;min-width:0}.fileTreeBranch{min-width:0}.fileTreeFolder{display:flex;align-items:center;min-width:0;min-height:34px;border-radius:6px}.fileTreeFolder:hover,.fileTreeFolder[data-current=true]{background:var(--teloa-subtle)}.fileTreeToggle,.fileTreeFolderName{display:flex;align-items:center;gap:7px;min-width:0;min-height:32px;border:0;background:transparent;color:var(--teloa-text);font:inherit;font-size:var(--teloa-font-caption);cursor:pointer}.fileTreeToggle{width:24px;justify-content:center;padding:3px;flex:none}.fileTreeFolderName{flex:1;padding:4px 6px 4px 0;text-align:left}.fileTreeFolderName>span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.fileTreeFolderName>svg{flex:none;color:var(--teloa-muted)}
+
+.libraryMore>summary{padding:6px 8px;border:0;background:transparent;color:var(--teloa-muted)}.libraryMore>summary:hover{background:var(--teloa-subtle);color:var(--teloa-text)}
+.page[data-reading=true] .documentToolbarActions{flex:none}.documentToolbarActions:empty{display:none}

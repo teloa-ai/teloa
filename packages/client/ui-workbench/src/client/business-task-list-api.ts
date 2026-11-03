@@ -1,8 +1,9 @@
+import {taskRunStates,type TaskRunState} from '@teloa/contract'
 import {businessObjectReference,isBusinessScopeKey,workTaskStates,type WorkTask} from '@teloa/contract'
 import {readBusinessTaskSource,type BusinessTaskSource} from './business-task-api.ts'
 
 export type BusinessTaskSummary=Pick<WorkTask,'id'|'ownerId'|'title'|'scope'|'version'|'state'|'assigneeRoleId'|'assigneeRoleVersion'|'createdAt'|'updatedAt'>
-export type BusinessTaskProgress={runId:string;state:'prepared'|'submitting'|'accepted'|'active'|'ended'|'withdrawn'|'configuration_failed';reason:string|null;stopRequestedAt:string|null}
+export type BusinessTaskProgress={runId:string;state:TaskRunState;reason:string|null;stopRequestedAt:string|null}
 export type BusinessTaskCompletion={artifactId:string;version:number;title:string;completedAt:string}
 export type BusinessTaskListItem={task:BusinessTaskSummary;source:BusinessTaskSource|null;progress:BusinessTaskProgress|null;completion:BusinessTaskCompletion|null}
 export type BusinessTaskListPage={items:BusinessTaskListItem[];nextCursor?:string}
@@ -16,7 +17,7 @@ const invalid=()=>Error('业务任务目录与当前本人、业务或对象不�
 function progress(value:unknown):BusinessTaskProgress|null{
  if(value===null)return null
  const row=exact(value,['runId','state','reason','stopRequestedAt'])
- if(!uuid(row.runId)||!['prepared','submitting','accepted','active','ended','withdrawn','configuration_failed'].includes(row.state as string)||(row.state==='ended'?!text(row.reason,128):row.reason!==null)||(row.stopRequestedAt!==null&&!stamp(row.stopRequestedAt)))throw invalid()
+ if(!uuid(row.runId)||!taskRunStates.includes(row.state as string)||(row.state==='ended'?!text(row.reason,128):row.reason!==null)||(row.stopRequestedAt!==null&&!stamp(row.stopRequestedAt)))throw invalid()
  return row as BusinessTaskProgress
 }
 function completion(value:unknown,task:BusinessTaskSummary):BusinessTaskCompletion|null{

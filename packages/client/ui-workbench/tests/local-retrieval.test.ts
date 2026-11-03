@@ -20,7 +20,7 @@ registerHooks({
   return next(url,context)
  },
 })
-const {createLocalRetrievalApi,readRetrievalModelStatus,readRetrievalStatus}=await import('../lib/types/client/local-retrieval-api.js')
+const {createLocalRetrievalApi,readRetrievalModelStatus,readRetrievalStatus}=await import('../src/client/local-retrieval-api.ts')
 const {LocalRetrievalModelPresentation}=await import('../lib/types/client/LocalRetrievalModelPanel.js')
 // 此入口随用户要求迁移到统一设置；直接验当前源码，不能由上次编译的旧区块掩盖差异。
 const {LocalRetrievalResourcesPresentation}=await import('../src/client/LocalRetrievalResources.tsx')
@@ -55,6 +55,26 @@ test('索引严格读取对齐真后端：一来源多资料允许；不可用�
  assert.equal(readRetrievalStatus({...index,items:[{sourceId:'removed',resourceId:null,title:null,version:null,state:'unavailable',chunkCount:null}]}).items[0]?.state,'unavailable')
  for(const value of [{...index,building:'yes'},{...index,enrolled:0},{...index,items:[index.items[0],index.items[0]]},{...index,items:[{...index.items[0],state:'unavailable'}]},{...index,items:[{...index.items[0],state:'complete'}]},{...index,items:[{...index.items[0],chunkCount:-1}]},{...index,path:'/host/private'}])assert.throws(()=>readRetrievalStatus(value))
 })
+test('原件变版明确提示重新核对，不伪装为自动等待整理',()=>{
+ const changed={...index,items:[{...index.items[0],sourceChanged:true}]}
+ assert.deepEqual(readRetrievalStatus(changed),changed)
+ const html=renderIndex({status:changed})
+ assert.match(html,/所选版本已不可用，请核对当前版本与可用资料/);assert.doesNotMatch(html,/等待整理|请核对并确认新版本/)
+ for(const item of [{...changed.items[0],sourceChanged:false},{...changed.items[0],state:'ready'},{...changed.items[0],chunkCount:7}])assert.throws(()=>readRetrievalStatus({...index,items:[item]}))
+})
+
+test('已确认新版的历史旧行明确追溯，三语言不再诱导重复确认；旧状态回执兼容',()=>{
+ const historical={...index,items:[{...index.items[0],sourceChanged:true,sourceState:'historical'}]}
+ assert.deepEqual(readRetrievalStatus(historical),historical);assert.deepEqual(readRetrievalStatus(index),index)
+ for(const locale of ['zh-CN','zh-TW','en']as const){
+  const translate=(key:string,params?:Record<string,string|number>)=>translateMessage(locale,key as never,params)
+  const html=renderIndex({status:historical,t:translate})
+  assert.ok(html.includes(translate('retrieval.index.historical')))
+  assert.ok(!html.includes(translate('retrieval.index.sourceChanged')))
+ }
+ for(const item of [{...historical.items[0],sourceChanged:undefined},{...historical.items[0],sourceState:'current'},{...historical.items[0],state:'ready'},{...historical.items[0],chunkCount:1}])assert.throws(()=>readRetrievalStatus({...index,items:[item]}))
+})
+
 test('全部八个 RPC 路由使用既有 payload 和请求 signal；只读不会准备',async()=>{
  const calls:{endpoint:string,payload:unknown,signal?:AbortSignal}[]=[]
  const api=createLocalRetrievalApi(async(endpoint,payload,signal)=>{calls.push({endpoint,payload,...(signal?{signal}:{})});return endpoint.startsWith('retrieval-model/')?model:index})

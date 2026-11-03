@@ -62,7 +62,7 @@ test('安装为每种语言逐个命名空间注册一次，卸载全部释放',
  assert.equal(registered.length,9*LOCALES.length)
  assert.ok(registered.some(([namespace,target])=>namespace==='sidebarTerminal'&&target==='zh-TW'))
  assert.ok(!registered.some(([,target])=>target==='zh-Hant'))
- assert.ok(registered.every(([namespace,,size])=>size===DSH_SIDEBAR_NAMESPACES[namespace as keyof typeof DSH_SIDEBAR_NAMESPACES].length))
+ assert.ok(registered.every(([namespace,target,size])=>size===DSH_SIDEBAR_NAMESPACES[namespace as keyof typeof DSH_SIDEBAR_NAMESPACES].length+(namespace==='sidebarRight'&&target==='zh-TW'?4:0)))
  for(const dispose of disposers)dispose()
  assert.equal(disposed,9*LOCALES.length)
 })

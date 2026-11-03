@@ -4,7 +4,7 @@ import {readFile,readdir} from 'node:fs/promises'
 
 const root=new URL('../',import.meta.url)
 const manifest=JSON.parse(await readFile(new URL('package.json',root),'utf8'))
-const filesOf=command=>[...command.matchAll(/"(tests\/[^"\n]+\.test\.js)"/g)].map(match=>match[1])
+const filesOf=command=>[...command.matchAll(/"(tests\/[^"\n]+\.test\.(?:js|mjs))"/g)].map(match=>match[1])
 
 test('公开工程测试使用无遗漏、无重复的明确文件清单',async()=>{
   const repo=manifest.scripts['test:repo']
@@ -13,7 +13,7 @@ test('公开工程测试使用无遗漏、无重复的明确文件清单',async(
     assert.doesNotMatch(command,/\*/,'入口不能使用会混入另一组的通配符')
   }
   const selected=[...filesOf(repo)]
-  const expected=(await readdir(new URL('tests/',root))).filter(file=>file.endsWith('.test.js')).map(file=>'tests/'+file)
+  const expected=(await readdir(new URL('tests/',root))).filter(file=>/\.test\.(?:js|mjs)$/.test(file)).map(file=>'tests/'+file)
   assert.equal(new Set(selected).size,selected.length,'每份根测试只能归入一组')
   assert.deepEqual(selected.sort(),expected.sort(),'新增根测试必须显式选择正式工程或私有原型组')
 })
@@ -38,10 +38,34 @@ test('正式契约与业务测试入口包含现有的模块测试',async()=>{
   for(const [directory,command,prefix] of [
     ['packages/contract/tests/',manifest.scripts['test:contract'],'packages/contract/tests/'],
     ['packages/backend/tests/',backend.scripts.test,'tests/'],
+    ['packages/client/ui-workbench/tests/',manifest.scripts['test:bindings'],'packages/client/ui-workbench/tests/'],
   ]){
     const patterns=command.split(/\s+/)
     for(const file of (await readdir(new URL(directory,root))).filter(file=>file.endsWith('.test.mjs'))){
       assert.ok(patterns.includes(prefix+file)||patterns.includes(prefix+'*.test.mjs'),directory+file+' 必须由正式入口执行')
     }
   }
+})
+
+test('每个有测试的工作区包均有正式根命令且由公开 CI 执行',async()=>{
+  const workflow=await readFile(new URL('.github/workflows/ci.yml',root),'utf8')
+  const packages=[]
+  for(const entry of await readdir(new URL('packages/',root),{withFileTypes:true})){
+    if(!entry.isDirectory()||entry.name.startsWith('.'))continue
+    if(entry.name==='client'){
+      for(const child of await readdir(new URL('packages/client/',root),{withFileTypes:true})){
+        if(child.isDirectory()&&!child.name.startsWith('.'))packages.push('packages/client/'+child.name)
+      }
+    }else packages.push('packages/'+entry.name)
+  }
+  const missing=[]
+  for(const directory of packages){
+    const item=JSON.parse(await readFile(new URL(directory+'/package.json',root),'utf8'))
+    if(!item.scripts?.test)continue
+    const commands=Object.entries(manifest.scripts).filter(([name,command])=>name.startsWith('test:')&&(
+      command.includes('--filter '+item.name+' ')||command.includes(directory+'/tests/')
+    ))
+    if(!commands.some(([name])=>workflow.includes('run: pnpm '+name)))missing.push(item.name)
+  }
+  assert.deepEqual(missing,[],'工作区包不能只有各自的 test 命令却没有正式 CI 入口')
 })

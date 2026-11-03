@@ -14,8 +14,8 @@ export function BusinessChangeSetPreview({draft:initial,api,close,changed}:{draf
   {draft.state==='stale'?<p>{copy.stale}</p>:draft.state!=='applied'&&<p>{copy.pending}</p>}
   {failed&&<p role="alert">{copy.failure}</p>}
   {draft.preview.operations.map((op,index)=><section key={index}><h3>{op.title} · {op.operation==='create'?(locale==='en'?'Create':'新增'):op.operation==='edit'?(locale==='en'?'Update':'修改'):(locale==='en'?'Archive':'归档')}</h3>
-   {op.before&&<><h4>{copy.before}</h4><p>{op.before.title}</p><p>{op.before.summary}</p><dl>{op.before.fields.map(f=><div key={f.label}><dt>{f.label}</dt><dd>{f.value||'—'}</dd></div>)}</dl></>}
-   {op.fields&&<><h4>{copy.after}</h4><p>{op.summary}</p><dl>{op.fields.map(f=><div key={f.name}><dt>{f.label??f.name}</dt><dd>{f.value||'—'}</dd></div>)}</dl></>}
+   {op.before&&<><h4>{copy.before}</h4><p>{op.before.title}</p><p>{op.before.summary}</p><dl>{op.before.fields.map(f=><div key={f.label}><dt>{f.label}</dt><dd>{f.value===''?'—':String(f.value)}</dd></div>)}</dl></>}
+   {op.fields&&<><h4>{copy.after}</h4><p>{op.summary}</p><dl>{op.fields.map(f=><div key={f.name}><dt>{f.label??f.name}</dt><dd>{f.value===''?'—':String(f.value)}</dd></div>)}</dl></>}
   </section>)}
   <div className={css.actions}>{['draft','awaiting-approval'].includes(draft.state)&&<button type="button" disabled={busy||!verified||failed} onClick={()=>void act('apply')}>{copy.apply}</button>}{draft.state!=='applied'&&draft.state!=='rejected'&&<button type="button" disabled={busy||!verified} onClick={()=>void act('reject')}>{copy.reject}</button>}</div>
  </section></ContextDrawer>

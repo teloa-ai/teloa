@@ -1,4 +1,5 @@
 import {registerTaskPermissionLoop,type EmployeeRunReader,type TaskPermissionDenial} from './task-permission-loop.ts'
+import {readAnalysisSelfAuthorizedTools} from '@teloa/contract'
 import {taskToolArgumentsAllowed,type TaskToolArgumentRule} from './task-tool-arguments.ts'
 import type {Context} from '@deepseek-ai/cordis'
 import type {PreToolDecision,ToolDefinition,ToolExecution} from '@deepseek-ai/dsh-tools'
@@ -22,7 +23,7 @@ import {recheckNativeAutoReviewPermissions} from './native-auto-review-guard.ts'
 import {ownsDeliveryReviewSubmission} from './task-delivery-review.ts'
 export type TaskRunGoalObservationReader=(sessionId:string,events:readonly SessionEvent[])=>Promise<GoalObservationContext|undefined>
 
-export type TaskToolPolicy={allowedTools:readonly string[];nativeRequestId?:string;argumentRules?:readonly TaskToolArgumentRule[];stopRequested?:boolean}
+export type TaskToolPolicy={allowedTools:readonly string[];nativeRequestId?:string;argumentRules?:readonly TaskToolArgumentRule[];stopRequested?:boolean;textOnly?:boolean;selfAuthorizedTools?:readonly string[]}
 /** null 仅表示该会话不受任务执行管理；岗位暂停应返回空清单，不能降级为 null。 */
 export type TaskToolPolicyReader=(sessionId:string,signal:AbortSignal)=>Promise<TaskToolPolicy|null>
 /**
@@ -54,13 +55,35 @@ export function registerTaskToolGuard(ctx:Context,readPolicy:TaskToolPolicyReade
  // 技能代发只能由本人按岗位授予（规格 2026-09-27 §5.1）；AI 员工不能自授。
  if(selfAuthorized.has(skillHttpToolName))throw Error('自授权工具不能包含技能代发工具。')
  if(workspaceFileToolNames.some(name=>selfAuthorized.has(name)))throw Error('自授权工具不能包含工作目录文件工具。')
+ if(selfAuthorized.has('present'))throw Error('文件交付必须核对当前运行的工作目录读取授权。')
  const removeFileGuard=ctx.on('tools/execute',async(exec,next)=>{await workspaceFiles?.recheck(exec);recheckNativeAutoReviewPermissions(exec);return next()})
+ // 官方 present 在 tools/result 才追加事件；先等完所有后处理，再让最终授权失败成为错误结果。
+ const removePresentationPostGuard=ctx.on('tools/post-execute',async(exec,result,next)=>{
+  const decision=await next()
+  if(exec.name==='present'&&!result.isError&&decision.kind==='accept')await workspaceFiles?.recheck(exec)
+  return decision
+ },{prepend:true})
  // 官方 monotonic guard 在审批结束后执行：确认期间卸载、换 provider 或替换工具不能执行旧定义。
  const checkedNative=new WeakMap<ToolExecution,ToolDefinition>()
  const checkedCleanup=new WeakSet<ToolExecution>()
  const checkedManaged=new WeakMap<ToolExecution,{rootId:string;policy:TaskToolPolicy;definition:ToolDefinition}>()
  const checkedOrchestration=new WeakMap<ToolExecution,{definition:ToolDefinition;rootId:string;policy:TaskToolPolicy|null}>()
+ const textExecutions=new WeakSet<ToolExecution>()
+ // 官方文件升级在工具体内等待审批；mutation intent 位于最终批准之后，actor 是该次调用的原对象。
+ // 不按 callId 猜测并发身份，也不依赖工作台、设备或 IM 审批答复器的先后顺序。
+ const recheckFileMutation=async(actor:object|undefined)=>{
+  const exec=actor as ToolExecution|undefined
+  if(!workspaceFiles||!exec||!checkedManaged.has(exec)||!(workspaceFileToolNames as readonly string[]).includes(exec.name))return
+  const root=resolveSessionLineage(ctx,exec.agent!.session).root,policy=await readPolicy(root.id,exec.signal)
+  if(!policy)throw Error('确认期间员工文件授权已变化。')
+  const issue=await workspaceFiles.check(exec,root,policy)
+  if(issue!==undefined)throw Error(issue)
+  await workspaceFiles.recheck(exec);recheckNativeAutoReviewPermissions(exec)
+ }
+ const removeFileWriteGuard=ctx.on('fs/write-intent',async(_target,actor,next)=>{const intent=await next();await recheckFileMutation(actor);return intent})
+ const removeFileEditGuard=ctx.on('fs/edit-intent',async(_target,actor,next)=>{const intent=await next();await recheckFileMutation(actor);return intent})
  const removeNativeGuard=ctx.tools.guard(exec=>{
+  if(textExecutions.has(exec))return '本次工作仅获准处理固定文本资料，不能执行任何工具。'
   const definition=checkedNative.get(exec)
   if(definition===undefined)return
   return (checkedCleanup.has(exec)?browserCleanup?.issue(exec):undefined)??nativeToolCallIssue(ctx,exec)??(ctx.tools.get(exec.name,exec.agent)!==definition?'原生工具已变更，请重新确认后再试。':undefined)
@@ -79,6 +102,13 @@ export function registerTaskToolGuard(ctx:Context,readPolicy:TaskToolPolicyReade
   return next()
  })
  // 原生审核与人工审批均可能等待；受限子级也必须复核同一根任务，不能漏掉祖先的 Auto。
+ const checkedAuxiliary=new WeakMap<ToolExecution,{rootId:string;requestId:string;definition:ToolDefinition}>()
+ const removeAuxiliaryGuard=ctx.on('tools/execute',async(exec,next)=>{
+  const checked=checkedAuxiliary.get(exec);if(!checked)return next()
+  exec.signal.throwIfAborted();const policy=await readPolicy(checked.rootId,exec.signal)
+  if(!policy?.textOnly||policy.stopRequested||policy.nativeRequestId!==checked.requestId||!readAnalysisSelfAuthorizedTools(policy.selfAuthorizedTools).includes(exec.name)||ctx.tools.get(exec.name,exec.agent)!==checked.definition)throw new WorkError('teloa/forbidden','原分析候选能力已暂停或改变。')
+  return next()
+ })
  const removeManagedGuard=ctx.on('tools/execute',async(exec,next)=>{
   const checked=checkedManaged.get(exec)
   if(!checked)return next()
@@ -102,6 +132,7 @@ export function registerTaskToolGuard(ctx:Context,readPolicy:TaskToolPolicyReade
    policySessionId=lineage.root.id
    authorizationStage='read-policy'
    policy=await readPolicy(policySessionId,exec.signal)
+   if(policy?.textOnly&&!(lineage.depth===0&&readAnalysisSelfAuthorizedTools(policy.selfAuthorizedTools).includes(exec.name))){textExecutions.add(exec);return {kind:'deny',reason:'本次工作仅获准处理固定文本资料，不能执行任何工具。'}}
    authorizationStage='cleanup'
    cleanup=await browserCleanup?.consume(exec,policy)??false
    if(cleanup)checkedCleanup.add(exec)
@@ -149,9 +180,17 @@ export function registerTaskToolGuard(ctx:Context,readPolicy:TaskToolPolicyReade
   if(orchestrationChild&&orchestration&&!orchestration.toolAllowed(exec))return {kind:'deny',reason:'工具超出本次 Flow 子工作授权范围。'}
   // 交付复核的结构化回执：同上，只认本 agent 存活复核租约在自身作用域登记的同一定义、且正在接收本单元唯一一次提交；不进岗位授权清单。
   if(policy!==null&&!teamMember&&!orchestrationChild&&ownsDeliveryReviewSubmission(exec))return next()
+  // present 只声明当前 Run 已获准读取的已有文件，不授予额外读取或外发能力。
+  // 进入受限 FS 检查并在 tools/execute 再核对；不能借工具名授权或自授权提前放行。
+  if(policy!==null&&exec.name==='present'){
+   if(!workspaceFiles||!policy.allowedTools.includes('read')||!policy.argumentRules?.some(rule=>rule.name==='read'&&isWorkspaceFileRule(rule)))return {kind:'deny',reason:'文件交付需要当前任务的工作目录读取授权。'}
+   const issue=await workspaceFiles.check(exec,lineage.root,policy)
+   return issue===undefined?next():{kind:'deny',reason:issue}
+  }
   if(selfAuthorized.has(exec.name)){
    if(teamMember||orchestrationChild)return {kind:'deny',reason:'临时助手不能借用负责人的员工记忆或群身份，请通过团队消息交回结果。'}
    if(policy===null||policy.nativeRequestId===undefined)return {kind:'deny',reason:'当前会话没有可核验的运行工具授权。'}
+   if(policy.textOnly){const definition=ctx.tools.get(exec.name,exec.agent);if(!definition)return {kind:'deny',reason:'原分析候选工具暂不可用。'};checkedAuxiliary.set(exec,{rootId:policySessionId,requestId:policy.nativeRequestId,definition})}
    return next()
   }
   // 上游把 MCP 资源工具做成共享工具，普通会话也能看见；这条闸让它和其他工具一样只认岗位授权清单。
@@ -245,5 +284,5 @@ export function registerTaskToolGuard(ctx:Context,readPolicy:TaskToolPolicyReade
   }
   return next()
  })
- return ()=>{permissionLoop?.dispose();removePreExecute();removeNativeGuard();removeOrchestrationGuard();removeManagedGuard();removeFileGuard()}
+ return ()=>{permissionLoop?.dispose();removePreExecute();removeNativeGuard();removeAuxiliaryGuard();removePresentationPostGuard();removeFileWriteGuard();removeFileEditGuard();removeOrchestrationGuard();removeManagedGuard();removeFileGuard()}
 }

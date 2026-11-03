@@ -76,7 +76,7 @@ test('负责人生产装配：真实RPC、原生审批、单连接池和任务�
  ctx.provide('loader',compositionEntries());await installNativeSessions(ctx);await installNativeHostServices(ctx,join(root,'.runtime/dsh'));const invocation=nativeToolInvocation(ctx,{providers:['controlled'],adapter:model})
  const workspaces=new Map<string,{id:string;path:string}>(),archived:string[]=[]
  ctx.provide('workspaceRegistry',{archivedSessionIds:archived,create:async(path:string)=>{const prior=[...workspaces.values()].find(item=>item.path===path);if(prior)return prior;const item={id:randomUUID(),path};workspaces.set(item.id,item);return item},get:(id:string)=>workspaces.get(id),list:()=>[...workspaces.values()]})
- ctx.provide('agentPresets',{serviceFor:()=>undefined,acquireScope:async()=>({key:{},async [Symbol.asyncDispose](){}}),resolve:async(id?:string)=>({id:id??'teloa-standard'})})
+ ctx.provide('agentPresets',{serviceFor:()=>undefined,composedPreset:(scope:Context)=>ctx.agents.list().find(agent=>agent.ctx===scope)?.session.header.agentPreset,acquireScope:async()=>({key:{},async [Symbol.asyncDispose](){}}),resolve:async(id?:string)=>({id:id??'teloa-standard'})})
  ctx.provide('fileReferences',{})
  const visible:string[]=[],pinnedTitles=new Map<string,string>()
  ctx.provide('sessionController',{

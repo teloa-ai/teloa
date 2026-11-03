@@ -1,4 +1,5 @@
 import {businessObjectReference,readBusinessViewWidgetResultV2,type BusinessObjectReference,type BusinessConfigurationViewRefVersioned,type BusinessViewResultV2,type BusinessViewWidgetResultV2,type BusinessWidgetDefinition} from '@teloa/contract'
+import {useLayoutEffect,useRef} from 'react'
 import {durationText,localizedBusinessFieldLabel,localizedBusinessFieldValue,localizedBusinessMeasureLabel,localizedBusinessObjectType,localizedBusinessViewTitle} from './business-definition-localization.js'
 import {useI18n,type I18nValue} from './i18n/provider.js'
 import css from './BusinessTypedViewWidget.module.css'
@@ -26,6 +27,37 @@ function valueText(value:Value,measure:Measure,format:I18nValue):string{
  if(typeof value==='object')return moneyText(value.decimal,value.currency,format.locale)
  if(measure.fieldType==='duration')return durationText(value,format.number)
  return measure.fieldType==='datetime'?format.dateTime(new Date(value)):format.number(value,{maximumFractionDigits:20})
+}
+
+/** 保留完整读数；按实际卡宽适配到正文字号，仍放不下时允许聚焦后横向读取。 */
+function MetricValue({text}:{text:string}){
+ const ref=useRef<HTMLElement>(null)
+ useLayoutEffect(()=>{
+  const element=ref.current,parent=element?.parentElement
+  if(!element||!parent)return
+  let active=true,previousWidth=-1
+  let frame:number|undefined
+  const fit=()=>{
+   if(!active)return
+   element.style.removeProperty('font-size')
+   const maximum=parseFloat(getComputedStyle(element).fontSize),minimum=Math.min(maximum,parseFloat(getComputedStyle(parent).fontSize))
+   if(element.clientWidth>0&&element.scrollWidth>element.clientWidth)element.style.fontSize=Math.max(minimum,maximum*(element.clientWidth-1)/element.scrollWidth)+'px'
+   if(element.scrollWidth>element.clientWidth)element.tabIndex=0
+   else element.removeAttribute('tabindex')
+  }
+  const scheduleFit=()=>{
+   if(!active||frame!==undefined)return
+   frame=requestAnimationFrame(()=>{frame=undefined;fit()})
+  }
+  const observer=new ResizeObserver(()=>{
+   if(element.clientWidth===previousWidth)return
+   previousWidth=element.clientWidth;scheduleFit()
+  })
+  observer.observe(parent);fit()
+  void document.fonts?.ready.then(scheduleFit)
+  return ()=>{active=false;observer.disconnect();if(frame!==undefined)cancelAnimationFrame(frame)}
+ },[text])
+ return <strong ref={ref} title={text}>{text}</strong>
 }
 
 /** 日期桶是 UTC 身份；按稳定维度重新本地化，不能沿用宿主计算的中文标签。 */
@@ -150,7 +182,7 @@ export function BusinessTypedViewWidget({widget,result,viewRefs,openRecord,share
  return <><h3>{title}</h3><div className={css.body} data-typed-view={view.chart}>
   {view.dimensionMode==='membership'&&<p className={dashboardCss.note} data-typed-membership>{t('business.typed.membership')}</p>}
   {currencies.length>1&&<p className={dashboardCss.note} data-typed-currencies>{t('business.typed.currencies',{currencies:list(currencies)})}</p>}
-  {view.chart==='number'?<div className={css.metric}><strong>{valueText(view.rows[0]?.values[0]??null,view.measures[0]!,format)}</strong><span>{view.measures[0]!.label}</span></div>:<>
+  {view.chart==='number'?<div className={css.metric}><MetricValue text={valueText(view.rows[0]?.values[0]??null,view.measures[0]!,format)}/><span>{view.measures[0]!.label}</span></div>:<>
    {view.chart!=='table'&&view.measures.map((measure,index)=><Plot key={measure.id} view={view} measure={measure} index={index}/>)}
    <ExactTable view={view} firstColumn={firstColumn} format={format} openRecord={openRecord}/>
   </>}

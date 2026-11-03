@@ -1,0 +1,5 @@
+/** 文件内容不翻译；预览控件仅定稿简中、繁中与英文。 */
+const en={download:'Download original',loading:'Preparing the file…',invalid:'The file snapshot could not be verified. Read the original version again.',unsupported:'This file type cannot be previewed here. Download the original to open it.',unavailable:'The browser could not preview this media. You can still download the original.',empty:'This file is empty.',text:'File source',image:(name:string)=>`Preview of ${name}`,meta:(type:string,size:string)=>`${type} · ${size}`}
+const zh:typeof en={download:'下载原件',loading:'正在准备文件…',invalid:'文件快照未通过校验，请重新读取原版本。',unsupported:'此类型暂不支持在线预览，可下载原件打开。',unavailable:'浏览器无法预览此媒体，仍可下载原件。',empty:'这是一个空文件。',text:'文件源码',image:name=>`${name} 预览`,meta:(type,size)=>`${type} · ${size}`}
+const hant:typeof en={download:'下載原檔',loading:'正在準備檔案…',invalid:'檔案快照未通過核對，請重新讀取原版本。',unsupported:'此類型暫不支援線上預覽，可下載原檔開啟。',unavailable:'瀏覽器無法預覽此媒體，仍可下載原檔。',empty:'這是一個空檔案。',text:'檔案原始碼',image:name=>`${name} 預覽`,meta:(type,size)=>`${type} · ${size}`}
+export const artifactAssetCopy=(locale:string)=>locale==='zh-CN'?zh:locale==='zh-Hant'||locale==='zh-TW'||locale==='zh-HK'?hant:en

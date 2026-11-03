@@ -47,14 +47,21 @@ type AcceptPorts={target:()=>Promise<IndustryLoadCreateInput['target']>;createRo
 /** 外层保存稳定阶段身份，底层沿用原 API journal；未知回执再次使用原请求，不重建资源。 */
 export function createTemplateAcceptance(storage:WorkbenchNavigationStorage,ports:AcceptPorts){
  let busy=false
- return {async accept(value:TemplateSharePackage,intent?:TemplateShareIntent):Promise<TemplateAcceptanceResult>{
+ const progress=(sha256:string):Progress|undefined=>{
+  const raw=storage.getItem('teloa.template-accept/v1/'+sha256);if(!raw)return undefined
+  const p:Progress=JSON.parse(raw)
+  if(p.sha256!==sha256||p.path!==undefined&&p.path!=='industry'||!p.roleRequestId||!p.loadRequestId||!p.contentRequestId||!p.knowledgeRequests||!Array.isArray(p.completedKnowledge))throw Error('Template recovery record is invalid.')
+  return p
+ }
+ return {
+ async hasRequest(value:TemplateSharePackage):Promise<boolean>{return !!progress(await templateShareDigest(readTemplateSharePackage(value)))},
+ async accept(value:TemplateSharePackage,intent?:TemplateShareIntent):Promise<TemplateAcceptanceResult>{
   if(busy)throw Error('Template acceptance is already running.')
   busy=true
   let cleanup:(()=>Promise<void>)|undefined
   try{
-   const checked=await inspectEmployeeTemplate(value),key='teloa.template-accept/v1/'+checked.sha256,raw=storage.getItem(key)
-   const p:Progress=raw?JSON.parse(raw):{sha256:checked.sha256,path:'industry',roleRequestId:crypto.randomUUID(),contentRequestId:crypto.randomUUID(),loadRequestId:crypto.randomUUID(),knowledgeRequests:{},completedKnowledge:[]}
-   if(p.sha256!==checked.sha256||p.path!==undefined&&p.path!=='industry'||!p.roleRequestId||!p.loadRequestId||!p.contentRequestId||!p.knowledgeRequests||!Array.isArray(p.completedKnowledge))throw Error('Template recovery record is invalid.')
+   const checked=await inspectEmployeeTemplate(value),key='teloa.template-accept/v1/'+checked.sha256
+   const p:Progress=progress(checked.sha256)??{sha256:checked.sha256,path:'industry',roleRequestId:crypto.randomUUID(),contentRequestId:crypto.randomUUID(),loadRequestId:crypto.randomUUID(),knowledgeRequests:{},completedKnowledge:[]}
    // 旧单岗位申请可能已直建成功而回执丢失；不换路径、不清租约、不改原记录，等待核对原申请。
    if(!p.result&&p.path===undefined&&checked.manifest.resources.length===1)throw Object.assign(Error('The original employee request is unconfirmed. Check the original request before continuing.'),{code:'acceptance-recovery-required'})
    const save=()=>storage.setItem(key,JSON.stringify(p))

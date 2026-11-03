@@ -28,7 +28,7 @@ test('工作成果面板的固定文案全部来自词典',async()=>{
 test('成果面板词典按十语顺序完整且保留动态正文',async()=>{
   const source=await readFile(url,'utf8'),locales=['zh-CN','zh-Hant','en','ja','ko','vi','es','fr','de','pt']
   for(const row of ARTIFACT_PANEL_MESSAGE_ROWS){assert.equal(row.length,locales.length+1,row[0]);for(let i=1;i<row.length;i++)assert.ok(row[i]!.trim(),row[0]+' '+locales[i-1])}
-  for(const value of ['version.title','version.note','item.title','item.text','draft.body','draft.note','draft.feedback'])assert.match(source,new RegExp(value.replaceAll('.', '\\.')),value)
+  for(const value of ['version.title','item.title','item.text','item.note','draft.body','draft.note','draft.feedback'])assert.match(source,new RegExp(value.replaceAll('.', '\\.')),value)
 })
 
 const artifactRow=(key:string)=>{

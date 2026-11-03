@@ -125,8 +125,7 @@ export async function runSupervisor(home:string):Promise<void>{
   try{
    const url=await urlReady
    cookie=await readiness.authorizeSession(url)
-   const deadline=Date.now()+20_000
-   for(;;){try{await readiness.probeTeloaChannel(origin,cookie,{timeout:3000});break}catch(error){if(!(error as any).mounting||Date.now()>deadline)throw error;await sleep(250)}}
+   await readiness.waitForTeloaChannel(origin,cookie,{timeout:3000,mountTimeout:20_000,retryInterval:250})
    await rpc('/teloa-local-runtime','readiness')
    await assertStartupCurrent()
    app='ready';await writeInstall({...state,phase:'ready'});log('Teloa 已就绪：'+origin+'\n')

@@ -77,6 +77,28 @@ test('认领初始会话要求真实空历史，取消与另一份待用身份�
  assert.deepEqual(adopted,[])
 })
 
+test('冷原对象即使没有消息也不能自动成为 Home，原输入保持归属且另备 Home 待用身份',async()=>{
+ const storage=memory(),adopted:string[]=[],drafts=new Map([['original-A','只属于原 A 的未发送输入'],['home-draft','']])
+ const port={storage,identity:()=> 'home-draft',isBlank:()=>true,canClaimPrepared:async(id:string,explicit:boolean)=>explicit||id!=='original-A',create:async(id:string)=>id,adopt:async(id:string)=>{adopted.push(id)}}
+ const controller=new HomeNativeController(port)
+ assert.equal(await controller.claimPrepared('original-A',()=>{}),false)
+ assert.equal(storage.getItem('teloa.home-native-session/v1'),null)
+ assert.equal(await controller.prepare(),'home-draft')
+ assert.deepEqual(adopted,['home-draft']);assert.equal(controller.owns('original-A'),false)
+ assert.equal(drafts.get('original-A'),'只属于原 A 的未发送输入');assert.equal(drafts.get('home-draft'),'')
+})
+
+test('初始归属核对期间导航变化失败关闭，显式原稿仍可按原许可接入',async()=>{
+ const storage=memory(),adopted:string[]=[];let current=true,finish!:(value:boolean)=>void
+ const checked=new Promise<boolean>(resolve=>{finish=resolve})
+ const port={storage,identity:()=> 'home',isBlank:()=>true,canClaimPrepared:async(_id:string,explicit:boolean)=>explicit||await checked,create:async(id:string)=>id,adopt:async(id:string)=>{adopted.push(id)}}
+ const controller=new HomeNativeController(port),claim=controller.claimPrepared('original-A',()=>{if(!current)throw Error('原会话已切换')})
+ current=false;finish(true);await assert.rejects(claim,/原会话已切换/)
+ assert.deepEqual(adopted,[]);assert.equal(storage.getItem('teloa.home-native-session/v1'),null)
+ assert.equal(await controller.claimPrepared('explicit-original',()=>{},true),true)
+ assert.deepEqual(adopted,['explicit-original'])
+})
+
 test('认领领养失败不认领、不写入待用身份；下一次进入首页以同一会话重试领养',async()=>{
  const storage=memory(),adopted:string[]=[];let failures=1
  const controller=new HomeNativeController({storage,identity:()=>{throw Error('不应另建待用会话')},isBlank:()=>true,create:async()=>{throw Error('不应另建待用会话')},adopt:async id=>{adopted.push(id);if(failures-- >0)throw Error('network response lost')}})

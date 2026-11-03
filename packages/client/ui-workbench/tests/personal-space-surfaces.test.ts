@@ -89,7 +89,7 @@ test('左栏顶部不再有空间入口与切换箭头；账号块提供「我�
  assert.match(frame,/objectConversationApi\.list\('role',roleId\)/)
  assert.match(frame,/const recent=latestRoleConversation\(presentConversations\(/)
  assert.match(frame,/if\(!recent\)\{[\s\S]{0,180}await requestRoleCreation\(object,role\.scopes\)[\s\S]{0,40}return true/)
- assert.match(frame,/if\(available\.length>1\)\{setRoleScopeIntent\(\{object:fresh,scopes:available,\.\.\.\(goal\?\{goal\}:\{\}\)\}\);return\}/,'跨业务范围先选业务语境，不把业务范围误当成本机执行位置')
+ assert.match(frame,/if\(available\.length>1\)\{setRoleScopeIntent\(\{object:fresh,scopes:available,\.\.\.\(goal\?\{goal\}:\{\}\),\.\.\.options\}\);return\}/,'跨业务范围先选业务语境，不把业务范围误当成本机执行位置')
  assert.equal(frame.match(/canStart:roleCanStartConversation\(role\.state\)/g)?.length,3,'暂停只是不再接新任务，仍应能开始聊天；只有离职阻断新会话')
  assert.match(frame,/roleConversationOpening\.current\.has\(roleId\)/,'所有分身与AI 员工直达入口应共用防重复打开锁')
  assert.match(frame,/return createWork\(decision\.workspaceId,intent,true\)\.then\(\(\)=>\{\},\(\)=>\{\}\)/,'自动创建必须把 Promise 交回调用者，岗位锁才能覆盖完整创建过程')
@@ -111,7 +111,7 @@ test('业务范围内页页头只剩范围名与摘要条：没有「我的工�
   assert.match(page,/const collaborationScopes=useBusinessScopes\(\)/)
  // 正式页不再携带不可达的演示对象、执行记录或项目数据分支；任务只从已保存任务读取。
  for(const key of ['sandbox-ledger','sandbox-directory','sandbox-section','businessTasksForMode'])assert.doesNotMatch(page,new RegExp(key))
- assert.match(page,/ledgerVisible&&<BusinessLedgerSurface/)
+ assert.match(page,/ledgerVisible&&ledgerSurface/)
  assert.doesNotMatch(page,/function BusinessCurrent/)
   // 「新建业务空间」「编辑当前空间」随管理菜单一起退场。
   assert.doesNotMatch(page,/business-space-create|business\.workspace\.editCurrent|BusinessSpaceForm/)

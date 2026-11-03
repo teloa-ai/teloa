@@ -1,9 +1,10 @@
+import {taskRunStates,type TaskRunState} from '@teloa/contract'
 import {conversationTaskRequest} from './conversation-task-request.ts'
 import {lockConversationTaskParent,assertConversationTaskOpen} from './conversation-work-task-protection.ts'
 import {businessTaskSourceDigest} from './business-task-source-digest.ts'
 import {businessTaskActionSourceDigest} from './business-task-action-source-digest.ts'
 import type {Pool,PoolClient} from 'pg'
-import {WorkError,artifactContent,savedArtifactSource,businessMcpSourceIdMaxLength,businessObjectReference,isBusinessScopeKey,isRecord,taskInput,type BusinessActionInput,type BusinessActionRecord,type BusinessDefinitionSource,type BusinessObjectReference,type BusinessObjectSnapshot,type BusinessObjectTypeRecord,type WorkTask} from '@teloa/contract'
+import {WorkError,businessFieldValueText,artifactContent,savedArtifactSource,businessMcpSourceIdMaxLength,businessObjectReference,isBusinessScopeKey,isRecord,taskInput,type BusinessActionInput,type BusinessActionRecord,type BusinessDefinitionSource,type BusinessObjectReference,type BusinessObjectSnapshot,type BusinessObjectTypeRecord,type WorkTask} from '@teloa/contract'
 import {businessObjectSnapshotHash,readBusinessObjectSnapshot} from './business-data.ts'
 import {readStoredTask,type TaskService} from './tasks.ts'
 import {runEvidence} from './task-run-evidence.ts'
@@ -22,7 +23,7 @@ export type BusinessTaskSource={
  createdAt:string
 }
 export type BusinessTaskRecord={task:WorkTask;source:BusinessTaskSource}
-export type BusinessTaskProgress={runId:string;state:'prepared'|'submitting'|'accepted'|'active'|'ended'|'withdrawn'|'configuration_failed';reason:string|null;stopRequestedAt:string|null}
+export type BusinessTaskProgress={runId:string;state:TaskRunState;reason:string|null;stopRequestedAt:string|null}
 export type BusinessTaskCompletion={artifactId:string;version:number;title:string;completedAt:string}
 export type BusinessTaskListItem={task:Pick<WorkTask,'id'|'ownerId'|'title'|'scope'|'version'|'state'|'assigneeRoleId'|'assigneeRoleVersion'|'createdAt'|'updatedAt'>;source:BusinessTaskSource|null;progress:BusinessTaskProgress|null;completion:BusinessTaskCompletion|null}
 export type BusinessTaskListPage={items:BusinessTaskListItem[];nextCursor?:string}
@@ -99,7 +100,7 @@ function mappedActionInput(input:BusinessActionInput,snapshot:Omit<BusinessObjec
  if(!field)throw new WorkError('teloa/source-unavailable','业务动作引用的对象字段不在当前声明里。')
  const value=snapshot.fields.find(candidate=>candidate.label===field.from)?.value
  if(value===undefined)throw new WorkError('teloa/invalid-input','固定业务对象缺少业务动作所需字段。')
- return value
+ return businessFieldValueText(value)
 }
 
 /** 群任务与对象交办共用固定版本读取，不接受调用方提供正文或 sourceId。调用方先核验目标业务权限。 */
@@ -304,7 +305,7 @@ export class BusinessTaskService{
    const runs=new Map<string,BusinessTaskProgress>(),completions=new Map<string,BusinessTaskCompletion>()
    for(const row of runRows){
     try{
-     if(!uuid(row.task_id)||!uuid(row.id)||!['prepared','submitting','accepted','active','ended','withdrawn','configuration_failed'].includes(row.state)||row.stop_requested_at!==null&&!(row.stop_requested_at instanceof Date))throw Error()
+     if(!uuid(row.task_id)||!uuid(row.id)||!taskRunStates.includes(row.state)||row.stop_requested_at!==null&&!(row.stop_requested_at instanceof Date))throw Error()
      const evidence=row.evidence===null?null:runEvidence(row.evidence)
      if(['accepted','active','ended'].includes(row.state)?evidence?.state!==row.state:evidence!==null)throw Error()
      runs.set(row.task_id,{runId:row.id,state:row.state,reason:evidence?.state==='ended'?evidence.reason:null,stopRequestedAt:row.stop_requested_at?.toISOString()??null})

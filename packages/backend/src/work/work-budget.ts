@@ -21,7 +21,8 @@ function preservesBudgetLease(before:WorkBudgetPolicy,after:WorkBudgetPolicy):bo
 }
 type ReserveInput={budgetAccountId:string;controlGeneration:number;modelRequestId:string;kind:BudgetReservation['kind'];tokens:number;rounds:number}
 type SettleInput={reservationId:string;modelRequestId:string;provider?:string|null;providerRequestId:string|null;tokens:number|null;moneyMinorUnits:number|null;currency:string|null;receiptId:string}
-export type RunBudgetTerminal={schema:'teloa.work-budget-terminal/v1';runId:string;sessionId:string;nativeRequestId:string;turn:number;messageSeq:number;endSeq:number;turnEndSeq:number;terminalKind:'turn/end'|'session/end-seed';endedAt:string}
+import {type AcceptedInboxFailureEvidence} from './task-run-evidence.ts'
+export type RunBudgetTerminal={schema:'teloa.work-budget-terminal/v1';runId:string;sessionId:string;nativeRequestId:string;turn:number;messageSeq:number;endSeq:number;turnEndSeq:number;terminalKind:'turn/end'|'session/end-seed';endedAt:string;inputAnchor?:AcceptedInboxFailureEvidence['inputAnchor']}
 function reservation(row:Record<string,any>):BudgetReservation{
  if(!uuid(row.id)||!identity(row.owner_id)||!uuid(row.budget_account_id)||!identity(row.model_request_id)||!integer(row.control_generation)||row.control_generation<1||!integer(row.reserved_tokens)||!integer(row.reserved_rounds)||!['goal','team','routing','memory','retry'].includes(row.kind)||!['reserved','settled','unknown','released'].includes(row.state))throw new WorkError('teloa/storage-corrupt','工作额度回执损坏。')
  return {id:row.id,ownerId:row.owner_id,budgetAccountId:row.budget_account_id,controlGeneration:row.control_generation,modelRequestId:row.model_request_id,providerRequestId:row.provider_request_id,kind:row.kind,reservedTokens:row.reserved_tokens,reservedRounds:row.reserved_rounds,state:row.state}
@@ -113,7 +114,7 @@ export class WorkBudgetService{
  async admitRunStartInTransaction(db:PoolClient,owner:string,budgetAccountId:string):Promise<void>{
   const {policy}=await this.lock(db,owner,budgetAccountId),total=await this.ownerPolicy(db,owner)
   const activeRuns=async(account:string|null)=>Number((await db.query(`select count(*) as n from teloa_task_runs r join teloa_task_work_lineage l on l.owner_id=r.owner_id and l.task_id=r.task_id
-   where r.owner_id=$1 and ($2::uuid is null or l.budget_account_id=$2) and r.state not in ('ended','withdrawn','configuration_failed')`,[owner,account])).rows[0]?.n)
+   where r.owner_id=$1 and ($2::uuid is null or l.budget_account_id=$2) and r.state not in ('ended','withdrawn','configuration_failed','submission_unknown')`,[owner,account])).rows[0]?.n)
   const accountStats=await this.stats(db,owner,budgetAccountId),ownerStats=await this.stats(db,owner,null)
   this.assertCapacity(accountStats,policy);this.assertCapacity(ownerStats,total.policy,0,0,'owner')
   if(policy.maxConcurrent!==null&&Math.max(accountStats.concurrent,await activeRuns(budgetAccountId))>=policy.maxConcurrent)throw exhausted('concurrent')
@@ -176,14 +177,20 @@ export class WorkBudgetService{
  async releaseUnaccepted(owner:string,input:unknown){const a=taskInput(input,['reservationId']);if(!uuid(a.reservationId))throw invalid();const rows=await this.pool.query("update teloa_work_budget_reservations set state='released',settled_at=$3 where owner_id=$1 and id=$2 and state in ('reserved','released') returning *",[owner,a.reservationId,this.clock.now()]);if(!rows.rows[0])throw new WorkError('teloa/conflict','请求已可能消耗额度，须核对真实回执，不能释放。');return this.remember(reservation(rows.rows[0]),true)}
  /** 宿主核对原生日志后的内部结算口，不注册本人/模型 RPC；结束耗时与未知用量分别保留。 */
  async recordRunTerminal(owner:string,input:RunBudgetTerminal):Promise<{closed:number}>{
-  const a=taskInput(input,['schema','runId','sessionId','nativeRequestId','turn','messageSeq','endSeq','turnEndSeq','terminalKind','endedAt'])
+  const a=taskInput(input,['schema','runId','sessionId','nativeRequestId','turn','messageSeq','endSeq','turnEndSeq','terminalKind','endedAt','inputAnchor'])
   const stamp=(value:unknown):value is string=>typeof value==='string'&&Number.isFinite(Date.parse(value))&&new Date(value).toISOString()===value
   if(!identity(owner)||a.schema!=='teloa.work-budget-terminal/v1'||!uuid(a.runId)||!identity(a.sessionId)||!uuid(a.nativeRequestId)||![a.turn,a.messageSeq,a.endSeq,a.turnEndSeq].every(integer)||Number(a.messageSeq)>=Number(a.turnEndSeq)||Number(a.turnEndSeq)>Number(a.endSeq)||!['turn/end','session/end-seed'].includes(String(a.terminalKind))||a.terminalKind==='turn/end'&&a.turnEndSeq!==a.endSeq||a.terminalKind==='session/end-seed'&&Number(a.turnEndSeq)+1!==a.endSeq||!stamp(a.endedAt)||a.endedAt>this.clock.now())throw invalid()
   const db=await this.pool.connect()
   try{
    await db.query('begin');await db.query('select pg_advisory_xact_lock(hashtextextended($1,0))',['teloa/work-budget/'+owner])
    const run=(await db.query('select r.*,l.budget_account_id from teloa_task_runs r join teloa_task_work_lineage l on l.owner_id=r.owner_id and l.task_id=r.task_id where r.owner_id=$1 and r.id=$2 for share of r,l',[owner,a.runId])).rows[0],evidence=run?.evidence
-   if(!run||run.state!=='ended'||run.session_id!==a.sessionId||run.native_request_id!==a.nativeRequestId||evidence?.state!=='ended'||evidence.turn!==a.turn||evidence.messageSeq!==a.messageSeq||evidence.endSeq!==a.endSeq||!(run.created_at instanceof Date)||a.endedAt<run.created_at.toISOString())throw denied()
+   if(!run||run.state!=='ended'||run.session_id!==a.sessionId||run.native_request_id!==a.nativeRequestId||evidence?.state!=='ended'||evidence.turn!==a.turn||evidence.messageSeq!==a.messageSeq||evidence.endSeq!==a.endSeq||!isDeepStrictEqual(evidence.inputAnchor,a.inputAnchor)||a.inputAnchor!==undefined&&(evidence.inputAnchor?.kind==='accepted-inbox-error'?evidence.reason!=='error':evidence.inputAnchor?.kind==='accepted-inbox-interrupted'?evidence.reason!=='interrupted'||evidence.inputAnchor.resumeSealSeq!==Number(a.endSeq)+1||a.terminalKind!=='turn/end'||a.turnEndSeq!==a.endSeq:true)||!(run.created_at instanceof Date)||a.endedAt<run.created_at.toISOString())throw denied()
+   if(a.inputAnchor!==undefined){
+    // 新输入锚点的零派发reserved额度已与Run原子结清，绝不把unknown用量当零。
+    const unresolved=await db.query(`select 1 from teloa_work_budget_reservations b join teloa_work_retry_claims c on c.owner_id=b.owner_id and c.model_request_id=b.model_request_id join teloa_work_retries r on r.owner_id=c.owner_id and r.operation_id=c.operation_id where b.owner_id=$1 and r.run_id=$2 and b.state in ('reserved','unknown') limit 1`,[owner,a.runId])
+    if(unresolved.rowCount)throw denied()
+    await db.query('commit');return {closed:0}
+   }
    // 子模型也沿用父Run预算身份；没有逐请求会话证明时，父终态不能截断任何子会话的未知消耗。
    if((await db.query('select 1 from teloa_task_run_subagents where owner_id=$1 and run_id=$2 and child_session_id is not null limit 1',[owner,a.runId])).rowCount){await db.query('commit');return {closed:0}}
    const closed=await db.query(`update teloa_work_budget_reservations b set elapsed_ended_at=least(coalesce(b.elapsed_ended_at,$4),$4),elapsed_terminal=$5 from teloa_work_retry_claims c join teloa_work_retries retry on retry.owner_id=c.owner_id and retry.operation_id=c.operation_id where b.owner_id=$1 and retry.run_id=$2 and b.budget_account_id=$3 and retry.budget_account_id=b.budget_account_id and c.owner_id=b.owner_id and c.model_request_id=b.model_request_id and b.state='unknown' and b.elapsed_terminal is null and b.created_at<=$4::timestamptz`,[owner,a.runId,run.budget_account_id,a.endedAt,JSON.stringify(a)])

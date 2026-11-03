@@ -1,10 +1,10 @@
 import {createHash} from 'node:crypto'
 import type {Context} from '@deepseek-ai/cordis'
 import type {Agent} from '@deepseek-ai/dsh-agent'
-import {createUserMessage,freezeMessage,type GenerateOptions,type UserMessage} from '@deepseek-ai/dsh-llm'
-import type {Session} from '@deepseek-ai/dsh-session'
-import {SessionId} from '@deepseek-ai/dsh-session'
-import {renderPrompt} from '@deepseek-ai/dsh-system-prompt'
+import {createSystemMessage,createUserMessage,freezeMessage,type GenerateOptions,type UserMessage} from '@deepseek-ai/dsh-llm'
+import {Session,SessionId,canonicalHeader} from '@deepseek-ai/dsh-session'
+import {renderPrompt,renderContextSections,joinContextSections} from '@deepseek-ai/dsh-system-prompt'
+import type {} from '@deepseek-ai/dsh-token-meter'
 import type {ToolRunContext} from '@deepseek-ai/dsh-tools'
 import type {WorkAccessLease,ProjectRuntimePrepared as BackendProjectRuntimePrepared} from '@teloa/backend'
 import {WorkError} from '@teloa/contract'
@@ -35,13 +35,16 @@ export type ProjectRuntimeInputHooks={
 /** 仅在宿主内部使用：辅助模型调用需要"当前会话已准备上下文"这一准入证明。 */
 export type ProjectRuntimeExposure={
  preparedForSession:(sessionId:string)=>ProjectRuntimePrepared|null
- assertPreparedCurrent:(prepared:ProjectRuntimePrepared)=>void
+ assertPreparedCurrent:(prepared:ProjectRuntimePrepared)=>Promise<void>
+ assertPreparedCurrentSync:(prepared:ProjectRuntimePrepared)=>void
  withAuxiliaryContext:(prepared:ProjectRuntimePrepared,options:Readonly<GenerateOptions>,dispatch:()=>AsyncIterable<import('@deepseek-ai/dsh-llm').StreamChunk>,onDispatched?:()=>void|Promise<void>)=>AsyncIterable<import('@deepseek-ai/dsh-llm').StreamChunk>
 }
 let projectRuntimeExposureValue:ProjectRuntimeExposure|undefined
 /** 供宿主内部模块（如输入框建议）取用；不对外暴露任何授权入口。 */
 export function projectRuntimeExposure():ProjectRuntimeExposure|undefined{return projectRuntimeExposureValue}
 const markerName='teloa/project-context-generation'
+const projectContextName='teloa/project-context'
+const retainedOwnerInputNotice='Earlier owner input retained after a role update'
 // 固定 DSH 的许可/委派上下文及本宿主的必要工作状态；新增 provider 必须先审核其无记忆语义。
 const memoryOffContexts=new Set(['sandbox:policy','approval:policy','subagent:delegation','teloa:product-identity','teloa:work-behavior-runtime','teloa/role-identity','teloa/saved-draft-state'])
 const denied=()=>new WorkError('teloa/conflict','项目上下文已更新，当前工作等待使用可用资料重新继续。')
@@ -82,32 +85,115 @@ function generationMarker(session:Session):string|undefined{
  return undefined
 }
 
-/** 官方 surface replacement 只更新模型视图；原 append 来源仍是人工历史真源。 */
-export function rebuildProjectModelSurface(session:Session,generation:number|string):void{
+/** 只规划官方 surface 替换；容量与许可复核通过前不写原会话。 */
+function projectSurfaceRebuild(session:Session,generation:number|string,retainUserInputFromGeneration?:number){
  const key=String(generation)
- if(generationMarker(session)===key)return
+ const previous=generationMarker(session)
+ if(previous===key)return
+ let retainInput=false
+ if(previous!==undefined&&retainUserInputFromGeneration!==undefined&&Number.isSafeInteger(retainUserInputFromGeneration)&&retainUserInputFromGeneration>0){
+  try{
+   const before:unknown=JSON.parse(previous),after:unknown=JSON.parse(key)
+   retainInput=Array.isArray(before)&&Array.isArray(after)&&before.length===3&&after.length===3&&before[0]===session.id&&after[0]===session.id&&before[1]===after[1]&&Number.isSafeInteger(before[2])&&Number.isSafeInteger(after[2])&&before[2]>=retainUserInputFromGeneration&&before[2]<after[2]
+  }catch{/* 旧或无法核对的代次标记沿完整重建处理。 */}
+ }
  const nodes=[...session.surface.nodes],events=readSessionEvents(session),head=nodes[0]===undefined?undefined:events.find(event=>event.seq===nodes[0])
  // 系统头保留给官方 step/start 后的 SystemPromptProjection；装配阶段不能写 system/message。
  const shadowed=head?.type==='system/message'?nodes.slice(1):nodes
  // 新会话的首个 surface 节点必须由官方 system/message 保留；代次标记随本步上下文落盘。
  if(!shadowed.length)return
- const message=createUserMessage({source:{kind:'runtime-context',form:'snapshot',sections:[{name:markerName,text:key}]},content:[{type:'text',text:'Project context updated: use only currently available materials and explicit input from this turn.'}]})
- session.append('user/message',message,{surfaceOp:{op:'replace',startSeq:shadowed[0]!,endSeq:shadowed.at(-1)!},sourceEventSeqs:shadowed})
+ const bySeq=new Map(events.map(event=>[event.seq,event])),groups:Array<typeof shadowed>=[],retained:UserMessage[]=[]
+ const restoredNodes:Array<{seq:typeof nodes[number];message:UserMessage;sources:typeof nodes}>=[]
+ // 固定 DSH 的 compact-checkpoint 是已提交压缩节点；其他replacement（尤其撤回重建）不可穿透。
+ const recoverable=(event:typeof events[number])=>event.type==='user/message'&&event.surfaceOp!==undefined&&event.surfaceOp!=='append'&&(event.data.source.kind==='compact-checkpoint'||event.data.source.kind==='runtime-context'&&event.data.source.form==='notice'&&event.data.source.summary===retainedOwnerInputNotice)
+ const recoveredOwners=(root:typeof nodes[number])=>{
+  const owners=new Map<typeof root,UserMessage>(),visited=new Set<typeof root>(),pending=[root]
+  while(pending.length){
+   const seq=pending.pop()!
+   if(visited.has(seq)||seq<session.inheritedEventCount)continue
+   visited.add(seq)
+   const event=bySeq.get(seq);if(!event||event.type!=='user/message')continue
+   if(event.data.source.kind==='user'){
+    const message=session.deriveEventMessage(event)
+    if(message?.role==='user')owners.set(seq,message)
+   }else if(recoverable(event))for(const source of event.sourceEventSeqs??[])pending.push(source)
+  }
+  return [...owners].sort(([a],[b])=>a-b)
+ }
+ let group:typeof shadowed=[]
+ for(const seq of shadowed){
+  const event=bySeq.get(seq)
+  // 仅保留本会话当前仍可见的本人输入；不从append历史复活撤回资料、旧摘要或父会话输入。
+  if(retainInput&&seq>=session.inheritedEventCount&&event?.type==='user/message'&&event.data.source.kind==='user'){
+   const message=session.deriveEventMessage(event);if(message?.role==='user')retained.push(message)
+   if(group.length)groups.push(group);group=[]
+  }else if(retainInput&&event&&recoverable(event)){
+   const owners=recoveredOwners(seq)
+   if(!owners.length){group.push(seq);continue}
+   if(group.length)groups.push(group);group=[]
+   const content:UserMessage['content'][number][]=[{type:'text',text:'Earlier owner input, retained verbatim. Apply the current role instructions and source permissions.'}]
+   for(const [,message] of owners)content.push({type:'text',text:'Prior owner message:'},...message.content)
+   const restored=createUserMessage({source:{kind:'runtime-context',form:'notice',summary:retainedOwnerInputNotice},content})
+   retained.push(restored);restoredNodes.push({seq,message:restored,sources:[seq,...owners.map(([source])=>source)]})
+  }else group.push(seq)
+ }
+ if(group.length)groups.push(group)
+ const replacements=groups.map(replaced=>{
+  const message=createUserMessage({source:{kind:'runtime-context',form:'snapshot',sections:[{name:markerName,text:key}]},content:[{type:'text',text:retainInput?'Role context updated: use current authorized materials and the retained owner input. Earlier responses and tool results have been removed.':'Project context updated: use only currently available materials and explicit input from this turn.'}]})
+  return {replaced,message}
+ })
+ const appended=!groups.length?createUserMessage({source:{kind:'runtime-context',form:'snapshot',sections:[{name:markerName,text:key}]},content:[{type:'text',text:'Role context updated; retained owner input remains available under current instructions.'}]}):undefined
+ const apply=(pending=false)=>{
+  for(const {seq,message,sources} of restoredNodes){
+   const value=pending?createUserMessage({source:{kind:'runtime-context',form:'notice',summary:retainedOwnerInputNotice},content:[{type:'text',text:'Earlier owner input is awaiting restoration under the current model capacity. Earlier responses and tool results have been removed.'}]}):message
+   session.append('user/message',value,{surfaceOp:{op:'replace',startSeq:seq,endSeq:seq},sourceEventSeqs:sources})
+  }
+  const marker=(message:UserMessage)=>pending?createUserMessage({source:{kind:'runtime-context',form:'snapshot',sections:[{name:markerName,text:previous!}]},content:[{type:'text',text:'Role context is being updated; earlier responses and tool results are no longer active.'}]}):message
+  for(const {replaced,message} of replacements)session.append('user/message',marker(message),{surfaceOp:{op:'replace',startSeq:replaced[0]!,endSeq:replaced.at(-1)!},sourceEventSeqs:replaced})
+  if(appended)session.append('user/message',marker(appended),{surfaceOp:'append'})
+ }
+ return {restored:restoredNodes.length>0,messages:[...retained,...replacements.map(row=>row.message),...appended?[appended]:[]],apply}
+}
+/** 官方 surface replacement 只更新模型视图；原 append 来源仍是人工历史真源。 */
+export function rebuildProjectModelSurface(session:Session,generation:number|string,retainUserInputFromGeneration?:number):void{
+ projectSurfaceRebuild(session,generation,retainUserInputFromGeneration)?.apply()
 }
 
 function currentInput(prepared:ProjectRuntimePrepared,signal?:AbortSignal){
  const binding=prepared.binding
  return {sessionId:binding.sessionId,projectId:binding.projectId,bindingVersion:binding.version,generation:binding.generation,contextVersion:binding.contextVersion,settingsVersion:binding.settingsVersion,...signal?{signal}: {}}
 }
+function currentProjectSnapshot(message:Readonly<GenerateOptions>['messages'][number],generation:string):boolean{
+ return message.role==='user'&&message.source?.kind==='runtime-context'&&message.source.form==='snapshot'&&message.source.sections.some(section=>section.name===projectContextName)&&message.source.sections.some(section=>section.name===markerName&&section.text===generation)
+}
 function providerEnvelope(resolved:Readonly<GenerateOptions>,prepared:ProjectRuntimePrepared,currentSystem?:string):Readonly<GenerateOptions>{
- const messages=resolved.messages.filter(message=>currentSystem===undefined||message.role!=='system').map(message=>{
+ const generation=JSON.stringify([prepared.binding.sessionId,prepared.binding.projectId,prepared.binding.generation])
+ const sourceMessages=resolved.messages.filter(message=>currentSystem===undefined||message.role!=='system')
+ let currentContext=-1
+ sourceMessages.forEach((message,index)=>{if(currentProjectSnapshot(message,generation))currentContext=index})
+ const messages=sourceMessages.map((message,index)=>{
   if(message.role==='assistant'&&message.source.replayState!==undefined){
    const {replayState:_replay,...source}=message.source
    return freezeMessage({...message,source})
   }
   // 旧 TaskRun 的冻结memory不是项目召回真源；启用时也只由prepared.text携带本轮获准记忆。
   if(message.role==='user'){
-   const content=message.content.map(block=>block.type==='text'?Object.freeze({...block,text:taskInputWithoutMemory(block.text)}):block)
+   // 代次标记保留在原生快照元数据中供恢复核验，仅从模型正文移除，避免被当成资料来源。
+   const sections=message.source?.kind==='runtime-context'&&message.source.form==='snapshot'?message.source.sections:undefined
+   const marked=sections?.some(section=>section.name===markerName)
+   const superseded=index!==currentContext&&currentProjectSnapshot(message,generation)
+   const rendered=marked?joinContextSections(sections!):undefined
+   const priorVisible=marked?joinContextSections(sections!.filter(section=>section.name!==markerName)):undefined
+   // 只替换本会话同代次的旧受管段落；来源审计、本人原话、模型答复与工具读取均保持原样。
+   const visible=marked?joinContextSections(sections!.filter(section=>section.name!==markerName&&(!superseded||section.name!==projectContextName)))||(superseded?'Previous automatically supplied project context is superseded by the current authorized snapshot.':''):undefined
+   const content=message.content.map(block=>{
+    if(block.type!=='text')return block
+    let text=taskInputWithoutMemory(block.text)
+    // 已移除代次正文的投影可再次进入固定闸口；两种合法表示使用同一段落替换，保持幂等。
+    const prior=[rendered,priorVisible].find(value=>value&&(text===value||text.endsWith('\n\n'+value)))
+    if(prior)text=text.slice(0,-prior.length)+visible
+    return Object.freeze({...block,text})
+   })
    Object.freeze(content);return Object.freeze({...message,content})
   }
   return message
@@ -131,6 +217,8 @@ export function registerProjectRuntimeContext(ctx:Context,ports:ProjectRuntimeCo
  const acceptedPrepared=new Map<string,ProjectRuntimePrepared>()
  const preparedMessages=new WeakMap<ProjectRuntimePrepared,string>()
  const accepted=new WeakMap<UserMessage,ProjectRuntimePrepared|null>(),active=new WeakMap<Agent,ProjectRuntimePrepared[]>()
+ const claimed=new WeakMap<Agent,UserMessage[]>()
+ const pendingRestores=new WeakMap<Agent,(messages:readonly UserMessage[])=>Promise<void>>()
  const requests=new WeakMap<object,{prepared:ProjectRuntimePrepared;projected:Readonly<GenerateOptions>;promptHash:string;dispatched:boolean}>()
  const auxiliaryContexts=new WeakMap<object,{prepared:ProjectRuntimePrepared;onDispatched?:()=>void|Promise<void>;entered:boolean}>(),usedAuxiliary=new WeakSet<object>()
  const assembledSystems=new WeakMap<Agent,string>()
@@ -171,11 +259,12 @@ export function registerProjectRuntimeContext(ctx:Context,ports:ProjectRuntimeCo
    while(acceptedPrepared.size>256)acceptedPrepared.delete(acceptedPrepared.keys().next().value!)
    accepted.set(message,candidate.prepared);candidates.delete(identity)
   },
-  turnStart(agent){active.delete(agent)},
+  turnStart(agent){active.delete(agent);claimed.delete(agent);pendingRestores.delete(agent)},
   claim(agent,message){
    if(!accepted.has(message))throw denied()
    const prepared=accepted.get(message)
    if(!prepared)return
+   claimed.set(agent,[...claimed.get(agent)??[],message])
    sync(prepared);const rows=active.get(agent)??[];rows.push(prepared);active.set(agent,rows);selected(agent)
   },
   async assertTool(exec){if(!exec.agent)return;const prepared=selected(exec.agent);if(prepared){await check(prepared,exec.signal);if(prepared.binding.memoryMode==='off'&&exec.name===roleMemoryProposalToolName)throw new WorkError('teloa/forbidden','此会话已关闭长期记忆，不能提交员工记忆候选。');assertProjectDefinitionWrite(prepared,exec.name,exec.arguments)}},
@@ -201,11 +290,55 @@ export function registerProjectRuntimeContext(ctx:Context,ports:ProjectRuntimeCo
   await check(prepared,context.signal)
   assembledSystems.set(agent,renderPrompt(result))
   const generation=JSON.stringify([prepared.binding.sessionId,prepared.binding.projectId,prepared.binding.generation])
-  rebuildProjectModelSurface(agent.session,generation)
   if(result.contexts.some(row=>row.name==='teloa/project-context')||Object.hasOwn(result.variables,'teloa_project_context'))throw denied()
-  const contexts=prepared.binding.memoryMode==='off'?result.contexts.filter(row=>memoryOffContexts.has(row.name)):result.contexts
+  // 本轮显式@员工的来源与指定知识不是长期记忆；保留来源，下一轮才能完整撤回旧身份。
+  let selectedEmployee=false
+  try{const value=JSON.parse(String(result.variables.teloa_employee_mention??''));selectedEmployee=value?.schema==='teloa.employee-mention/v1'&&value.boundTo==='current-owner-message'}catch{/* 没有可信宿主来源时仍用原memory-off白名单。 */}
+  const contexts=prepared.binding.memoryMode==='off'?result.contexts.filter(row=>memoryOffContexts.has(row.name)||selectedEmployee&&(row.name==='teloa/employee-mention'||row.name==='teloa/role-knowledge')):result.contexts
   if(contexts.some(row=>row.name===markerName)||contexts.some(row=>row.name===definitionBoundaryName)||Object.hasOwn(result.variables,'teloa_project_generation'))throw denied()
-  return {...result,contexts:[...contexts,{name:'teloa/project-context',text:'{{teloa_project_context}}'},{name:definitionBoundaryName,text:definitionBoundaryText},{name:markerName,text:'{{teloa_project_generation}}'}],variables:{...result.variables,teloa_project_context:prepared.text,teloa_project_generation:generation}}
+  const assembled:typeof result={...result,contexts:[...contexts,{name:'teloa/project-context',text:'{{teloa_project_context}}'},{name:definitionBoundaryName,text:definitionBoundaryText},{name:markerName,text:'{{teloa_project_generation}}'}],variables:{...result.variables,teloa_project_context:prepared.text,teloa_project_generation:generation}}
+  const validateRestored=async(messages:readonly UserMessage[],nextMessages?:readonly UserMessage[])=>{
+   const recover='请在当前会话选择上下文窗口更大的模型后重新发送当前请求，或新建对话并附上本轮所需材料。原始消息和压缩记录已保留。'
+   const unavailable=()=>new WorkError('teloa/invalid-input','暂不能核对岗位更新后恢复历史所需的模型容量。'+recover,{reason:'employee-history-capacity-unavailable'})
+   const meter=agent.ctx.get('tokenMeter'),provider=assembled.variables.provider??agent.options.provider,model=assembled.variables.model??agent.options.model
+   if(!meter||!provider||!model)throw unavailable()
+   const info=await agent.ctx.llm.resolveModelInfo(provider,model,context.signal),capacity=info.context?.contextWindow
+   if(capacity===undefined||!Number.isSafeInteger(capacity)||capacity<=0)throw unavailable()
+   // 仅作官方 token-meter 的脱离注册表预验；不创建持久会话、不读额外来源或发送模型请求。
+   const preview=Session.create(agent.id)
+   preview.append('system/message',{turn:1,step:1,message:createSystemMessage(renderPrompt(assembled))},{surfaceOp:'append'})
+   for(const message of messages)preview.append('user/message',message,{surfaceOp:'append'})
+   if(nextMessages){for(const message of nextMessages)preview.append('user/message',message,{surfaceOp:'append'})}
+   else{
+    const written=new Set(readSessionEvents(agent.session).flatMap(event=>event.type==='user/message'?[event.data.id]:[]))
+    for(const message of claimed.get(agent)??[])if(!written.has(message.id))preview.append('user/message',message,{surfaceOp:'append'})
+    preview.append('user/message',createUserMessage({source:{kind:'runtime-context',form:'notice',summary:'Current authorized context'},content:[{type:'text',text:joinContextSections(renderContextSections(assembled))}]}),{surfaceOp:'append'})
+   }
+   const inputTokens=meter.measure(preview,canonicalHeader({config:{provider,model},tools:assembled.tools})).totalTokens
+   // 与官方 requestProposal 一致：已落盘的显式上限继续生效；adapter 默认值才随新模型重取。
+   const header=agent.session.requestHeader(),explicitOutput=header?header.adapterDefaults?.maxTokens===true?undefined:header.config.maxTokens:agent.options.maxTokens
+   const outputTokens=explicitOutput??info.defaultMaxTokens??0
+   if(inputTokens+outputTokens>capacity)throw new WorkError('teloa/invalid-input','岗位更新后需要恢复的本人历史超过当前模型的上下文窗口。'+recover,{reason:'employee-history-context-limit'})
+   await check(prepared,context.signal)
+  }
+  const rebuild=async(defer:boolean,nextMessages?:readonly UserMessage[])=>{
+   const plan=projectSurfaceRebuild(agent.session,generation,prepared.retainUserInputFromGeneration)
+   if(!plan)return
+   if(plan.restored)await validateRestored(plan.messages,nextMessages)
+   context.signal?.throwIfAborted();sync(prepared)
+   // 原生压力压缩仍按上一 request/header 选模。先清理旧混合内容，仅留可恢复seq，
+   // 待 pre-step 结束后再展开到已预验的新模型窗口，避免旧小模型先吃到展开后的长输入。
+   if(defer&&plan.restored){plan.apply(true);pendingRestores.set(agent,messages=>rebuild(false,messages))}
+   else plan.apply()
+  }
+  await rebuild(true)
+  return assembled
+ },{prepend:true})
+ const releaseRestore=ctx.on('agent/pre-step',async({agent,signal},next)=>{
+  const decision=await next(),restore=pendingRestores.get(agent);pendingRestores.delete(agent)
+  signal.throwIfAborted()
+  if(decision.kind!=='reject'&&restore)await restore(decision.messages)
+  return decision
  },{prepend:true})
  const projection=Reflect.get(Object.getPrototypeOf(ctx.llm) as object,'installStreamProjection') as unknown
  if(typeof projection!=='function')throw new WorkError('teloa/unavailable','项目输入隔离能力尚未就绪，当前工作等待恢复。')
@@ -229,11 +362,15 @@ export function registerProjectRuntimeContext(ctx:Context,ports:ProjectRuntimeCo
    await auxiliary.onDispatched?.()
    original.signal?.throwIfAborted();sync(state.prepared)
   }
-  await ports.recordUsed({manifestId:state.prepared.manifestId,promptHash:promptHash(projected),generation:state.prepared.binding.generation,stage:'dispatched',...original.signal?{signal:original.signal}: {}})
   if(!auxiliaryContexts.has(original)&&!acknowledged.has(state.prepared)&&ports.ackGeneration){
    await ports.ackGeneration({sessionId:state.prepared.binding.sessionId,generation:state.prepared.binding.generation});acknowledged.add(state.prepared)
   }
-  await check(state.prepared,original.signal);state.dispatched=true
+  await check(state.prepared,original.signal)
+ },async(original:Readonly<GenerateOptions>,projected:Readonly<GenerateOptions>)=>{
+  const state=requests.get(original);if(!state)return
+  // 首次 iterator.next 已尝试进入 adapter；此后的取消或零 delta 失败不能撤销使用事实。
+  state.dispatched=true
+  await ports.recordUsed({manifestId:state.prepared.manifestId,promptHash:promptHash(projected),generation:state.prepared.binding.generation,stage:'dispatched'})
  }])
  // 不另装私有 admission；本监听器在既有 causality 包装内等待真源复核。
  const releaseStream=ctx.on('llm/stream',async function*(original,next){
@@ -261,8 +398,8 @@ export function registerProjectRuntimeContext(ctx:Context,ports:ProjectRuntimeCo
   async memoryEnabled(sessionId:string):Promise<boolean>{const agent=ctx.agents.get(SessionId(sessionId)),prepared=agent?selected(agent):null;if(!prepared)return assertUnbound(sessionId);await check(prepared);return prepared.binding.memoryMode!=='off'},
   async legacyRoleExperienceEnabled(sessionId:string):Promise<boolean>{const agent=ctx.agents.get(SessionId(sessionId)),prepared=agent?selected(agent):null;if(!prepared)return assertUnbound(sessionId);await check(prepared);return false},
   async assertResultCurrent(sessionId:string):Promise<void>{const agent=ctx.agents.get(SessionId(sessionId)),prepared=agent?selected(agent):null;if(prepared)await check(prepared);else if(!await assertUnbound(sessionId))throw denied()},
-  close(){closed=true;candidates.clear();acceptedPrepared.clear();releaseContext();releaseStream()},
+  close(){closed=true;candidates.clear();acceptedPrepared.clear();releaseContext();releaseRestore();releaseStream()},
  })
- projectRuntimeExposureValue={preparedForSession:sessionId=>{const agent=ctx.agents.get(SessionId(sessionId));return agent?selected(agent):null},assertPreparedCurrent:check,withAuxiliaryContext:runtime.withAuxiliaryContext}
+ projectRuntimeExposureValue={preparedForSession:sessionId=>{const agent=ctx.agents.get(SessionId(sessionId));return agent?selected(agent):null},assertPreparedCurrent:check,assertPreparedCurrentSync:sync,withAuxiliaryContext:runtime.withAuxiliaryContext}
  return runtime
 }

@@ -123,7 +123,7 @@ export function host(options:{agents?:boolean;composition?:{entries:()=>Iterable
   })
   configureNativeHostTestPorts(ctx,{collectTool:definition=>{tools.push(definition)}})
 
-  ctx.provide('agentPresets',{serviceFor:()=>undefined,acquireScope:async()=>({key:{},async [Symbol.asyncDispose](){}}),resolve:async(id?:string)=>({id:id??'default-agent'})})
+  ctx.provide('agentPresets',{serviceFor:()=>undefined,composedPreset:(scope:Context)=>ctx.agents.list().find(agent=>agent.ctx===scope)?.session.header.agentPreset,acquireScope:async()=>({key:{},async [Symbol.asyncDispose](){}}),resolve:async(id?:string)=>({id:id??'default-agent'})})
   ctx.provide('fileReferences',{})
   ctx.provide('connection',{fetch:{register:()=>async()=>{}},rpc:{handle:(path:string,handler:RpcHandler)=>{assert.equal(path,'/teloa');rpc=handler;return ()=>{if(rpc===handler)rpc=undefined}}}})
   return {ctx,tools,modelCalls,ready:async(directory:string)=>{await installNativeSessions(ctx);await installNativeHostServices(ctx,directory)},get rpc(){assert.ok(rpc,'/teloa handler 尚未注册');return rpc}}

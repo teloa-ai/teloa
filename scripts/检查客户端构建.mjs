@@ -17,20 +17,24 @@ for(const module of ['react','react/jsx-runtime','@deepseek-ai/dsh-client-store'
 requireCheck(/createElement\(["']style["']\)/.test(code),'CSS 未内联到客户端。')
 requireCheck(code.includes('data:image/svg+xml;base64,'),'品牌资源未内联。')
 requireCheck(!/export\s*\{[^}]*\bas\s+default\b/s.test(host),'Host 插件出现默认出口。')
-// 仅允许已复核的焦点协调、自有菜单定位、首页菜单边界、持续通话、小松鼠输入避让及原生右栏键盘桥；不得搬移 DSH 节点。
+// 仅允许已复核的焦点协调、自有菜单定位、首页菜单边界、原生输入菜单视口、持续通话、小松鼠输入避让及原生右栏键盘桥；不得搬移 DSH 节点。
 const clientDir=resolve(dir,'src/client')
 const observerSources=readdirSync(clientDir,{recursive:true}).filter(path=>/\.[tj]sx?$/.test(path)&&readFileSync(resolve(clientDir,path),'utf8').includes('MutationObserver')).sort()
-const reviewedObservers=['AssistantCompanion.tsx','ComposerPopover.tsx','EmployeeVoiceCall.tsx','HomeNativeConversation.tsx','native-sidebar-accessibility.ts','settings-subdialog-focus.ts']
-requireCheck(JSON.stringify(observerSources)===JSON.stringify(reviewedObservers),'MutationObserver 来源必须与已复核的六个组件完全一致。')
+const reviewedObservers=['AssistantCompanion.tsx','ComposerPopover.tsx','EmployeeVoiceCall.tsx','HomeNativeConversation.tsx','native-composer-menu-viewport.ts','native-sidebar-accessibility.ts','settings-subdialog-focus.ts']
+requireCheck(JSON.stringify(observerSources)===JSON.stringify(reviewedObservers),'MutationObserver 来源必须与已复核的七个组件完全一致。')
 const homeBoundary=readFileSync(resolve(clientDir,'HomeNativeConversation.tsx'),'utf8')
 requireCheck(homeBoundary.includes('mutation.observe(element,{subtree:true,childList:true})')&&homeBoundary.includes('resize.disconnect();mutation.disconnect();')&&homeBoundary.includes("element.style.setProperty('--teloa-home-menu-height'"),'首页菜单桥必须限定自有外壳，只调整菜单可用高度并解除监听。')
 requireCheck(!/innerHTML|outerHTML|replaceChildren|appendChild|removeChild|document\.querySelector/.test(homeBoundary),'首页菜单桥不得搬移或替换原生内容。')
 const nativeSidebar=readFileSync(resolve(clientDir,'native-sidebar-accessibility.ts'),'utf8')
 requireCheck(nativeSidebar.includes('root.ownerDocument')&&nativeSidebar.includes('observer.observe(root,')&&nativeSidebar.includes("attributeFilter:['data-sidebar-right-open','data-sidebar-right-panel','aria-selected','hidden']")&&nativeSidebar.includes('observer.disconnect();resize.disconnect();'),'原生右栏桥必须限定当前外壳、公开状态标记并完整解除监听。')
 requireCheck(!/innerHTML|outerHTML|replaceChildren|appendChild|removeChild|document\.querySelector/.test(nativeSidebar),'原生右栏桥不得搬移内容、写正文或越过当前外壳查询。')
+const nativeComposerMenu=readFileSync(resolve(clientDir,'native-composer-menu-viewport.ts'),'utf8')
+requireCheck(nativeComposerMenu.includes('mutation.observe(anchor,{childList:true,subtree:true,attributes:true,attributeFilter:[\'style\']})')&&nativeComposerMenu.includes('disposed=true;mutation.disconnect();resize.disconnect();cancelAnimationFrame(frame)')&&nativeComposerMenu.includes('restore?.();menu=null'),'原生输入菜单桥必须只观察当前 anchor 的菜单与样式，完整解除监听并还原呈现。')
+requireCheck(!/innerHTML|outerHTML|replaceChildren|appendChild|removeChild|document\.querySelector/.test(nativeComposerMenu),'原生输入菜单桥不得搬移或替换原生菜单内容，也不得越过当前 anchor 查询。')
 // ComposerSubmenu 仅由隔离测试使用，原生输入接管后不进入正式产物；
-// 正式入口增加原生右栏键盘桥，以及助手通话浮窗为小松鼠小窗让位的布局观察（只重算自身位置），数量仍精确核对，不放宽到任意观察器。
-const reviewedBundleObserverCount=6
+// 合并后保留首页自有菜单边界和原生输入菜单视口桥；后者只调整 top-layer 与自身坐标，保留官方菜单 DOM/控制器。
+// 两边既有焦点、通话与原生右栏观察器均保留，数量仍精确核对，不放宽到任意观察器。
+const reviewedBundleObserverCount=7
 requireCheck((code.match(/new MutationObserver\(/g)??[]).length===reviewedBundleObserverCount,'产物中的观察器与已复核来源不一致。')
 // 同包按需分块：只认 `client.<名>.js`，各自以 chunk 包装、自包含（不得同步 require 另一个 client*.js），外部引用只取平台模块；入口只经 require.async 取它。
 const chunks=readdirSync(resolve(dir,'lib')).filter(name=>/^client\.[A-Za-z0-9][A-Za-z0-9._-]*\.js$/.test(name))

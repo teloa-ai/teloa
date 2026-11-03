@@ -1,3 +1,5 @@
+import type {RunTextQuotedDraft} from './run-text-continuation.ts'
+import {taskRunTerminalStates} from '@teloa/contract'
 import {createHash} from 'node:crypto'
 import type {Pool,PoolClient} from 'pg'
 import {WorkError,groupWorkInput,groupWorkInputTransitions,isGroupWorkInputReceipt,isMessageReference,normalizeReferences,type MessageReference,type GroupWorkInputReceipt,type GroupWorkInputState} from '@teloa/contract'
@@ -5,7 +7,7 @@ import {WorkError,groupWorkInput,groupWorkInputTransitions,isGroupWorkInputRecei
 type Database=Pick<PoolClient,'query'>
 const ownerId=(value:string):void=>{if(typeof value!=='string'||!value.trim()||value.length>128)throw new WorkError('teloa/forbidden','需要有效的本人身份。')}
 const corrupt=()=>new WorkError('teloa/storage-corrupt','群工作追加回执损坏，已停止读取。')
-const settledRun=['ended','withdrawn','configuration_failed']
+const settledRun=taskRunTerminalStates
 
 /**
  * 群对原工作的追加与停止回执（规格 §4.4、§6.7）。每条本人消息对同一任务至多一条回执；
@@ -61,7 +63,7 @@ function receipt(row:Record<string,unknown>):GroupWorkInputReceipt{
  return value
 }
 
-export type GroupWorkContinuation={messageId:string;text:string;createdAt:string;references:MessageReference[]}
+export type GroupWorkContinuation={messageId:string;text:string;createdAt:string;references:MessageReference[];quoted?:RunTextQuotedDraft}
 /** versioned：已为续办升过任务版本；未升版本但带原生身份的回执是向活动 Run 的即时追加。 */
 export type GroupWorkInputRecord=GroupWorkInputReceipt&{groupId:string;messageId:string;observedRunId:string|null;versioned:boolean}
 
@@ -135,6 +137,9 @@ export class GroupWorkInputService{
     on reply.owner_id=m.owner_id and reply.group_id=m.group_id and reply.id=m.reply_to_message_id
     where m.owner_id=$1 and m.group_id=$2 and m.id=$3`,[owner,row.group_id,row.message_id])).rows[0]
    if(quoted?.task_id&&quoted.task_id!==row.task_id)return reject('teloa/forbidden')
+   // 本人处置的是“结果仍未知”，不能消费处置前排队的追加，也不能把新群消息当作再次执行确认。
+   // 后续由本人在原任务核对并明确准备新的 Run；保留这条追加的拒绝回执和原 Run。
+   if(latest?.state==='submission_unknown')return reject('teloa/execution-pending')
    if(latest&&!settledRun.includes(String(latest.state)))return receipt(row)
    if(!task||task.state==='cancelled')return reject('teloa/conflict')
    if((latest?.id??null)!==row.observed_run_id)return reject('teloa/version-conflict')
@@ -209,4 +214,31 @@ export async function readGroupWorkContinuation(db:Database,owner:string,taskId:
  const references=normalizeReferences(row.reference_snapshot)
  if(!Array.isArray(references)||!references.every(isMessageReference))throw corrupt()
  return {messageId:String(row.id),text:String(row.text),createdAt:(row.created_at as Date).toISOString(),references:references.map(reference=>({...reference}))}
+}
+
+/** 同一任务已升版本的本人续办来源；只作持续限制的可信依据，不改变 latest 续办目标或工具授权。 */
+export async function readGroupWorkOwnerMessages(db:Database,owner:string,groupId:string,taskId:string,taskVersion:number){
+ if(!Number.isSafeInteger(taskVersion)||taskVersion<1)throw corrupt()
+ const rows=(await db.query(`select i.state,i.run_id,m.id,m.text from teloa_group_work_inputs i
+  join teloa_group_messages m on m.id=i.message_id and m.group_id=i.group_id and m.owner_id=i.owner_id
+  where i.owner_id=$1 and i.group_id=$2 and i.task_id=$3 and i.task_version<=$4
+   and i.operation='continue' and i.state in ('continued','accepted','unknown') and m.author_id='self'
+  order by i.task_version,i.created_at,i.request_id`,[owner,groupId,taskId,taskVersion])).rows
+ const result:{messageId:string;text:string;sha256:string}[]=[]
+ for(const row of rows){
+  if(row.state==='unknown'){
+   if(!row.run_id)continue
+   const raw=(await db.query('select * from teloa_task_runs where owner_id=$1 and task_id=$2 and id=$3',[owner,taskId,row.run_id])).rows[0]
+   if(!raw)continue
+   const {readStoredTaskRun,readRunGroupContinuation}=await import('./task-runs.ts'),run=readStoredTaskRun(raw)
+   if(run.taskVersion>taskVersion)continue
+   const input=JSON.parse(run.inputText) as Record<string,unknown>
+   if(input.groupContinuation===undefined)continue
+   const continuation=readRunGroupContinuation(input.groupContinuation)
+   if(continuation.messageId!==row.id||continuation.text!==row.text)continue
+  }
+  if(typeof row.text!=='string'||!row.text.trim())throw corrupt()
+  result.push({messageId:String(row.id),text:row.text,sha256:createHash('sha256').update(row.text).digest('hex')})
+ }
+ return result
 }

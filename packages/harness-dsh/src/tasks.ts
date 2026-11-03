@@ -1,12 +1,13 @@
 import {WorkError,taskInput} from '@teloa/contract'
 import type {TaskService,TaskTransitions} from '@teloa/backend'
 export const confirmedTaskEndpoint='tasks/create-confirmed'
-export const taskEndpoints=['tasks/list','tasks/create','tasks/edit','tasks/configure','tasks/configuration-request','tasks/create-configuration','tasks/create-configuration-request','tasks/transition','tasks/completion']
-export function createTaskHandler(owner:string,get:()=>Promise<Pick<TaskService,'list'|'create'|'edit'>&Partial<Pick<TaskService,'createConfirmed'|'configure'|'configurationRequest'|'createConfiguration'|'createConfigurationRequest'>>>,transitions?:()=>Promise<Pick<TaskTransitions,'change'>&Partial<Pick<TaskTransitions,'completion'>>>){
- return async(endpoint:string,payload:unknown,signal?:AbortSignal)=>{
+export const taskEndpoints=['tasks/list','tasks/create','tasks/edit','tasks/configure','tasks/configuration-request','tasks/create-configuration','tasks/create-configuration-request','tasks/transition','tasks/completion','tasks/rework-candidate']
+export function createTaskHandler(owner:string,get:()=>Promise<Pick<TaskService,'list'|'create'|'edit'>&Partial<Pick<TaskService,'createConfirmed'|'configure'|'configurationRequest'|'createConfiguration'|'createConfigurationRequest'>>>,transitions?:()=>Promise<Pick<TaskTransitions,'change'>&Partial<Pick<TaskTransitions,'completion'|'reworkCandidate'>>>){
+ return async(endpoint:string,payload:unknown,signal?:AbortSignal,ownerRework?:{assertCurrent:()=>void})=>{
   if(!taskEndpoints.includes(endpoint)&&endpoint!==confirmedTaskEndpoint)throw new WorkError('teloa/not-found','未提供此任务接口。')
+  if(endpoint==='tasks/rework-candidate'){taskInput(payload,['taskId','expectedVersion']);const service=await transitions?.();if(!service?.reworkCandidate)throw new WorkError('teloa/unavailable','任务续办服务尚未就绪。');return service.reworkCandidate(owner,payload)}
   if(endpoint==='tasks/completion'){taskInput(payload,['taskId']);const service=await transitions?.();if(!service?.completion)throw new WorkError('teloa/conflict','结项服务尚未就绪。');return service.completion(owner,payload)}
-  if(endpoint==='tasks/transition'){taskInput(payload,['taskId','requestId','expectedVersion','action','artifact','note']);if(!transitions)throw new WorkError('teloa/conflict','任务状态服务尚未就绪。');return (await transitions()).change(owner,payload)}
+  if(endpoint==='tasks/transition'){taskInput(payload,['taskId','requestId','expectedVersion','action','artifact','note']);if(!transitions)throw new WorkError('teloa/conflict','任务状态服务尚未就绪。');return (await transitions()).change(owner,payload,ownerRework)}
   taskInput(payload,endpoint==='tasks/list'?[]:endpoint==='tasks/edit'?['taskId','expectedVersion','fields']:endpoint==='tasks/configure'?['requestId','taskId','expectedVersion','fields','taskName','groupName']:endpoint==='tasks/configuration-request'||endpoint==='tasks/create-configuration-request'?['requestId']:endpoint==='tasks/create-configuration'?['requestId','sessionId','fields','groupName','businessName']:['requestId','fields','assignee'])
   const service=await get()
   if(endpoint==='tasks/configure'){if(!service.configure)throw new WorkError('teloa/unavailable','任务配置服务尚未就绪。');return service.configure(owner,payload,signal)}

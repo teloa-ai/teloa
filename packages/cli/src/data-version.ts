@@ -8,5 +8,6 @@ export function canUseData(release:Pick<ReleaseManifest,'dataVersion'|'compatibl
  return supportedDataVersion(version)&&release.dataVersion===version&&release.compatibleDataVersions.includes(version)
 }
 export function canUpgradeData(release:Pick<ReleaseManifest,'dataVersion'|'compatibleDataVersions'>,version:number):boolean{
- return canUseData(release,version)||release.dataVersion===metadata.dataVersion&&canUseData(release,release.dataVersion)&&metadata.migrations.some(row=>row.from===version&&row.to===release.dataVersion)
+ // 保留已声明的历史迁移；每条边仍须经备份核验，不能由兼容列表推导迁移或降级。
+ return canUseData(release,version)||canUseData(release,release.dataVersion)&&metadata.migrations.some(row=>row.from===version&&row.to===release.dataVersion)
 }

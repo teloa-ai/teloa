@@ -12,7 +12,7 @@ function fixture(){
  const state={scope:'sales',pending:false,projection:{pending:null as {provider:string;model:string;reasoningEffort?:string}|null,lastUsed:null},resolved:[] as unknown[],activation:0}
  const ctx={agents:{get:()=>undefined},sessionController:{inspect:async(id:string)=>{assert.equal(id,session.id);return {meta:session.header,events:session.snapshotEvents(),inheritedEventCount:0}},resolveAgent:()=>{state.activation++;throw Error('must not activate')}},sessionProjections:{stateOf:(_session:Session,key:string)=>key==='inbox'?{'next-turn':state.pending?[{id:'queued'}]:[],'next-step':[]}:state.projection},llm:{resolveCallConfig:async(value:unknown)=>{state.resolved.push(value);return value}},workspaceRegistry:{archivedSessionIds:[]}}
  const pool={query:async(text:string)=>({rows:text.includes('teloa_conversation_work_contexts')?[{session_id:session.id,scope_id:state.scope,role_id:null,version:1,locked:false}]:[]})}
- const ports={owner:'owner',pool,conversations:{snapshotBySession:async()=>binding,repository:{read:async()=>[binding]}},links:{bySession:async()=>[]},runs:async()=>({}),resources:{readForIndexInTransaction:async()=>{throw Error('not configured')}}}
+ const ports={owner:'owner',pool,conversations:{snapshotBySession:async()=>binding,repository:{read:async()=>[binding]}},links:{bySession:async()=>[]},runs:async()=>({sessionRun:async()=>null}),resources:{readForIndexInTransaction:async()=>{throw Error('not configured')}}}
  const adapters=createProjectRuntimeAdapters(ctx as never,ports as never)
  return {session,state,adapters,pool}
 }
@@ -62,7 +62,7 @@ function ownerFixture(){
   const spec={requestId,sessionId:state.parent,messageId:message.id,messageSeq:0,kind:'task',executor:'general',scope:'general',title:'原工作',goal:'保留原工作目标'}
   return {rows:state.missing?[]:[{request_id:requestId,session_id:state.parent,request_spec:spec,targets:[],failures:{},stopped_at:null,created_at:new Date('2026-10-17T00:00:00.000Z')}]}
  }}
- const adapters=createProjectRuntimeAdapters(ctx as never,{owner:'owner',pool,conversations:{snapshotBySession:async()=>({id:'conversation-run',ownerId:'owner',sessionId:session.id,title:'原Run',purpose:'task-run'}),repository:{read:async()=>{throw Error('不按当前目录选择父会话')}}},runs:async()=>({get:async()=>({id:'run-one',sessionId:session.id,roleId:null,executor:{kind:'owner',grantId:state.grantId,grantVersion:1},inputText:JSON.stringify({task:{scope:'general',goal:'固定Run目标'}})}),conversationParent:async()=>({executor:'general',sessionId:parent.id,requestId})})} as never)
+ const adapters=createProjectRuntimeAdapters(ctx as never,{owner:'owner',pool,conversations:{snapshotBySession:async()=>({id:'conversation-run',ownerId:'owner',sessionId:session.id,title:'原Run',purpose:'task-run'}),repository:{read:async()=>{throw Error('不按当前目录选择父会话')}}},runs:async()=>({sessionRun:async()=>({id:'run-one',sessionId:session.id,roleId:null,executor:{kind:'owner',grantId:state.grantId,grantVersion:1},inputText:JSON.stringify({task:{scope:'general',goal:'固定Run目标'}})}),conversationParent:async()=>({executor:'general',sessionId:parent.id,requestId})})} as never)
  return {adapters,session,parent,message,state,reads}
 }
 
@@ -87,7 +87,7 @@ test('本人计划背景沿固定计划授权，人工认可不伪造父会话�
  const ports={
   owner:'owner',pool:{query:async()=>({rows:[{id:run.id}]}),connect:async()=>db},
   conversations:{snapshotBySession:async()=>({id:'conversation',ownerId:'owner',sessionId:session.id,title:'计划工作',purpose:'task-run'})},
-  runs:async()=>({get:async()=>run,conversationParent:async()=>{throw Error('计划不得猜普通会话父请求')}}),
+  runs:async()=>({sessionRun:async()=>run,conversationParent:async()=>{throw Error('计划不得猜普通会话父请求')}}),
   ownerExecution:{current:async(_db:unknown,actor:string,value:unknown)=>{
    assert.equal(actor,'owner');assert.deepEqual(value,executor)
    if(state.revoked)throw new WorkError('teloa/forbidden','已撤回')
@@ -120,6 +120,19 @@ test('项目optionalMemories仅普通分身私聊复用原private读取选择，
  await assert.rejects(adapters.optionalMemories(db as never,'other',target,'',false),{code:'teloa/forbidden'})
 })
 
+test('多业务员工的经验只读取本次工作范围，共享可见条目保留且不读取其他业务',async()=>{
+ const id='11111111-1111-4111-8111-111111111111',reads:string[]=[]
+ const row={id,owner_id:'owner',definition:{name:'跨业务员工',kind:'employee',scopes:['sales','support'],duty:'核对',dataScope:'授权资料',executionScope:'只读',skills:[],knowledge:[]},version:1,state:'active',created_at:new Date('2026-10-17T00:00:00Z'),updated_at:new Date('2026-10-17T00:00:00Z')}
+ const entries={sales:[{id:'shared',version:1,title:'共享经验',markdown:'仅用于销售核验',contentHash:'a'.repeat(64),visibility:{kind:'role',scopeIds:['sales','support']}}],support:[{id:'private-support',version:1,title:'客服经验',markdown:'不应进入销售会话',contentHash:'b'.repeat(64),visibility:{kind:'role',scopeIds:['support']}}]}
+ const adapters=createProjectRuntimeAdapters({} as never,{owner:'owner',roleMemories:async()=>({confirmedForExperience:async(_db:unknown,_owner:string,scope:keyof typeof entries)=>{reads.push(scope);return entries[scope]??[]}})} as never)
+ const db={query:async()=>({rows:[row]})}
+ for(const kind of ['employee','task'] as const){
+  reads.length=0
+  const result=await adapters.optionalMemories(db as never,'owner',{sessionId:'sales-work',kind,scope:'sales',scopes:['sales','support'],roleId:id,title:'销售工作',submitted:true,running:false},'',false)
+  assert.deepEqual(result.map(memory=>memory.id),['shared']);assert.deepEqual(reads,['sales'])
+ }
+})
+
 test('真实私聊adapter回读本人role/link和固定private选择，迟撤回的lease失效不复活',async()=>{
  const session=Session.create(SessionId('twin-private-chat')),roleId='11111111-1111-4111-8111-111111111111',reads:unknown[]=[]
  const row={id:roleId,owner_id:'owner',definition:{name:'本人分身',kind:'twin',scopes:['general'],duty:'核对',dataScope:'本人资料',executionScope:'只读',skills:[],knowledge:[]},version:1,state:'active',created_at:new Date('2026-10-17T00:00:00.000Z'),updated_at:new Date('2026-10-17T00:00:00.000Z')}
@@ -127,7 +140,7 @@ test('真实私聊adapter回读本人role/link和固定private选择，迟撤回
  const state={memories:[memory],linked:true,version:1,afterRead:undefined as (()=>Promise<void>)|undefined}
  const pool={query:async(sql:string,values:string[])=>{assert.equal(values[0],'owner');if(sql.includes('teloa_task_runs'))return {rows:[]};assert.match(sql,/teloa_roles/);assert.equal(values[1],roleId);return {rows:[{...row,version:state.version}]}}}
  const ctx={agents:{get:()=>undefined},sessionController:{inspect:async(id:string)=>{assert.equal(id,session.id);return {meta:session.header,events:session.snapshotEvents(),inheritedEventCount:0}}},sessionProjections:{stateOf:()=>({'next-turn':[],'next-step':[]})}}
- const adapters=createProjectRuntimeAdapters(ctx as never,{owner:'owner',pool,conversations:{snapshotBySession:async()=>({id:'conversation',ownerId:'owner',sessionId:session.id,title:'分身私聊'}),repository:{read:async()=>[{sessionId:session.id,requestedRoleId:roleId}]}},links:{bySession:async()=>state.linked?[{kind:'role',active:true,objectId:roleId,conversationId:'conversation',sessionId:session.id,scopeId:'general'}]:[]},roleMemories:async()=>({confirmedForRun:async(...args:unknown[])=>{reads.push(args);await state.afterRead?.();return state.memories}})} as never)
+ const adapters=createProjectRuntimeAdapters(ctx as never,{owner:'owner',pool,runs:async()=>({sessionRun:async()=>null}),conversations:{snapshotBySession:async()=>({id:'conversation',ownerId:'owner',sessionId:session.id,title:'分身私聊'}),repository:{read:async()=>[{sessionId:session.id,requestedRoleId:roleId}]}},links:{bySession:async()=>state.linked?[{kind:'role',active:true,objectId:roleId,conversationId:'conversation',sessionId:session.id,scopeId:'general'}]:[]},roleMemories:async()=>({confirmedForRun:async(...args:unknown[])=>{reads.push(args);await state.afterRead?.();return state.memories}})} as never)
  const role={...row.definition,id:roleId,ownerId:'owner',version:1,state:'active',createdAt:row.created_at.toISOString(),updatedAt:row.updated_at.toISOString()} as DigitalRole
  const input={sessionId:session.id,role,scopeId:'general'},lease=await adapters.privateMemory(input)
  assert.match(lease.text,/本人私有习惯/);assert.match(JSON.parse(lease.text).notice,/private twin experience/);assert.doesNotMatch(JSON.parse(lease.text).notice,/\p{Script=Han}/u);assert.deepEqual((reads[0] as unknown[]).slice(1,3),['owner',{scope:'general',groupId:null,memoryViewId:null}]);await lease.assertCurrent()
@@ -143,4 +156,20 @@ test('真实私聊adapter回读本人role/link和固定private选择，迟撤回
   await assert.rejects(current?current.assertCurrent():adapters.privateMemory(input),{code:'teloa/forbidden'},phase+':'+change)
   state.afterRead=undefined
  }
+})
+
+test('员工输入边界来自真实岗位权限和资源，交付文案与暂停不改变边界',async()=>{
+ const session=Session.create(SessionId('employee-boundary')),roleId='11111111-1111-4111-8111-111111111111'
+ const definition={name:'订单复核员',kind:'employee',scopes:['general'],duty:'复核订单',dataScope:'本人订单',executionScope:'只读计算',skills:['calculate'],knowledge:['order-guide'],responsibility:{triggers:['本人交办'],autonomousActions:['计算'],confirmationPoints:['外发前确认'],escalationRules:['异常上报'],deliveryChecks:['原页脚']}}
+ const row={id:roleId,owner_id:'owner',definition,version:1,state:'active',created_at:new Date('2026-10-17T00:00:00Z'),updated_at:new Date('2026-10-17T00:00:00Z')}
+ const ctx={agents:{get:()=>undefined},sessionController:{inspect:async()=>({meta:session.header,events:session.snapshotEvents(),inheritedEventCount:0})},sessionProjections:{stateOf:()=>({'next-turn':[],'next-step':[]})}}
+ const adapters=createProjectRuntimeAdapters(ctx as never,{owner:'owner',pool:{query:async()=>({rows:[row]})},runs:async()=>({sessionRun:async()=>null}),conversations:{snapshotBySession:async()=>({id:'conversation',ownerId:'owner',sessionId:session.id,title:'员工私聊'}),repository:{read:async()=>[{sessionId:session.id,requestedRoleId:roleId}]}},links:{bySession:async()=>[{kind:'role',active:true,objectId:roleId,conversationId:'conversation',sessionId:session.id,scopeId:'general'}]}} as never)
+ const boundary=async()=>(await adapters.inspect('owner',session.id)).roleInputBoundary
+ const original=await boundary();assert.match(original??'',/^[a-f0-9]{64}$/)
+ row.version++;row.state='paused';definition.name='订单复核员新版';definition.responsibility.deliveryChecks=['新页脚']
+ assert.equal(await boundary(),original,'交付说明更新不丢本人输入')
+ for(const field of ['duty','dataScope','executionScope'] as const){const before=definition[field];definition[field]+='（调整）';assert.notEqual(await boundary(),original,field);definition[field]=before}
+ for(const field of ['skills','knowledge'] as const){definition[field].push('new-reference');assert.notEqual(await boundary(),original,field);definition[field].pop()}
+ for(const field of ['triggers','autonomousActions','confirmationPoints','escalationRules'] as const){definition.responsibility[field].push('新约束');assert.notEqual(await boundary(),original,field);definition.responsibility[field].pop()}
+ assert.equal(await boundary(),original)
 })

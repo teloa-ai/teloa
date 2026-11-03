@@ -15,13 +15,13 @@ export function scheduleTaskRunRefresh(rows:RunView[],api:Pick<TaskRunApi,'recon
   })()})
   return ()=>{cancelled=true;cancelFirst()}
  }
- if(!rows.some(row=>row.state!=='prepared'&&row.state!=='ended'&&row.state!=='withdrawn'&&row.state!=='configuration_failed'))return ()=>{}
+ if(!rows.some(row=>row.state!=='prepared'&&row.state!=='ended'&&row.state!=='withdrawn'&&row.state!=='configuration_failed'&&row.state!=='submission_unknown'))return ()=>{}
  const cancelTimer=schedule(()=>{void (async()=>{
   try{
    const updated:RunView[]=[]
    for(const row of rows){
     if(cancelled)return
-    updated.push(row.state==='prepared'||row.state==='ended'||row.state==='withdrawn'||row.state==='configuration_failed'?row:await api.reconcile(row))
+    updated.push(row.state==='prepared'||row.state==='ended'||row.state==='withdrawn'||row.state==='configuration_failed'||row.state==='submission_unknown'?row:await api.reconcile(row))
    }
    if(!cancelled)publish(updated)
   }catch(error){if(!cancelled)failed(error)}

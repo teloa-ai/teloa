@@ -1,5 +1,6 @@
 /** 业务搭建面板：简中、繁中、英、日、韩、越、西、法、德、葡。 */
 export const BUSINESS_BUILDER_MESSAGE_ROWS = [
+ ...[['business.manual.integer','仅允许整数','僅允許整數','Integer only'],['business.manual.minimum','最小值','最小值','Minimum value']].map(([key,cn,tw,en])=>[key!,cn!,tw!,en!,en!,en!,en!,en!,en!,en!,en!] as const),
  ...[['business.plan.noChanges','当前没有需要采用的改动，也没有新增资源。草案已保留，可以继续编辑。','目前沒有需要採用的改動，也沒有新增資源。草案已保留，可以繼續編輯。','There are no changes to apply or new resources. Your draft is kept and can be edited.'],['business.plan.allRejected','所有变更均已拒绝，且没有新增资源。可以调整逐项决定或继续编辑。','所有變更均已拒絕，且沒有新增資源。可以調整逐項決定或繼續編輯。','All changes were rejected and there are no new resources. Adjust the decisions or continue editing.'],['business.plan.resourcesOnly','页面、字段和现有员工职责没有变更；采用后可按方案准备新增资源。','頁面、欄位和現有員工職責沒有變更；採用後可按方案準備新增資源。','Pages, fields, and existing employee duties are unchanged. Apply the plan to prepare its new resources.']].map(([key,cn,tw,en])=>[key!,cn!,tw!,en!,en!,en!,en!,en!,en!,en!,en!] as const),
  ...[['business.manual.pauseRole','此员工在岗。如需调整职责，请先在员工页暂停，再采用草案。','此員工在崗。如需調整職責，請先在員工頁暫停，再採用草案。','This employee is active. Pause the employee in their profile before applying duty changes.']].map(([key,cn,tw,en])=>[key!,cn!,tw!,en!,en!,en!,en!,en!,en!,en!,en!] as const),
  ...[['business.plan.recoveryError','无法读取上次采用方案的本机记录。记录仍保留，请回到原业务会话核对执行结果；当前不会重新采用。','無法讀取上次採用方案的本機記錄。記錄仍保留，請回到原業務會話核對執行結果；目前不會重新採用。','The previous apply result could not be read. The local record is preserved. Check the original business conversation; the proposal will not be applied again automatically.']].map(([key,cn,tw,en])=>[key!,cn!,tw!,en!,en!,en!,en!,en!,en!,en!,en!] as const),
@@ -62,4 +63,14 @@ export const BUSINESS_BUILDER_MESSAGE_ROWS = [
   ['business.builder.restart','重新创建业务','重新建立業務','Start a new business'],
   ['business.builder.unconfigured','原预约指向尚无正式配置的旧业务，无法继续。重新创建会保留旧业务资料。','原預約指向尚無正式設定的舊業務，無法繼續。重新建立會保留舊業務資料。','This reservation points to a legacy business without a saved configuration. Start a new business; the old business data stays in place.'],
  ].map(([key,cn,tw,en])=>[key!,cn!,tw!,en!,en!,en!,en!,en!,en!,en!,en!] as const),
+ ['business.builder.previewStatus','草案预览状态','草案預覽狀態','Draft preview status'],
+ ['business.builder.preview.saved','草案预览已更新。请在预览面板查看字段与约束；尚未采用业务或授予连接权限。','草案預覽已更新。請在預覽面板查看欄位與限制；尚未採用業務或授予連接權限。','Draft preview updated. Review fields and constraints in the preview panel; the business has not been applied or connections authorized.'],
+ ['business.builder.preview.failed','这次预览未能完成。原草案已保留，请查看预览后调整说明。','這次預覽未能完成。原草案已保留，請查看預覽後調整說明。','Preview could not be completed. Your draft is preserved; review it before adjusting your request.'],
+ ['business.builder.preview.unknown','尚未确认预览保存结果。请刷新原草案核对，先不要重复发送。','尚未確認預覽儲存結果。請重新整理原草案核對，先不要重複傳送。','Preview save is unconfirmed. Refresh the original draft before sending again.'],
+ ['business.builder.preview.cancelled','预览生成已停止。请刷新查看保留的草案。','預覽產生已停止。請重新整理查看保留的草案。','Preview generation stopped. Refresh to review your preserved draft.'],
+ ['business.builder.preview.generating','正在生成草案预览…','正在產生草案預覽…','Generating draft preview…'],
+ ['business.builder.advanced','更多搭建选项','更多搭建選項','More setup options'],
+ ['business.builder.generationMode','生成方式','生成方式','Generation mode'],
+ ['business.builder.previewOnly','只生成草案预览','只產生草案預覽','Draft preview only'],
+ ['business.builder.assisted','完整搭建（操作仍需确认）','完整搭建（操作仍須確認）','Full setup (actions require confirmation)'],
 ] as const

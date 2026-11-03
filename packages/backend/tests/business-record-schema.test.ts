@@ -13,6 +13,10 @@ const base={format:'teloa.business-object-type/v2',id:'customer',version:'1.0.0'
 const definition=(value:unknown=base)=>readBusinessObjectTypeDefinitionVersioned(value)
 const full=(value:unknown=base)=>businessRecordSchemaFingerprint(definition(value))
 const write=(value:unknown=base)=>businessRecordImportWriteSchemaFingerprint(definition(value))
+test('数值整数与下限规则改变导入写入指纹，未声明字段顺序不影响摘要',()=>{
+ const field={name:'quantity',label:'数量',from:'数量',type:'number',required:true},plain={...base,fields:[basic,money,relation,field]}
+ for(const numeric of [{integer:true},{minimum:0},{integer:true,minimum:0}])assert.notEqual(write(plain),write({...plain,fields:[basic,money,relation,{...field,...numeric}]}))
+})
 
 test('完整定义指纹复用既有canonical正文且保留v1/v2差别',()=>{
  assert.equal(full(),createHash('sha256').update(businessDefinitionCanonicalBody(definition())).digest('hex'))

@@ -1,0 +1,19 @@
+{
+  "schema": "teloa.frozen-data-version-reader-fixture/v1",
+  "candidate": 135,
+  "sourceCommit": "c3f49b996fb72b42066b94988ab056e580bacd12",
+  "dataVersion": 9,
+  "manifestSha256": "5b3edfc7cf1515ee803aeba07e0c371952b9e9319442a589b872cbb95da34584",
+  "files": [
+    {
+      "path": "data-version.js.txt",
+      "bytes": 902,
+      "sha256": "aeb529b12d09d871fec1437db513e47d869d425f6e333fa9e8eba679627c8ddf"
+    },
+    {
+      "path": "data-version.json",
+      "bytes": 983,
+      "sha256": "10f81b798a5a5037a46dc241c69f6a9c4f17b4f0a77b14be5a47cea2fd4a3797"
+    }
+  ]
+}

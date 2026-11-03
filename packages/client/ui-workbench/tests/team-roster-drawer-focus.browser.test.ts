@@ -14,7 +14,7 @@ import {launchOptions,loadPlaywright} from './fixtures/load-playwright.mjs'
 const root=fileURLToPath(new URL('../../../../',import.meta.url)),client=fileURLToPath(new URL('../src/client/',import.meta.url))
 let browser:any,script:string,styles:string,temp:string
 const entry=`
-import tokens from '${client}theme-tokens.module.css';import React,{useState} from 'react';import {createRoot} from 'react-dom/client';import {TeamPage} from '${client}TeamPage.tsx';import {I18nProvider} from '${client}i18n/provider.tsx';import {translateMessage} from '${client}i18n/messages.ts';import {emptyTaskPreview} from '${client}task-preview.ts';import {emptyCollaboration} from '${client}collaboration-preview.ts';import {prototypeThemes} from '${client}../brand/prototype-theme.ts';
+import tokens from '${client}theme-tokens.module.css';import React,{useState} from 'react';import {createRoot} from 'react-dom/client';import {Link2} from 'lucide-react';import {TeamPage} from '${client}TeamPage.tsx';import {I18nProvider} from '${client}i18n/provider.tsx';import {translateMessage} from '${client}i18n/messages.ts';import {emptyTaskPreview} from '${client}task-preview.ts';import {emptyCollaboration} from '${client}collaboration-preview.ts';import {prototypeThemes} from '${client}../brand/prototype-theme.ts';
 for(const [key,value] of Object.entries(prototypeThemes.light))document.body.style.setProperty(key,value);
 document.body.className=tokens.tokens;
 const locale='zh-CN',snapshot={locale,dshLocale:'zh',revision:1},runtime={t:(key,params)=>translateMessage(locale,key,params),subscribe:()=>()=>{},getSnapshot:()=>snapshot};
@@ -26,8 +26,17 @@ const labels=[{scope:'general',title:'通用工作',kind:'builtin',loads:0,activ
 const noop=()=>{},noopNode=()=>null;
 function App(){
  const [selected,setSelected]=useState(null);
- return <main id="teloa-main" tabIndex={-1}><TeamPage visible work={{}} resourceApi={{directory:async()=>({resources:[]}),sources:async()=>[]}} conversations={noopNode}
-  state={{...emptyTaskPreview(),roles}} collaboration={emptyCollaboration()} scopeLabels={labels}
+ const [directory,setDirectory]=useState(null);
+ const readDirectory=async()=>{
+  setDirectory(current=>({...current,roles:current?.roles??[],known:current?.known??false,loading:true,error:undefined}));
+  try{const response=await fetch('http://127.0.0.1:31234/teloa/roles/list');if(!response.ok)throw Error('读取员工失败，请重试。');const rows=await response.json();setDirectory({roles:rows,known:true,loading:false,error:undefined})}
+  catch(error){setDirectory(current=>({...current,loading:false,error:error.message}))}
+ };
+ window.savedEmployeeRows=roles.map(role=>({...role,storage:'persistent'}));
+ window.enableSavedEmployeeDirectory=()=>setDirectory({roles:[],known:false,loading:false,error:undefined});
+ const persistence=directory?{directoryKnown:directory.known,loading:directory.loading,error:directory.error,load:readDirectory,pendingFields:()=>undefined,lifecycle:{pending:undefined,error:directory.error},assignmentPending:false}:undefined;
+ return <main id="teloa-main" tabIndex={-1}><TeamPage key={directory?'saved':'sandbox'} visible objectLinkActions={<button type="button" aria-label="复制链接" title="复制链接" onClick={()=>{window.employeeLinkClicks=(window.employeeLinkClicks??0)+1}}><Link2 size={17}/></button>} work={{}} resourceApi={{directory:async()=>({resources:[]}),sources:async()=>[]}} conversations={noopNode}
+  state={{...emptyTaskPreview(),roles:directory?.roles??roles}} persistence={persistence} collaboration={emptyCollaboration()} scopeLabels={labels}
   selected={selected} select={setSelected} change={noop} openTask={noop} openGroup={noop} resources={noop} nativeSettings={noop}
   capabilities={noopNode} plans={noopNode}/></main>
 }
@@ -70,6 +79,18 @@ test('名录打开档案抽屉后 Escape：抽屉关闭，焦点回到同一行�
  // 回到入口后按 Enter 能再次打开，证明焦点落在可用入口上而不是容器。
  await page.keyboard.press('Enter')
  await page.getByRole('dialog',{name:'原员工甲',exact:true}).waitFor()
+})
+
+test('员工链接在真实模态抽屉头部可正常点击，复制不关闭抽屉、不误点关闭按钮',async t=>{
+ const {page,entryButton}=await open(t)
+ await entryButton('原员工甲').click()
+ const dialog=page.getByRole('dialog',{name:'原员工甲',exact:true}),copy=dialog.getByRole('button',{name:'复制链接',exact:true})
+ await copy.click()
+ assert.equal(await page.evaluate(()=>((window as any).employeeLinkClicks)),1)
+ assert.equal(await dialog.isVisible(),true)
+ if(process.env.TELOA_NAV_ACCEPTANCE_DIR)await page.screenshot({path:join(process.env.TELOA_NAV_ACCEPTANCE_DIR,'employee-copy-inside-actual-drawer.png')})
+ await dialog.getByRole('button',{name:'关闭',exact:true}).click()
+ assert.equal(await page.locator('dialog[open]').count(),0)
 })
 
 test('档案抽屉里打开二级面板：第一次 Escape 只关二级并回到面板入口，第二次关档案并回到名录行',async t=>{
@@ -118,4 +139,111 @@ test('派活表单继续使用原生约束校验，不继承员工配置的产�
  assert.equal(await assignment.locator('form').evaluate((form:HTMLFormElement)=>form.noValidate),false)
  assert.equal(await assignment.locator('input[required]').count(),1)
  assert.equal(await assignment.locator('textarea[required]').count(),1)
+})
+
+test('真实员工目录首轮未就绪及挂起读取不报零人，失败后可用重试回到真实名单',async t=>{
+ const {page,entryButton}=await open(t)
+ await page.evaluate(()=>{(window as any).enableSavedEmployeeDirectory()})
+ await page.getByRole('status').getByText('正在读取员工…',{exact:true}).waitFor()
+ assert.equal(await page.getByText('尚未配置员工',{exact:true}).count(),0)
+ assert.equal(await page.getByText('0 位',{exact:true}).count(),0)
+ assert.equal(await page.getByText('还没有在岗员工',{exact:true}).count(),0)
+ let release!:(value:void)=>void
+ const held=new Promise<void>(resolve=>{release=resolve})
+ let reads=0
+ await page.route('http://127.0.0.1:31234/teloa/roles/list',async(route:any)=>{
+  reads++
+  if(reads===1){await held;await route.fulfill({status:503,headers:{'access-control-allow-origin':'*'},body:'unavailable'})}
+  else await route.fulfill({json:await page.evaluate(()=>((window as any).savedEmployeeRows)),headers:{'access-control-allow-origin':'*'}})
+ })
+ await page.getByRole('button',{name:'刷新已保存员工',exact:true}).click()
+ await page.getByRole('button',{name:'正在读取员工…',exact:true}).waitFor()
+ assert.equal(await page.locator('[data-teloa-entry]').count(),0)
+ assert.equal(await page.getByText('尚未配置员工',{exact:true}).count(),0)
+ if(process.env.TELOA_NAV_ACCEPTANCE_DIR)await page.screenshot({path:join(process.env.TELOA_NAV_ACCEPTANCE_DIR,'employee-directory-loading.png')})
+ release()
+ await page.getByRole('alert').getByText('读取员工失败，请重试。',{exact:true}).waitFor()
+ assert.equal(await page.getByText('尚未配置员工',{exact:true}).count(),0)
+ assert.equal(await page.getByText('0 位',{exact:true}).count(),0)
+ assert.equal(await page.getByText('还没有在岗员工',{exact:true}).count(),0)
+ if(process.env.TELOA_NAV_ACCEPTANCE_DIR)await page.screenshot({path:join(process.env.TELOA_NAV_ACCEPTANCE_DIR,'employee-directory-failed.png')})
+ await page.getByRole('button',{name:'重试',exact:true}).click()
+ await entryButton('原员工甲').waitFor()
+ await entryButton('原员工乙').waitFor()
+ assert.equal(reads,2)
+ assert.equal(await page.getByRole('alert').count(),0)
+ if(process.env.TELOA_NAV_ACCEPTANCE_DIR)await page.screenshot({path:join(process.env.TELOA_NAV_ACCEPTANCE_DIR,'employee-directory-recovered.png')})
+})
+
+test('成功读取的真实空目录才展示零人与未配置，不把初次未知当作空目录',async t=>{
+ const {page}=await open(t)
+ await page.evaluate(()=>{(window as any).enableSavedEmployeeDirectory()})
+ await page.getByRole('status').getByText('正在读取员工…',{exact:true}).waitFor()
+ await page.route('http://127.0.0.1:31234/teloa/roles/list',(route:any)=>route.fulfill({json:[],headers:{'access-control-allow-origin':'*'}}))
+ await page.getByRole('button',{name:'刷新已保存员工',exact:true}).click()
+ await page.getByText('尚未配置员工',{exact:true}).waitFor()
+ await page.getByText('还没有在岗员工',{exact:true}).waitFor()
+ await page.getByText('0 位',{exact:true}).waitFor()
+ assert.equal(await page.getByRole('status').count(),0)
+ if(process.env.TELOA_NAV_ACCEPTANCE_DIR)await page.screenshot({path:join(process.env.TELOA_NAV_ACCEPTANCE_DIR,'employee-directory-ready-empty.png')})
+})
+
+test('已有真实名单在刷新挂起及失败时保留人员与查询，正常重试不重置筛选',async t=>{
+ const {page,entryButton}=await open(t)
+ await page.evaluate(()=>{(window as any).enableSavedEmployeeDirectory()})
+ let reads=0,release!:(value:void)=>void
+ const held=new Promise<void>(resolve=>{release=resolve})
+ await page.route('http://127.0.0.1:31234/teloa/roles/list',async(route:any)=>{
+  reads++
+  if(reads===2){await held;await route.fulfill({status:503,headers:{'access-control-allow-origin':'*'},body:'unavailable'})}
+  else await route.fulfill({json:await page.evaluate(()=>((window as any).savedEmployeeRows)),headers:{'access-control-allow-origin':'*'}})
+ })
+ await page.getByRole('button',{name:'刷新已保存员工',exact:true}).click()
+ await entryButton('原员工乙').waitFor()
+ const search=page.getByRole('textbox',{name:'搜名字、岗位，或它擅长的事',exact:true})
+ await search.fill('原员工乙')
+ await page.getByRole('button',{name:'刷新已保存员工',exact:true}).click()
+ await page.getByRole('status').getByText('正在读取员工…',{exact:true}).waitFor()
+ assert.equal(await entryButton('原员工乙').isVisible(),true)
+ assert.equal(await entryButton('原员工甲').count(),0)
+ release()
+ await page.getByRole('alert').getByText('读取员工失败，请重试。',{exact:true}).waitFor()
+ assert.equal(await entryButton('原员工乙').isVisible(),true)
+ assert.equal(await search.inputValue(),'原员工乙')
+ if(process.env.TELOA_NAV_ACCEPTANCE_DIR)await page.screenshot({path:join(process.env.TELOA_NAV_ACCEPTANCE_DIR,'employee-directory-cached-failure-query.png')})
+ await page.getByRole('button',{name:'重试',exact:true}).click()
+ await page.getByRole('alert').waitFor({state:'hidden'})
+ assert.equal(await search.inputValue(),'原员工乙')
+ assert.equal(await entryButton('原员工乙').isVisible(),true)
+ assert.equal(await entryButton('原员工甲').count(),0)
+ assert.equal(reads,3)
+})
+
+test('非嵌入员工详情在目录刷新失败时保留可见错误，抽屉内重试恢复且不关闭详情',async t=>{
+ const {page,entryButton}=await open(t)
+ await page.evaluate(()=>{(window as any).enableSavedEmployeeDirectory()})
+ let reads=0,release!:(value:void)=>void
+ const held=new Promise<void>(resolve=>{release=resolve})
+ await page.route('http://127.0.0.1:31234/teloa/roles/list',async(route:any)=>{
+  reads++
+  if(reads===2){await held;await route.fulfill({status:503,headers:{'access-control-allow-origin':'*'},body:'unavailable'})}
+  else await route.fulfill({json:await page.evaluate(()=>((window as any).savedEmployeeRows)),headers:{'access-control-allow-origin':'*'}})
+ })
+ await page.getByRole('button',{name:'刷新已保存员工',exact:true}).click()
+ await entryButton('原员工乙').waitFor()
+ await page.getByRole('button',{name:'刷新已保存员工',exact:true}).click()
+ await entryButton('原员工乙').click()
+ const detail=page.getByRole('dialog',{name:'原员工乙',exact:true})
+ await detail.getByRole('status').getByText('正在读取员工…',{exact:true}).waitFor()
+ release()
+ await detail.getByRole('alert').getByText('读取员工失败，请重试。',{exact:true}).waitFor()
+ assert.equal(await detail.getByRole('alert').count(),1)
+ if(process.env.TELOA_NAV_ACCEPTANCE_DIR)await page.screenshot({path:join(process.env.TELOA_NAV_ACCEPTANCE_DIR,'employee-detail-directory-failed.png')})
+ await detail.getByRole('button',{name:'重试',exact:true}).click()
+ await detail.getByRole('alert').waitFor({state:'hidden'})
+ assert.equal(await detail.isVisible(),true)
+ assert.equal(reads,3)
+ await page.keyboard.press('Escape')
+ assert.equal(await entryButton('原员工乙').isVisible(),true)
+ assert.equal(await page.getByRole('alert').count(),0)
 })

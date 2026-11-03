@@ -12,9 +12,10 @@ import type {IndustryLoadService} from './industry-loads.ts'
 import type {IndustryRoleService} from './industry-roles.ts'
 import type {IndustryPlanService} from './industry-plans.ts'
 import {businessSetupConfigurationChanges,selectBusinessSetupConfiguration} from './business-setup-plan-selection.ts'
+import {businessSetupPortableCandidate} from './business-setup-local-resource.ts'
 
 type Candidate=BusinessConfigurationCandidate|BusinessConfigurationCandidateV2
-type Stored={descriptionChange?:{before:string;after:string};plan:BusinessSetupPlan;baseline:Candidate;candidate:Candidate;originalContentId:string;originalContentHash:string;roleNames:Record<string,string>;preview?:BusinessSetupPreview;target?:{kind:'existing';spaceId:string;expectedVersion:number};planInputs:Record<string,unknown>}
+type Stored={localOwnerConfiguration?:true;descriptionChange?:{before:string;after:string};plan:BusinessSetupPlan;baseline:Candidate;candidate:Candidate;originalContentId:string;originalContentHash:string;roleNames:Record<string,string>;preview?:BusinessSetupPreview;target?:{kind:'existing';spaceId:string;expectedVersion:number};planInputs:Record<string,unknown>}
 export type BusinessSetupReadiness={loadId:string;digest:string;rows:{itemInstanceId:string;kind:string;title:string;state:string;entry?:string|null}[]}
 export type BusinessSetupPlanPorts={
  drafts:Pick<BusinessConfigurationDraftService,'get'|'draftInTransaction'|'reviseInTransaction'|'upgradeFormatInTransaction'>
@@ -91,13 +92,13 @@ export class BusinessSetupPlanService{
   // 重用新草案编辑和固定请求回执；只恢复声明，不恢复岗位、连接或运行授权。
   return this.edit(actor,{requestId,draftId,expectedRevision:0,configurationRevision:r.configurationRevision,configurationHash:r.configurationHash,candidate,description:'本地配置版本 v'+version,roleEdits:[]})
  }
- private async inspect(content:MarketContent,scope:string,candidate:Candidate):Promise<BusinessSetupResource[]>{
+ private async inspect(content:MarketContent,scope:string,candidate:Candidate,localOwnerConfiguration=false):Promise<BusinessSetupResource[]>{
   const manifest=validateManifest(content.metadata)
   if(manifest.format!=='teloa.business-package/v4'||manifest.scope!==scope||content.references.length)throw fail('完整方案须使用当前业务范围的固定 v4 包，公共资源请先取得并核对固定版本正文。','teloa/invalid-input')
   const configs=manifest.resources.filter(r=>r.kind==='business-configuration')
   if(configs.length!==1)throw fail('完整方案须包含一份当前业务页面配置。','teloa/invalid-input')
   const configuration=readMarketBusinessConfigurationResource(content,configs[0]!.id).configuration
-  if(hash(configuration)!==hash(candidate))throw fail('方案页面与原搭建草案不一致，请先读取原草案并保存同一份配置。','teloa/version-conflict')
+  if(hash(configuration)!==hash(localOwnerConfiguration?businessSetupPortableCandidate(candidate):candidate))throw fail('方案页面与原搭建草案不一致，请先读取原草案并保存同一份配置。','teloa/version-conflict')
   const root=content.manifestPath.includes('/')?content.manifestPath.slice(0,content.manifestPath.lastIndexOf('/')+1):''
   const resources:BusinessSetupResource[]=[]
   for(const resource of manifest.resources){
@@ -145,7 +146,7 @@ export class BusinessSetupPlanService{
   const root=snapshot?.manifestPath.includes('/')?snapshot.manifestPath.slice(0,snapshot.manifestPath.lastIndexOf('/')+1):'',manifestPath=snapshot?.manifestPath??'teloa.json',resourcePath=root+config.source.path
   const files=snapshot?snapshot.files.map(f=>({path:f.path,text:new TextDecoder('utf-8',{fatal:true}).decode(f.bytes)})):[]
   const set=(path:string,text:string)=>{const found=files.find(f=>f.path===path);if(found)found.text=text;else files.push({path,text})}
-  set(manifestPath,JSON.stringify(manifest));set(resourcePath,JSON.stringify({format:'teloa.business-dashboard-resource/v1',id:config.id,version:config.version,configuration:candidate}))
+  set(manifestPath,JSON.stringify(manifest));set(resourcePath,JSON.stringify({format:'teloa.business-dashboard-resource/v1',id:config.id,version:config.version,configuration:businessSetupPortableCandidate(candidate)}))
   return this.reviseWithConfiguration(actor,{requestId,draftId,expectedRevision:r.expectedRevision,package:{manifestPath,files},roleEdits:r.roleEdits},{candidate,revision:configurationRevision,hash:r.configurationHash},{kind:'edit',specHash})
  }
  async revise(actor:BusinessConfigurationActor,input:unknown):Promise<BusinessSetupPlan>{return this.reviseWithConfiguration(actor,input)}
@@ -153,14 +154,25 @@ export class BusinessSetupPlanService{
   const r=taskInput(input,['requestId','draftId','expectedRevision','package','roleEdits']),requestId=id(r.requestId),draftId=id(r.draftId)
   if(!Number.isSafeInteger(r.expectedRevision)||Number(r.expectedRevision)<0||!Array.isArray(r.roleEdits)||r.roleEdits.length>100)throw fail('方案修订格式不正确。','teloa/invalid-input')
   const pkg=readBusinessSetupPackage(r.package),edits=r.roleEdits.map(readBusinessSetupRoleEdit)
-  const originalDraft=await this.ports.drafts.get(actor,{draftId})
+  let originalDraft=await this.ports.drafts.get(actor,{draftId})
+  const specHash=operation?.specHash??hash(r),requestKind=operation?.kind??'revise'
+  const recovered=await this.transaction(actor.ownerId,db=>this.prior<BusinessSetupPlan>(db,actor.ownerId,requestId,requestKind,specHash));if(recovered){await this.ports.drafts.get(actor,{draftId});return recovered}
+  // public revise 只能继承本人原方案的服务端标记；同时固定完整草案，避免 portable 投影掩盖来源并发变化。
+  const inherited=await this.transaction(actor.ownerId,async db=>{
+   const draft=await this.ports.drafts.draftInTransaction(db,actor,draftId),previous=await this.stored(db,actor,draftId)
+   if(draft.status!=='draft'||previous?.plan.state==='applied'||(previous?.plan.revision??0)!==r.expectedRevision)throw fail('方案已变化，请读取原稿。','teloa/version-conflict')
+   return {draft,localOwnerConfiguration:previous?.localOwnerConfiguration===true}
+  })
+  originalDraft=inherited.draft
+  const localOwnerConfiguration=configuration!==undefined||inherited.localOwnerConfiguration
+  const resourceCandidate=(candidate:Candidate)=>localOwnerConfiguration?businessSetupPortableCandidate(candidate):candidate
   const manifestFile=pkg.files.find(f=>f.path===pkg.manifestPath)!,rawManifest=JSON.parse(manifestFile.text)
   // 配置附入后才做完整包验证；纯页面或已有员工方案不需要虚构一个资源。
   if(rawManifest&&rawManifest.format==='teloa.business-package/v4'&&Array.isArray(rawManifest.resources)&&!rawManifest.resources.length){
    const resourceId='business-configuration',path='business-configuration.json',root=pkg.manifestPath.includes('/')?pkg.manifestPath.slice(0,pkg.manifestPath.lastIndexOf('/')+1):''
    if(pkg.files.some(f=>f.path===root+path))throw fail('配置资源保留路径已被占用。','teloa/invalid-input')
    rawManifest.resources.push({id:resourceId,kind:'business-configuration',title:originalDraft.candidate.title,version:'1.0.0',required:true,source:{kind:'local',path}})
-   pkg.files.push({path:root+path,text:JSON.stringify({format:'teloa.business-dashboard-resource/v1',id:resourceId,version:'1.0.0',configuration:configuration?.candidate??originalDraft.candidate})})
+   pkg.files.push({path:root+path,text:JSON.stringify({format:'teloa.business-dashboard-resource/v1',id:resourceId,version:'1.0.0',configuration:resourceCandidate(configuration?.candidate??originalDraft.candidate)})})
   }
   const manifest=validateManifest(rawManifest);manifestFile.text=JSON.stringify(manifest)
   if(!manifest.resources.some(resource=>resource.kind==='business-configuration')){
@@ -169,16 +181,15 @@ export class BusinessSetupPlanService{
    if(manifest.resources.some(resource=>resource.id===resourceId)||pkg.files.some(f=>f.path===root+path))throw fail('完整方案保留的页面资源标识已被占用。','teloa/invalid-input')
    manifest.resources.push({id:resourceId,kind:'business-configuration',title:originalDraft.candidate.title,version:'1.0.0',required:true,source:{kind:'local',path}})
    manifestFile.text=JSON.stringify(manifest)
-   pkg.files.push({path:root+path,text:JSON.stringify({format:'teloa.business-dashboard-resource/v1',id:resourceId,version:'1.0.0',configuration:originalDraft.candidate})})
+   pkg.files.push({path:root+path,text:JSON.stringify({format:'teloa.business-dashboard-resource/v1',id:resourceId,version:'1.0.0',configuration:resourceCandidate(originalDraft.candidate)})})
   }
   if(new Set(edits.map(e=>e.roleId)).size!==edits.length)throw fail('同一员工不能重复修改。','teloa/invalid-input')
-  const specHash=operation?.specHash??hash(r),requestKind=operation?.kind??'revise'
-  const recovered=await this.transaction(actor.ownerId,db=>this.prior<BusinessSetupPlan>(db,actor.ownerId,requestId,requestKind,specHash));if(recovered){await this.ports.drafts.get(actor,{draftId});return recovered}
   const imported=await this.ports.market.import({ownerId:actor.ownerId,kind:'human'},{kind:'industry-template',requestId:businessSetupRequestId(requestId,'content'),source:{kind:'upload',name:'业务搭建草案'},manifestPath:pkg.manifestPath,files:pkg.files.map(f=>({path:f.path,bytes:new TextEncoder().encode(f.text)})),references:[]})
   return this.transaction(actor.ownerId,async db=>{
    const prior=await this.prior<BusinessSetupPlan>(db,actor.ownerId,requestId,requestKind,specHash);if(prior)return prior
    let draft=await this.ports.drafts.draftInTransaction(db,actor,draftId);const previous=await this.stored(db,actor,draftId)
    if(draft.status!=='draft'||previous?.plan.state==='applied'||(previous?.plan.revision??0)!==r.expectedRevision)throw fail('方案已变化，请读取原稿。','teloa/version-conflict')
+   if(localOwnerConfiguration&&(draft.revision!==originalDraft.revision||draft.hash!==originalDraft.hash||(previous?.localOwnerConfiguration===true)!==inherited.localOwnerConfiguration))throw fail('本地完整候选或方案身份已变化，请读取原稿。','teloa/version-conflict')
    if(configuration){
     if(draft.revision!==configuration.revision||draft.hash!==configuration.hash)throw fail('原配置草案已变化。','teloa/version-conflict')
     if(draft.candidate.format!=='teloa.business-configuration/v2')draft=await this.ports.drafts.upgradeFormatInTransaction(db,actor,{requestId:businessSetupRequestId(requestId,'manual-upgrade'),draftId,expectedRevision:draft.revision})
@@ -186,12 +197,12 @@ export class BusinessSetupPlanService{
     draft=await this.ports.drafts.reviseInTransaction(db,actor,{requestId:businessSetupRequestId(requestId,'manual-configuration'),draftId,expectedRevision:draft.revision,patch:{title:candidate.title,upsertDefinitions:candidate.definitions,removeDefinitions:draft.candidate.definitions.filter(d=>!candidate.definitions.some(c=>c.kind===d.kind&&c.definition.id===d.definition.id)).map(d=>({kind:d.kind,localId:d.definition.id})),upsertPages:candidate.pages,removePageIds:draft.candidate.pages.filter(p=>!candidate.pages.some(c=>c.id===p.id)).map(p=>p.id),pageOrder:candidate.pages.map(p=>p.id),...(candidate.homePageId?{homePageId:candidate.homePageId}:{})}})
    }
    if(draft.candidate.format!=='teloa.business-configuration/v2')throw fail('请先在原搭建草案升级业务配置，再保存完整方案。','teloa/invalid-input')
-   const resources=await this.inspect(imported.content,draft.scope,draft.candidate),current=await new BusinessConfigurationStore(this.pool).currentInTransaction(db,actor.ownerId,draft.scope)
+   const resources=await this.inspect(imported.content,draft.scope,draft.candidate,localOwnerConfiguration),current=await new BusinessConfigurationStore(this.pool).currentInTransaction(db,actor.ownerId,draft.scope)
    const baseline=current?{...current.manifest,definitions:current.leaves.map(l=>({kind:l.kind,definition:JSON.parse(l.body)}))} as Candidate:{...draft.candidate,definitions:[],pages:[]};if(!current)delete baseline.homePageId
    const roleNames:Record<string,string>={}
    for(const edit of edits){const row=(await db.query('select * from teloa_roles where owner_id=$1 and id=$2',[actor.ownerId,edit.roleId])).rows[0];if(!row)throw fail('员工不存在或不属于当前本人。','teloa/forbidden');const role=readStoredRole(row);if(role.kind!=='employee'||!role.scopes.includes(draft.scope)||role.state==='retired')throw fail('只能调整当前业务的真实员工职责。','teloa/forbidden');if(role.version!==edit.expectedVersion)throw fail('员工版本已变化。','teloa/version-conflict');roleNames[role.id]=role.name}
    const manifest=validateManifest(imported.content.metadata),plan:BusinessSetupPlan={format:'teloa.business-setup-plan/v1',draftId,scope:draft.scope,revision:Number(r.expectedRevision)+1,configurationRevision:draft.revision,configurationHash:draft.hash,contentId:imported.content.id,contentHash:imported.content.hash,title:draft.candidate.title,description:manifest.description,resources,roleEdits:edits,roleNames,rejected:[],state:'draft',updatedAt:this.identity.now()}
-   await this.put(db,actor.ownerId,{plan,baseline,candidate:draft.candidate,originalContentId:plan.contentId,originalContentHash:plan.contentHash,roleNames,planInputs:{},...(configuration&&previous?{descriptionChange:{before:previous.descriptionChange?.before??previous.plan.description,after:manifest.description}}:{})})
+   await this.put(db,actor.ownerId,{plan,baseline,candidate:draft.candidate,originalContentId:plan.contentId,originalContentHash:plan.contentHash,roleNames,planInputs:{},...(localOwnerConfiguration?{localOwnerConfiguration:true as const}:{}),...(configuration&&previous?{descriptionChange:{before:previous.descriptionChange?.before??previous.plan.description,after:manifest.description}}:{})})
    await this.receipt(db,actor.ownerId,requestId,requestKind,specHash,plan);return plan
   })
  }
@@ -211,7 +222,7 @@ export class BusinessSetupPlanService{
    if(source.kind!=='local')throw fail('页面配置正文不可用。','teloa/source-unavailable')
    const root=content.manifestPath.includes('/')?content.manifestPath.slice(0,content.manifestPath.lastIndexOf('/')+1):'',resourcePath=root+source.path
    const description=body.descriptionChange&&(r.rejected as string[]).includes('business:description')?body.descriptionChange.before:manifest.description
-   return {description,planHash:hash(body.plan),manifestPath:content.manifestPath,files:content.files.map(file=>file.path===content.manifestPath?{path:file.path,bytes:new TextEncoder().encode(JSON.stringify({...manifest,description}))}:file.path===resourcePath?{path:file.path,bytes:new TextEncoder().encode(JSON.stringify({format:'teloa.business-dashboard-resource/v1',id:resource.id,version:resource.version,configuration:candidate}))}:{path:file.path,bytes:file.bytes})}
+   return {description,planHash:hash(body.plan),manifestPath:content.manifestPath,files:content.files.map(file=>file.path===content.manifestPath?{path:file.path,bytes:new TextEncoder().encode(JSON.stringify({...manifest,description}))}:file.path===resourcePath?{path:file.path,bytes:new TextEncoder().encode(JSON.stringify({format:'teloa.business-dashboard-resource/v1',id:resource.id,version:resource.version,configuration:body.localOwnerConfiguration?businessSetupPortableCandidate(candidate):candidate}))}:{path:file.path,bytes:file.bytes})}
   })
   // 仅固定静态内容，事务外复用市场导入，避免小连接池嵌套事务自锁。
   const selected=await this.ports.market.import({ownerId:actor.ownerId,kind:'human'},{kind:'industry-template',requestId:businessSetupRequestId(draftId,'selection-content:'+hash([prepared.planHash,r.rejected])),source:{kind:'upload',name:'已复核业务方案'},manifestPath:prepared.manifestPath,files:prepared.files,references:[]})

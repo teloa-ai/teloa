@@ -1,18 +1,18 @@
-import {readBusinessObjectTypeDefinition,readBusinessObjectTypeDefinitionV2,readBusinessRichFieldValue,readBusinessRecordCreate,readBusinessRecordEdit,readBusinessRecordArchive,readBusinessRecordGet,taskInput,parseBooleanValue,parseDurationSeconds,type BusinessRichFieldDefinition,type BusinessRichMoneyFieldDefinition,type BusinessObjectSnapshot,type BusinessObjectTypeDefinition as BusinessObjectTypeV1,type BusinessObjectTypeDefinitionV2,type BusinessRecordCreate,type BusinessRecordEdit,type BusinessRecordArchive} from '@teloa/contract'
+import {businessFieldValueText,type BusinessFieldValue,readBusinessObjectTypeDefinition,readBusinessObjectTypeDefinitionV2,readBusinessRichFieldValue,readBusinessRecordCreate,readBusinessRecordEdit,readBusinessRecordArchive,readBusinessRecordGet,taskInput,parseBooleanValue,parseDurationSeconds,parseBusinessNumberValue,type BusinessRichFieldDefinition,type BusinessRichMoneyFieldDefinition,type BusinessObjectSnapshot,type BusinessObjectTypeDefinition as BusinessObjectTypeV1,type BusinessObjectTypeDefinitionV2,type BusinessRecordCreate,type BusinessRecordEdit,type BusinessRecordArchive} from '@teloa/contract'
 import type {BusinessRecordApi} from './business-record-api.js'
+import {BusinessRecordDraftConflict,createBusinessRecordDrafts,businessRecordSchema as schema,type BusinessRecordDrafts} from './business-record-drafts.ts'
 type BusinessObjectTypeDefinition=BusinessObjectTypeV1|BusinessObjectTypeDefinitionV2
 export type BusinessRecordJournal={read:()=>string|null;write:(value:string)=>void;clear:()=>void}
 export type BusinessRecordCapabilities={create:boolean;edit:boolean;archive:boolean}
-export type BusinessRecordForm={kind:'create'|'edit'|'archive';title:string;summary:string;values:Record<string,string>;schema:string;definition:BusinessObjectTypeDefinition;base?:Pick<BusinessObjectSnapshot,'id'|'version'>}
+export type BusinessRecordForm={kind:'create'|'edit'|'archive';title:string;summary:string;values:Record<string,string>;originalValues?:Record<string,BusinessFieldValue>;schema:string;definition:BusinessObjectTypeDefinition;base?:Pick<BusinessObjectSnapshot,'id'|'version'>}
 type Mutation={kind:'create';input:BusinessRecordCreate}|{kind:'edit';input:BusinessRecordEdit}|{kind:'archive';input:BusinessRecordArchive}
-export type BusinessRecordPhase='idle'|'saving'|'unknown'|'retryable'|'conflict'|'schema-changed'|'error'|'saved'|'recovery-error'
-export type BusinessRecordState={phase:BusinessRecordPhase;form?:BusinessRecordForm|undefined;pending?:Mutation|undefined;errors:Record<string,string>;errorCode?:string|undefined;comparison?:BusinessObjectSnapshot|undefined;comparing:boolean;result?:BusinessObjectSnapshot|undefined}
+export type BusinessRecordPhase='idle'|'saving'|'unknown'|'retryable'|'conflict'|'draft-conflict'|'schema-changed'|'error'|'saved'|'recovery-error'
+export type BusinessRecordState={phase:BusinessRecordPhase;form?:BusinessRecordForm|undefined;pending?:Mutation|undefined;errors:Record<string,string>;errorCode?:string|undefined;draftError?:boolean|undefined;draftAlternatives?:BusinessRecordForm[]|undefined;comparison?:BusinessObjectSnapshot|undefined;comparing:boolean;result?:BusinessObjectSnapshot|undefined}
 const code=(error:unknown)=>error&&typeof error==='object'&&'code' in error?String(error.code):'teloa/transport-unknown'
-const schema=(d:BusinessObjectTypeDefinition)=>d.format==='teloa.business-object-type/v1'?JSON.stringify([d.domain,d.id,d.sourceId,d.fields.map(f=>[f.name,f.from,f.type,f.required,f.values??null,f.referenceType??null])]):JSON.stringify([d.format,d.domain,d.id,d.sourceId,d.fields.map(f=>'format'in f?[f.format,f.name,f.from,f.type,f.required,f.type==='money'?f.currencies:f.type==='multi-reference'?f.referenceType:f.values]:[f.name,f.from,f.type,f.required,f.values??null,f.referenceType??null]),...(d.constraints?[d.constraints.uniqueFields]:[])])
 const journalFormat=(d:BusinessObjectTypeDefinition)=>d.format==='teloa.business-object-type/v1'?'teloa.business-record-request/v1':'teloa.business-record-request/v2'
 const locked=(s:BusinessRecordState)=>s.phase==='saving'||s.phase==='unknown'||s.phase==='retryable'||s.phase==='recovery-error'
 export function businessRecordValues(definition:BusinessObjectTypeDefinition,snapshot:BusinessObjectSnapshot):Record<string,string>{
- return Object.fromEntries(definition.fields.map(field=>[field.name,snapshot.fields.find(item=>item.label===field.from)?.value??'']))
+ return Object.fromEntries(definition.fields.map(field=>[field.name,businessFieldValueText(snapshot.fields.find(item=>item.label===field.from)?.value)]))
 }
 export function businessRecordErrors(definition:BusinessObjectTypeDefinition,form:BusinessRecordForm):Record<string,string>{
  const errors:Record<string,string>={}
@@ -33,7 +33,7 @@ export function businessRecordErrors(definition:BusinessObjectTypeDefinition,for
    case 'enum':if(!field.values?.includes(value))errors[field.name]='invalid';break
    case 'boolean':if(parseBooleanValue(value)===undefined)errors[field.name]='invalid';break
    case 'duration':if(parseDurationSeconds(value)===undefined)errors[field.name]='invalid';break
-   case 'number':if(!/^[+-]?(?:\d+(?:\.\d+)?|\.\d+)(?:[eE][+-]?\d+)?$/.test(value)||!Number.isFinite(Number(value))||Math.abs(Number(value))>1e15)errors[field.name]='invalid';break
+   case 'number':if(parseBusinessNumberValue(value,field)===undefined)errors[field.name]='invalid';break
    case 'datetime':if(!Number.isFinite(Date.parse(value))||new Date(value).toISOString()!==value)errors[field.name]='invalid';break
   }
  }
@@ -45,10 +45,11 @@ export class BusinessRecordFlow{
  private readonly id:()=>string
  private readonly journal:((scope:string,type:string)=>BusinessRecordJournal)|undefined
  private readonly sessions=new Map<string,BusinessRecordSession>()
- constructor(api:BusinessRecordApi,id:()=>string=()=>crypto.randomUUID(),journal?:(scope:string,type:string)=>BusinessRecordJournal){this.api=api;this.id=id;this.journal=journal}
+ private readonly drafts:BusinessRecordDrafts
+ constructor(api:BusinessRecordApi,id:()=>string=()=>crypto.randomUUID(),journal?:(scope:string,type:string)=>BusinessRecordJournal,drafts:BusinessRecordDrafts=createBusinessRecordDrafts()){this.api=api;this.id=id;this.journal=journal;this.drafts=drafts}
  forTarget(scope:string,type:string):BusinessRecordSession{
   const key=JSON.stringify([scope,type]);let session=this.sessions.get(key)
-  if(!session){session=new BusinessRecordSession(this.api,this.id,scope,type,this.journal?.(scope,type));this.sessions.set(key,session)}
+  if(!session){session=new BusinessRecordSession(this.api,this.id,scope,type,this.journal?.(scope,type),this.drafts);this.sessions.set(key,session)}
   return session
  }
 }
@@ -56,34 +57,55 @@ export class BusinessRecordSession{
  readonly scope:string;readonly type:string
  private readonly api:BusinessRecordApi;private readonly id:()=>string
  private readonly journal:BusinessRecordJournal|undefined
+ private readonly drafts:BusinessRecordDrafts
+ private pendingDraft:string|undefined
+ private pendingRequestRaw:string|undefined
+ private currentRecord:BusinessObjectSnapshot|undefined
  private definition?:BusinessObjectTypeDefinition
  private capabilities:BusinessRecordCapabilities={create:false,edit:false,archive:false}
  private state:BusinessRecordState={phase:'idle',errors:{},comparing:false}
  private readonly listeners=new Set<()=>void>()
- constructor(api:BusinessRecordApi,id:()=>string,scope:string,type:string,journal?:BusinessRecordJournal){
-  this.api=api;this.id=id;this.scope=scope;this.type=type;this.journal=journal
+ constructor(api:BusinessRecordApi,id:()=>string,scope:string,type:string,journal?:BusinessRecordJournal,drafts:BusinessRecordDrafts=createBusinessRecordDrafts()){
+  this.api=api;this.id=id;this.scope=scope;this.type=type;this.journal=journal;this.drafts=drafts
   try{
    if(!journal)return
    const raw=journal.read();if(raw===null)return
-   if(raw.length>150000)throw Error()
-   const row=taskInput(JSON.parse(raw),['format','schema','definition','mutation'])
+   if(raw.length>500000)throw Error()
+   const row=taskInput(JSON.parse(raw),['format','schema','definition','mutation','draft'])
+   if(row.draft!==undefined&&(typeof row.draft!=='string'||row.draft.length>150000))throw Error()
+   this.pendingDraft=row.draft as string|undefined
    if(!['teloa.business-record-request/v1','teloa.business-record-request/v2'].includes(String(row.format))||typeof row.schema!=='string'||row.schema.length>50000)throw Error()
    const definition=row.format==='teloa.business-record-request/v2'?readBusinessObjectTypeDefinitionV2(row.definition):readBusinessObjectTypeDefinition(row.definition)
    if(schema(definition)!==row.schema||definition.domain!==scope||definition.id!==type)throw Error()
    const value=taskInput(row.mutation,['kind','input'])
    const pending:Mutation=value.kind==='create'?{kind:'create',input:readBusinessRecordCreate(value.input)}:value.kind==='edit'?{kind:'edit',input:readBusinessRecordEdit(value.input)}:value.kind==='archive'?{kind:'archive',input:readBusinessRecordArchive(value.input)}:(()=>{throw Error()})()
    if(pending.input.scope!==scope||pending.input.type!==type)throw Error()
-   const form:BusinessRecordForm={kind:pending.kind,title:'title'in pending.input?pending.input.title??'':'',summary:'summary'in pending.input?pending.input.summary??'':'',definition,values:'fields'in pending.input?Object.fromEntries(pending.input.fields.map(f=>[f.name,f.value])):{},schema:row.schema,...(pending.kind==='create'?{}:{base:{id:pending.input.id,version:pending.input.expectedVersion}})}
-   this.state={...this.state,phase:'unknown',pending,form}
+   const form:BusinessRecordForm={kind:pending.kind,title:'title'in pending.input?pending.input.title??'':'',summary:'summary'in pending.input?pending.input.summary??'':'',definition,values:'fields'in pending.input?Object.fromEntries(pending.input.fields.map(f=>[f.name,businessFieldValueText(f.value)])):{},schema:row.schema,...('fields'in pending.input?{originalValues:Object.fromEntries(pending.input.fields.map(f=>[f.name,f.value]))}:{}),...(pending.kind==='create'?{}:{base:{id:pending.input.id,version:pending.input.expectedVersion}})}
+   this.state={...this.state,phase:'unknown',pending,form};this.pendingRequestRaw=raw
   }catch{this.state={...this.state,phase:'recovery-error',errorCode:'teloa/recovery-storage-unavailable'}}
  }
  getSnapshot=()=>this.state
  subscribe=(listener:()=>void)=>{this.listeners.add(listener);return ()=>{this.listeners.delete(listener)}}
  private update(patch:Partial<BusinessRecordState>){this.state={...this.state,...patch};for(const listener of this.listeners)listener()}
+ private keepDraft(form:BusinessRecordForm,resolve=false){
+  try{const raw=this.drafts[resolve?'resolve':'write'](this.scope,this.type,form);this.update({form,draftError:false,draftAlternatives:undefined});return raw}
+  catch(error){if(error instanceof BusinessRecordDraftConflict)this.update({form,phase:'draft-conflict',draftAlternatives:error.forms,draftError:false});else this.update({form,draftError:true});return undefined}
+ }
+ private persistRequest(mutation:Mutation){
+  const form=this.state.form!,raw=JSON.stringify({format:journalFormat(form.definition),schema:form.schema,definition:form.definition,mutation,...(this.pendingDraft===undefined?{}:{draft:this.pendingDraft})})
+  if(raw.length>500000)throw Error('记录恢复意图过大。')
+  const current=this.journal?.read()
+  if(current&&current!==this.pendingRequestRaw)throw Error('已有另一条记录的保存结果需要核对。')
+  this.pendingRequestRaw=raw;this.journal?.write(raw)
+ }
+ private clearRequest(){
+  if(this.journal?.read()===this.pendingRequestRaw)this.journal?.clear()
+  this.pendingRequestRaw=undefined
+ }
  configure(definition:BusinessObjectTypeDefinition,capabilities:BusinessRecordCapabilities){
   if(definition.domain!==this.scope||definition.id!==this.type)throw Error('记录页面范围不一致。')
   this.definition=definition;this.capabilities=capabilities
-  if(this.state.form&&this.state.form.schema!==schema(definition)&&!locked(this.state)&&this.state.phase!=='schema-changed')this.update({phase:'schema-changed'})
+  if(this.state.form&&this.state.form.schema!==schema(definition)&&!locked(this.state)&&this.state.phase!=='schema-changed'&&this.state.phase!=='draft-conflict')this.update({phase:'schema-changed'})
  }
  private allowed(kind:BusinessRecordForm['kind']){
   if(!this.definition||!this.capabilities[kind])throw Error('记录只读或没有此操作权限。')
@@ -94,26 +116,48 @@ export class BusinessRecordSession{
   if(locked(this.state))throw Error('操作在途或结果未知，请先核对。')
   const d=this.allowed(kind)
   if(base&&(base.scope!==this.scope||base.type!==this.type||base.deletedAt))throw Error('该记录不允许修改。')
-  this.update({form:{kind,title:base?.title??'',summary:base?.summary??'',values:base?businessRecordValues(d,base):{},schema:schema(d),definition:d,...(base?{base}:{})},phase:'idle',errors:{},errorCode:undefined,pending:undefined,comparison:undefined,result:undefined})
+  let form:BusinessRecordForm={kind,title:base?.title??'',summary:base?.summary??'',values:base?businessRecordValues(d,base):{},schema:schema(d),definition:d,...(base?{base,originalValues:Object.fromEntries(d.fields.flatMap(f=>{const value=base.fields.find(row=>row.label===f.from)?.value;return value===undefined?[]:[[f.name,value]]}))}:{})}
+  this.currentRecord=base
+  let draftError=false,draftAlternatives:BusinessRecordForm[]|undefined
+  if(kind!=='archive')try{form=this.drafts.read(this.scope,this.type,form)??form}catch(error){if(error instanceof BusinessRecordDraftConflict){draftAlternatives=error.forms;form=error.forms[0]??form}else draftError=true}
+  const changedSchema=form.schema!==schema(d),changedVersion=!!base&&form.base?.version!==base.version
+  this.update({form,phase:draftAlternatives?'draft-conflict':changedSchema?'schema-changed':changedVersion?'conflict':'idle',errors:{},errorCode:undefined,pending:undefined,comparison:changedVersion?base:undefined,result:undefined,draftError,draftAlternatives})
+  if(kind!=='archive'&&!draftAlternatives&&!changedSchema)this.keepDraft(form)
  }
  create(){this.start('create')}
  edit(base:BusinessObjectSnapshot){this.start('edit',base)}
  archive(base:BusinessObjectSnapshot){this.start('archive',base)}
  change(field:string,value:string){
   if(locked(this.state))throw Error('操作在途或结果未知，不能修改原请求。')
-  if(this.state.phase==='conflict'||this.state.phase==='schema-changed')throw Error('请先核对版本或重新打开表单，原稿已冻结。')
+  if(this.state.phase==='conflict'||this.state.phase==='draft-conflict'||this.state.phase==='schema-changed')throw Error('请先核对版本或重新打开表单，原稿已冻结。')
   const form=this.state.form;if(!form)return
-  this.update({form:field==='title'||field==='summary'?{...form,[field]:value}:{...form,values:{...form.values,[field]:value}},errors:{...this.state.errors,[field==='title'||field==='summary'?'$'+field:field]:''}})
+  this.update({errors:{...this.state.errors,[field==='title'||field==='summary'?'$'+field:field]:''}})
+  this.keepDraft(field==='title'||field==='summary'?{...form,[field]:value}:{...form,values:{...form.values,[field]:value}})
  }
  changeField(field:string,value:string){
   if(locked(this.state))throw Error('操作在途或结果未知，不能修改原请求。')
-  if(this.state.phase==='conflict'||this.state.phase==='schema-changed')throw Error('请先核对版本或重新打开表单，原稿已冻结。')
+  if(this.state.phase==='conflict'||this.state.phase==='draft-conflict'||this.state.phase==='schema-changed')throw Error('请先核对版本或重新打开表单，原稿已冻结。')
   const form=this.state.form;if(!form)return
-  this.update({form:{...form,values:{...form.values,[field]:value}},errors:{...this.state.errors,[field]:''}})
+  this.update({errors:{...this.state.errors,[field]:''}});this.keepDraft({...form,values:{...form.values,[field]:value}})
  }
- cancel(){if(locked(this.state))throw Error('操作在途或结果未知，请先核对。');this.update({form:undefined,pending:undefined,phase:'idle',errors:{},comparison:undefined,errorCode:undefined})}
+ cancel(){if(locked(this.state))throw Error('操作在途或结果未知，请先核对。');this.update({form:undefined,pending:undefined,phase:'idle',errors:{},comparison:undefined,errorCode:undefined,draftAlternatives:undefined})}
+ chooseDraft(index:number){
+  if(this.state.phase!=='draft-conflict'||!Number.isInteger(index))return
+  const form=this.state.draftAlternatives?.[index];if(!form)return
+  const d=this.allowed(form.kind)
+  this.update({phase:form.schema!==schema(d)?'schema-changed':this.currentRecord&&form.base?.version!==this.currentRecord.version?'conflict':'idle',comparison:this.currentRecord&&form.base?.version!==this.currentRecord.version?this.currentRecord:undefined})
+  this.keepDraft(form,true)
+ }
+ reopenWithCurrentDefinition(){
+  const form=this.state.form;if(this.state.phase!=='schema-changed'||!form||this.state.pending)return
+  const definition=this.allowed(form.kind),values:Record<string,string>=this.currentRecord?businessRecordValues(definition,this.currentRecord):{},originalValues:Record<string,BusinessFieldValue>=this.currentRecord?Object.fromEntries(definition.fields.flatMap(field=>{const value=this.currentRecord!.fields.find(item=>item.label===field.from)?.value;return value===undefined?[]:[[field.name,value]]})):{}
+  for(const field of definition.fields){const old=form.definition.fields.find(item=>item.name===field.name&&item.from===field.from&&item.type===field.type&&('format'in item?item.format:undefined)===('format'in field?field.format:undefined));if(old){if(form.values[field.name]!==undefined)values[field.name]=form.values[field.name]!;if(form.originalValues?.[field.name]!==undefined)originalValues[field.name]=form.originalValues[field.name]!}}
+  const next={...form,definition,schema:schema(definition),values,originalValues}
+  this.update({phase:this.currentRecord&&form.base?.version!==this.currentRecord.version?'conflict':'idle',errors:{},errorCode:undefined})
+  this.keepDraft(next,true)
+ }
  async save(){
-  if(this.state.phase==='recovery-error'||locked(this.state)||this.state.phase==='conflict'||this.state.phase==='schema-changed'||!this.state.form)return
+  if(this.state.phase==='recovery-error'||locked(this.state)||this.state.phase==='conflict'||this.state.phase==='draft-conflict'||this.state.phase==='schema-changed'||!this.state.form)return
   const form=this.state.form
   let d:BusinessObjectTypeDefinition
   try{d=this.allowed(form.kind)}catch{this.update({phase:'error',errorCode:'teloa/forbidden'});return}
@@ -121,7 +165,12 @@ export class BusinessRecordSession{
   const errors=form.kind==='archive'?{}:businessRecordErrors(d,form)
   if(Object.keys(errors).length){this.update({errors});return}
   const requestId=this.id(),target={scope:this.scope,type:this.type,requestId}
-  const fields=d.fields.map(f=>({name:f.name,value:'format'in f?(form.values[f.name]??''):(form.values[f.name]??'').trim()}))
+  const fields=d.fields.map(f=>{
+   const raw='format'in f?(form.values[f.name]??''):(form.values[f.name]??'').trim(),original=form.originalValues?.[f.name]
+   // 未改字段保持原标量与历史字符串；只把本次明确输入按当前声明编码。
+   const value:BusinessFieldValue=original!==undefined&&raw===businessFieldValueText(original)?original:'format'in f||raw===''?raw:f.type==='boolean'?(parseBooleanValue(raw)??raw):f.type==='number'?(parseBusinessNumberValue(raw,f)??raw):raw
+   return {name:f.name,value}
+  })
   const mutation:Mutation=form.kind==='create'?{kind:'create',input:{...target,title:form.title.trim(),summary:form.summary.trim(),fields}}:form.kind==='edit'?{kind:'edit',input:{...target,id:form.base!.id,expectedVersion:form.base!.version,title:form.title.trim(),summary:form.summary.trim(),fields}}:{kind:'archive',input:{...target,id:form.base!.id,expectedVersion:form.base!.version}}
   await this.send(mutation)
  }
@@ -137,11 +186,14 @@ export class BusinessRecordSession{
     !expected||expected.length!==result.fields.length||expected.some(field=>result.fields.filter(actual=>actual.label===field.label&&actual.value===field.value).length!==1))
     throw Object.assign(Error('回执正文与原操作不一致。'),{code:'teloa/invalid-host-response'})
   }
-  this.journal?.clear()
+  this.drafts.clearMatching(this.scope,this.type,this.state.form!,this.pendingDraft)
+  this.clearRequest();this.pendingDraft=undefined
   this.update({phase:'saved',result,form:undefined,pending:undefined,errorCode:undefined,errors:{},comparison:undefined})
  }
  private async send(mutation:Mutation){
-  try{this.journal?.write(JSON.stringify({format:journalFormat(this.state.form!.definition),schema:this.state.form!.schema,definition:this.state.form!.definition,mutation}))}
+  if(!this.state.pending)this.pendingDraft=this.state.form!.kind==='archive'?undefined:this.keepDraft(this.state.form!)
+  if(this.state.phase==='draft-conflict')return
+  try{this.persistRequest(mutation)}
   catch{this.update({phase:'recovery-error',pending:mutation,errorCode:'teloa/recovery-storage-unavailable'});return}
   this.update({phase:'saving',pending:mutation,errorCode:undefined})
   try{
@@ -151,10 +203,10 @@ export class BusinessRecordSession{
    const errorCode=code(error)
    const details=error&&typeof error==='object'&&'details'in error?error.details as {field?:unknown;reason?:unknown}:undefined
    if(errorCode==='teloa/version-conflict'){
-    try{this.journal?.clear()}catch{this.update({phase:'unknown',errorCode:'teloa/recovery-storage-unavailable'});return}
+    try{this.clearRequest()}catch{this.update({phase:'unknown',errorCode:'teloa/recovery-storage-unavailable'});return}
     this.update({phase:'conflict',pending:undefined,errorCode});return}
    if(['teloa/invalid-input','teloa/forbidden','teloa/not-found'].includes(errorCode)||errorCode==='teloa/conflict'&&details?.reason==='unique-field'){
-    try{this.journal?.clear()}catch{this.update({phase:'unknown',errorCode:'teloa/recovery-storage-unavailable'});return}
+    try{this.clearRequest()}catch{this.update({phase:'unknown',errorCode:'teloa/recovery-storage-unavailable'});return}
     const field=details?.field
     this.update({phase:'error',pending:undefined,errorCode,errors:typeof field==='string'?{[field]:details?.reason==='unique-field'?'unique':'invalid'}:{}});return
    }
@@ -164,7 +216,7 @@ export class BusinessRecordSession{
  async recover(){
   const pending=this.state.pending;if(!pending||this.state.phase==='saving')return
   if(this.state.phase==='recovery-error'){
-   try{this.journal?.write(JSON.stringify({format:journalFormat(this.state.form!.definition),schema:this.state.form!.schema,definition:this.state.form!.definition,mutation:pending}))}catch{return}
+   try{this.persistRequest(pending)}catch{return}
   }
   this.update({phase:'saving',errorCode:undefined})
   try{
@@ -197,7 +249,7 @@ export class BusinessRecordSession{
   const {form,comparison}=this.state
   if(!form||!comparison||comparison.deletedAt||locked(this.state))return
   if(!this.definition||form.schema!==schema(this.definition)){this.update({phase:'schema-changed'});return}
-  this.update({form:{...form,base:comparison},phase:'idle',comparison:undefined,errorCode:undefined})
+  this.update({phase:'idle',comparison:undefined,errorCode:undefined});this.keepDraft({...form,base:comparison})
  }
 }
 

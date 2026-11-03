@@ -12,6 +12,7 @@ export function businessRecordSchemaFingerprint(definition:Definition):string{re
 export function businessRecordImportWriteSchemaFingerprint(definition:Definition):string{
  const fields=[...definition.fields].sort((a,b)=>a.name<b.name?-1:a.name>b.name?1:0).map(field=>({
   ...('format' in field?{format:field.format}:{}),name:field.name,from:field.from,type:field.type,required:field.required,
+  ...('integer' in field?{integer:field.integer}:{}),...('minimum' in field?{minimum:field.minimum}:{}),...('decimalScale' in field?{decimalScale:field.decimalScale}:{}),
   ...('values' in field?{values:field.values}:{}),...('currencies' in field?{currencies:field.currencies}:{}),...('referenceType' in field?{referenceType:field.referenceType}:{})
  }))
  const uniqueFields='constraints' in definition?[...(definition.constraints?.uniqueFields??[])].sort():[]

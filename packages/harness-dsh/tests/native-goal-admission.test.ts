@@ -87,6 +87,9 @@ test('真实持久 Inbox 已受理但 confirm 回包失败，可补确认原seq�
  const input=createNativeWorkInput(f.ctx,new WorkAccess()),adapter=createTaskRunGoal(f.ctx,service,'owner',{nativeInput:input,hostGeneration:()=>1});t.after(()=>{adapter.close();input.close()})
  const message=createUserMessage({source:{kind:'goal',goalId:g.id,revision:g.revision,round:1} as any,content:[{type:'text',text:'只允许原请求一次'}]}),candidate={agent:f.agent,message,goal:{id:g.id,revision:g.revision},round:1}
  await assert.rejects(adapter.admit(candidate,()=>f.agent.followup(message)),/lost confirmation/);assert.equal(receipt.state,'unknown')
+ const readOnly=await adapter.readOnlyObservation(run)
+ assert.equal(readOnly!.continuations[0]!.state,'unknown','审批目录读取不能替原 Goal 补确认')
+ assert.equal(confirmCalls,1,'只读观察不得触发 confirm 或重发')
  const observed=await adapter.observation(run);assert.equal(observed!.continuations[0]!.state,'accepted');assert.equal(confirmCalls,2)
  assert.equal(f.agent.session.snapshotEvents().filter(event=>event.type==='agent/inbox/spliced'&&event.data.inserted.some(item=>item.id===message.id)).length,1)
  receipt={...receipt,state:'unknown',acceptedSeq:null,payloadSha256:'0'.repeat(64)};await assert.rejects(adapter.observation(run),{code:'teloa/storage-corrupt'});assert.equal(confirmCalls,2)

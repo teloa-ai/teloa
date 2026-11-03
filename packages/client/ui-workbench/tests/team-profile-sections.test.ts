@@ -81,7 +81,7 @@ test('默认工作页签不混入能力编辑器，记忆日志和权限仍有�
  const html=render(baseRole({storage:'persistent'}),{editing:false})
  assert.match(html,/id="employee-detail-panel-work"[^>]*role="tabpanel"/)
  assert.match(html,/id="employee-detail-panel-capabilities"[^>]*hidden=""/)
- for(const label of ['它记得的事','工作日志','委托与工具授权','员工管理'])assert.ok(html.includes(label),label)
+ for(const label of ['它记得的事','工作日志','权限','员工管理'])assert.ok(html.includes(label),label)
  assert.equal((html.match(/role="tablist"/g)??[]).length,1)
 })
 

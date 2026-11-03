@@ -9,8 +9,42 @@ concurrency:
   group: community-${{ github.ref }}
   cancel-in-progress: true
 jobs:
-  check:
+  tests:
+    name: ${{ matrix.name }}
     runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: checks
+            suite: checks
+          - name: bindings 1/4
+            suite: bindings
+            shard: 1
+          - name: bindings 2/4
+            suite: bindings
+            shard: 2
+          - name: bindings 3/4
+            suite: bindings
+            shard: 3
+          - name: bindings 4/4
+            suite: bindings
+            shard: 4
+          - name: native 1/4
+            suite: native
+            shard: 1
+          - name: native 2/4
+            suite: native
+            shard: 2
+          - name: native 3/4
+            suite: native
+            shard: 3
+          - name: native 4/4
+            suite: native
+            shard: 4
+          - name: work
+            suite: work
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
@@ -25,20 +59,70 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
       - run: pnpm check:client
+        if: matrix.suite == 'checks'
       - run: pnpm check:dsh
+        if: matrix.suite == 'checks'
       - run: pnpm typecheck
+        if: matrix.suite == 'checks'
         env:
           NODE_OPTIONS: --max-old-space-size=4096
       - run: pnpm test:contract
+        if: matrix.suite == 'checks'
       - run: pnpm test:sdk
-      - run: pnpm test:bindings
+        if: matrix.suite == 'checks'
+      - name: Install locked Playwright WebKit and Firefox
+        if: matrix.suite == 'bindings'
+        run: |
+          node --input-type=module <<'JS'
+          import {readdirSync} from 'node:fs'
+          import {createRequire} from 'node:module'
+          import {dirname,resolve} from 'node:path'
+          import {spawnSync} from 'node:child_process'
+          const require=createRequire(resolve('package.json'))
+          const name=process.env.TELOA_TEST_PLAYWRIGHT??'playwright'
+          let manifest
+          try{manifest=require.resolve(name+'/package.json')}catch{
+            const store=resolve('node_modules/.pnpm')
+            const installed=readdirSync(store).find(entry=>entry.startsWith('playwright@'))
+            if(!installed)throw Error('The current worktree has no locked Playwright installation.')
+            manifest=resolve(store,installed,'node_modules/playwright/package.json')
+          }
+          const result=spawnSync(process.execPath,[resolve(dirname(manifest),'cli.js'),'install','--with-deps','webkit','firefox'],{stdio:'inherit'})
+          if(result.error)throw result.error
+          if(result.status!==0)process.exit(result.status??1)
+          JS
+      - name: Run bindings shard ${{ matrix.shard }}/4
+        if: matrix.suite == 'bindings'
+        timeout-minutes: 25
+        run: node --test --test-shard=${{ matrix.shard }}/4 --test-concurrency=2 --test-timeout=180000 packages/client/ui-workbench/tests/*.test.ts packages/client/ui-workbench/tests/*.test.mjs
       - name: Configure Docker socket for isolated tests
+        if: matrix.suite != 'bindings'
         run: |
           mkdir -p "$HOME/.orbstack/run"
           ln -sf /var/run/docker.sock "$HOME/.orbstack/run/docker.sock"
       - run: pnpm setup:dsh
+        if: matrix.suite != 'bindings'
       - run: pnpm test:repo
+        if: matrix.suite == 'checks'
       - run: pnpm test:references
+        if: matrix.suite == 'checks'
       - run: pnpm test:extensions
+        if: matrix.suite == 'checks'
+      - run: pnpm test:runtime-packages
+        if: matrix.suite == 'checks'
       - run: pnpm test:native
+        if: matrix.suite == 'native'
+        env:
+          NODE_OPTIONS: --test-shard=${{ matrix.shard }}/4
       - run: pnpm test:work
+        if: matrix.suite == 'work'
+  check:
+    needs: tests
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Require all test jobs to succeed
+        env:
+          TESTS_RESULT: ${{ needs.tests.result }}
+        run: test "$TESTS_RESULT" = success

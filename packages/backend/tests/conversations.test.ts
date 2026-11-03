@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { mkdtemp, writeFile, readFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { ConversationService, FileConversationRepository } from '../src/work/conversations.ts'
+import { ConversationService, FileConversationRepository, type StoredConversation } from '../src/work/conversations.ts'
 
 const owner='local:teloa-owner'
 const request={requestId:'12345678-1234-4234-8234-123456789012',title:'通用资料整理'}
@@ -192,4 +192,30 @@ test('只读已落盘快照不进入create串行队列，并复用身份与ready
  }finally{release();await creating}
  await service.adopt(owner,{sessionId:'native-snapshot',requestId:'22345678-1234-4234-8234-123456789012',title:'已入目录'})
  assert.equal((await service.snapshotBySession(owner,'native-snapshot')).title,'已入目录')
+})
+
+
+test('历史运行 CID 不在当前目录时仍可本人只读定位；SID 兼容且不改变存储或调用宿主',async()=>{
+ const f=await fixture(),taskId='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',roleId='bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'
+ const history={id:'history-cid',ownerId:owner,title:'原失败运行',scopeIds:['general' as const],version:1,status:'ready' as const,sessionId:'task-run-history',requestedSessionId:'task-run-history',createdAt:f.identity.now(),requestId:request.requestId,purpose:'task-run' as const,run:{taskId,taskVersion:2,roleId,roleVersion:1,agentPresetId:'teloa-standard'},requestedRoleId:roleId} satisfies StoredConversation
+ const latest={...history,id:'latest-cid',sessionId:'task-run-latest',requestedSessionId:'task-run-latest',requestId:'22345678-1234-4234-8234-123456789012',run:{...history.run,taskVersion:11}}
+ await f.repository.write([history,latest]);const before=await readFile(f.path,'utf8')
+ const host={create:async()=>{throw Error('精确读取不能创建原生会话')},inspect:async()=>{throw Error('CID 元数据读取不能激活宿主')}}
+ const service=new ConversationService(f.repository,host,f.identity,undefined,async()=>[latest],async()=>({items:[latest]}))
+ assert.deepEqual((await service.listPage(owner,{limit:16},true)).items.map(row=>row.id),[latest.id])
+ const result=await service.read(owner,{conversationId:history.id})
+ const {requestedRoleId,...publicHistory}=history;assert.equal(requestedRoleId,roleId)
+ assert.deepEqual(result,publicHistory);assert.deepEqual(await service.read(owner,{sessionId:history.sessionId}),publicHistory)
+ assert.equal(await readFile(f.path,'utf8'),before);assert.equal(f.created.length,0)
+})
+
+test('CID 读取互斥选择器、未知或未就绪记录拒绝，其他本人不可借 CID 查看历史',async()=>{
+ const f=await fixture(),ready=await f.service.create(owner,request);const before=await readFile(f.path,'utf8')
+ for(const input of [{},{conversationId:ready.id,sessionId:ready.sessionId},{conversationId:ready.id,sessionId:undefined},{conversationId:'../other'},{conversationId:ready.id,scopeIds:['other']}])await assert.rejects(f.service.read(owner,input),{code:'teloa/invalid-input'})
+ await assert.rejects(f.service.read('another-owner',{conversationId:ready.id}),{code:'teloa/forbidden'})
+ await assert.rejects(f.service.read(owner,{conversationId:'missing-cid'}),{code:'teloa/not-bound'})
+ assert.equal(await readFile(f.path,'utf8'),before)
+ await f.repository.write([{...ready,status:'pending'}])
+ await assert.rejects(f.service.read(owner,{conversationId:ready.id}),{code:'teloa/binding-pending'})
+ await assert.rejects(f.service.read('another-owner',{conversationId:ready.id}),{code:'teloa/forbidden'})
 })

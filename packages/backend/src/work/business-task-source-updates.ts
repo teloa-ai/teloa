@@ -1,3 +1,4 @@
+import {taskRunTerminalStates} from '@teloa/contract'
 import type {Pool,PoolClient} from 'pg'
 import {WorkError,businessObjectReference,type BusinessObjectReference,type WorkEventV2} from '@teloa/contract'
 import {businessObjectSnapshotHash,readBusinessObjectSnapshot,type BusinessObjectSnapshot} from './business-data.ts'
@@ -8,7 +9,7 @@ export type BusinessTaskSourceUpdateState='pending'|'continued'|'accepted'|'need
 export type BusinessTaskSourceUpdate={id:string;ownerId:string;taskId:string;planId:string;eventId:string;reference:BusinessObjectReference;state:BusinessTaskSourceUpdateState;taskVersion:number|null;runId:string|null;reason:string|null;createdAt:string;updatedAt:string}
 const ownerId=(value:string):void=>{if(typeof value!=='string'||!value.trim()||value.length>128)throw new WorkError('teloa/forbidden','需要有效的本人身份。')}
 const corrupt=()=>new WorkError('teloa/storage-corrupt','业务来源更新账本损坏，已停止读取。')
-const settledRun=['ended','withdrawn','configuration_failed']
+const settledRun=taskRunTerminalStates
 /** 续办可继续的任务状态：已完成/已取消的任务不自动复活（needs-user）；本人暂停的任务保持排队，不改为 ready。 */
 const continuable=['waiting','blocked','ready']
 
@@ -135,6 +136,7 @@ export class BusinessTaskSourceUpdateService{
     left join teloa_roles r on r.owner_id=t.owner_id and r.id=t.assignee_role_id where t.owner_id=$1 and t.id=$2 for update of t`,[owner,row.task_id])).rows[0]
    if(!task)return settle('rejected','teloa/forbidden')
    const latest=(await db.query('select state from teloa_task_runs where owner_id=$1 and task_id=$2 order by created_at desc,id desc limit 1',[owner,row.task_id])).rows[0]
+   if(latest?.state==='submission_unknown')return settle('needs-user','teloa/submission-unknown')
    if(latest&&!settledRun.includes(String(latest.state)))return read(row)
    if(['completed','cancelled'].includes(String(task.state)))return settle('needs-user','teloa/task-ended')
    const plan=(await db.query(`select p.state,p.work_definition,c.state as control_state from teloa_plans p

@@ -34,3 +34,10 @@ test('相同跳过时间按配置版本和事件身份倒序，跨页不允许�
  assert.throws(()=>planSkipHistoryResponse({items:[item,newer]},{planId,limit:2}),{code:'teloa/invalid-host-response'})
  assert.throws(()=>planSkipHistoryResponse({items:[item]},{planId,limit:1,cursor:position}),{code:'teloa/invalid-host-response'})
 })
+
+test('AD02-DST：跳过历史保留纽约本地日身份和原复合游标',()=>{
+ const ny={...item,occurrenceId:'2026-11-01T01:30[America/New_York]',scheduledAt:'2026-11-01T05:30:00.000Z',skippedAt:'2026-11-01T05:30:01.000Z'}
+ const cursor={skippedAt:ny.skippedAt,configVersion:ny.configVersion,occurrenceId:ny.occurrenceId},input={planId,limit:1}
+ assert.deepEqual(planSkipHistoryInput({...input,cursor}),{...input,cursor})
+ assert.deepEqual(planSkipHistoryResponse({items:[ny],cursor},input),{items:[ny],cursor})
+})

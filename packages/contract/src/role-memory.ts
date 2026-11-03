@@ -7,6 +7,10 @@ export type RoleMemorySourceKind=typeof roleMemorySourceKinds[number]
 export type RoleMemorySource={kind:RoleMemorySourceKind;id:string;version:number}
 export type RoleMemoryVisibility={kind:'role';scopeIds:string[]}|{kind:'private';scopeIds:[]}
 export type RoleMemoryProposer={kind:'self'}|{kind:'role';roleId:string;roleVersion:number}
+export type RoleMemoryPreferenceKind='preference'|'one-off'|'correction'|'counterexample'
+export type RoleMemoryPreferenceReference={memoryId:string;version:number;contentHash:string}
+/** 显式提议参数，与用户 Markdown 正文独立；分类不授予任何读取或执行权限。 */
+export type RoleMemoryPreference={schema:'teloa.preference-candidate/v1';kind:RoleMemoryPreferenceKind;scope:string;taskId?:string;basis:{kind:'owner-input';quote:string}|{kind:'owner-confirmation'}|({kind:'habit-observation';quote:string;evidenceId:string}&RoleMemoryPreferenceReference)|{kind:'owner-revision';artifactId:string;version:number;quote:string};against?:RoleMemoryPreferenceReference}
 export type RoleMemoryContent={version:number;contentHash:string;bytes:number;markdown:string;createdAt:string;editedBy?:'self'}
 export type RoleMemory={
  id:string;ownerId:string;roleId:string;roleVersion:number;title:string;state:RoleMemoryState;stateVersion:number
@@ -15,12 +19,36 @@ export type RoleMemory={
 }
 
 const uuid=(value:unknown):value is string=>typeof value==='string'&&/^[a-f0-9]{8}-[a-f0-9]{4}-[1-5][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i.test(value)
+/** 只生成比较键；原请求、来源快照与不可变回执保留原始编码。 */
+export const roleMemoryIdentityKey=(value:string):string=>uuid(value)?value.toLowerCase():value
+export const roleMemoryTitleKey=(value:string):string=>value.normalize('NFKC').trim().replace(/\s+/gu,' ').toLocaleLowerCase('en-US')
+export const roleMemorySourceKey=(source:RoleMemorySource):string=>JSON.stringify([source.kind,roleMemoryIdentityKey(source.id),source.version])
+export const roleMemoryProposerKey=(value:RoleMemoryProposer):string=>value.kind==='self'?'self':JSON.stringify([value.kind,roleMemoryIdentityKey(value.roleId),value.roleVersion])
+
 const positive=(value:unknown):value is number=>Number.isSafeInteger(value)&&Number(value)>0
 const scope=(value:unknown):value is string=>typeof value==='string'&&/^[a-zA-Z0-9_-]{1,128}$/.test(value)
 const stamp=(value:unknown):value is string=>{if(typeof value!=='string')return false;const date=new Date(value);return Number.isFinite(date.getTime())&&date.toISOString()===value}
 const exact=(value:unknown,keys:readonly string[]):Record<string,unknown>=>{
  if(!value||typeof value!=='object'||Array.isArray(value)||Object.keys(value).some(key=>!keys.includes(key)))throw new WorkError('teloa/invalid-input','员工记忆请求格式不正确或包含未知字段。')
  return value as Record<string,unknown>
+}
+
+export function roleMemoryPreference(value:unknown):RoleMemoryPreference{
+ const bad=()=>new WorkError('teloa/invalid-input','偏好提议类型、适用范围或固定依据不正确。')
+ const r=exact(value,['schema','kind','scope','taskId','basis','against']),b=exact(r.basis,['kind','quote','memoryId','version','contentHash','evidenceId','artifactId'])
+ if(r.schema!=='teloa.preference-candidate/v1'||!['preference','one-off','correction','counterexample'].includes(String(r.kind))||!scope(r.scope))throw bad()
+ const temporary=r.kind==='one-off'||r.kind==='counterexample',related=r.kind==='correction'||r.kind==='counterexample'
+ if(r.taskId!==undefined&&(!temporary||!uuid(r.taskId)))throw bad()
+ if(related!==(r.against!==undefined))throw bad()
+ let reference:RoleMemoryPreferenceReference|undefined
+ if(r.against!==undefined){const a=exact(r.against,['memoryId','version','contentHash']);if(!uuid(a.memoryId)||!positive(a.version)||typeof a.contentHash!=='string'||!/^[a-f0-9]{64}$/.test(a.contentHash))throw bad();reference={memoryId:a.memoryId.toLowerCase(),version:a.version,contentHash:a.contentHash}}
+ if(b.kind==='owner-confirmation'){if(Object.keys(b).length!==1)throw bad()}
+ else if(typeof b.quote!=='string'||!b.quote.trim()||b.quote.length>8000)throw bad()
+ if(b.kind==='owner-input'){if(Object.keys(b).some(k=>!['kind','quote'].includes(k)))throw bad()}
+ else if(b.kind==='habit-observation'){if(Object.keys(b).some(k=>!['kind','quote','memoryId','version','contentHash','evidenceId'].includes(k))||!uuid(b.memoryId)||!positive(b.version)||typeof b.contentHash!=='string'||!/^[a-f0-9]{64}$/.test(b.contentHash)||!uuid(b.evidenceId))throw bad()}
+ else if(b.kind==='owner-revision'){if(Object.keys(b).some(k=>!['kind','quote','artifactId','version'].includes(k))||!uuid(b.artifactId)||!positive(b.version)||b.version<2)throw bad()}
+ else if(b.kind!=='owner-confirmation')throw bad()
+ return {schema:r.schema,kind:r.kind as RoleMemoryPreferenceKind,scope:r.scope,...(r.taskId?{taskId:(r.taskId as string).toLowerCase()}:{}),basis:{...b} as RoleMemoryPreference['basis'],...(reference?{against:reference}:{})}
 }
 
 export function roleMemorySource(value:unknown):RoleMemorySource{
@@ -46,7 +74,7 @@ export function isRoleMemory(value:unknown):value is RoleMemory{
   roleMemorySource(row.source);roleMemoryVisibility(row.visibility)
   const proposed=exact(row.proposedBy,['kind','roleId','roleVersion'])
   if(proposed.kind==='self'){if(Object.keys(proposed).length!==1)return false}
-  else if(proposed.kind!=='role'||!uuid(proposed.roleId)||proposed.roleId!==row.roleId||!positive(proposed.roleVersion))return false
+  else if(proposed.kind!=='role'||!uuid(proposed.roleId)||roleMemoryIdentityKey(proposed.roleId)!==roleMemoryIdentityKey(row.roleId)||!positive(proposed.roleVersion))return false
   const content=exact(row.content,['version','contentHash','bytes','markdown','createdAt','editedBy'])
   const candidateAt=row.candidateAt
   if(!positive(content.version)||typeof content.contentHash!=='string'||!/^[a-f0-9]{64}$/.test(content.contentHash)||!positive(content.bytes)||content.bytes>128*1024||typeof content.markdown!=='string'||!content.markdown.trim()||new TextEncoder().encode(content.markdown).byteLength!==content.bytes||!stamp(content.createdAt)||!stamp(candidateAt)||content.createdAt<candidateAt)return false

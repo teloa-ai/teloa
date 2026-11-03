@@ -1,0 +1,21 @@
+const copy={
+ description:['岗位说明','職位說明','Role description'],
+ hint:['说明它负责什么、如何交付，以及需要遵守的边界。原有配置会保留，可按需展开调整。','說明它負責甚麼、如何交付，以及需要遵守的界線。原有設定會保留，可按需要展開調整。','Describe its responsibility, deliverables, and boundaries. Existing settings are preserved; expand them when needed.'],
+ identity:['姓名与头像','姓名與頭像','Name and avatar'],
+ responsibility:['完整职责','完整職責','Detailed responsibilities'],
+ capabilities:['知识与技能','知識與技能','Knowledge and skills'],
+ runtime:['模型与工作方式','模型與工作方式','Model and work mode'],
+ edit:['修改','修改','Edit '],
+ finishEdit:['完成修改','完成修改','Done editing'],
+ cancelEdit:['取消修改','取消修改','Cancel editing'],
+ notSet:['暂未设置','尚未設定','Not set'],
+ skills:['已关联技能','已連結技能','Linked skills'],
+ knowledge:['已关联资料','已連結資料','Linked materials'],
+ chooseSkills:['选择技能','選擇技能','Choose skills'],
+ finishSkills:['完成选择技能','完成選擇技能','Done choosing skills'],
+ chooseKnowledge:['选择资料','選擇資料','Choose materials'],
+ finishKnowledge:['完成选择资料','完成選擇資料','Done choosing materials'],
+ noSkills:['未关联技能','未連結技能','No linked skills'],
+ noKnowledge:['未关联资料','未連結資料','No linked materials'],
+} as const
+export function roleEditCopy(locale:string,key:keyof typeof copy){return copy[key][/^zh-(hant|tw|hk)$/i.test(locale)?1:/^zh(?:-(?:hans|cn))?$/i.test(locale)?0:2]}

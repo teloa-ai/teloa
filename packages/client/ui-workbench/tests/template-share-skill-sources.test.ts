@@ -73,6 +73,13 @@ test('a missing license remains unshareable',async()=>{
  assert.equal((await resolveTemplateShareSkills(['meeting-summary'],f.ports))[0]!.text,undefined)
 })
 
+test('F24 员工按原生名分享时读取实际 available 安装，不取旧同名首项',async()=>{
+ const current=await fixture(),old=await fixture();old.installed.id=id(40);old.load.id=id(20);old.load.contentId=id(10);old.item.contentStorage!.contentId=id(10);old.item.trust!.license={status:'missing'}
+ Object.assign(old.installed.source,{loadId:id(20),contentId:id(10)});old.preview.source=structuredClone(old.installed.source)
+ const ports={contents:{hydrate:async(item:MarketItem)=>item.contentStorage?.contentId===old.load.contentId?old.item:current.item},loads:{get:async(loadId:string)=>loadId===old.load.id?old.load:current.load},skills:{list:async()=>({items:[old.installed,current.installed],usages:[]}),preview:async(source:{kind:string;loadId?:string})=>source.loadId===old.load.id?old.preview:current.preview,observe:async(installationId:string)=>({installationId,scope:'default-workspace' as const,state:installationId===current.installed.id?'available' as const:'shadowed' as const,current:{...current.installed.native,provider:'fixture',source:'fixed'}})}}
+ assert.equal((await resolveTemplateShareSkills(['meeting-summary'],ports))[0]!.text,text)
+})
+
 test('an unreadable installation directory or unknown source cannot be converted into a successful empty share',async()=>{
  const f=await fixture()
  f.ports.skills.list=async()=>{throw Error('Unavailable directory')}
@@ -180,4 +187,33 @@ test('sharing does not invent a license from body text, duplicate keys or comple
   f.installed.bundleHash=f.preview.bundleHash=hash(JSON.stringify([['SKILL.md',file.hash]]))
   assert.equal((await resolveTemplateShareSkills(['meeting-summary'],f.ports))[0]!.text,undefined)
  })
+})
+
+test('atomic fixed model declarations survive actual installed-source export, share parser and receiving resource conversion',async()=>{
+ const f=await fixture(),bytes=new TextEncoder().encode(text),models=[{catalogId:'teloa.model.sensevoice',version:'1.0.0',usage:'speech-to-text' as const,required:true}]
+ const content=await readAtomicSkill([{path:'SKILL.md',size:bytes.length,read:async()=>bytes}],{id:'atomic-summary',title:'Atomic summary',version:'1.0.0',categories:[],modelDependencies:models})
+ f.installed.source={kind:'atomic',contentId:id(1),contentHash:content.hash,resourceId:content.id,resourceVersion:content.version};f.preview.source=structuredClone(f.installed.source)
+ f.preview.files=content.files.map(file=>({path:file.path,hash:file.hash,size:file.bytes.length}));f.installed.bundleHash=f.preview.bundleHash=hash(JSON.stringify(f.preview.files.map(file=>[file.path,file.hash])))
+ f.ports.contents.hydrate=async()=>({...f.item,kind:'skill',atomicSkill:content});f.ports.loads.get=async()=>{throw Error('atomic source must not read a scheme')}
+ const [source]=await resolveTemplateShareSkills(['meeting-summary'],f.ports)
+ assert.deepEqual(source!.modelDependencies,models)
+ const pkg=buildSharePlan({subject:'skill',publisher:'Reviewer',roles:[],skills:[source!]}),parsed=readSharePackage(JSON.parse(JSON.stringify(pkg)))
+ assert.equal(pkg.compatibility.manifestFormat,'teloa.business-package/v3')
+ const received=await shareIndustryItem(parsed as any,{scope:'general',skills:['atomic-summary']})
+ assert.deepEqual((received.manifest as any).resources.find((row:any)=>row.id==='atomic-summary').modelDependencies,models)
+ assert.equal(received.packageContent?.files.find(file=>file.path==='atomic-summary/SKILL.md')?.hash,content.files[0]!.hash)
+ assert.deepEqual(content.modelDependencies,models,'分享不能改变原声明')
+})
+
+test('industry local and public sharing preserve only the selected skill resource model declarations',async()=>{
+ const models=[{catalogId:'teloa.model.sensevoice',version:'1.0.0',usage:'speech-to-text' as const,required:true}]
+ for(const kind of ['industry-local','industry-public'] as const){
+  const f=await fixture();Object.assign((f.item.manifest as any).resources[0],{modelDependencies:models});Object.assign(f.load.items[0]!,{modelDependencies:models})
+  if(kind==='industry-public')f.installed.source={...f.installed.source as Extract<SkillInstallationRecord['source'],{kind:'industry-local'}>,kind,sourceContentId:id(9),sourceContentHash:'d'.repeat(64),sourceResourceId:'official-summary',sourceResourceVersion:'2.3.4'}
+  const [source]=await resolveTemplateShareSkills(['meeting-summary'],f.ports)
+  assert.deepEqual(source!.modelDependencies,models)
+  const pkg=buildSharePlan({subject:'skill',publisher:'Reviewer',roles:[],skills:[source!]})
+  assert.equal(pkg.compatibility.manifestFormat,'teloa.business-package/v3')
+  assert.deepEqual(JSON.parse(pkg.files.find(file=>file.path==='teloa.json')!.text).resources[0].modelDependencies,models)
+ }
 })

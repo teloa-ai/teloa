@@ -6,6 +6,7 @@ import type {ArtifactService} from './artifacts.ts'
 import type {PageCreateDraftService} from './page-create-drafts.ts'
 import {readStoredTask} from './tasks.ts'
 import {isArtifactRevisionProducer} from './artifact-revision-requests.ts'
+import {assertArtifactAvailable} from './artifact-availability.ts'
 
 export type MethodReuseAcceptedMessage=MethodReuseAcceptedSource&{ownerId:string;source:{kind:'user';rpcId:string};text:string}
 export type PrepareMethodReuseInput={requestId:string;source:MethodReuseSource;acceptedSource?:MethodReuseAcceptedSource;target:MethodReuseTarget}
@@ -97,6 +98,7 @@ export class MethodReuseService{
   return {valid:true,manual:Object.hasOwn(receipt.request_spec,'verifiedCompletion')?null:{kind:'manual-completion',taskId,taskVersion:task.version,requestId:receipt.request_id}}
  }
  private async currentArtifact(db:PoolClient,owner:string,source:MethodReuseSource,lock=true){
+  await assertArtifactAvailable(db,owner,source.artifactId,source.version)
   const head=(await db.query('select current_version from teloa_artifacts where owner_id=$1 and id=$2'+(lock?' for share':''),[owner,source.artifactId])).rows[0]
   if(!head)throw denied();if(head.current_version!==source.version)throw stale()
   const artifact=await this.ports.artifacts.readVersion(db,owner,source.artifactId,source.version)

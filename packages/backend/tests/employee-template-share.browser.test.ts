@@ -357,7 +357,7 @@ function employeePackage(){
   await screenshot(page,'bundle-knowledge-receipt-lost','核对原请求')
   await page.reload();await page.getByRole('button',{name:'接收模板文件',exact:true}).click();await page.getByLabel('选择离线模板文件',{exact:true}).setInputFiles(path)
   await page.getByRole('heading',{name:pkg.title,exact:true}).waitFor();await confirm(page)
-  await page.getByText('员工副本已添加。',{exact:true}).waitFor();await page.getByText('资源包员工保持暂停，配置后再启用。',{exact:true}).waitFor()
+  await page.getByText('副本已添加；列出的模板、计划或业务配置仍需你确认，不会自动开始工作。',{exact:true}).waitFor();await page.getByText('资源包员工保持暂停，配置后再启用。',{exact:true}).waitFor()
   const attempts=f.calls.filter(row=>row.endpoint==='industry-knowledge/instantiate');assert.deepEqual(attempts.map(row=>row.localId),['knowledge-one','knowledge-two','knowledge-two']);assert.equal(attempts[1]!.payload.requestId,attempts[2]!.payload.requestId)
   const [employee]=await f.roles.list(f.owner,{});assert.ok(employee);assert.equal(employee.state,'paused');assert.equal(employee.ownerId,f.owner);assert.equal(employee.knowledge.length,2);assert.equal(employee.avatarKey,'researcher');assert.deepEqual(employee.skills,[])
   const {items}=await f.employees.list(f.owner,{});assert.equal(items.length,1);assert.deepEqual(items[0]!.declarations.map(row=>[row.kind,row.status]),[['skill','pending-adapter']])

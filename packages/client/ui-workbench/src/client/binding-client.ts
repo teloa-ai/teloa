@@ -1,4 +1,5 @@
-import type { CapabilitySnapshot, Conversation } from '@teloa/contract'
+import type { CapabilitySnapshot, Conversation,ConversationDirectoryPage,ConversationDirectoryPageRequest } from '@teloa/contract'
+import {readConversationDirectoryPage} from './conversation-directory-page.ts'
 export type BindingState={sessionId:string|undefined;status:'idle'|'loading'|'ready'|'failed';conversation:Conversation|undefined;error:string|undefined;capabilities:CapabilitySnapshot|undefined;catalogStatus:'idle'|'loading'|'ready'|'failed';catalogError:string|undefined}
 // roleId 只进「同一 requestId 不能改投另一项工作」的请求指纹（服务端按落盘的 requestedRoleId 比对）；
 // 回包 Conversation 零新键，客户端读不回它，因此恢复路径重建请求时无从补上（见 T14 报告疑虑）。
@@ -9,7 +10,10 @@ export type ConversationOpenResult='opened'|'cancelled'
 const taskRunInputBlock='工作会话正在由任务执行编排，请从原任务恢复。'
 export interface WorkPort {
   list(signal?:AbortSignal):Promise<Conversation[]>
+  listPage?(input:ConversationDirectoryPageRequest,signal?:AbortSignal):Promise<ConversationDirectoryPage>
   read(sessionId:string):Promise<Conversation>
+  /** 正常本人 API 按 CID 只读定位，不创建、领养或授予原生执行能力。 */
+  readById?(conversationId:string,signal?:AbortSignal):Promise<Conversation>
   ensure(sessionId:string):Promise<Conversation>
   /** 选中恢复时可借用已核验的专用预约；普通会话仍委派 ensure。 */
   selectBinding?(sessionId:string):Promise<Conversation>
@@ -38,8 +42,10 @@ export class BindingClient {
   private releaseOpeningBlock:(()=>void)|undefined
   private listing=0
   private directoryReady=false
-  private directory:{status:'idle'|'loading'|'ready'|'failed';rows:Conversation[];error:unknown|undefined;refreshing?:boolean}={status:'idle',rows:[],error:undefined}
+  // 分页、后台刷新与身份投影共用代次；已核目录在重读期间保留。
+  private directory:{generation:number;ownerId:string|undefined;signal:AbortSignal|undefined;status:'idle'|'loading'|'ready'|'failed';rows:Conversation[];error:unknown|undefined;loadingMore?:boolean;refreshing?:boolean}={generation:0,ownerId:undefined,signal:undefined,status:'idle',rows:[],error:undefined}
   private directorySettled=this.directory
+  private directoryAbort:AbortController|undefined
   constructor(port:WorkPort) {this.port=port}
   getSnapshot=():BindingState=>this.state
   getDirectorySnapshot=()=>this.directory
@@ -73,23 +79,56 @@ export class BindingClient {
     }
   }
   retry=()=>this.select(this.state.sessionId)
-  async refreshDirectory(signal?:AbortSignal):Promise<void> {
+  async refreshDirectory(signal?:AbortSignal):Promise<Conversation[]|undefined> {
     if(signal?.aborted)return
     const listing=++this.listing
-    const previous=this.directory
-    // 已有目录时后台重读，保留搜索、列表和身份显示；首次加载仍明确等待真源。
-    this.directory={...previous,status:this.directoryReady?'ready':'loading',error:undefined,refreshing:true};this.publish({})
-    const cancelled=()=>{if(listing===this.listing){this.directory=this.directorySettled;this.publish({})}}
-    signal?.addEventListener('abort',cancelled,{once:true})
-    try {if(signal?.aborted){cancelled();return}const rows=await this.port.list(signal);if(listing===this.listing&&!signal?.aborted){this.directoryReady=true;this.directory={status:'ready',rows,error:undefined,refreshing:false};this.directorySettled=this.directory;this.publish({})}}
-    catch(error){if(listing===this.listing&&!signal?.aborted){this.directory={...this.directory,status:'failed',error,refreshing:false};this.directorySettled=this.directory;this.publish({})}}
-    finally{signal?.removeEventListener('abort',cancelled)}
+    this.directoryAbort?.abort()
+    const controller=new AbortController();this.directoryAbort=controller
+    const directorySignal=signal?AbortSignal.any([controller.signal,signal]):controller.signal
+    const abort=()=>controller.abort(signal?.reason)
+    const restore=()=>{if(this.directoryAbort===controller&&listing===this.listing){const settled=this.directorySettled;this.directory=settled.loadingMore||settled.refreshing?{...settled,loadingMore:false,refreshing:false}:settled;this.directorySettled=this.directory;this.publish({})}}
+    controller.signal.addEventListener('abort',restore,{once:true})
+    signal?.addEventListener('abort',abort,{once:true})
+    const current=()=>listing===this.listing&&!controller.signal.aborted
+    this.directory={...this.directory,generation:listing,signal:directorySignal,status:this.directoryReady?'ready':'loading',error:undefined,refreshing:true};this.publish({})
+    try {
+      if(!this.port.listPage){const rows=await this.port.list(controller.signal);if(!current())return;this.directory={generation:listing,ownerId:rows[0]?.ownerId,signal:directorySignal,status:'ready',rows,error:undefined,refreshing:false};this.directoryReady=true;this.directorySettled=this.directory;this.publish({});return rows}
+      let cursor:string|undefined,owner:string|undefined
+      const rows:Conversation[]=[],ids=new Set<string>(),cursors=new Set<string>()
+      do{
+        const page=readConversationDirectoryPage(await this.port.listPage({limit:16,...(cursor?{cursor}:{})},controller.signal))
+        if(!current())return
+        for(const row of page.items){
+          owner??=row.ownerId
+          if(row.ownerId!==owner||ids.has(row.sessionId))throw Error('工作服务返回的会话目录身份不一致。')
+          ids.add(row.sessionId);rows.push(row)
+        }
+        if(page.nextCursor&&(page.nextCursor===cursor||cursors.has(page.nextCursor)))throw Error('工作服务返回了重复的会话目录游标。')
+        cursor=page.nextCursor;if(cursor)cursors.add(cursor)
+        this.directory={generation:listing,ownerId:owner,signal:directorySignal,status:'ready',rows:[...rows],error:undefined,loadingMore:cursor!==undefined,refreshing:cursor!==undefined};this.directoryReady=true;this.directorySettled=this.directory;this.publish({})
+      }while(cursor&&current())
+      return current()?rows:undefined
+    }catch(error){if(current()){this.directory={...this.directory,status:'failed',loadingMore:false,refreshing:false,error};this.directorySettled=this.directory;this.publish({})}}
+    finally{
+      signal?.removeEventListener('abort',abort)
+      controller.signal.removeEventListener('abort',restore)
+      if(this.directoryAbort===controller)this.directoryAbort=undefined
+    }
+  }
+  async readConversationById(conversationId:string,signal?:AbortSignal):Promise<Conversation|undefined> {
+    if(!this.port.readById)return undefined
+    signal?.throwIfAborted()
+    const owner=this.directory.ownerId??this.state.conversation?.ownerId
+    const row=await this.port.readById(conversationId,signal)
+    signal?.throwIfAborted()
+    if(row.id!==conversationId||row.status!=='ready'||owner!==undefined&&row.ownerId!==owner)throw Error('返回的工作会话与本人读取目标不一致。')
+    return row
   }
   async openSession(sessionId:string,signal?:AbortSignal,mayOpen?:()=>boolean):Promise<void> {
     await this.openSessionResult(sessionId,signal,mayOpen)
   }
   /** 只有本次已派发原生打开才回执 opened；当前同 ID 不能证明未取消的导航。 */
-  async openSessionResult(sessionId:string,signal?:AbortSignal,mayOpen?:()=>boolean):Promise<ConversationOpenResult> {
+  async openSessionResult(sessionId:string,signal?:AbortSignal,mayOpen?:()=>boolean,expectedConversationId?:string):Promise<ConversationOpenResult> {
     // 新入口使旧导航失效时，先撤下旧导航自己的临时阻断；read 未完成也不能遗留它。
     this.releaseOpeningBlock?.()
     const navigation={opening:++this.opening,generation:this.generation,previous:this.port.current(),mayOpen}
@@ -97,7 +136,7 @@ export class BindingClient {
     if(!valid())return 'cancelled'
     const conversation=await this.port.read(sessionId)
     if(!valid())return 'cancelled'
-    if(conversation.sessionId!==sessionId||conversation.status!=='ready')throw Error('返回的工作会话绑定与目标会话不一致。')
+    if(conversation.sessionId!==sessionId||conversation.status!=='ready'||expectedConversationId!==undefined&&conversation.id!==expectedConversationId)throw Error('返回的工作会话绑定与目标会话不一致。')
     const previous=this.state
     const commit=()=>{
       this.publish({sessionId,status:'ready',conversation,error:undefined,capabilities:undefined,catalogStatus:'idle',catalogError:undefined})

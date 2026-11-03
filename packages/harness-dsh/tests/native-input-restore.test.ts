@@ -28,9 +28,10 @@ async function fixture(t:TestContext,restore?:NativeInputRestore){
  const adapter=new HotAdapter();f.ctx.llm.registerAdapter([route.provider],adapter)
  await f.ctx.plugin(f.loopPackage.AgentLoop,{agents:[]})
  const id=SessionId('cold-input'),messages=[1,2].map(index=>createUserMessage({source:{kind:'user',rpcId:'cold-'+index},content:[{type:'text',text:'pending root '+index}]}))
- const seed=async({count=1,nextStep=false,interrupted=false,claimed=false,inherited=false}={})=>{
+ const seed=async({count=1,nextStep=false,interrupted=false,claimed=false,inherited=false,edited=false}={})=>{
   const events:SessionEvent[]=messages.slice(0,count).map((message,index)=>({type:'agent/inbox/spliced',seq:SessionSeq(index),time:index+1,data:{target:nextStep?'next-step':'next-turn',start:index,removedCount:0,inserted:[message]}}))
   if(interrupted){events.push({type:'turn/start',seq:SessionSeq(events.length),time:3,data:{turn:1}});events.push({type:'step/start',seq:SessionSeq(events.length),time:4,data:{turn:1,step:1}})}
+  if(edited)events.push({type:'agent/inbox/spliced',seq:SessionSeq(events.length),time:5,data:{target:'next-turn',start:0,removedCount:1,inserted:[{...messages[0]!,content:[{type:'text',text:'latest edited pending root'}]}],outcome:'canceled'}})
   if(claimed){events.push({type:'agent/inbox/spliced',seq:SessionSeq(events.length),time:5,data:{target:'next-turn',start:0,removedCount:1,inserted:[]}})}
   const header={...f.sessionPackage.Session.create(id).header,...inherited?{isSeeded:true,parentSession:SessionId('parent')}:{}}
   const cold=f.sessionPackage.Session.create(id,events,header,f.sessionPackage.SessionLogOffset(inherited?events.length:0))
@@ -55,6 +56,20 @@ for(const count of [1,2])for(const interrupted of [false,true])test(`真实 JSON
  for(const message of f.messages.slice(0,count))assert.equal(handle.agent.session.snapshotEvents().filter(event=>event.type==='user/message'&&event.data.id===message.id).length,1)
  await handle.dispose()
  const complete=await f.resume();assert.equal(calls,1);await complete.agent.whenIdle();assert.equal(f.adapter.requests.length,count);await complete.dispose()
+})
+
+test('真实JSONL未领取编辑项恢复只核最后受理正文并执行一次，旧稿与历史不重放',options,async t=>{
+ let calls=0
+ const f=await fixture(t,input=>{calls++;assert.equal(input.messages.length,1);assert.match(JSON.stringify(input.messages[0]!.content),/latest edited pending root/);return permit(input)})
+ const cold=await f.seed({edited:true,interrupted:true});f.adapter.scripts.push(textAnswer)
+ const handle=await f.resume();await handle.agent.whenIdle()
+ assert.equal(calls,1);assert.equal(f.adapter.requests.length,1)
+ assert.match(JSON.stringify(f.adapter.requests[0]!.messages),/latest edited pending root/)
+ assert.doesNotMatch(JSON.stringify(f.adapter.requests[0]!.messages),/pending root 1/)
+ assert.deepEqual(handle.agent.session.snapshotEvents().slice(0,cold.seq),cold.snapshotEvents())
+ assert.equal(handle.agent.inbox.nextTurn.length,0);await handle.dispose()
+ const complete=await f.resume();await complete.agent.whenIdle()
+ assert.equal(calls,1);assert.equal(f.adapter.requests.length,1);await complete.dispose()
 })
 
 test('无恢复策略：公开 roots JSON 和创建通知不授予 pending 许可，首写前保持原日志',options,async t=>{

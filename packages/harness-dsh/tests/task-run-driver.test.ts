@@ -497,13 +497,30 @@ test('本人结束后的成果保存失败可恢复同一候选，不重新记�
  assert.equal(await driver.reconcile('owner',{runId:run.id}),run);assert.equal(attempts,2)
 })
 
+test('QLT004：带本人来源链的reply只凭后端固定模式豁免空工具闸，work与未知来源仍拒绝',async()=>{
+ const make=(reply:boolean|'unknown'|'error')=>{
+  let current={id:'run',sessionId:'session',nativeRequestId:'native',state:'prepared',stopRequestedAt:null,allowedTools:[],skills:[],inputText:'固定目标',groupContext:{ownerRequest:{messageId:'owner',text:'不使用工具',sha256:'0'.repeat(64)}}} as unknown as TaskRun
+  let claims=0,sends=0,checks=0
+  const target={taskId:'task',taskVersion:1,sessionId:'session',linkVersion:1,scope:'SOC'}
+  const base={get:async()=>current,executionScope:async()=>target,claim:async()=>{claims++;current={...current,state:'submitting'};return {run:current,dispatch:true as const,target}},record:async()=>{current={...current,state:'accepted'};return current},requestStop:async()=>current}
+  const service=reply==='unknown'?base:{...base,isGroupReplyRun:async(owner:string,input:unknown)=>{checks++;assert.equal(owner,'owner');assert.deepEqual(input,{runId:'run'});if(reply==='error')throw Object.assign(Error('来源未核实'),{code:'teloa/storage-corrupt'});return reply}}
+  const driver=new TaskRunDriver(service,{check:async()=>{},send:async()=>{sends++},stop:async()=>{},events:async()=>[]})
+  return {driver,counts:()=>({claims,sends,checks})}
+ }
+ const reply=make(true)
+ assert.equal((await reply.driver.start('owner',{runId:'run'},new AbortController().signal)).state,'accepted')
+ assert.deepEqual(reply.counts(),{claims:1,sends:1,checks:1})
+ for(const mode of [false,'unknown'] as const){const rejected=make(mode);await assert.rejects(rejected.driver.start('owner',{runId:'run'},new AbortController().signal),{code:'teloa/conflict'});assert.equal(rejected.counts().claims,0);assert.equal(rejected.counts().sends,0)}
+ const failed=make('error');await assert.rejects(failed.driver.start('owner',{runId:'run'},new AbortController().signal),{code:'teloa/storage-corrupt'});assert.equal(failed.counts().sends,0)
+})
+
 /** GRP-01 / RET-001：员工运行没有任何执行工具时不得把空工具目录交给模型循环。 */
 test('员工运行没有执行工具时阻止启动并给出可操作的授权提示',async()=>{
- const make=(allowedTools:string[],extra:Partial<TaskRun>={})=>{
+ const make=(allowedTools:string[],extra:Partial<TaskRun>={},verifiedReply=false)=>{
   let run={id:'run',sessionId:'session',nativeRequestId:'native',state:'prepared',stopRequestedAt:null,allowedTools,skills:[],inputText:'固定目标',...extra} as TaskRun
   let claims=0,sends=0
   const target={taskId:'task',taskVersion:1,sessionId:'session',linkVersion:1,scope:'SOC'}
-  const driver=new TaskRunDriver({get:async()=>run,executionScope:async()=>target,claim:async()=>{claims++;run={...run,state:'submitting'};return {run,dispatch:true as const,target}},record:async(_owner:string,input:unknown)=>{run={...run,state:'accepted'};return run},requestStop:async()=>run},{check:async()=>{},send:async()=>{sends++},stop:async()=>{},events:async()=>[]})
+  const driver=new TaskRunDriver({get:async()=>run,isGroupReplyRun:async()=>verifiedReply,executionScope:async()=>target,claim:async()=>{claims++;run={...run,state:'submitting'};return {run,dispatch:true as const,target}},record:async(_owner:string,input:unknown)=>{run={...run,state:'accepted'};return run},requestStop:async()=>run},{check:async()=>{},send:async()=>{sends++},stop:async()=>{},events:async()=>[]})
   return {driver,run:()=>run,claims:()=>claims,sends:()=>sends}
  }
  // 普通员工任务（非群交办）：RET-001 场景
@@ -521,10 +538,12 @@ test('员工运行没有执行工具时阻止启动并给出可操作的授权�
  const granted=make(['read','teloa_workspace_write'])
  assert.equal((await granted.driver.start('owner',{runId:'run'},new AbortController().signal)).state,'accepted')
  assert.equal(granted.sends(),1)
- // 本人执行（owner）与群交流回应（无 ownerRequest）不按本规则阻断
+ // 本人执行（owner）与后端核实的群交流回应不按本规则阻断；缺本人链不能代替模式证明。
  const owner=make([],{executor:{kind:'owner',grantId:'11111111-1111-4111-8111-111111111111',grantVersion:1},roleId:null,roleVersion:null})
  assert.equal((await owner.driver.start('owner',{runId:'run'},new AbortController().signal)).state,'accepted')
- const groupReply=make([],{groupContext:{taskId:'task',groupId:'group',groupVersion:1,roleId:'role',roleVersion:1,grantVersion:1,source:{messageId:'message',rootId:'message',createdAt:'2026-10-22T00:00:00.000Z',text:'你好'},materials:[],files:[]} as unknown as NonNullable<TaskRun['groupContext']>})
+ const context={taskId:'task',groupId:'group',groupVersion:1,roleId:'role',roleVersion:1,grantVersion:1,source:{messageId:'message',rootId:'message',createdAt:'2026-10-22T00:00:00.000Z',text:'你好'},materials:[],files:[]} as unknown as NonNullable<TaskRun['groupContext']>
+ const unknown=make([],{groupContext:context});await assert.rejects(unknown.driver.start('owner',{runId:'run'},new AbortController().signal),{code:'teloa/conflict'})
+ const groupReply=make([],{groupContext:context},true)
  assert.equal((await groupReply.driver.start('owner',{runId:'run'},new AbortController().signal)).state,'accepted')
 })
 

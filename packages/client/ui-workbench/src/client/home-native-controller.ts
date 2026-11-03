@@ -1,15 +1,14 @@
 type Storage={getItem(key:string):string|null;setItem(key:string,value:string):void;removeItem(key:string):void}
 /** create 只建立或恢复原生会话；adopt 以已持久化的同一领养请求把待用会话加入工作目录，须幂等。 */
-type HomePort={storage:Storage;identity:()=>string;isBlank:(id:string)=>boolean|undefined|Promise<boolean|undefined>;isEligible?:(id:string,afterAdopt?:boolean)=>Promise<boolean>;create:(id:string)=>Promise<string>;adopt:(id:string)=>Promise<void>;refresh?:()=>Promise<void>}
+type HomePort={storage:Storage;identity:()=>string;isBlank:(id:string)=>boolean|undefined|Promise<boolean|undefined>;isEligible?:(id:string,afterAdopt?:boolean)=>Promise<boolean>;canClaimPrepared?:(id:string,explicit:boolean)=>Promise<boolean>;create:(id:string)=>Promise<string>;adopt:(id:string)=>Promise<void>;refresh?:()=>Promise<void>}
 const draftKey='teloa.home-native-session/v1'
 const uuid=/^[a-f0-9]{8}-[a-f0-9]{4}-[1-5][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i
 
 /** 原生会话身份不等于业务请求 UUID；冷恢复和未知回包重试必须复用同一领养请求。 */
 export function homeNativeAdoptionRequestId(storage:Storage,sessionId:string,identity:()=>string=()=>crypto.randomUUID()):string{
- if(uuid.test(sessionId))return sessionId
  const key='teloa.home-native-adoption/'+sessionId,saved=storage.getItem(key)
  if(saved!==null){if(!uuid.test(saved))throw Error('待用会话接入记录无法核对。');return saved}
- const requestId=identity()
+ const requestId=uuid.test(sessionId)?sessionId:identity()
  if(!uuid.test(requestId))throw Error('待用会话接入身份不正确。')
  storage.setItem(key,requestId)
  return requestId
@@ -31,6 +30,11 @@ export class HomeNativeController{
   assertCurrent()
   if(previous&&previous!==sessionId&&!explicit)return false
   const unchanged=()=>{assertCurrent();if(this.pending||this.port.storage.getItem(draftKey)!==previous)throw Error('待用会话身份已变化，请重试。')}
+  if(previous!==sessionId&&this.port.canClaimPrepared){
+   const claimable=await this.port.canClaimPrepared(sessionId,explicit)
+   unchanged()
+   if(!claimable)return false
+  }
   const blank=await this.port.isBlank(sessionId)
   unchanged()
   if(blank!==true)return false

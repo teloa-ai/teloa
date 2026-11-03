@@ -6,6 +6,7 @@ import {projectLinkKinds,type ProjectDefinition,type ProjectDetail,type ProjectI
 import type {BusinessScopeLabel} from './business-directory.js'
 import {useBusinessScopes} from './business-scope-context.js'
 import type {ProjectApi} from './project-api.js'
+import type {ProjectCreationTicket,ProjectEditTicket,ProjectEditReview,ProjectEditField} from './project-creation-drafts.js'
 import {ProjectForm,ProjectArchiveDialog,type ProjectFormDraft} from './ProjectForm.js'
 import {ProjectRelations,type ProjectRelationsDraft} from './ProjectRelations.js'
 import {ProjectReferences,type ProjectReferencesDraft} from './ProjectReferences.js'
@@ -18,10 +19,12 @@ import {localizeWorkError} from './i18n/errors.js'
 import css from './ProjectWorkspace.module.css'
 import light from './light-actions.module.css'
 import {projectCardSummary,invalidateProjectCardSummary} from './project-card-summary.js'
+import {openDialog} from './dialog-focus.js'
+import {useDialogDismiss} from './use-dialog-dismiss.js'
 
 type Props={api:ProjectApi;conversationActions?:ProjectConversationActions|undefined;scope:string;selectedId?:string;typeName:string;scopeLabels?:readonly BusinessScopeLabel[];select:(id:string,scope?:string)=>void;back:()=>void;openItem:(item:ProjectItem|ProjectReferenceItem)=>void|Promise<void>}
 type Draft<T>={value:T;pending?:Promise<void>}
-type FormDraft=Draft<ProjectFormDraft>&{initial:ProjectDefinition;project?:WorkProject}
+type FormDraft=Draft<ProjectFormDraft>&{initial:ProjectDefinition;project?:WorkProject;ticket?:ProjectCreationTicket;editTicket?:ProjectEditTicket}
 type RelationDraft<T>=Draft<T>&{project:WorkProject}
 type ProjectDrafts={forms:Map<string,FormDraft>;relations:Map<string,RelationDraft<ProjectRelationsDraft>>;references:Map<string,RelationDraft<ProjectReferencesDraft>>;directories:Map<string,{query:string;archived:boolean}>}
 // 同一本人连接内按项目和入口保留草稿；连接释放后不保留跨身份的全局副本。
@@ -35,19 +38,23 @@ function submitDraft<T extends Draft<unknown>>(drafts:Map<string,T>,key:string,d
  return pending
 }
 type OpenDraft<T>={book:ProjectDrafts;key:string;draft:T}
+type OpenForm=OpenDraft<FormDraft>&{token:number}
+type EditRecovery={form:OpenForm;review:ProjectEditReview}
 type ArchiveTarget={api:ProjectApi;key:string;epoch:number;project:WorkProject}
 export function ProjectWorkspace({api,conversationActions,scope,selectedId,typeName,scopeLabels=[],select,back,openItem}:Props){
  const {t,locale}=useI18n(),collaborationScopes=useBusinessScopes(),scopeName=(value:string)=>referenceScopeName({scope:value},scopeLabels,item=>collaborationScopes[item]||item),[rows,setRows]=useState<WorkProject[]>([]),[detail,setDetail]=useState<ProjectDetail>(),[loadedKey,setLoadedKey]=useState(''),[loading,setLoading]=useState(true),[error,setError]=useState(''),[revision,refresh]=useState(0)
  const [query,setQueryValue]=useState(()=>draftsFor(api).directories.get(scope)?.query??''),[archived,setArchivedValue]=useState(()=>draftsFor(api).directories.get(scope)?.archived??false),[busy,setBusy]=useState(false),[discarded,setDiscarded]=useState(false)
- const [form,setForm]=useState<OpenDraft<FormDraft>|null>(null),[relations,setRelations]=useState<OpenDraft<RelationDraft<ProjectRelationsDraft>>|null>(null),[references,setReferences]=useState<OpenDraft<RelationDraft<ProjectReferencesDraft>>|null>(null),[archive,setArchive]=useState<ArchiveTarget|null>(null)
+ const [form,setForm]=useState<OpenForm|null>(null),[relations,setRelations]=useState<OpenDraft<RelationDraft<ProjectRelationsDraft>>|null>(null),[references,setReferences]=useState<OpenDraft<RelationDraft<ProjectReferencesDraft>>|null>(null),[archive,setArchive]=useState<ArchiveTarget|null>(null)
  const [contextProject,setContextProject]=useState<string>()
+ const [editRecovery,setEditRecovery]=useState<EditRecovery|null>(null)
  const key=scope+':'+(selectedId??''),current=loadedKey===key?detail:undefined
  const book=draftsFor(api),origin=JSON.stringify([scope,selectedId??null]),location=useRef({api,key,epoch:0}),mounted=useRef(true)
+ const editEpoch=useRef(0),reviewEpoch=useRef(0)
  const setQuery=(query:string)=>{book.directories.set(scope,{query,archived});setQueryValue(query)},setArchived=(archived:boolean)=>{book.directories.set(scope,{query,archived});setArchivedValue(archived)}
  useEffect(()=>{const saved=book.directories.get(scope);setQueryValue(saved?.query??'');setArchivedValue(saved?.archived??false)},[api,scope])
  if(location.current.api!==api||location.current.key!==key)location.current={api,key,epoch:location.current.epoch+1}
  useEffect(()=>{mounted.current=true;return()=>{mounted.current=false}},[])
- useEffect(()=>{setForm(null);setRelations(null);setReferences(null);setArchive(null)},[api,key])
+ useEffect(()=>{editEpoch.current++;reviewEpoch.current++;setForm(null);setEditRecovery(null);setRelations(null);setReferences(null);setArchive(null)},[api,key])
  useEffect(()=>{
   const opened=form??relations??references,pending=opened?.draft.pending
   if(!opened||opened.book!==book||opened.key!==origin||!pending)return
@@ -56,7 +63,36 @@ export function ProjectWorkspace({api,conversationActions,scope,selectedId,typeN
   return()=>{active=false}
  },[form,relations,references,book,origin])
  const sameLocation=()=>mounted.current&&location.current.api===api&&location.current.key===key
- const openForm=(initial:ProjectDefinition,project?:WorkProject)=>{let draft=book.forms.get(origin);if(!draft){draft={initial,value:{fields:initial,ack:false},...(project?{project}:{})};book.forms.set(origin,draft)}setForm({book,key:origin,draft})}
+ const closeForm=(opened:OpenForm)=>{
+  if(opened.token!==editEpoch.current)return
+  editEpoch.current++;reviewEpoch.current++;setForm(value=>value===opened?null:value);setEditRecovery(value=>value?.form===opened?null:value)
+ }
+ const reviewEdit=async(opened:OpenForm,latest:WorkProject,started:typeof location.current)=>{
+  const ticket=opened.draft.editTicket
+  if(!ticket||!api.creationDrafts)return
+  const request=++reviewEpoch.current
+  const review=await api.creationDrafts.reviewEdit(ticket,latest)
+  if(mounted.current&&location.current===started&&opened.token===editEpoch.current&&request===reviewEpoch.current&&book.forms.get(opened.key)===opened.draft)setEditRecovery({form:opened,review})
+ }
+ const openForm=async(initial:ProjectDefinition,project?:WorkProject)=>{
+  const started=location.current,token=++editEpoch.current;reviewEpoch.current++;setEditRecovery(null)
+  try{
+   let draft=book.forms.get(origin)
+   if(project&&api.creationDrafts&&!draft?.pending){
+    const restored=await api.creationDrafts.openEdit(project)
+    if(!mounted.current||location.current!==started||token!==editEpoch.current)return
+    draft={initial:projectFields(restored.project),value:restored.draft,project:restored.project,editTicket:restored.ticket};book.forms.set(origin,draft)
+   }
+   if(!project&&api.creationDrafts&&!draft?.pending){
+    const restored=await api.creationDrafts.open('workspace',scope,initial)
+    if(!mounted.current||location.current!==started||token!==editEpoch.current)return
+    draft={initial,value:{...restored.draft,fields:{...restored.draft.fields,scope}},ticket:restored.ticket};book.forms.set(origin,draft)
+   }
+   if(!draft){draft={initial,value:{fields:initial,ack:false},...(project?{project}:{})};book.forms.set(origin,draft)}
+   const opened={book,key:origin,draft,token};setForm(opened)
+   if(project&&draft.project&&draft.editTicket&&project.version>draft.project.version)await reviewEdit(opened,project,started)
+  }catch(e){if(mounted.current&&location.current===started&&token===editEpoch.current)setError(localizeWorkError(locale,e))}
+ }
  const openRelations=(project:WorkProject)=>{let draft=book.relations.get(origin);if(!draft){draft={project,value:{kind:'task',query:'',selected:[]}};book.relations.set(origin,draft)}setRelations({book,key:origin,draft})}
  const openReferences=(project:WorkProject)=>{let draft=book.references.get(origin);if(!draft){draft={project,value:{scope:scopeLabels.find(label=>label.scope!==scope)?.scope??'',kind:'task',query:'',selected:[]}};book.references.set(origin,draft)}setReferences({book,key:origin,draft})}
  useEffect(()=>{
@@ -81,11 +117,55 @@ export function ProjectWorkspace({api,conversationActions,scope,selectedId,typeN
     {!shown.length?<div className={css.directoryEmpty}><FolderKanban size={27}/><h3>{t(query||archived?'project.noMatch':'project.empty.title')}</h3></div>:<div className={css.projectList}>{shown.map(project=><ProjectCard key={project.id} project={project} api={api} open={()=>select(project.id)}/>)}</div>}
    </div>}
   {current&&<ProjectContextPanel key={current.project.id} project={current.project} api={api} open={contextProject===current.project.id} close={()=>setContextProject(undefined)}/>}
-  {form&&form.book===book&&form.key===origin&&<ProjectForm initial={form.draft.initial} draft={form.draft.value} changeDraft={value=>{form.draft.value=value}} pending={form.draft.pending} editing={!!form.draft.project} scopeName={scopeName(form.draft.initial.scope)} openTasks={current?projectProgress(current.summary).total-current.summary.completedTasks:0} close={()=>setForm(null)} save={async fields=>{await submitDraft(book.forms,form.key,form.draft,async()=>{if(form.draft.project)await api.edit(form.draft.project.id,form.draft.project.version,fields);else{const created=await api.create(fields);if(sameLocation())select(created.id,created.scope)}});if(sameLocation()){refresh(n=>n+1);setForm(current=>current===form?null:current)}}}/>}
+  {form&&form.book===book&&form.key===origin&&!editRecovery&&<ProjectForm initial={form.draft.initial} draft={form.draft.value} changeDraft={value=>{form.draft.value=value;if(form.draft.ticket)api.creationDrafts!.write(form.draft.ticket,value);if(form.draft.editTicket)api.creationDrafts!.writeEdit(form.draft.editTicket,value)}} pending={form.draft.pending} editing={!!form.draft.project} scopeName={scopeName(form.draft.initial.scope)} openTasks={current?projectProgress(current.summary).total-current.summary.completedTasks:0} close={()=>closeForm(form)} save={async fields=>{
+   const started=location.current
+   await submitDraft(book.forms,form.key,form.draft,async()=>{
+    if(form.draft.project){
+     const ticket=form.draft.editTicket
+     if(ticket){await api.creationDrafts!.checkEdit(ticket);api.creationDrafts!.writeEdit(ticket,{...form.draft.value,fields})}
+     try{await api.edit(form.draft.project.id,form.draft.project.version,fields)}catch(error){
+      if(ticket&&(error as {code?:string})?.code==='teloa/version-conflict'){
+       const latest=await api.get(form.draft.project.id)
+       if(mounted.current&&location.current===started&&form.token===editEpoch.current)await reviewEdit(form,latest.project,started)
+      }
+      throw error
+     }
+     if(ticket)await api.creationDrafts!.clearEdit(ticket,fields)
+    }else{const created=await api.create(fields,form.draft.ticket);if(sameLocation())select(created.id,created.scope)}
+   })
+   if(sameLocation()&&form.token===editEpoch.current){refresh(n=>n+1);closeForm(form)}
+  }}/>}
+  {editRecovery&&form===editRecovery.form&&form.book===book&&form.key===origin&&<ProjectEditRecovery review={editRecovery.review} close={()=>closeForm(editRecovery.form)} back={()=>{reviewEpoch.current++;setEditRecovery(value=>value===editRecovery?null:value)}} resume={async choices=>{
+   const started=location.current,opened=await api.creationDrafts!.resumeEdit(editRecovery.review,choices)
+   if(!mounted.current||location.current!==started||editRecovery.form.token!==editEpoch.current||book.forms.get(editRecovery.form.key)!==editRecovery.form.draft)return
+   const next={initial:projectFields(opened.project),value:opened.draft,project:opened.project,editTicket:opened.ticket}
+   reviewEpoch.current++;book.forms.set(editRecovery.form.key,next);setForm({book,key:editRecovery.form.key,draft:next,token:editRecovery.form.token});setEditRecovery(value=>value===editRecovery?null:value);refresh(n=>n+1)
+  }}/>}
   {relations&&relations.book===book&&relations.key===origin&&<ProjectRelations project={relations.draft.project} api={api} draft={relations.draft.value} changeDraft={value=>{relations.draft.value=value}} pending={relations.draft.pending} close={()=>setRelations(null)} save={async links=>{await submitDraft(book.relations,relations.key,relations.draft,async()=>{const project=relations.draft.project;await api.edit(project.id,project.version,projectFields(project,{links:[...project.links,...links]}))});if(sameLocation()){refresh(n=>n+1);setRelations(current=>current===relations?null:current)}}}/>}
   {references&&references.book===book&&references.key===origin&&<ProjectReferences project={references.draft.project} api={api} draft={references.draft.value} changeDraft={value=>{references.draft.value=value}} pending={references.draft.pending} scopeLabels={scopeLabels} scopeName={scopeName} close={()=>setReferences(null)} save={async added=>{await submitDraft(book.references,references.key,references.draft,async()=>{const project=references.draft.project;await api.edit(project.id,project.version,projectFields(project,{references:[...project.references,...added]}))});if(sameLocation()){refresh(n=>n+1);setReferences(current=>current===references?null:current)}}}/>}
   {archive&&archive.api===api&&archive.key===key&&archive.epoch===location.current.epoch&&<ProjectArchiveDialog close={()=>setArchive(value=>value===archive?null:value)} save={async()=>{if(!sameLocation()||archive.epoch!==location.current.epoch)return;await archive.api.edit(archive.project.id,archive.project.version,projectFields(archive.project,{state:'archived'}));if(sameLocation()&&archive.epoch===location.current.epoch){refresh(n=>n+1);setArchive(value=>value===archive?null:value)}}}/>}
  </section>
+}
+
+const editRecoveryCopy={
+ en:{title:'Project updated: review your draft',notice:'The server has a newer version. Your draft is kept. Unchanged fields use the latest values; choose which content to keep for each conflicting field.',versions:'Draft based on v{base} · Latest v{latest}',mine:'Keep my draft',latest:'Use latest content',back:'Return to draft',next:'Continue editing with latest version'},
+ 'zh-CN':{title:'项目已更新：审阅草稿',notice:'服务器已有新版本，你的草稿仍保留。未修改的字段采用最新值；请逐项选择冲突字段要保留的内容。',versions:'草稿基于 v{base} · 最新 v{latest}',mine:'保留我的草稿',latest:'采用最新内容',back:'返回草稿',next:'基于最新版本继续编辑'},
+ 'zh-HK':{title:'項目已更新：審閱草稿',notice:'伺服器已有新版本，你的草稿仍然保留。未修改的欄位採用最新值；請逐項選擇衝突欄位要保留的內容。',versions:'草稿基於 v{base} · 最新 v{latest}',mine:'保留我的草稿',latest:'採用最新內容',back:'返回草稿',next:'以最新版本繼續編輯'},
+ 'zh-TW':{title:'專案已更新：檢閱草稿',notice:'伺服器已有新版本，你的草稿仍會保留。未修改的欄位採用最新值；請逐項選擇衝突欄位要保留的內容。',versions:'草稿以 v{base} 為基礎 · 最新 v{latest}',mine:'保留我的草稿',latest:'使用最新內容',back:'返回草稿',next:'以最新版本繼續編輯'},
+}
+function ProjectEditRecovery({review,close,back,resume}:{review:ProjectEditReview;close:()=>void;back:()=>void;resume:(choices:Partial<Record<ProjectEditField,'draft'|'latest'>>)=>Promise<void>}){
+ const {t,locale}=useI18n(),copy=editRecoveryCopy[locale==='zh-Hant'?'zh-TW':locale==='zh-CN'||locale==='zh-HK'||locale==='zh-TW'?locale:'en'],dialog=useRef<HTMLDialogElement>(null)
+ const [choices,setChoices]=useState<Partial<Record<ProjectEditField,'draft'|'latest'>>>({}),[busy,setBusy]=useState(false),[error,setError]=useState(''),dismiss=useDialogDismiss(close,!busy)
+ useEffect(()=>openDialog(dialog.current),[])
+ const names={title:'project.name',goal:'project.goal',dueDate:'project.dueDate',state:'project.status'} as const
+ const display=(value:ProjectDefinition,field:ProjectEditField)=>field==='state'?t(projectStateKeys[value.state]):String(value[field]??'—')
+ return <dialog ref={dialog} className={css.dialog} aria-label={copy.title} {...dismiss}><form className={css.form} onSubmit={async event=>{event.preventDefault();if(busy||review.conflicts.some(field=>!choices[field]))return;setBusy(true);setError('');try{await resume(choices)}catch(error){setError(localizeWorkError(locale,error))}finally{setBusy(false)}}}>
+  <header><h2>{copy.title}</h2><button type="button" disabled={busy} onClick={close} aria-label={t('project.dialog.close')}><X size={18}/></button></header>
+  <p>{copy.notice}</p><p>{copy.versions.replace('{base}',String(review.base.version)).replace('{latest}',String(review.latest.version))}</p>
+  {error&&<p role="alert" className={css.error}>{error}</p>}
+  {review.conflicts.map(field=><fieldset key={field} style={{border:0,padding:0,margin:0,minWidth:0}}><legend><strong>{t(names[field])}</strong></legend>{(['draft','latest'] as const).map(choice=><div key={choice}><label className={css.check}><input type="radio" name={field} value={choice} checked={choices[field]===choice} disabled={busy} style={{minHeight:0,width:14,height:14,padding:0,border:0,accentColor:'var(--teloa-text)'}} onChange={()=>setChoices({...choices,[field]:choice})}/>{choice==='draft'?copy.mine:copy.latest}</label><textarea readOnly rows={field==='goal'?4:1} style={{width:'100%',margin:'6px 0 12px'}} aria-label={t(names[field])+': '+(choice==='draft'?copy.mine:copy.latest)} value={display(choice==='draft'?review.draft.fields:review.latest,field)}/></div>)}</fieldset>)}
+  <footer><button type="button" disabled={busy} onClick={back}>{copy.back}</button><button type="submit" className={css.primary} disabled={busy||review.conflicts.some(field=>!choices[field])}>{copy.next}</button></footer>
+ </form></dialog>
 }
 
 /** 1.0 项目卡（设计 23）：名称与状态同行，其下业务、目标摘要，底部截止日期与更新时间；业务内页签不显示业务名。 */

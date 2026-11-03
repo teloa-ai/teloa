@@ -33,7 +33,7 @@ after(async()=>{await pool?.end();await container?.stop()})
 const fields={name:'小研',avatarKey:'researcher',scopes:['general'],duty:'核对来源并整理结论',dataScope:'本人明确提供的资料',executionScope:'只整理资料并给出建议',skills:[],knowledge:[],responsibility:{triggers:['收到本人资料'],autonomousActions:['核对事实'],confirmationPoints:['外发前交回本人'],escalationRules:['证据不足时说明阻塞'],deliveryChecks:['结论包含来源']}}
 
 async function setup(options:{instruction?:boolean;subagent?:boolean;ports?:Partial<EmployeeToolsPorts>}={}){
- const owner='test:'+randomUUID(),identity={id:()=>randomUUID(),now:()=>new Date().toISOString()},roles=new RoleService(pool,identity),lifecycle=new RoleLifecycleService(pool,identity)
+ const owner='test:'+randomUUID(),identity={id:()=>randomUUID(),now:()=>new Date().toISOString()},roles=new RoleService(pool,identity,undefined,async()=>({default:{provider:'test',model:'test'},groups:[{id:'test',name:'Fixture models',remote:true,models:[{id:'test',name:'Primary'},{id:'fallback',name:'Fallback'}]}],failures:[]})),lifecycle=new RoleLifecycleService(pool,identity)
  const ctx=new Context()
  await ctx.plugin(LlmRuntime);await ctx.plugin(SystemPrompt);await ctx.plugin(ToolRuntime);await ctx.plugin(SessionStore);await ctx.plugin(SessionProjectionRegistry);await ctx.plugin(AgentRegistry);await ctx.plugin(AgentLoop,{agents:[]})
  const {agent}=await ctx.agents.create({sessionId:SessionId('employee-'+randomUUID()),...(options.subagent?{meta:{origin:'subagent' as const,delegationDepth:1}}:{}),agentOptions:{provider:'test',model:'test'}})

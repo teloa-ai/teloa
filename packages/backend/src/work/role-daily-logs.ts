@@ -1,16 +1,16 @@
+import {readRoleDayEvidence,readRoleEvidenceRole,hasRoleDayEvidence,roleDailyLogEvidenceLimit,type RoleDayEvidence} from './role-day-evidence.ts'
 import {createHash} from 'node:crypto'
 import type {Pool,PoolClient} from 'pg'
-import {WorkError,artifactContent,isRecord,isRoleDailyLog,isRoleDailyLogSummary,isRoleMemory,readScheduleTrigger,roleDailyLogDiscardInput,roleDailyLogGetInput,roleDailyLogListInput,roleDefinition,savedArtifactSource,type RoleDailyLog,type RoleDailyLogEvidence,type RoleDailyLogPruneHint,type RoleDailyLogSummary,type RoleMemory,type ScheduleTrigger} from '@teloa/contract'
+import {WorkError,isRecord,isRoleDailyLog,isRoleDailyLogSummary,isRoleMemory,readScheduleTrigger,roleDailyLogDiscardInput,roleDailyLogGetInput,roleDailyLogListInput,roleDefinition,type RoleDailyLogEvidence,type RoleDailyLog,type RoleDailyLogPruneHint,type RoleDailyLogSummary,type RoleMemory,type ScheduleTrigger} from '@teloa/contract'
 import {planSource} from './plans.ts'
 import type {PlanSource} from './plans.ts'
 import type {RoleMemoryService} from './role-memory.ts'
 import {PlanOccurrenceService,readStoredPlanOccurrence} from './plan-occurrences.ts'
+import {BusinessScopeService} from './business-scopes.ts'
+import {AUTO_DREAM_DEFAULT_TRIGGER,readAutoDreamSetting} from './auto-dream-plans.ts'
 
 export type RoleDailyLogActor={ownerId:string;kind:'human'}|{ownerId:string;kind:'agent';roleId:string}
-export type RoleDayEvidence={
- day:string;timezone:ScheduleTrigger['timezone'];roleId:string;roleVersion:number;scopeIds:string[]
- runs:RoleDailyLogEvidence[];artifacts:RoleDailyLogEvidence[];approvals:RoleDailyLogEvidence[];revisions:RoleDailyLogEvidence[];groupMessages:RoleDailyLogEvidence[]
-}
+export type {RoleDayEvidence} from './role-day-evidence.ts'
 export type RoleDailyDigestSubmission={
  title:string;markdown:string
  candidates:Array<{title:string;markdown:string;scopeIds:string[]}>
@@ -20,7 +20,7 @@ export type RoleDigestRunIdentity={runId:string;taskId:string;planId:string;role
 export type RoleDailyLogCompletionEvidence={identity:RoleDigestRunIdentity;log:RoleDailyLog;receiptIds:string[];contentHash:string}
 
 /** 日志正文可引用的证据上限，与契约 `isRoleDailyLog` 的 60 条一致。 */
-export const roleDailyLogEvidenceLimit=60
+export {roleDailyLogEvidenceLimit} from './role-day-evidence.ts'
 /** 每张日志表按岗位与类别保留最近 60 个自然日。 */
 export const roleDailyLogRetentionDays=60
 /** `role-daily-log/list` 的回包上限，与保留天数各自独立。 */
@@ -38,19 +38,6 @@ const scope=(value:unknown):value is string=>typeof value==='string'&&/^[a-zA-Z0
 const isDay=(value:unknown):value is string=>typeof value==='string'&&/^\d{4}-\d{2}-\d{2}$/.test(value)&&new Date(value+'T00:00:00.000Z').toISOString().slice(0,10)===value
 const invalid=()=>new WorkError('teloa/invalid-input','每日日志请求包含未知字段或格式不正确。')
 const corrupt=()=>new WorkError('teloa/storage-corrupt','每日日志记录损坏，已停止读取。')
-/**
- * 运行证据必须让模型分辨完成/中止/失败与未完成：终态只取自 `teloa_task_runs.state` 与
- * `evidence.reason`，不把“有运行”当成“已完成”。非 ended 一律标未完成。
- */
-function runTerminalLabel(state:unknown,evidence:unknown):string{
- if(state!=='ended')return '未完成'
- const reason=isRecord(evidence)&&evidence.state==='ended'?evidence.reason:undefined
- if(reason==='completed')return '完成'
- if(reason==='aborted')return '中止'
- if(reason==='error')return '失败'
- if(reason==='stopped')return '已停止'
- return typeof reason==='string'&&reason.trim()?`结束：${reason.trim().slice(0,20)}`:'结束'
-}
 
 const exact=(value:unknown,keys:readonly string[]):Record<string,unknown>=>{
  if(!value||typeof value!=='object'||Array.isArray(value)||Object.keys(value).some(key=>!keys.includes(key)))throw invalid()
@@ -76,7 +63,6 @@ const principal=(value:RoleDailyLogActor):RoleDailyLogActor=>{
  return value
 }
 /** 证据标题固定 200 字上限（契约判据），拼接后过长时截到上限，不丢条目。 */
-const label=(value:string):string=>value.length>200?value.slice(0,200):value
 const logColumns=['id','owner_id','role_id','role_version','kind',"to_char(day,'YYYY-MM-DD') as day",'state','run_id','title','markdown','scope_ids','evidence','prune_hints','created_at','discarded_at'] as const
 const selectLog=(extra:readonly string[]=[]):string=>'select '+[...extra,...logColumns].join(',')+' from teloa_role_daily_logs'
 
@@ -90,6 +76,12 @@ function readLog(row:Record<string,unknown>|undefined):RoleDailyLog{
  }
  if(!isRoleDailyLog(value))throw corrupt()
  return value
+}
+
+/** 仅用于新提交后的读取：窗口外迟到记录会被本次淘汰，明确拒绝并由写事务整体回滚。 */
+function readRetainedLog(row:Record<string,unknown>|undefined):RoleDailyLog{
+ if(!row)throw new WorkError('teloa/source-unavailable','本次小结已超出日志保留期限，未保存日志或候选记忆。')
+ return readLog(row)
 }
 
 function submission(value:unknown):RoleDailyDigestSubmission{
@@ -145,20 +137,13 @@ export async function initializeRoleDailyLogs(pool:Pool):Promise<void>{await poo
  create trigger teloa_role_daily_log_changes_immutable before update or delete on teloa_role_daily_log_changes for each row execute function teloa_reject_role_daily_log_change_mutation();
 `)}
 
-type ScopedEvidence={item:RoleDailyLogEvidence;scope?:string}
-
 export class RoleDailyLogService{
  readonly pool:Pool
  readonly identity:{id:()=>string;now:()=>string}
  readonly memory:Pick<RoleMemoryService,'remember'>
  constructor(pool:Pool,identity:{id:()=>string;now:()=>string},memory:Pick<RoleMemoryService,'remember'>){this.pool=pool;this.identity=identity;this.memory=memory}
 
- private async role(db:Pick<Pool,'query'>,ownerId:string,roleId:string,lock=false):Promise<{version:number;state:string;scopes:string[]}>{
-  const row=(await db.query('select version,state,definition from teloa_roles where owner_id=$1 and id=$2'+(lock?' for share':''),[ownerId,roleId])).rows[0]
-  if(!row)throw new WorkError('teloa/forbidden','员工不存在或不属于当前本人。')
-  let scopes:string[];try{scopes=roleDefinition(row.definition).scopes}catch{throw corrupt()}
-  return {version:Number(row.version),state:String(row.state),scopes}
- }
+ private role(db:Pick<Pool,'query'>,ownerId:string,roleId:string,lock=false){return readRoleEvidenceRole(db,ownerId,roleId,lock)}
 
  /**
   * 闸的唯一真源：run → task → plan_task_links → plan_occurrences → plans.source。
@@ -218,118 +203,85 @@ export class RoleDailyLogService{
   return {identity:who,log,receiptIds,contentHash:createHash('sha256').update(log.markdown).digest('hex')}
  }
 
- /** 任一类读不出即抛 `teloa/storage-corrupt`，不以空数组糊弄；五类全空抛 `teloa/source-unavailable`。 */
+ /** 模型提交仍要求实际工作证据；领取前的空日判断复用同一读取器。 */
  async dayEvidence(ownerId:string,identity:RoleDigestRunIdentity):Promise<RoleDayEvidence>{
-  const plan=(await this.pool.query('select definition from teloa_plans where owner_id=$1 and id=$2',[ownerId,identity.planId])).rows[0]
-  if(!plan)throw new WorkError('teloa/forbidden','持续计划不存在或不属于当前本人。')
-  if(!isDay(identity.day))throw invalid()
-  // 时区白名单的唯一真源是契约 `readScheduleTrigger`，本文件不另抄一份。
-  let timezone:ScheduleTrigger['timezone']
-  try{timezone=readScheduleTrigger((plan.definition as Record<string,unknown>).trigger).timezone}catch{throw corrupt()}
-  const bounds=(await this.pool.query('select ($1::date)::timestamp at time zone $2 as from_at,(($1::date)+interval \'1 day\')::timestamp at time zone $2 as to_at',[identity.day,timezone])).rows[0]
-  const from=bounds?.from_at,to=bounds?.to_at
-  if(!(from instanceof Date)||!(to instanceof Date))throw corrupt()
-  const read=async<T>(work:()=>Promise<T>):Promise<T>=>{try{return await work()}catch(error){if(error instanceof WorkError)throw error;throw corrupt()}}
-
-  const runRows=await read(async()=>(await this.pool.query(`select r.id,r.state,r.evidence,t.definition->>'title' as title,t.definition->>'scope' as scope
-   from teloa_task_runs r join teloa_tasks t on t.id=r.task_id
-   where r.owner_id=$1 and r.role_id=$2 and r.created_at>=$3 and r.created_at<$4 order by r.created_at,r.id`,[ownerId,identity.roleId,from,to])).rows)
-  const runs:ScopedEvidence[]=runRows.map(row=>{
-   if(!uuid(row.id)||typeof row.title!=='string'||!row.title.trim()||!scope(row.scope))throw corrupt()
-   return {item:{kind:'run' as const,id:row.id as string,version:1,title:label('运行（'+runTerminalLabel(row.state,row.evidence)+'）：'+row.title)},scope:row.scope}
-  })
-  const runIds=runs.map(entry=>entry.item.id)
-
-  const artifactRows=await read(async()=>(await this.pool.query(`select artifact_id,number,source,content from teloa_artifact_versions
-   where owner_id=$1 and source->>'kind'='run' and source->>'id'=any($2::text[]) order by artifact_id,number`,[ownerId,runIds])).rows)
-  const artifacts=latest(artifactRows.map(row=>{
-   let title:string,fixed:string
-   try{title=artifactContent(row.content).title;fixed=savedArtifactSource(row.source).scope}catch{throw corrupt()}
-   if(!uuid(row.artifact_id)||!Number.isSafeInteger(row.number)||Number(row.number)<1||!scope(fixed))throw corrupt()
-   return {item:{kind:'artifact' as const,id:row.artifact_id as string,version:Number(row.number),title:label(title)},scope:fixed}
-  }))
-
-  const present=await read(async()=>(await this.pool.query('select name from unnest($1::text[]) as name where to_regclass(name) is not null',[['teloa_security_approvals','teloa_security_actions']])).rows.length)
-  if(present!==2)throw corrupt()
-  // 审批的时间窗判在 `teloa_security_approvals.created_at` 上（决定发生的时刻），不看发起动作或所属运行的时刻。
-  const approvalRows=await read(async()=>(await this.pool.query(`select distinct a.id,a.decision,a.frozen,s.title,s.scope_id
-   from teloa_security_approvals a
-   join teloa_security_actions s on s.id=a.action_id and s.owner_id=a.owner_id
-   join teloa_task_runs r on r.task_id=s.task_id and r.owner_id=s.owner_id
-   where a.owner_id=$1 and r.role_id=$2 and a.created_at>=$3 and a.created_at<$4 order by a.id`,[ownerId,identity.roleId,from,to])).rows)
-  const approvals:ScopedEvidence[]=approvalRows.map(row=>{
-   const frozen=row.frozen
-   if(!uuid(row.id)||!['approved','rejected'].includes(String(row.decision))||typeof row.title!=='string'||!row.title.trim()||!scope(row.scope_id))throw corrupt()
-   if(!frozen||typeof frozen!=='object'||Array.isArray(frozen))throw corrupt()
-   return {item:{kind:'approval' as const,id:row.id as string,version:1,title:label((row.decision==='approved'?'允许：':'拒绝：')+row.title)},scope:row.scope_id}
-  })
-
-  const revisionRows=await read(async()=>(await this.pool.query(`select v.artifact_id,v.number,v.source,v.content from teloa_artifact_versions v
-   where v.owner_id=$1 and v.created_at>=$3 and v.created_at<$4 and v.source->>'kind'<>'run'
-   and exists(select 1 from teloa_artifact_versions f join teloa_task_runs r on r.id::text=f.source->>'id' and r.owner_id=f.owner_id
-    where f.owner_id=v.owner_id and f.artifact_id=v.artifact_id and f.number=1 and f.source->>'kind'='run' and r.role_id=$2)
-   order by v.artifact_id,v.number`,[ownerId,identity.roleId,from,to])).rows)
-  // 只记指针不记正文：正文一律不取。
-  const revisions=latest(revisionRows.map(row=>{
-   let title:string,fixed:string
-   try{title=artifactContent(row.content).title;fixed=savedArtifactSource(row.source).scope}catch{throw corrupt()}
-   if(!uuid(row.artifact_id)||!Number.isSafeInteger(row.number)||Number(row.number)<1||!scope(fixed))throw corrupt()
-   return {item:{kind:'revision' as const,id:row.artifact_id as string,version:Number(row.number),title:label(title)},scope:fixed}
-  }))
-
-  const messageRows=await read(async()=>(await this.pool.query(`select m.id,m.root_id,t.definition->>'scope' as scope
-   from teloa_group_messages m left join teloa_tasks t on t.id=m.task_id
-   where m.owner_id=$1 and m.author_id=$2 and m.created_at>=$3 and m.created_at<$4 order by m.created_at,m.id`,[ownerId,identity.roleId,from,to])).rows)
-  const groupMessages:ScopedEvidence[]=messageRows.map(row=>{
-   if(!uuid(row.id))throw corrupt()
-   if(row.scope!==null&&row.scope!==undefined&&!scope(row.scope))throw corrupt()
-   return {item:{kind:'group-message' as const,id:row.id as string,version:1,title:label('群回帖 · 话题 '+String(row.root_id??row.id).slice(0,8))},...(scope(row.scope)?{scope:row.scope}:{})}
-  })
-
-  const all=[...runs,...artifacts,...approvals,...revisions,...groupMessages]
-  if(!all.length)throw new WorkError('teloa/source-unavailable','今天没有可核对的工作证据，本次小结不产出。')
-  // 先切到 60 条，再从留下的条目汇出范围：范围必须和日志里真正引用到的证据一致。
-  const kept=all.slice(0,roleDailyLogEvidenceLimit),keys=new Set(kept.map(entry=>entry.item.kind+'\0'+entry.item.id))
-  const pick=(list:ScopedEvidence[])=>list.filter(entry=>keys.has(entry.item.kind+'\0'+entry.item.id)).map(entry=>entry.item)
-  const scopeIds=[...new Set(kept.flatMap(entry=>entry.scope?[entry.scope]:[]))].sort().slice(0,30)
-  return {day:identity.day,timezone,roleId:identity.roleId,roleVersion:identity.roleVersion,scopeIds,runs:pick(runs),artifacts:pick(artifacts),approvals:pick(approvals),revisions:pick(revisions),groupMessages:pick(groupMessages)}
+  const db=await this.pool.connect()
+  try{
+   await db.query('begin')
+   const result=await readRoleDayEvidence(this.pool,db,ownerId,identity,this.identity.now)
+   if(!hasRoleDayEvidence(result))throw new WorkError('teloa/source-unavailable','今天没有可核对的工作证据，本次小结不产出。')
+   await db.query('commit');return result
+  }catch(error){await db.query('rollback');throw error}finally{db.release()}
  }
 
- /** 一个请求身份落一条日志；候选与剪枝建议先全部核对，任一不成立整次拒绝，库里零残留。 */
+ /** 原生结束不等于日结已保存；复用完整交付回执，不读模型回复或补写缺项。 */
+ async deliveryCheck(ownerId:string,runId:string):Promise<{state:'saved'|'unknown'}|undefined>{
+  let db:PoolClient|undefined
+  try{
+   db=await this.pool.connect()
+   await db.query('begin isolation level repeatable read')
+   if(!await this.digestRun(ownerId,{runId},db)){await db.query('commit');return undefined}
+   const saved=await this.completeEvidenceInTransaction(db,ownerId,runId)
+   await db.query('commit');return {state:saved?'saved':'unknown'}
+  }catch(error){
+   await db?.query('rollback').catch(()=>{})
+   // 只归一可重试的存储故障；SQL/程序错误仍保留，不能伪装成一次成功核对。
+   const code=error&&typeof error==='object'&&'code' in error?error.code:undefined
+   if(typeof code==='string'&&(/^(08[0-9A-Z]{3}|40001|40P01|55P03|57P0[123]|53300)$/.test(code)||['ECONNREFUSED','ECONNRESET','ETIMEDOUT'].includes(code)))
+    throw new WorkError('teloa/storage-unavailable','日结交付状态暂不可核对，请稍后沿原运行查看。')
+   throw error
+  }finally{db?.release()}
+ }
+
+ private async assertSubmissionCurrent(db:PoolClient,ownerId:string,who:RoleDigestRunIdentity,spec:RoleDailyDigestSubmission,log?:RoleDailyLog){
+  const current=await this.digestRun(ownerId,{runId:who.runId},db)
+  if(!current||current.taskId!==who.taskId||current.planId!==who.planId||current.roleId!==who.roleId||current.roleVersion!==who.roleVersion||current.day!==who.day)
+   throw new WorkError('teloa/forbidden','本次小结的运行身份与计划来源已变化。')
+  const role=await this.role(db,ownerId,who.roleId,true)
+  if(role.version!==who.roleVersion)throw new WorkError('teloa/version-conflict','员工版本已变化，本次小结不产出。')
+  if(role.state==='retired')throw new WorkError('teloa/conflict','已退役员工不能新增记忆候选。')
+  if(role.state!=='active')throw new WorkError('teloa/forbidden','员工已暂停，不能继续保存小结。')
+  const plan=(await db.query("select p.state,p.source,p.role_id,r.definition->>'kind' as role_kind,r.version as role_version,r.state as role_state from teloa_plans p join teloa_roles r on r.owner_id=p.owner_id and r.id=p.role_id where p.owner_id=$1 and p.id=$2 for share of p",[ownerId,who.planId])).rows[0]
+  if(!plan||plan.state!=='active'||plan.role_id!==who.roleId||plan.role_kind!=='employee'||plan.role_version!==who.roleVersion||plan.role_state!=='active')throw new WorkError('teloa/forbidden','原小结计划已暂停或变化，不能继续保存。')
+  const source=planSource(plan.source)
+  if(source.kind!=='system-digest'||source.roleId!==who.roleId)throw new WorkError('teloa/forbidden','原计划已不再授权本员工的小结。')
+  if(log&&(log.state!=='kept'||!(await db.query("select 1 from teloa_role_daily_logs where owner_id=$1 and id=$2 and state='kept' for share",[ownerId,log.id])).rowCount))
+   throw new WorkError('teloa/version-conflict','原小结已丢弃或不可读取，不能补写经验。')
+  const scopes=new Set([...(log?.scopeIds??[]),...spec.candidates.flatMap(candidate=>candidate.scopeIds)])
+  for(const scopeId of [...scopes].sort()){
+   if(!role.scopes.includes(scopeId)||!(await new BusinessScopeService(db).attentionScopes(ownerId,{scope:scopeId})).scopeIds.includes(scopeId)||scopeId!=='general'&&!(await db.query('select 1 from teloa_business_scopes where owner_id=$1 and scope=$2 for share',[ownerId,scopeId])).rowCount)
+    throw new WorkError('teloa/forbidden','原小结的业务授权已变化，不能继续保存经验。')
+  }
+  return role
+ }
+
+ /** 首份日志固定原请求与正文；同Run同参只沿旧回执补齐经验，不覆盖日志或复活撤回项。 */
  async submitDigest(ownerId:string,identity:RoleDigestRunIdentity,requestId:string,value:unknown):Promise<{log:RoleDailyLog;candidates:RoleMemory[]}>{
   if(typeof ownerId!=='string'||!ownerId.trim()||ownerId.length>128)throw new WorkError('teloa/forbidden','需要可核验的本人身份。')
   if(!uuid(requestId))throw invalid()
   const spec=submission(value)
   // 闸的唯一真源是 digestRun：调用方给的身份必须与当场重算的结果一致，不信任传进来的岗位、计划与日期。
-  // 深比跑在写事务之外（digestRun 走 this.pool，不在下面那条连接的快照里），所以分两级：
-  // 入口只复判 runId／roleId／day 这三个不随本人改计划而变的维度，保证回执命中时候选一定补得齐；
-  // 未在回执路径复判的维度只有 plans.source 指向的计划身份，后果上限是本人自己多落一条自己的日志，
-  // 越不到别人的岗位、也越不到别的日期。首次落库路径在事务里做全量深比。
   const who=identity&&typeof identity==='object'?await this.digestRun(ownerId,{runId:identity.runId}):null
-  if(!who||who.runId!==identity.runId||who.roleId!==identity.roleId||who.day!==identity.day)
+  if(!who||who.runId!==identity.runId||who.taskId!==identity.taskId||who.planId!==identity.planId||who.roleId!==identity.roleId||who.roleVersion!==identity.roleVersion||who.day!==identity.day)
    throw new WorkError('teloa/forbidden','本次小结的运行身份与计划来源不一致。')
   const db=await this.pool.connect()
   let log:RoleDailyLog
   try{
    await db.query('begin')
+   const role=await this.assertSubmissionCurrent(db,ownerId,who,spec)
    await db.query('select pg_advisory_xact_lock(hashtextextended($1,0))',[JSON.stringify(['role-daily-log-submit',ownerId,requestId])])
+   await db.query('select pg_advisory_xact_lock(hashtextextended($1,0))',[JSON.stringify(['role-daily-log-day',ownerId,who.roleId,who.day])])
    // 回执在证据之前判：重放补建候选不能被当天证据的波动切断。
    const previous=(await db.query(selectLog(['request_spec=$3::jsonb as same'])+' where owner_id=$1 and request_id=$2',[ownerId,requestId,JSON.stringify(spec)])).rows[0]
+    ??(await db.query(selectLog(['request_spec=$4::jsonb as same'])+" where owner_id=$1 and role_id=$2 and kind='daily-digest' and day=$3::date",[ownerId,who.roleId,who.day,JSON.stringify(spec)])).rows[0]
    if(previous){
-    if(!previous.same)throw new WorkError('teloa/conflict','同一请求不能提交不同的每日小结。')
     log=readLog(previous)
+    if(!previous.same||log.runId!==who.runId||log.roleId!==who.roleId||log.roleVersion!==who.roleVersion||log.day!==who.day)
+     throw new WorkError('teloa/conflict','今天已保存另一份小结，不能更换内容或运行；同一运行仅可补齐原小结。')
+    await this.assertSubmissionCurrent(db,ownerId,who,spec,log)
    }else{
-    // 首次落库才做全量深比：计划身份与岗位版本必须与当场重算的结果逐字相同。
-    if(who.taskId!==identity.taskId||who.planId!==identity.planId||who.roleVersion!==identity.roleVersion)
-     throw new WorkError('teloa/forbidden','本次小结的运行身份与计划来源不一致。')
-    // 同一天只有一条小结：先拿当天锁再判，两个不同请求身份并发时只有一个能落，另一个拿到明确的冲突而不是数据库原生报错。
-    await db.query('select pg_advisory_xact_lock(hashtextextended($1,0))',[JSON.stringify(['role-daily-log-day',ownerId,who.roleId,who.day])])
-    if((await db.query("select 1 from teloa_role_daily_logs where owner_id=$1 and role_id=$2 and kind='daily-digest' and day=$3::date",[ownerId,who.roleId,who.day])).rows[0])
-     throw new WorkError('teloa/conflict','今天已经写过小结。')
-    const role=await this.role(db,ownerId,who.roleId,true)
-    if(role.version!==who.roleVersion)throw new WorkError('teloa/version-conflict','员工版本已变化，本次小结不产出。')
-    if(role.state==='retired')throw new WorkError('teloa/conflict','已退役员工不能新增记忆候选。')
-    const evidence=await this.dayEvidence(ownerId,who)
+    const evidence=await readRoleDayEvidence(this.pool,db,ownerId,who,this.identity.now)
+    if(!hasRoleDayEvidence(evidence))throw new WorkError('teloa/source-unavailable','今天没有可核对的工作证据，本次小结不产出。')
     const pruneHints:RoleDailyLogPruneHint[]=[]
     for(const hint of spec.pruneHints){
      const stored=(await db.query('select role_id,state,state_version from teloa_role_memories where owner_id=$1 and id=$2',[ownerId,hint.memoryId])).rows[0]
@@ -345,18 +297,19 @@ export class RoleDailyLogService{
      values($1,$2,$3,$4,'daily-digest',$5::date,'kept',$6,$7,$8,$9,$10,$11,$12,$13,$14,null)`,
      [id,ownerId,who.roleId,who.roleVersion,who.day,who.runId,spec.title,spec.markdown,JSON.stringify(evidence.scopeIds),JSON.stringify(list),JSON.stringify(pruneHints),requestId,JSON.stringify(spec),now])
     await this.prune(db,ownerId,who.roleId,'daily-digest')
-    log=readLog((await db.query(selectLog()+' where owner_id=$1 and id=$2',[ownerId,id])).rows[0])
+    log=readRetainedLog((await db.query(selectLog()+' where owner_id=$1 and id=$2',[ownerId,id])).rows[0])
    }
    await db.query('commit')
   }catch(error){await db.query('rollback');throw error}finally{db.release()}
   const candidates:RoleMemory[]=[]
-  for(const [index,candidate] of spec.candidates.entries())
+  for(const [index,candidate] of spec.candidates.entries()){
    // source 由服务端派生，入参里没有 source 字段，模型不可自选来源类别。
    candidates.push(await this.memory.remember({ownerId,kind:'agent',roleId:who.roleId},{
     requestId:derivedRequestId(ownerId,who,index),roleId:who.roleId,expectedRoleVersion:who.roleVersion,
     title:candidate.title,markdown:candidate.markdown,
     source:{kind:'daily-digest',id:log.id,version:1},visibility:{kind:'role',scopeIds:candidate.scopeIds}
-   }))
+   },async db=>{await this.assertSubmissionCurrent(db,ownerId,who,spec,log)}))
+  }
   return {log,candidates}
  }
 
@@ -388,24 +341,45 @@ export class RoleDailyLogService{
    values($1,$2,$3,$4,'habit-digest',$5::date,'kept',null,$6,$7,'[]'::jsonb,$8,'[]'::jsonb,$9,$10,$11,null)`,
    [id,ownerId,value.roleId,value.roleVersion,value.day,title,markdown,JSON.stringify(value.evidence),value.requestId,JSON.stringify(spec),now])
   await this.prune(db,ownerId,value.roleId,'habit-digest')
-  return readLog((await db.query(selectLog()+' where owner_id=$1 and id=$2',[ownerId,id])).rows[0])
+  return readRetainedLog((await db.query(selectLog()+' where owner_id=$1 and id=$2',[ownerId,id])).rows[0])
  }
 
  /**
-  * 60 天淘汰：落库成功后在同一事务里删掉更早的日志。
+  * 60 天淘汰：按计划时区的当前自然日及最新业务日中较晚者，保留当日及前 59 日。
+  * 当前日使空日也能到期；最新业务日防止迟到写入或时钟回拨延长窗口。
   * 留过丢弃回执的日志有意不淘汰——回执表不可变，连带删除会让整次提交失败；
   * 淘汰集合只增不减，本人明确丢弃过的那一天永远留一行可查的痕迹。
   */
- private async prune(db:Pick<Pool,'query'>,ownerId:string,roleId:string,kind:'daily-digest'|'habit-digest'):Promise<void>{
+ private async prune(db:Pick<Pool,'query'>,ownerId:string,roleId:string,kind:'daily-digest'|'habit-digest',nowIso=this.identity.now()):Promise<void>{
+  if(!Number.isFinite(Date.parse(nowIso)))throw corrupt()
+  let timezone:ScheduleTrigger['timezone']
+  if(kind==='habit-digest')timezone=(await readAutoDreamSetting(db,ownerId)).trigger.timezone
+  else{
+   const plan=(await db.query("select definition from teloa_plans where owner_id=$1 and role_id=$2 and source->>'kind'='system-digest' order by created_at,id limit 1",[ownerId,roleId])).rows[0]
+   try{timezone=plan?readScheduleTrigger((plan.definition as Record<string,unknown>).trigger).timezone:AUTO_DREAM_DEFAULT_TRIGGER.timezone}catch{throw corrupt()}
+  }
   await db.query(`delete from teloa_role_daily_logs l where l.owner_id=$1 and l.role_id=$2 and l.kind=$3
-   and l.day<(select min(day) from (select day from teloa_role_daily_logs where owner_id=$1 and role_id=$2 and kind=$3 order by day desc limit ${roleDailyLogRetentionDays}) recent)
-   and not exists(select 1 from teloa_role_daily_log_changes c where c.owner_id=l.owner_id and c.log_id=l.id)`,[ownerId,roleId,kind])
+   and l.day<(select greatest(max(day),($4::timestamptz at time zone $5)::date)-${roleDailyLogRetentionDays-1} from teloa_role_daily_logs where owner_id=$1 and role_id=$2 and kind=$3)
+   and not exists(select 1 from teloa_role_daily_log_changes c where c.owner_id=l.owner_id and c.log_id=l.id)`,[ownerId,roleId,kind,nowIso,timezone])
+ }
+
+ /** 后台及本人读口共用；不依赖岗位在岗、观察开启或当天有新日志，停止期间到期的记录在恢复后清理。 */
+ async pruneExpired(ownerId:string,nowIso=this.identity.now(),roleId?:string):Promise<void>{
+  if(typeof ownerId!=='string'||!ownerId.trim()||ownerId.length>128||roleId!==undefined&&!uuid(roleId))throw invalid()
+  const db=await this.pool.connect()
+  try{
+   await db.query('begin')
+   const groups=(await db.query('select distinct role_id,kind from teloa_role_daily_logs where owner_id=$1'+(roleId?' and role_id=$2':'')+' order by role_id,kind',roleId?[ownerId,roleId]:[ownerId])).rows
+   for(const group of groups)await this.prune(db,ownerId,group.role_id,group.kind,nowIso)
+   await db.query('commit')
+  }catch(error){await db.query('rollback');throw error}finally{db.release()}
  }
 
  async list(actor:RoleDailyLogActor,input:unknown):Promise<{items:RoleDailyLogSummary[]}>{
   const who=principal(actor);if(who.kind!=='human')throw new WorkError('teloa/forbidden','每日日志目录只对本人开放。')
   const row=roleDailyLogListInput(input)
   await this.role(this.pool,who.ownerId,row.roleId)
+  await this.pruneExpired(who.ownerId,this.identity.now(),row.roleId)
   const rows=(await this.pool.query(`select id,kind,to_char(day,'YYYY-MM-DD') as day,state,title,created_at from teloa_role_daily_logs
    where owner_id=$1 and role_id=$2 order by day desc,id limit ${roleDailyLogListLimit}`,[who.ownerId,row.roleId])).rows
   return {items:rows.map(item=>{
@@ -419,6 +393,7 @@ export class RoleDailyLogService{
   const who=principal(actor);if(who.kind!=='human')throw new WorkError('teloa/forbidden','每日日志只对本人开放。')
   const row=roleDailyLogGetInput(input)
   await this.role(this.pool,who.ownerId,row.roleId)
+  await this.pruneExpired(who.ownerId,this.identity.now(),row.roleId)
   const stored=(await this.pool.query(selectLog()+' where owner_id=$1 and id=$2 and role_id=$3',[who.ownerId,row.logId,row.roleId])).rows[0]
   if(!stored)throw new WorkError('teloa/forbidden','每日日志不存在或不属于当前本人。')
   return {log:readLog(stored)}
@@ -448,11 +423,4 @@ export class RoleDailyLogService{
    await db.query('commit');return {log}
   }catch(error){await db.query('rollback');throw error}finally{db.release()}
  }
-}
-
-/** 同一成果当日多个版本只留最后一条：证据的唯一键是 `kind+id`。 */
-function latest(items:ScopedEvidence[]):ScopedEvidence[]{
- const map=new Map<string,ScopedEvidence>()
- for(const entry of items){const kept=map.get(entry.item.id);if(!kept||kept.item.version<entry.item.version)map.set(entry.item.id,entry)}
- return [...map.values()]
 }

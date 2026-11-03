@@ -36,3 +36,10 @@ test('结项恢复固定成果版本与说明，未核对请求不能替换交�
  await assert.rejects(api.change(id,1,'complete',{...delivery,artifact:{id,version:2}}),/原请求/)
  await api.recover();assert.deepEqual(calls[0],calls[1]);assert.equal(raw,null)
 })
+test('返工未知回执刷新只续原nonce；资格纯读绑定原Task版本且不产生状态请求',async()=>{
+ let raw:string|null=null,first=true;const calls:{method:string;payload:unknown}[]=[],journal={read:()=>raw,write:(v:string)=>{raw=v},clear:()=>{raw=null}}
+ const call=async(method:string,payload:unknown)=>{calls.push({method,payload});if(method==='tasks/rework-candidate')return {taskId:id,taskVersion:1,available:true,controlId:id};if(first){first=false;throw Error('回包丢失')}return {...result,state:'ready'}}
+ const api=createTaskTransitionApi(call,journal);assert.deepEqual(await api.reworkCandidate(id,1),{taskId:id,taskVersion:1,available:true,controlId:id});assert.equal(raw,null)
+ await assert.rejects(api.change(id,1,'rework'),/回包丢失/);const fresh=createTaskTransitionApi(call,journal);assert.equal(fresh.pending()?.action,'rework');await fresh.recover();assert.deepEqual(calls[1],calls[2]);assert.equal(raw,null)
+ for(const response of [{taskId:id,taskVersion:2,available:true,controlId:id},{taskId:id,taskVersion:1,available:true,controlId:null},{taskId:id,taskVersion:1,available:'yes',controlId:id}])await assert.rejects(createTaskTransitionApi(async()=>response).reworkCandidate(id,1),/不一致/)
+})

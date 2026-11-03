@@ -7,25 +7,31 @@ import {Pool} from './postgres-test-lifecycle.ts'
 import {PostgreSqlContainer,type StartedPostgreSqlContainer} from '@testcontainers/postgresql'
 import {initializeResources} from '../src/capabilities/schema.ts'
 import {initializeRoles,RoleService} from '../src/work/roles.ts'
+import {initializeRoleLifecycle,RoleLifecycleService} from '../src/work/role-lifecycle.ts'
 import {initializeTasks,TaskService} from '../src/work/tasks.ts'
 import {initializeObjectConversations,ObjectConversationService} from '../src/work/object-conversations.ts'
-import {initializeTaskRuns,TaskRunService} from '../src/work/task-runs.ts'
+import {initializeTaskRuns,roleMemoryNotice,TaskRunService} from '../src/work/task-runs.ts'
 import {TaskAttentionService} from '../src/work/task-attention.ts'
 import {initializeArtifactSnapshots} from '../src/work/artifact-snapshots.ts'
-import {initializeArtifacts} from '../src/work/artifacts.ts'
+import {ArtifactService,initializeArtifacts} from '../src/work/artifacts.ts'
 import {initializeRoleMemory,RoleMemoryService} from '../src/work/role-memory.ts'
 import {initializeRoleMemoryViews,RoleMemoryViewService} from '../src/work/role-memory-views.ts'
 import {initializeCollaboration} from '../src/work/collaboration.ts'
 import {initializeMarkdownKnowledge} from '../src/capabilities/markdown-knowledge.ts'
 import {testRoleResponsibility} from './role-test-fixture.ts'
+import {RoleExperienceService} from '../src/work/role-experience.ts'
+import {createRoleMemoryApi} from '../../client/ui-workbench/src/client/role-memory-api.ts'
+import {initializeRoleDailyLogs,RoleDailyLogService} from '../src/work/role-daily-logs.ts'
+import {initializePlans} from '../src/work/plans.ts'
 
 let container:StartedPostgreSqlContainer,pool:Pool
 const identity={id:randomUUID,now:()=>new Date().toISOString()}
 before(async()=>{
- process.env.DOCKER_HOST='unix://'+join(homedir(),'.orbstack/run/docker.sock')
+ process.env.DOCKER_HOST??='unix://'+join(homedir(),'.orbstack/run/docker.sock')
  process.env.TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE='/var/run/docker.sock'
  container=await new PostgreSqlContainer('postgres:17-alpine').start();pool=new Pool({connectionString:container.getConnectionUri()})
- await initializeResources(pool);await initializeRoles(pool);await initializeTasks(pool);await initializeObjectConversations(pool);await initializeTaskRuns(pool);await initializeArtifactSnapshots(pool);await initializeArtifacts(pool);await initializeMarkdownKnowledge(pool);await initializeRoleMemory(pool);await initializeCollaboration(pool);await initializeRoleMemoryViews(pool)
+ await initializeResources(pool);await initializeRoles(pool);await initializeTasks(pool);await initializeObjectConversations(pool);await initializeTaskRuns(pool);await initializeArtifactSnapshots(pool);await initializeArtifacts(pool);await initializeMarkdownKnowledge(pool);await initializeRoleMemory(pool);await initializeCollaboration(pool);await initializeRoleMemoryViews(pool);await initializeRoleLifecycle(pool)
+ await initializePlans(pool)
 },{timeout:180_000})
 after(async()=>{await pool?.end();await container?.stop()})
 
@@ -119,6 +125,26 @@ test('共享视图拒绝候选、跨本人、未知项以及不匹配的版本�
  await assert.rejects(f.views.create(f.owner,{...f.input,ownerId:other.owner}),{code:'teloa/invalid-input'})
  await assert.rejects(f.views.create(f.owner,{...f.input,expectedRoleVersion:3}),{code:'teloa/version-conflict'})
  await assert.rejects(f.views.create(f.owner,{...f.input,groupId:other.groupId}),{code:'teloa/forbidden'})
+})
+
+test('MEM-DEDUP-CORRECTIVE-V3 共享视图保留大写原件，固定运行按返回身份复核且不扩大选项',async()=>{
+ const f=await memoryViewFixture(),memoryId='a'+randomUUID().slice(1),service=new RoleMemoryService(pool,{...identity,id:()=>memoryId})
+ const candidate=await service.create(f.human,{requestId:randomUUID(),roleId:f.role.id,expectedRoleVersion:2,title:'大小写固定项',markdown:'只读取本人明确共享的固定内容。',source:{kind:'self-feedback',id:randomUUID(),version:1},visibility:{kind:'private',scopeIds:[]}})
+ const memory=await service.confirm(f.human,{requestId:randomUUID(),memoryId:candidate.id,expectedStateVersion:1}),entries=[{memoryId:memory.id.toUpperCase(),memoryVersion:memory.content.version,contentSha256:memory.content.contentHash}]
+ const view=await f.views.create(f.owner,{...f.input,entries}),target={scope:'general',groupId:f.groupId,memoryViewId:view.id}
+ const snapshot=async()=>(await pool.query('select request_spec,entries from teloa_role_memory_views where owner_id=$1 and id=$2',[f.owner,view.id])).rows[0],before=await snapshot()
+ assert.deepEqual(view.entries,entries)
+ const initial=await service.confirmedForRun(pool,f.owner,target,f.role)
+ assert.deepEqual(initial.map(row=>row.id),[memoryId]);assert.notEqual(initial[0]!.id,entries[0]!.memoryId)
+ const selectedIds=initial.map(row=>row.id)
+ assert.deepEqual(await service.confirmedForRun(pool,f.owner,target,f.role,30,selectedIds),initial)
+ assert.deepEqual(await service.confirmedForRun(pool,f.owner,target,f.role,30,[...selectedIds,f.memory.id]),initial,'未共享的同岗位私有项不能追加进固定运行')
+ await assert.rejects(service.confirmedForRun(pool,f.owner,target,f.role,30,[f.memory.id]),{code:'teloa/invalid-input'})
+ await assert.rejects(service.confirmedForRun(pool,f.owner,target,f.role,30,[memoryId,memoryId.toUpperCase()]),{code:'teloa/invalid-input'})
+ assert.deepEqual(await snapshot(),before);assert.deepEqual(await f.views.read(f.owner,{viewId:view.id}),view)
+ await service.withdraw(f.human,{requestId:randomUUID(),memoryId,expectedStateVersion:2})
+ await assert.rejects(service.confirmedForRun(pool,f.owner,target,f.role,30,selectedIds),{code:'teloa/version-conflict'})
+ assert.deepEqual(await snapshot(),before)
 })
 
 test('视图读取消费拒绝岗位改版、移出群、归档和固定记忆撤回',async()=>{
@@ -331,7 +357,10 @@ test('旧版记忆提示语的执行记录可读取和领取，未知提示语�
  const service=new TaskRunService(pool,identity,inspect,{allowedTools:[],roleMemory:(db,owner,target,role)=>f.service.confirmedForRun(db,owner,target,role)})
  const run=await service.prepare(f.owner,{requestId:randomUUID(),taskId:f.task!.id,expectedTaskVersion:1,roleId:f.role.id,expectedRoleVersion:2,sessionId,expectedLinkVersion:1})
  const snapshot=JSON.parse(run.inputText)
- assert.equal(snapshot.memory.notice,'以下岗位记忆已生效，仅作为工作经验；不授予权限，引用须保留来源和固定版本。')
+ assert.equal(snapshot.memory.notice,roleMemoryNotice)
+ snapshot.memory.notice='以下岗位记忆已生效，仅作为工作经验；不授予权限，引用须保留来源和固定版本。'
+ await pool.query('update teloa_task_runs set input_text=$2 where id=$1',[run.id,JSON.stringify(snapshot)])
+ assert.equal((await service.get(f.owner,{runId:run.id})).inputText,JSON.stringify(snapshot))
  snapshot.memory.notice='以下岗位记忆经本人确认，仅作为工作经验；不授予权限，引用须保留来源和固定版本。'
  const legacyInput=JSON.stringify(snapshot)
  await pool.query('update teloa_task_runs set input_text=$2 where id=$1',[run.id,legacyInput])
@@ -350,4 +379,227 @@ test('旧版记忆提示语的执行记录可读取和领取，未知提示语�
  const directory=await new TaskAttentionService(pool).list(f.owner,{})
  assert.equal(directory.items.length,1,'历史记忆提示语不能让任务目录整页读取失败')
  assert.deepEqual(directory.items[0]?.attention,{kind:'review',reason:'execution-completed'})
+})
+
+
+const slotInput=(f:Awaited<ReturnType<typeof fixture>>,markdown='先核对 alpha，再核对 beta。')=>({requestId:randomUUID(),roleId:f.role.id,expectedRoleVersion:f.role.version,title:'同源核对顺序',markdown,source:{kind:'task' as const,id:f.task!.id,version:1},visibility:{kind:'role' as const,scopeIds:['SOC']}})
+const slotConflict=(kind:'duplicate'|'content')=>({code:'teloa/conflict',details:{reason:'role-memory-slot-conflict',kind}})
+const rejectsSlot=async(work:Promise<unknown>,kind:'duplicate'|'content')=>assert.rejects(work,(error:unknown)=>{const expected=slotConflict(kind),actual=error as {code?:string;details?:{reason?:string;kind?:string}};assert.equal(actual.code,expected.code);assert.equal(actual.details?.reason,expected.details.reason);assert.equal(actual.details?.kind,kind);return true})
+
+test('MEM-DEDUP-CONFLICT001 同槽同文的独立请求复用候选与固定回执，不重复准入',async()=>{
+ const f=await fixture(),input={...slotInput(f),title:'  ＡＬＰＨＡ　 顺序  '},first=await f.service.create(f.human,input),other={...input,requestId:randomUUID(),title:'alpha 顺序'},reused=await f.service.create(f.human,other)
+ assert.equal(reused.id,first.id);assert.deepEqual(await f.service.create(f.human,other),reused)
+ const confirmed=await f.service.confirm(f.human,{requestId:randomUUID(),memoryId:first.id,expectedStateVersion:1})
+ assert.equal((await f.service.create(f.human,{...other,requestId:randomUUID()})).id,first.id)
+ assert.equal((await f.service.list(f.human,{roleId:f.role.id})).length,1)
+ assert.equal((await f.service.confirmedForRun(pool,f.owner,'SOC',f.role)).length,1)
+ assert.equal(Number((await pool.query('select count(*) from teloa_role_memory_versions where owner_id=$1',[f.owner])).rows[0].count),1)
+ assert.equal(confirmed.content.contentHash,first.content.contentHash)
+ // 不同来源不是同一槽，不能借规范化标题扩大去重范围。
+ const another=await new TaskService(pool,identity).create(f.owner,{requestId:randomUUID(),fields:{title:'另一份合成来源',goal:'核对独立来源',scope:'SOC'},assignee:{roleId:f.role.id,expectedVersion:f.role.version}})
+ assert.notEqual((await f.service.create(f.human,{...other,requestId:randomUUID(),source:{kind:'task',id:another.id,version:1}})).id,first.id)
+})
+
+test('MEM-DEDUP-CONFLICT001 同槽反文只能保留候选，确认明确冲突，撤回原件后可正常解决',async()=>{
+ const f=await fixture(),first=await f.service.create(f.human,slotInput(f)),other=await f.service.create(f.human,slotInput(f,'先核对 beta，再核对 alpha。'))
+ const confirmed=await f.service.confirm(f.human,{requestId:randomUUID(),memoryId:first.id,expectedStateVersion:1}),decision={requestId:randomUUID(),memoryId:other.id,expectedStateVersion:1}
+ await rejectsSlot(f.service.confirm(f.human,decision),'content')
+ assert.deepEqual((await f.service.confirmedForRun(pool,f.owner,'SOC',f.role)).map(row=>row.id),[first.id])
+ await f.service.withdraw(f.human,{requestId:randomUUID(),memoryId:first.id,expectedStateVersion:confirmed.stateVersion})
+ assert.equal((await f.service.confirm(f.human,decision)).state,'confirmed')
+ assert.deepEqual((await f.service.confirmedForRun(pool,f.owner,'SOC',f.role)).map(row=>row.id),[other.id])
+})
+
+test('MEM-DEDUP-CONFLICT001 旧重复及矛盾条目不能无提示同时注入，原件与范围保持',async()=>{
+ for(const kind of ['duplicate','content'] as const){
+  const f=await fixture(),base=slotInput(f),first=await f.service.create(f.human,base)
+  // 不同提出者仍有各自审计候选；直接状态写只构造这个新隔离PG里的 legacy 数据，绝不触既有实例。
+  const second=await f.service.create({ownerId:f.owner,kind:'agent',roleId:f.role.id},{...base,requestId:randomUUID(),markdown:kind==='duplicate'?base.markdown:'先核对 beta，再核对 alpha。'})
+  assert.notEqual(first.id,second.id)
+  await f.service.confirm(f.human,{requestId:randomUUID(),memoryId:first.id,expectedStateVersion:1})
+  await pool.query("update teloa_role_memories set state='confirmed',state_version=2,confirmed_at=candidate_at where owner_id=$1 and id=$2",[f.owner,second.id])
+  await rejectsSlot(f.service.confirmedForRun(pool,f.owner,'SOC',f.role),kind)
+  let providerCalls=0
+  const provider={retain:async()=>{providerCalls++},operation:async()=>{providerCalls++;return 'not_found' as const},recall:async()=>{providerCalls++;return []}}
+  await rejectsSlot(new RoleExperienceService(pool,provider,{providerKey:'mem03-test'}).read({ownerId:f.owner,roleId:f.role.id,roleVersion:f.role.version,scope:'SOC',query:'仅核对本合成记忆',load:()=>f.service.confirmedForExperience(pool,f.owner,'SOC',f.role)}),kind)
+  assert.equal(providerCalls,0,'冲突在外部 retain/recall 前阻断，不降级成空记忆')
+  const sessionId=randomUUID(),links=new ObjectConversationService(pool,async()=>({id:'conversation-'+sessionId,sessionId,ownerId:f.owner,status:'ready'}),identity.now)
+  await links.change(f.owner,{requestId:randomUUID(),kind:'task',objectId:f.task!.id,expectedObjectVersion:1,sessionId,expectedLinkVersion:0,action:'link'})
+  const runs=new TaskRunService(pool,identity,async()=>({id:'conversation-'+sessionId,sessionId,ownerId:f.owner,status:'ready'}),{allowedTools:[],roleMemory:(db,owner,target,role)=>f.service.confirmedForRun(db,owner,target,role)})
+  await rejectsSlot(runs.prepare(f.owner,{requestId:randomUUID(),taskId:f.task!.id,expectedTaskVersion:1,roleId:f.role.id,expectedRoleVersion:f.role.version,sessionId,expectedLinkVersion:1}),kind)
+  assert.equal(Number((await pool.query('select count(*) from teloa_task_runs where owner_id=$1',[f.owner])).rows[0].count),0,'准备失败回滚，不能生成Run或假称完成')
+  assert.deepEqual(await f.service.confirmedForRun(pool,f.owner,'IT',f.role).catch((error:{code?:string})=>error.code), 'teloa/forbidden')
+  if(kind==='duplicate'){
+   await f.service.withdraw(f.human,{requestId:randomUUID(),memoryId:second.id,expectedStateVersion:2})
+   assert.deepEqual((await f.service.confirmedForRun(pool,f.owner,'SOC',f.role)).map(row=>row.id),[first.id])
+  }else{
+   const edit={requestId:randomUUID(),roleId:f.role.id,memoryId:second.id,expectedContentVersion:1,expectedContentHash:second.content.contentHash,expectedStateVersion:2,title:second.title,markdown:base.markdown}
+   await rejectsSlot(f.service.edit(f.human,edit),'duplicate')
+   const resolved=await f.service.edit(f.human,{...edit,requestId:randomUUID(),title:'本人明确区分的另一主题',markdown:second.content.markdown})
+   assert.equal(resolved.content.version,2);assert.equal((await f.service.confirmedForRun(pool,f.owner,'SOC',f.role)).length,2)
+  }
+  assert.equal((await f.service.readVersion(f.human,{roleId:f.role.id,memoryId:first.id,version:1})).content.contentHash,first.content.contentHash)
+ }
+})
+
+test('MEM-DEDUP-CONFLICT001 并发同槽创建唯一，反文确认只准入一份且旧版本编辑仍拒绝',async()=>{
+ const f=await fixture(),base=slotInput(f),duplicates=await Promise.all([f.service.create(f.human,base),f.service.create(f.human,{...base,requestId:randomUUID()})]);assert.equal(duplicates[0]!.id,duplicates[1]!.id)
+ const opposite=await f.service.create(f.human,slotInput(f,'先核对 beta，再核对 alpha。'))
+ const results=await Promise.allSettled([duplicates[0]!,opposite].map(row=>f.service.confirm(f.human,{requestId:randomUUID(),memoryId:row.id,expectedStateVersion:1})))
+ assert.equal(results.filter(row=>row.status==='fulfilled').length,1);assert.equal(results.filter(row=>row.status==='rejected'&&row.reason.code==='teloa/conflict'&&row.reason.details?.reason==='role-memory-slot-conflict').length,1)
+ const current=(await f.service.list(f.human,{roleId:f.role.id})).find(row=>row.state==='confirmed')!
+ await assert.rejects(f.service.edit(f.human,{requestId:randomUUID(),roleId:f.role.id,memoryId:current.id,expectedContentVersion:1,expectedContentHash:current.content.contentHash,expectedStateVersion:1,title:current.title,markdown:'旧状态不能编辑'}),{code:'teloa/version-conflict'})
+ assert.equal((await f.service.confirmedForRun(pool,f.owner,'SOC',f.role)).length,1)
+})
+
+
+test('MEM-DEDUP-CONFLICT001 AutoDream固定来源同文重试不重复保存，反文不绕过确认闸',async()=>{
+ await initializeRoleDailyLogs(pool)
+ const f=await fixture('twin','general'),db=await pool.connect(),logs=new RoleDailyLogService(pool,identity,f.service)
+ let log
+ try{await db.query('begin');log=await logs.writeHabitLog(db,f.owner,{roleId:f.role.id,roleVersion:f.role.version,day:'2026-10-29',title:'合成观察',markdown:'只记合成事实。',evidence:[],requestId:randomUUID()});await db.query('commit')}finally{db.release()}
+ const input={requestId:randomUUID(),roleId:f.role.id,expectedRoleVersion:f.role.version,title:'核对顺序',markdown:'先核对 alpha，再核对 beta。',source:{kind:'habit-digest' as const,id:log.id,version:1},visibility:{kind:'private' as const,scopeIds:[]}}
+ const first=await f.service.remember(f.human,input),same=await f.service.remember(f.human,{...input,requestId:randomUUID()});assert.equal(first.id,same.id);assert.equal(same.stateVersion,2)
+ await rejectsSlot(f.service.remember(f.human,{...input,requestId:randomUUID(),markdown:'先核对 beta，再核对 alpha。'}),'content')
+ assert.equal((await f.service.list(f.human,{roleId:f.role.id})).filter(row=>row.state==='confirmed').length,1)
+ await f.service.withdraw(f.human,{requestId:randomUUID(),memoryId:first.id,expectedStateVersion:2})
+ assert.equal((await f.service.remember(f.human,input)).state,'withdrawn','原固定请求不恢复本人已撤回项')
+})
+
+
+test('MEM-DEDUP-CORRECTIVE 正式create API接受规范等价标题的原快照并收口journal',async()=>{
+ const f=await fixture(),{requestId:_requestId,...base}=slotInput(f);let raw:string|null=null
+ const api=createRoleMemoryApi(async(endpoint,payload)=>{assert.equal(endpoint,'role-memory/create');return f.service.create(f.human,payload)},{read:()=>raw,write:value=>{raw=value},clear:()=>{raw=null}})
+ const first=await api.create({...base,title:'ＡＬＰＨＡ　 顺序'})
+ const second=await api.create({...base,title:'alpha 顺序'})
+ assert.equal(second.id,first.id);assert.equal(second.title,first.title);assert.equal(raw,null);assert.equal(api.pending(),undefined)
+ assert.equal((await f.service.list(f.human,{roleId:f.role.id})).length,1)
+})
+
+test('MEM-DEDUP-CORRECTIVE 同Task大小写source不能双准入，legacy读取仍拒绝且原source不改',async()=>{
+ const f=await fixture(),base=slotInput(f),upper={...base.source,id:base.source.id.toUpperCase()};assert.notEqual(base.source.id,upper.id)
+ const first=await f.service.create(f.human,base),second=await f.service.create(f.human,{...base,requestId:randomUUID(),source:upper,markdown:'先核对 beta，再核对 alpha。'})
+ const before=(await pool.query('select id,source_snapshot,request_spec from teloa_role_memories where owner_id=$1 order by id',[f.owner])).rows
+ await f.service.confirm(f.human,{requestId:randomUUID(),memoryId:first.id,expectedStateVersion:1})
+ await rejectsSlot(f.service.confirm(f.human,{requestId:randomUUID(),memoryId:second.id,expectedStateVersion:1}),'content')
+ // 只在新PG模拟旧版本已准入的别名快照。
+ await pool.query("update teloa_role_memories set state='confirmed',state_version=2,confirmed_at=candidate_at where owner_id=$1 and id=$2",[f.owner,second.id])
+ await rejectsSlot(f.service.confirmedForRun(pool,f.owner,'SOC',f.role),'content')
+ assert.deepEqual((await pool.query('select id,source_snapshot,request_spec from teloa_role_memories where owner_id=$1 order by id',[f.owner])).rows,before)
+ await f.service.withdraw(f.human,{requestId:randomUUID(),memoryId:second.id,expectedStateVersion:2})
+ assert.deepEqual((await f.service.confirmedForRun(pool,f.owner,'SOC',f.role)).map(row=>row.id),[first.id])
+})
+
+test('MEM-DEDUP-CORRECTIVE 并发role/source UUID别名共用准入身份且保留原请求',async()=>{
+ const f=await fixture(),base=slotInput(f),alias={...base,requestId:randomUUID(),roleId:f.role.id.toUpperCase(),source:{...base.source,id:base.source.id.toUpperCase()}}
+ const rows=await Promise.all([f.service.create(f.human,base),f.service.create(f.human,alias)])
+ assert.equal(rows[0]!.id,rows[1]!.id);assert.equal((await f.service.list(f.human,{roleId:f.role.id})).length,1)
+ const receipts=(await pool.query('select request_id,request_spec,result from teloa_role_memory_creations where owner_id=$1',[f.owner])).rows
+ assert.equal(receipts.length,2)
+ for(const input of [base,alias]){const receipt=receipts.find(row=>row.request_id===input.requestId)!;assert.equal(receipt.request_spec.roleId,input.roleId);assert.deepEqual(receipt.request_spec.source,input.source)}
+ const agent=await f.service.create({ownerId:f.owner,kind:'agent',roleId:alias.roleId},{...alias,requestId:randomUUID(),title:'独立合成主题'})
+ assert.equal(agent.proposedBy.kind,'role');if(agent.proposedBy.kind==='role')assert.equal(agent.proposedBy.roleId,alias.roleId)
+})
+
+test('MEM03-CROSS 跨Task同文保留新来源候选，不能重复生效或冒用旧创建回执',async()=>{
+ const f=await fixture(),base={...slotInput(f),title:'跨来源核验顺序'},first=await f.service.create(f.human,base)
+ await f.service.confirm(f.human,{requestId:randomUUID(),memoryId:first.id,expectedStateVersion:1})
+ const task=await new TaskService(pool,identity).create(f.owner,{requestId:randomUUID(),fields:{title:'第二个独立核验任务',goal:'核对独立证据',scope:'SOC'},assignee:{roleId:f.role.id,expectedVersion:f.role.version}})
+ let journal:string|null=null
+ const api=createRoleMemoryApi(async(endpoint,payload)=>{assert.equal(endpoint,'role-memory/create');return f.service.create(f.human,payload)},{read:()=>journal,write:value=>{journal=value},clear:()=>{journal=null}})
+ const {requestId:_requestId,...input}=base,second=await api.create({...input,source:{kind:'task',id:task.id,version:1}})
+ assert.notEqual(second.id,first.id);assert.equal(second.source.id,task.id);assert.equal(second.state,'candidate');assert.equal(journal,null)
+ const originals=(await pool.query('select id,request_spec,source_snapshot from teloa_role_memories where owner_id=$1 order by id',[f.owner])).rows
+ await rejectsSlot(f.service.confirm(f.human,{requestId:randomUUID(),memoryId:second.id,expectedStateVersion:1}),'duplicate')
+ assert.deepEqual((await f.service.confirmedForRun(pool,f.owner,'SOC',f.role)).map(row=>row.id),[first.id])
+ assert.equal((await f.service.list(f.human,{roleId:f.role.id})).find(row=>row.id===second.id)!.state,'candidate')
+ assert.deepEqual((await pool.query('select id,request_spec,source_snapshot from teloa_role_memories where owner_id=$1 order by id',[f.owner])).rows,originals)
+ assert.deepEqual(await f.service.create(f.human,base),first)
+})
+
+test('MEM03-CROSS 跨Task反文并发确认只准入一份，明确withdraw后才能选择另一份',async()=>{
+ const f=await fixture(),base={...slotInput(f),title:'跨来源核验顺序'},first=await f.service.create(f.human,base)
+ const task=await new TaskService(pool,identity).create(f.owner,{requestId:randomUUID(),fields:{title:'另一证据任务',goal:'核对反规则',scope:'SOC'},assignee:{roleId:f.role.id,expectedVersion:f.role.version}})
+ const second=await f.service.create(f.human,{...base,requestId:randomUUID(),markdown:'先核对 beta，再核对 alpha。',source:{kind:'task',id:task.id,version:1}})
+ const outcomes=await Promise.allSettled([first,second].map(memory=>f.service.confirm(f.human,{requestId:randomUUID(),memoryId:memory.id,expectedStateVersion:1})))
+ assert.equal(outcomes.filter(row=>row.status==='fulfilled').length,1)
+ assert.equal(outcomes.filter(row=>row.status==='rejected'&&row.reason.code==='teloa/conflict'&&row.reason.details?.kind==='content').length,1)
+ const active=(await f.service.list(f.human,{roleId:f.role.id})).find(row=>row.state==='confirmed')!,candidate=(await f.service.list(f.human,{roleId:f.role.id})).find(row=>row.state==='candidate')!
+ await f.service.withdraw(f.human,{requestId:randomUUID(),memoryId:active.id,expectedStateVersion:active.stateVersion})
+ assert.equal((await f.service.confirm(f.human,{requestId:randomUUID(),memoryId:candidate.id,expectedStateVersion:candidate.stateVersion})).state,'confirmed')
+ assert.deepEqual((await f.service.confirmedForRun(pool,f.owner,'SOC',f.role)).map(row=>row.id),[candidate.id])
+})
+
+test('MEM03-CROSS 不相交scope独立生效，确认态编辑不能撞入另一有效主题',async()=>{
+ const f=await fixture();await pool.query("update teloa_roles set definition=jsonb_set(definition,'{scopes}','[\"SOC\",\"general\"]') where owner_id=$1 and id=$2",[f.owner,f.role.id])
+ const role=(await new RoleService(pool,identity).list(f.owner,{}))[0]!,base={...slotInput(f),title:'跨范围顺序'}
+ const first=await f.service.create(f.human,base);await f.service.confirm(f.human,{requestId:randomUUID(),memoryId:first.id,expectedStateVersion:1})
+ const task=await new TaskService(pool,identity).create(f.owner,{requestId:randomUUID(),fields:{title:'通用任务',goal:'范围独立',scope:'general'},assignee:{roleId:role.id,expectedVersion:role.version}})
+ const second=await f.service.create(f.human,{...base,requestId:randomUUID(),source:{kind:'task',id:task.id,version:1},visibility:{kind:'role',scopeIds:['general']},markdown:'先核对 beta，再核对 alpha。'})
+ await f.service.confirm(f.human,{requestId:randomUUID(),memoryId:second.id,expectedStateVersion:1})
+ assert.deepEqual((await f.service.confirmedForRun(pool,f.owner,'SOC',role)).map(row=>row.id),[first.id]);assert.deepEqual((await f.service.confirmedForRun(pool,f.owner,'general',role)).map(row=>row.id),[second.id])
+ const other=await f.service.create(f.human,{...base,requestId:randomUUID(),title:'原本不同的主题',source:{kind:'self-feedback',id:randomUUID(),version:1}}),confirmed=await f.service.confirm(f.human,{requestId:randomUUID(),memoryId:other.id,expectedStateVersion:1})
+ await rejectsSlot(f.service.edit(f.human,{requestId:randomUUID(),roleId:role.id,memoryId:other.id,expectedContentVersion:1,expectedContentHash:other.content.contentHash,expectedStateVersion:confirmed.stateVersion,title:base.title,markdown:base.markdown}),'duplicate')
+ assert.equal((await f.service.readVersion(f.human,{roleId:role.id,memoryId:other.id,version:1})).title,other.title)
+})
+
+test('MEM03-CROSS legacy跨来源集合不能注入，固定选项不扩选也不改历史',async()=>{
+ const f=await fixture(),base=slotInput(f),first=await f.service.create(f.human,base),second=await f.service.create(f.human,{...base,requestId:randomUUID(),source:{kind:'self-feedback',id:randomUUID(),version:1},markdown:'先核对 beta，再核对 alpha。'})
+ await f.service.confirm(f.human,{requestId:randomUUID(),memoryId:first.id,expectedStateVersion:1});await pool.query("update teloa_role_memories set state='confirmed',state_version=2,confirmed_at=candidate_at where owner_id=$1 and id=$2",[f.owner,second.id])
+ await rejectsSlot(f.service.confirmedForRun(pool,f.owner,'SOC',f.role),'content')
+ await rejectsSlot(f.service.confirmedForRun(pool,f.owner,'SOC',f.role,30,[first.id,second.id]),'content')
+ let calls=0;const provider={retain:async()=>{calls++},operation:async()=>{calls++;return 'not_found' as const},recall:async()=>{calls++;return []}}
+ await rejectsSlot(new RoleExperienceService(pool,provider,{providerKey:'mem03-cross-test'}).read({ownerId:f.owner,roleId:f.role.id,roleVersion:f.role.version,scope:'SOC',query:'仅核对本合成记忆',load:()=>f.service.confirmedForExperience(pool,f.owner,'SOC',f.role)}),'content');assert.equal(calls,0)
+ assert.deepEqual((await f.service.confirmedForRun(pool,f.owner,'SOC',f.role,30,[first.id])).map(row=>row.id),[first.id])
+ assert.deepEqual(await f.service.readVersion(f.human,{roleId:f.role.id,memoryId:first.id,version:1}),first)
+ const twin=await memoryViewFixture(),duplicate=await twin.service.create(twin.human,{requestId:randomUUID(),roleId:twin.role.id,expectedRoleVersion:twin.role.version,title:twin.memory.title,markdown:twin.memory.content.markdown,source:{kind:'self-feedback',id:randomUUID(),version:1},visibility:{kind:'private',scopeIds:[]}})
+ const view=await twin.views.create(twin.owner,twin.input);await pool.query("update teloa_role_memories set state='confirmed',state_version=2,confirmed_at=candidate_at where owner_id=$1 and id=$2",[twin.owner,duplicate.id])
+ await rejectsSlot(twin.service.confirmedViewEntries(pool,twin.owner,twin.role,[...view.entries,{memoryId:duplicate.id,memoryVersion:1,contentSha256:duplicate.content.contentHash}]),'duplicate')
+ assert.deepEqual((await twin.views.read(twin.owner,{viewId:view.id})).entries,view.entries)
+})
+
+test('MEM03-CROSS 跨日remember保留冲突候选，已确认重试也不能吞legacy冲突',async()=>{
+ await initializeRoleDailyLogs(pool)
+ const f=await fixture('twin','general'),logs=new RoleDailyLogService(pool,identity,f.service),ids:string[]=[]
+ for(const day of ['2026-10-29','2026-10-30']){const db=await pool.connect();try{await db.query('begin');const log=await logs.writeHabitLog(db,f.owner,{roleId:f.role.id,roleVersion:f.role.version,day,title:'合成观察',markdown:'只记合成事实。',evidence:[],requestId:randomUUID()});ids.push(log.id);await db.query('commit')}finally{db.release()}}
+ const base={requestId:randomUUID(),roleId:f.role.id,expectedRoleVersion:f.role.version,title:'跨日核验顺序',markdown:'先核对 alpha，再核对 beta。',source:{kind:'habit-digest' as const,id:ids[0]!,version:1},visibility:{kind:'private' as const,scopeIds:[]}},first=await f.service.remember(f.human,base)
+ await rejectsSlot(f.service.remember(f.human,{...base,requestId:randomUUID(),source:{...base.source,id:ids[1]!}}),'duplicate')
+ const second=(await f.service.list(f.human,{roleId:f.role.id})).find(row=>row.id!==first.id)!;assert.equal(second.state,'candidate');assert.equal(second.source.id,ids[1])
+ await pool.query("update teloa_role_memories set state='confirmed',state_version=2,confirmed_at=candidate_at where owner_id=$1 and id=$2",[f.owner,second.id])
+ await rejectsSlot(f.service.remember(f.human,base),'duplicate')
+ assert.deepEqual((await f.service.readVersion(f.human,{roleId:f.role.id,memoryId:first.id,version:1})).source,base.source)
+})
+
+test('MEM03-ROLE-VERSION 正常暂停改名恢复后，旧有效主题仍阻止同文及反文双准入',async()=>{
+ for(const kind of ['duplicate','content'] as const){
+  const owner=randomUUID(),roles=new RoleService(pool,identity),lifecycle=new RoleLifecycleService(pool,identity),service=new RoleMemoryService(pool,identity),human={ownerId:owner,kind:'human' as const}
+  const role=await roles.create(owner,{requestId:randomUUID(),fields:{name:'版本前核验员',kind:'employee',scopes:['general'],duty:'核对本轮合成记忆',dataScope:'固定本人反馈',executionScope:'仅存取守卫',skills:[],knowledge:[],responsibility:testRoleResponsibility,runtimeConfig:{agentPresetId:'standard'}}})
+  const source={kind:'self-feedback' as const,id:randomUUID(),version:1},input={requestId:randomUUID(),roleId:role.id,expectedRoleVersion:role.version,title:'成果交付前的核验顺序',markdown:'先核对 alpha，再核对 beta。',source,visibility:{kind:'role' as const,scopeIds:['general']}},first=await service.create(human,input),confirmed=await service.confirm(human,{requestId:randomUUID(),memoryId:first.id,expectedStateVersion:1})
+  const fixedA=async()=>({record:(await pool.query('select * from teloa_role_memories where owner_id=$1 and id=$2',[owner,first.id])).rows,versions:(await pool.query('select * from teloa_role_memory_versions where owner_id=$1 and memory_id=$2 order by number',[owner,first.id])).rows,creations:(await pool.query('select * from teloa_role_memory_creations where owner_id=$1 and memory_id=$2 order by request_id',[owner,first.id])).rows,changes:(await pool.query('select * from teloa_role_memory_changes where owner_id=$1 and memory_id=$2 order by request_id',[owner,first.id])).rows})
+  const before=await fixedA(),paused=(await lifecycle.change(owner,{roleId:role.id,expectedVersion:role.version,action:'pause',reason:'仅修改本合成岗位姓名。'})).role
+  const {id:_id,ownerId:_ownerId,version:_version,state:_state,createdAt:_createdAt,updatedAt:_updatedAt,...fields}=paused
+  const edited=await roles.edit(owner,{roleId:role.id,expectedVersion:paused.version,expectedProfile:{name:paused.name,...(paused.avatarKey?{avatarKey:paused.avatarKey}:{})},fields:{...fields,name:'版本后核验员'}}),current=(await lifecycle.change(owner,{roleId:role.id,expectedVersion:edited.version,action:'resume',reason:'恢复同一岗位，不发起工作。'})).role
+  assert.deepEqual([role.version,paused.version,edited.version,current.version],[1,2,3,4]);assert.equal(current.id,role.id)
+  const candidate=await service.create(human,{...input,requestId:randomUUID(),expectedRoleVersion:current.version,markdown:kind==='duplicate'?input.markdown:'先核对 beta，再核对 alpha。'})
+  assert.notEqual(candidate.id,first.id);assert.equal(candidate.roleVersion,4);assert.deepEqual(candidate.source,source)
+  await rejectsSlot(service.confirm(human,{requestId:randomUUID(),memoryId:candidate.id,expectedStateVersion:1}),kind)
+  const effective=await service.confirmedForRun(pool,owner,'general',current);assert.deepEqual(effective.map(row=>row.id),[first.id]);assert.equal((await service.list(human,{roleId:role.id})).find(row=>row.id===first.id)!.sourceAvailable,true)
+  assert.deepEqual(await fixedA(),before);assert.deepEqual(await service.readVersion(human,{roleId:role.id,memoryId:first.id,version:1}),first);assert.deepEqual(await service.create(human,input),first)
+  await service.withdraw(human,{requestId:randomUUID(),memoryId:first.id,expectedStateVersion:confirmed.stateVersion})
+  assert.equal((await service.confirm(human,{requestId:randomUUID(),memoryId:candidate.id,expectedStateVersion:1})).state,'confirmed');assert.deepEqual((await service.confirmedForRun(pool,owner,'general',current)).map(row=>row.id),[candidate.id])
+  const after=await fixedA();assert.deepEqual(after.versions,before.versions);assert.deepEqual(after.creations,before.creations);assert.ok(before.changes.every(row=>after.changes.some(saved=>JSON.stringify(saved)===JSON.stringify(row))))
+  assert.deepEqual(await service.readVersion(human,{roleId:role.id,memoryId:first.id,version:1}),first)
+ }
+})
+
+test('成果对象撤回后依赖记忆不再进入新Run，确认历史和正文保留而不冒称有效来源',async()=>{
+ const f=await fixture(),source={kind:'session' as const,id:randomUUID(),scope:'SOC',version:'artifact-withdrawal-v1',title:'本轮合成成果来源'},artifacts=new ArtifactService(pool,identity,async()=>({source,sessionIds:[source.id]}))
+ const artifact=await artifacts.create(f.owner,{requestId:randomUUID(),source,content:{title:'合成成果',sections:[{id:'body',title:'正文',text:'合成原稿'}],snapshotIds:[],note:'原稿'}})
+ const candidate=await f.service.create(f.human,{requestId:randomUUID(),roleId:f.role.id,expectedRoleVersion:f.role.version,title:'本轮合成规则',markdown:'仅来源有效时用于本轮工作。',source:{kind:'artifact',id:artifact.artifactId,version:1},visibility:{kind:'role',scopeIds:['SOC']}})
+ const confirmed=await f.service.confirm(f.human,{requestId:randomUUID(),memoryId:candidate.id,expectedStateVersion:1})
+ assert.equal((await f.service.confirmedForRun(pool,f.owner,'SOC',f.role)).length,1)
+ await artifacts.withdraw(f.owner,{requestId:randomUUID(),artifactId:artifact.artifactId,expectedVersion:1,source})
+ assert.deepEqual(await f.service.confirmedForRun(pool,f.owner,'SOC',f.role),[])
+ const kept=(await f.service.list(f.human,{roleId:f.role.id}))[0]!
+ assert.equal(kept.sourceAvailable,false);assert.equal(kept.state,'confirmed');assert.deepEqual(kept.content,confirmed.content);assert.deepEqual(kept.source,confirmed.source)
 })

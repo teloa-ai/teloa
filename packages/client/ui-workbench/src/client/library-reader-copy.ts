@@ -1,0 +1,6 @@
+/** 阅读、编辑共用的短文案；其他语言沿产品既有英文回退。 */
+export function libraryReaderText(locale:string){
+ if(locale.startsWith('en'))return {tree:'Library file tree',collapse:'Collapse file tree',expand:'Expand file tree',info:'File information',closeInfo:'Close file information',edit:'Edit',download:'Download',type:'Type',size:'Size',location:'Location',saved:'Record saved',text:'Text',markdown:'Markdown',editUnavailable:'Editing is unavailable for this source.',copy:'Save copy',version:'Save version',cancel:'Cancel',source:'View source',read:'Read content',copyBoundary:'Save an editable copy. The original file stays unchanged.',files:'Files',details:'More details'}
+ if(/^zh-(Hant|TW|HK)/.test(locale))return {tree:'資料檔案樹',collapse:'收起檔案樹',expand:'展開檔案樹',info:'檔案資訊',closeInfo:'關閉檔案資訊',edit:'修改',download:'下載',type:'類型',size:'大小',location:'位置',saved:'資料儲存時間',text:'文字',markdown:'Markdown',editUnavailable:'此來源目前無法修改。',copy:'儲存副本',version:'儲存版本',cancel:'取消',source:'檢視原始碼',read:'閱讀內容',copyBoundary:'儲存為可編輯副本，原檔案保持不變。',files:'檔案',details:'更多詳情'}
+ return {tree:'资料文件树',collapse:'收起文件树',expand:'展开文件树',info:'文件信息',closeInfo:'关闭文件信息',edit:'修改',download:'下载',type:'类型',size:'大小',location:'位置',saved:'资料保存时间',text:'文本',markdown:'Markdown',editUnavailable:'此来源目前无法修改。',copy:'保存副本',version:'保存版本',cancel:'取消',source:'查看源码',read:'阅读正文',copyBoundary:'保存为可编辑副本，原文件保持不变。',files:'文件',details:'更多详情'}
+}

@@ -202,7 +202,7 @@ test('群内直接回应从路由到接力停下与表情：真库、真端点�
   },
  })
 
- ctx.provide('agentPresets',{serviceFor:()=>undefined,acquireScope:async()=>({key:{},async [Symbol.asyncDispose](){}}),resolve:async(id?:string)=>({id:id??teloaAgentPresetId})})
+ ctx.provide('agentPresets',{serviceFor:()=>undefined,composedPreset:(scope:Context)=>ctx.agents.list().find(agent=>agent.ctx===scope)?.session.header.agentPreset,acquireScope:async()=>({key:{},async [Symbol.asyncDispose](){}}),resolve:async(id?:string)=>({id:id??teloaAgentPresetId})})
  ctx.provide('fileReferences',{})
  let registered:RpcHandler|undefined
  ctx.provide('connection',{fetch:{register:()=>async()=>{}},rpc:{handle:(path:string,handler:RpcHandler)=>{assert.equal(path,'/teloa');registered=handler;return ()=>{registered=undefined}}}})
@@ -430,22 +430,26 @@ test('群内直接回应从路由到接力停下与表情：真库、真端点�
  const runRowOf=async(runId:string)=>(await pool.query('select input_text,group_context_hash,state from teloa_task_runs where owner_id=$1 and id=$2',[owner,runId])).rows[0]
  const firstRunRow=await runRowOf(firstRun.id)
  const firstInput=JSON.parse(String(firstRunRow.input_text)) as Record<string,unknown>
- await t.test('I8 input_text 顶层带 groupTopic：≤20 条、升序、每项恰 5 键、notice 逐字',()=>{
+ await t.test('I8 input_text 顶层带 groupTopic：≤20 条、升序、每项恰 6 键含原消息身份、notice 逐字',()=>{
   const topic=firstInput.groupTopic as {notice:string;messages:Record<string,unknown>[]}
   assert.ok(topic,'群任务的执行输入必须带 groupTopic')
   // 路由派工是 v2 群来源：按连续上下文读取（规格 §3.3），notice 逐字是连续上下文那一句；手工群任务仍沿原话题那一句。
   assert.equal(topic.notice,groupConversationNotice)
   assert.notEqual(topic.notice,groupTopicNotice)
   assert.ok(topic.messages.length>=1&&topic.messages.length<=20)
-  for(const message of topic.messages)assert.deepEqual(Object.keys(message).sort(),['authorId','authorKind','authorName','createdAt','text'])
+  for(const message of topic.messages)assert.deepEqual(Object.keys(message).sort(),['authorId','authorKind','authorName','createdAt','messageId','text'])
+  assert.ok(topic.messages.some(message=>message.messageId===rootMessage.id),'原始本人消息身份不得用位置或作者代替')
   const stamps=topic.messages.map(message=>Date.parse(String(message.createdAt)))
   assert.deepEqual(stamps,[...stamps].sort((left,right)=>left-right),'话题按时间升序')
   assert.equal('groupTopic' in (firstInput.groupContext as Record<string,unknown>),false,'groupTopic 不进 groupContext')
  })
- await t.test('I10 RunGroupContext 键数与 runGroupContextHash 逐字不变',()=>{
+ await t.test('I10 RunGroupContext 明确核对新增固定来源，runGroupContextHash逐字一致',()=>{
   const context=firstRun.groupContext!
-  // 键名逐字钉住（比只数个数更有区分力）：`task-run-group-context.ts:12` 的九键，`files` 必须排在最后。
-  assert.deepEqual(Object.keys(context),['taskId','groupId','groupVersion','roleId','roleVersion','grantVersion','source','materials','files'])
+  // 当前契约允许固定本人要求与成果资源；仍逐键核对，files 保持最后。
+  const keys=['taskId','groupId','groupVersion','roleId','roleVersion','grantVersion','source','materials']
+  if(context.ownerRequest!==undefined){keys.push('ownerRequest');assert.deepEqual(context.ownerRequest,{messageId:rootMessage.id,text:firstText,sha256:createHash('sha256').update(firstText).digest('hex')})}
+  if(context.workResources!==undefined){keys.push('workResources');assert.ok(context.workResources.length>0)}
+  assert.deepEqual(Object.keys(context),[...keys,'files'])
   assert.deepEqual(Object.keys(context.source),['messageId','rootId','createdAt','text'])
   assert.equal(String(firstRunRow.group_context_hash),runGroupContextHash(context))
  })

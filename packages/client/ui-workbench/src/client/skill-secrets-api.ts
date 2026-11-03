@@ -7,7 +7,7 @@ export type SkillSecretVar={envVarName:string;label:{'zh-CN':string;en:string};r
  * vars 为空：当前生效的不是声明密钥的市场安装（未安装、非市场来源或被同名技能遮蔽），页面显示「需先安装」。
  * group：共享密钥组（目录内同组技能名，按名排序）；保存与删除作用于整组。
  */
-export type SkillSecretsState={skill:string;binding:string|null;writable:boolean;reconfirm:boolean;vars:SkillSecretVar[];group?:{id:string;members:string[]}}
+export type SkillSecretsState={skill:string;binding:string|null;writable:boolean;reconfirm:boolean;vars:SkillSecretVar[];group?:{id:string;members:string[]};owner?:{installation:string;installationId:string;version:string;authorized:boolean|null}}
 const skillPat=/^[a-z][a-z0-9-]{0,63}$/,varPat=/^[A-Z][A-Z0-9_]{1,63}$/,groupPat=/^[a-z][a-z0-9-]{1,63}$/
 const exact=(value:unknown,keys:readonly string[]):Record<string,unknown>=>{
  if(!value||typeof value!=='object'||Array.isArray(value)||Object.keys(value).length!==keys.length||keys.some(key=>!Object.hasOwn(value,key)))throw Error()
@@ -35,7 +35,8 @@ function readVar(item:unknown):SkillSecretVar{
 function readState(value:unknown):SkillSecretsState{
  try{
   const grouped=!!value&&typeof value==='object'&&Object.hasOwn(value,'group')
-  const row=exact(value,['skill','binding','writable','reconfirm','vars',...(grouped?['group']:[])])
+  const owned=!!value&&typeof value==='object'&&Object.hasOwn(value,'owner')
+  const row=exact(value,['skill','binding','writable','reconfirm','vars',...(grouped?['group']:[]),...(owned?['owner']:[])])
   if(typeof row.skill!=='string'||!skillPat.test(row.skill)||typeof row.writable!=='boolean'||typeof row.reconfirm!=='boolean'||!Array.isArray(row.vars))throw Error()
   if(row.vars.length?(typeof row.binding!=='string'||!/^[a-f0-9]{64}$/.test(row.binding)):row.binding!==null)throw Error()
   let group:{id:string;members:string[]}|undefined
@@ -45,7 +46,15 @@ function readState(value:unknown):SkillSecretsState{
    if(!row.vars.length||typeof g.id!=='string'||!groupPat.test(g.id)||!Array.isArray(g.members)||!g.members.every(name=>typeof name==='string'&&skillPat.test(name))||!g.members.includes(row.skill))throw Error()
    group={id:g.id,members:[...g.members] as string[]}
   }
-  return {skill:row.skill,binding:row.binding as string|null,writable:row.writable,reconfirm:row.reconfirm,vars:row.vars.map(readVar),...(group?{group}:{})}
+  let owner:SkillSecretsState['owner']
+  if(owned){
+   const o=exact(row.owner,['installation','installationId','version','authorized']),authorized=o.authorized
+   if(grouped||typeof o.installation!=='string'||!/^[a-f0-9]{64}$/.test(o.installation)||typeof o.installationId!=='string'||!o.installationId||typeof o.version!=='string'||!o.version||o.version.length>80)throw Error()
+   if(authorized!==null&&typeof authorized!=='boolean')throw Error()
+   if(authorized===null?row.writable||row.vars.length!==0:authorized!==!!row.vars.length)throw Error()
+   owner={installation:o.installation,installationId:o.installationId,version:o.version,authorized}
+  }
+  return {skill:row.skill,binding:row.binding as string|null,writable:row.writable,reconfirm:row.reconfirm,vars:row.vars.map(readVar),...(group?{group}:{}),...(owner?{owner}:{})}
  }catch{throw Error('技能密钥回包格式不正确。')}
 }
 const checkSkill=(skill:string)=>{if(!skillPat.test(skill))throw Error('技能名格式不正确。')}
@@ -53,11 +62,12 @@ const checkSkill=(skill:string)=>{if(!skillPat.test(skill))throw Error('技能�
  * 「已添加」卡片徽标：密钥：已保存 / 未填写 / 需重新确认；另有两种不能说「未填写」的状态——
  * 当前生效的不是声明密钥的市场安装（需先安装）、存储锁定或只读（此时宿主读不到记录，已保存与否不可知）。
  */
-export function skillSecretsBadge(state:SkillSecretsState,t:(key:string)=>string):string{
- const status=!state.vars.length?t('market.skillSecrets.needsInstallShort'):!state.writable?t('market.skillSecrets.lockedShort'):state.reconfirm?t('market.skillSecrets.reconfirmShort'):state.vars.every(v=>v.configured||!v.required)&&state.vars.some(v=>v.configured)?t('market.skillSecrets.saved'):t('market.skillSecrets.missing')
+export function skillSecretsBadge(state:SkillSecretsState,t:(key:string)=>string,locale='zh-CN'):string{
+ const waiting=locale==='zh-CN'?'待本人授权':locale.startsWith('zh')?'待本人授權':'Awaiting your consent'
+ const status=!state.writable?t('market.skillSecrets.lockedShort'):state.owner?.authorized===false?waiting:!state.vars.length?t('market.skillSecrets.needsInstallShort'):state.reconfirm?t('market.skillSecrets.reconfirmShort'):state.vars.every(v=>v.configured||!v.required)&&state.vars.some(v=>v.configured)?t('market.skillSecrets.saved'):t('market.skillSecrets.missing')
  return `${t('market.skillSecrets.open')}：${status}`
 }
-export type SkillSecretsApi=ReturnType<typeof createSkillSecretsApi>
+export type SkillSecretsApi=Pick<ReturnType<typeof createSkillSecretsApi>,'describe'|'save'|'remove'>&Partial<Pick<ReturnType<typeof createSkillSecretsApi>,'authorizeOwned'|'revokeOwned'|'removeOwned'>>
 export function createSkillSecretsApi(call:Call){
  return {
   async describe(skill:string){checkSkill(skill);return readState(await call('skill-secrets/describe',{skill}))},
@@ -68,5 +78,8 @@ export function createSkillSecretsApi(call:Call){
    return readState(await call('skill-secrets/save',{skill,values,expectedBinding}))
   },
   async remove(skill:string){checkSkill(skill);return readState(await call('skill-secrets/delete',{skill}))},
+  async authorizeOwned(skill:string,expectedInstallation:string,expectedBinding:string|null,secrets:unknown[]){checkSkill(skill);return readState(await call('skill-secrets/authorize-owned',{skill,expectedInstallation,expectedBinding,secrets,confirmed:true}))},
+  async removeOwned(skill:string,expectedInstallation:string,expectedBinding:string){checkSkill(skill);return readState(await call('skill-secrets/delete-owned',{skill,expectedInstallation,expectedBinding,confirmed:true}))},
+  async revokeOwned(skill:string,expectedInstallation:string,expectedBinding:string){checkSkill(skill);return readState(await call('skill-secrets/revoke-owned',{skill,expectedInstallation,expectedBinding,confirmed:true}))},
  }
 }

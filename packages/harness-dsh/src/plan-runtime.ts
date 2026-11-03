@@ -107,8 +107,8 @@ export function createPlanRuntime(dependencies:PlanRuntimeDependencies,options:{
  const overview=async(input:unknown)=>(await services()).occurrences.overview(owner,input)
  const executionHistory=async(input:unknown)=>(await services()).occurrences.executionHistory(owner,input)
  const status=async(input:unknown)=>new PlanSchedulerStatusService(await getPool(),{now}).get(owner,input)
- const executionContext:PlanOccurrenceService['executionContext']=async(db,value,taskId,completion,includeMethodSource)=>{
-  actor(value);return (await services()).occurrences.executionContext(db,owner,taskId,completion,includeMethodSource)
+ const executionContext:PlanOccurrenceService['executionContext']=async(db,value,taskId,completion,includeMethodSource,verification,singleOwner)=>{
+  actor(value);return (await services()).occurrences.executionContext(db,owner,taskId,completion,includeMethodSource,verification,singleOwner)
  }
  const dispatchOccurrence=async(occurrence:PlanOccurrence,signal:AbortSignal)=>{
   actor(occurrence.ownerId);signal.throwIfAborted()

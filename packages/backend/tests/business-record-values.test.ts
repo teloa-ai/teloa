@@ -1,10 +1,17 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import * as api from '../src/index.ts'
+import {normalizeBusinessRecordFieldValue} from '../src/work/business-record-values.ts'
 import type {BusinessObjectFieldDefinition,BusinessRichMoneyFieldDefinition,BusinessRichMultiEnumFieldDefinition} from '@teloa/contract'
 const field=(type:BusinessObjectFieldDefinition['type'],required=true):BusinessObjectFieldDefinition=>({name:'value',label:'值',from:'值',type,required,...(type==='enum'?{values:['甲','乙']}:{})})
 const money:BusinessRichMoneyFieldDefinition={format:'teloa.business-rich-field/v2',name:'amount',label:'金额',from:'金额',required:true,type:'money',currencies:['CNY','SGD']}
 const tags:BusinessRichMultiEnumFieldDefinition={format:'teloa.business-rich-field/v2',name:'tags',label:'标签',from:'标签',required:true,type:'multi-enum',values:['vip','priority']}
+test('数量声明非负整数时拒绝负数、小数及被浮点舍入的非整数，旧number兼容',()=>{
+ const quantity={...field('number'),integer:true as const,minimum:0}
+ for(const value of ['0','4','4.0','40e-1'])assert.doesNotThrow(()=>api.assertBusinessRecordFieldValue(quantity,value))
+ for(const value of ['-1','1.5','4.0000000000000001','1e-400','-1e-400'])assert.throws(()=>api.assertBusinessRecordFieldValue(quantity,value),{code:'teloa/invalid-input'},value)
+ for(const value of ['-1','1.5'])assert.doesNotThrow(()=>api.assertBusinessRecordFieldValue(field('number'),value))
+})
 test('严格原始字段值共用校验，完整数值和原生布尔/时长语义',()=>{
  assert.equal(typeof api.assertBusinessRecordFieldValue,'function')
  for(const [type,valid,invalid] of [
@@ -56,4 +63,18 @@ test('基础字段超长错误只包含字段和长度事实，2000边界仍按U
  })
  assert.doesNotThrow(()=>api.assertBusinessRecordFieldValue(field('text'),'😀'.repeat(1000)))
  assert.throws(()=>api.assertBusinessRecordFieldValue(field('text'),'😀'.repeat(1000)+'字'),{code:'teloa/invalid-input'})
+})
+
+test('新修改草稿只依字段声明规范number/boolean，保留文本、富字段、空串和optional缺省',()=>{
+ for(const [type,raw,expected] of [['number','3',3],['number','0',0],['number','12.50',12.5],['boolean','false',false],['boolean',false,false],['boolean','0',false],['boolean','true',true],['text','03','03']] as const)
+  assert.equal(normalizeBusinessRecordFieldValue(field(type),raw),expected)
+ for(const type of ['text','number','boolean'] as const){
+  assert.equal(normalizeBusinessRecordFieldValue(field(type,false),''),'')
+  assert.equal(normalizeBusinessRecordFieldValue(field(type,false),undefined),undefined)
+  assert.throws(()=>normalizeBusinessRecordFieldValue(field(type),undefined),{code:'teloa/invalid-input'})
+ }
+ assert.equal(normalizeBusinessRecordFieldValue(money,'{"currency":"CNY","decimal":"9007199254740993.01"}'),'{"currency":"CNY","decimal":"9007199254740993.01"}')
+ assert.throws(()=>normalizeBusinessRecordFieldValue({...field('number'),integer:true,minimum:0},'3.5'),{code:'teloa/invalid-input'})
+ assert.throws(()=>normalizeBusinessRecordFieldValue({...field('number'),decimalScale:2},'12.501'),{code:'teloa/invalid-input'})
+ assert.throws(()=>normalizeBusinessRecordFieldValue(field('boolean'),'unknown'),{code:'teloa/invalid-input'})
 })

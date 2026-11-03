@@ -1,7 +1,8 @@
+import {taskRunStates,type TaskRunState} from '@teloa/contract'
 import {WorkError,isRecord,workTaskStates} from '@teloa/contract'
 import type {PlanExecutionHistoryCursor,PlanExecutionHistoryPage} from '@teloa/backend'
 
-export type PlanExecutionHistoryInput={planId?:string;limit:number;cursor?:PlanExecutionHistoryCursor;scope?:string;roleId?:string;query?:string;runState?:'prepared'|'submitting'|'accepted'|'active'|'ended'|'withdrawn'|'configuration_failed'|'not-started'}
+export type PlanExecutionHistoryInput={planId?:string;limit:number;cursor?:PlanExecutionHistoryCursor;scope?:string;roleId?:string;query?:string;runState?:TaskRunState|'not-started'}
 const uuid=(value:unknown):value is string=>typeof value==='string'&&/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)
 const timestamp=(value:unknown):value is string=>typeof value==='string'&&Number.isFinite(Date.parse(value))&&new Date(value).toISOString()===value
 const positive=(value:unknown):value is number=>Number.isSafeInteger(value)&&Number(value)>0
@@ -25,7 +26,7 @@ export function planExecutionHistoryInput(value:unknown):PlanExecutionHistoryInp
  if('scope' in row&&(typeof row.scope!=='string'||!/^[-a-zA-Z0-9_]{1,128}$/.test(row.scope)))throw invalidInput()
  if('roleId' in row&&!uuid(row.roleId))throw invalidInput()
  if('query' in row&&(typeof row.query!=='string'||!row.query.trim()||row.query.length>240))throw invalidInput()
- if('runState' in row&&(typeof row.runState!=='string'||!['prepared','submitting','accepted','active','ended','withdrawn','configuration_failed','not-started'].includes(row.runState)))throw invalidInput()
+ if('runState' in row&&(typeof row.runState!=='string'||!['prepared','submitting','accepted','active','ended','withdrawn','configuration_failed','submission_unknown','not-started'].includes(row.runState)))throw invalidInput()
  return {...row,...('query' in row?{query:(row.query as string).trim()}:{}),...('cursor' in row?{cursor:cursor(row.cursor,invalidInput)}:{})} as PlanExecutionHistoryInput
 }
 
@@ -49,7 +50,7 @@ export function planExecutionHistoryResponse(value:unknown,input:PlanExecutionHi
   }
   if(row.run!==null){
    const run=exact(row.run,['id','state','sessionId','createdAt'],invalidResponse)
-   if(row.task===null||!uuid(run.id)||typeof run.state!=='string'||!['prepared','submitting','accepted','active','ended','withdrawn','configuration_failed'].includes(run.state)||typeof run.sessionId!=='string'||!/^[a-zA-Z0-9_-]{1,128}$/.test(run.sessionId)||!timestamp(run.createdAt))throw invalidResponse()
+   if(row.task===null||!uuid(run.id)||typeof run.state!=='string'||!taskRunStates.includes(run.state)||typeof run.sessionId!=='string'||!/^[a-zA-Z0-9_-]{1,128}$/.test(run.sessionId)||!timestamp(run.createdAt))throw invalidResponse()
   }
   if(input.runState!==undefined&&(row.run===null?input.runState!=='not-started':(row.run as Record<string,unknown>).state!==input.runState))throw invalidResponse()
  }

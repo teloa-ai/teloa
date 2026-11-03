@@ -38,10 +38,10 @@ test('需要你入口会读取所有正式来源，并在任务、外部动作�
   const visit=(node:ts.Node)=>{if(ts.isVariableDeclaration(node)&&node.name.getText(file)==='attentionStatus'&&node.initializer&&ts.isObjectLiteralExpression(node.initializer))status=node.initializer;ts.forEachChild(node,visit)}
   visit(file);assert.ok(status)
   const known=status.properties.find((node):node is ts.PropertyAssignment=>ts.isPropertyAssignment(node)&&node.name.getText(file)==='known');assert.ok(known)
-  const ready:Record<string,unknown>={pendingMarketKnown:true,workAttention:{known:true},securityAttentionKnown:true,handoffsKnown:true,handoffError:undefined,savedPlanDirectory:'ready',serverRecoveryError:undefined}
+  const ready:Record<string,unknown>={taskAttentionKnown:true,taskLoadError:undefined,taskAttention:[],pendingMarketKnown:true,workAttention:{known:true},securityAttentionKnown:true,handoffsKnown:true,handoffError:undefined,savedPlanDirectory:'ready',serverRecoveryError:undefined}
   const evaluate=(patch:Record<string,unknown>={})=>new Function(...Object.keys(ready),'return ('+known.initializer.getText(file)+')')(...Object.values({...ready,...patch}))
   assert.equal(evaluate(),true)
-  for(const patch of [{pendingMarketKnown:false},{workAttention:{known:false}},{securityAttentionKnown:false},{handoffsKnown:false},{handoffError:'failed'},{savedPlanDirectory:'error'},{serverRecoveryError:'failed'}])assert.equal(evaluate(patch),false,'任一正式来源未确认都不可宣告完整')
+  for(const patch of [{taskAttentionKnown:false},{taskLoadError:'failed'},{taskAttention:[{nativeApprovalUnknown:true}]},{pendingMarketKnown:false},{workAttention:{known:false}},{securityAttentionKnown:false},{handoffsKnown:false},{handoffError:'failed'},{savedPlanDirectory:'error'},{serverRecoveryError:'failed'}])assert.equal(evaluate(patch),false,'任一正式来源未确认都不可宣告完整')
   // 会话页带着会话对象详情时也要装载：右栏页签的正文就是整张任务页，它要凭这份台账才敢说「已核对」。
   assert.ok(frame.includes("if(['home','tasks','attention'].includes(state.view)||conversationLedger)void loadSecurityAttention().catch"))
   assert.doesNotMatch(frame,/installations:\[\]/)

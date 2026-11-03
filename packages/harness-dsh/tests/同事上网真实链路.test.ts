@@ -115,7 +115,7 @@ async function boot(){
   },
  })
 
- ctx.provide('agentPresets',{serviceFor:()=>undefined,acquireScope:async()=>({key:{},async [Symbol.asyncDispose](){}}),resolve:async(id?:string)=>({id:id??'teloa-standard'})})
+ ctx.provide('agentPresets',{serviceFor:()=>undefined,composedPreset:(scope:Context)=>ctx.agents.list().find(agent=>agent.ctx===scope)?.session.header.agentPreset,acquireScope:async()=>({key:{},async [Symbol.asyncDispose](){}}),resolve:async(id?:string)=>({id:id??'teloa-standard'})})
  ctx.provide('fileReferences',{})
  let registered:RpcHandler|undefined
  ctx.provide('connection',{fetch:{register:()=>async()=>{}},rpc:{handle:(path:string,handler:RpcHandler)=>{assert.equal(path,'/teloa');registered=handler;return ()=>{}}}})

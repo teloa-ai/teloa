@@ -19,6 +19,7 @@ import type { WebAccessApi } from './web-access-api.js'
 import {ImChannelsSettingsPage,type ImChannelsSettingsProps} from './ImChannelsSettingsPage.js'
 import type {TeloaTranslate} from './i18n/index.js'
 import {applicationPresentation} from './application-presentation.js'
+import {installThemeSettingsSaveFeedback} from './ThemeSettingsSaveFeedback.js'
 
 /** 不以声明或单一厂商弹窗阻挡设置；模型配置统一进入原生模型页。主动补录密钥仍归原插件。 */
 const REPLACED_ONBOARDING_STEPS=new Set(['welcome-notice','deepseek-official'])
@@ -56,6 +57,7 @@ export function installSettingsShell(ctx:Context,navigation:{open:()=>void;close
     return ()=>management.dispose()
   })
   ctx.inject(['slots','sessions','connection','locale','configForms','uiSession','layout','remote','remote.settings'],child=>{
+    installThemeSettingsSaveFeedback(child)
     const connection=Reflect.get(child,'connection') as unknown as ConnectionHandle
     const remote=Reflect.get(child,'remote') as ClientRemote
     const mainSession=mainSessionSource(child.uiSession)

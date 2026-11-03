@@ -7,11 +7,15 @@ import type {createNativeWorkInput,NativeInputContext} from './native-work-input
 import type {NativeVoiceInputAdmissions} from './native-voice-input-admission.ts'
 import type {NativeHardwareInputAdmissions} from './native-hardware-input-admission.ts'
 import {combineWorkAccessLeases} from '@teloa/backend'
+import {prepareEmployeeMentionOwnerInput} from './employee-mention-input.ts'
 
 declare module '@deepseek-ai/dsh-typert-protocol'{
  interface RemoteErrorDetailsMap{
   'teloa/forbidden':Record<string,never>
   'teloa/unavailable':Record<string,never>
+  'teloa/version-conflict':Record<string,never>
+  'teloa/conflict':Record<string,never>
+  'teloa/invalid-input':{reason:'employee-context-goal-required'|'detached-project-goal-required'}
  }
 }
 
@@ -41,12 +45,17 @@ export function createNativeProducerAdmissions(input:Input,goalAdmission?:(candi
     ?context('prompt',['controller/prompt',candidate.agent.id,candidate.requestId,candidate.mode])
     :context('queue',['controller/queue-edit',candidate.agent.id,candidate.itemId,candidate.target,candidate.previousMessage.id])
    try{
+    await prepareEmployeeMentionOwnerInput(candidate.agent,candidate.message)
     const leases=[voice?.controller(candidate),hardware?.controller(candidate)].filter(lease=>lease!==undefined)
     await input.withNewInput(candidate.agent,candidate.message,binding,dispatch,undefined,leases.length?combineWorkAccessLeases(leases):undefined)
    }
    catch(error){
     // 内部准入仍抛业务错误；只有官方 Controller 的传输边界显式转换已知拒绝。
-    if(error instanceof WorkError&&(error.code==='teloa/forbidden'||error.code==='teloa/unavailable'))throw new RemoteError(error.code,error.message,{}, {cause:error})
+    if(error instanceof WorkError&&error.code==='teloa/invalid-input'){
+     const reason=error.details?.reason
+     if(reason==='employee-context-goal-required'||reason==='detached-project-goal-required')throw new RemoteError(error.code,'Restate the task using the current context.',{reason},{cause:error})
+    }
+    if(error instanceof WorkError&&(error.code==='teloa/forbidden'||error.code==='teloa/unavailable'||error.code==='teloa/version-conflict'||error.code==='teloa/conflict'))throw new RemoteError(error.code,error.message,{}, {cause:error})
     throw error
    }
   },

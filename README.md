@@ -280,7 +280,7 @@ Community 0.2.4 · 32 views · Actual interfaces with example data. Click an ima
 
 Bring your own model service and API key. Model usage is billed by your provider; the Community software license does not include inference credits.
 
-**0.2.10** is the current Community release. It is a patch for 0.2.9: the native package manifest now records the pinned DSH version, matching the release manifest schema; features are unchanged from 0.2.9, which added optional next-step suggestions in the composer — after a reply an empty composer shows one grey model-written sentence, Tab puts it into the draft without sending, typing dismisses it, and Settings → General can turn it off. The SDK remains compatible at `@teloa/sdk@0.2.4`. [GitHub Releases](https://github.com/teloa-ai/teloa/releases/tag/v0.2.10), [npm](https://www.npmjs.com/package/@teloa/cli/v/0.2.10) and [Docker Hub](https://hub.docker.com/r/teloa/teloa) provide this release: native macOS ARM64 and container Linux ARM64.
+**0.2.11-rc.4** is being prepared as a prerelease for testing and has not been published. Its planned channels are npm `next` and a GitHub prerelease; stable 0.2.11 is not released by this candidate. The versioned native-package commands below are for use after its release; the currently published release remains [0.2.10](https://github.com/teloa-ai/teloa/releases/tag/v0.2.10). The SDK remains compatible at `@teloa/sdk@0.2.4`. Availability on [npm](https://www.npmjs.com/package/@teloa/cli?activeTab=versions) and [Docker Hub](https://hub.docker.com/r/teloa/teloa) must be checked separately.
 
 ### What changes in this release
 
@@ -309,13 +309,15 @@ Use **Node.js 24.x from 24.22.1 onward** or **22.x from 22.23.4 onward**, **npm 
 ```sh
 mkdir teloa-command
 cd teloa-command
-npm install --ignore-scripts https://github.com/teloa-ai/teloa/releases/download/v0.2.10/teloa-cli-0.2.10.tgz
+npm install --ignore-scripts https://github.com/teloa-ai/teloa/releases/download/v0.2.11-rc.4/teloa-cli-0.2.11-rc.4.tgz
 ./node_modules/.bin/teloa up
 ./node_modules/.bin/teloa doctor
 ./node_modules/.bin/teloa status
 ```
 
-Teloa and DSH run natively on your computer. Startup opens the Web interface; configure your model in Settings. The default Web port is 3100. For a new installation, use `./node_modules/.bin/teloa up --port 3101` if it is occupied. The release also lists the package's SHA-256 checksum. To upgrade an existing installation, such as 0.2.0-alpha.7, keep its data and identity by installing the 0.2.10 package into a new command directory, then running `teloa stop` and `teloa upgrade --to 0.2.10` from that directory (pass the original `--home` for a custom installation). The upgrade creates a backup before switching. See the [installation and stop instructions](https://docs.teloa.ai/en/start/quickstart) and [backup and upgrades](https://docs.teloa.ai/en/deploy/backup). For npm, use `npm install --ignore-scripts @teloa/cli@0.2.10`.
+Teloa and DSH run natively on your computer. Startup opens the Web interface; configure your model in Settings. The default Web port is 3100. For a new installation, use `./node_modules/.bin/teloa up --port 3101` if it is occupied. The release also lists the package's SHA-256 checksum. To upgrade an existing installation, such as 0.2.0-alpha.7, keep its data and identity by installing the 0.2.11-rc.4 package into a new command directory, then running `teloa stop` and `teloa upgrade --to 0.2.11-rc.4` from that directory (pass the original `--home` for a custom installation). The upgrade creates a backup before switching. See the [installation and stop instructions](https://docs.teloa.ai/en/start/quickstart) and [backup and upgrades](https://docs.teloa.ai/en/deploy/backup). For npm, use `npm install --ignore-scripts @teloa/cli@0.2.11-rc.4`.
+
+If a first installation never initialized successfully and a backup is refused because required database tables are missing, preserve its original home and database. Do not add tables, reset the database, or change installation markers to force an upgrade. Check the original initialization error and the complete release package first. Only after confirming that the installation never held work data, use a verified complete release in a separate command directory with a new `--home` and a new empty dedicated database. This creates an independent installation; it does not migrate the failed installation or restore a backup. An installation with work data requires a valid backup restored by its matching release into another new home; without such a backup, keep the original data for diagnosis rather than overwrite it. See the installation and backup instructions linked above.
 
 <details>
 <summary><strong>Docker Hub with Compose (0.2.10)</strong></summary>

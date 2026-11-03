@@ -1,0 +1,22 @@
+{
+  "schema": "teloa.frozen-data-version-reader-fixture/v1",
+  "dataVersion": 11,
+  "sourceCommit": "ddb1e728c91fe91926d45e8df80cfb1804f0d440",
+  "source": "Exact Git source snapshot of public CLI data reader and metadata; no runtime package copied. Node strips only the original type import.",
+  "files": [
+    {
+      "path": "data-version.json",
+      "bytes": 1351,
+      "sha256": "1eb7d949e2bbc0c21a1c52768669557acb5c880742dc65c02fa84beb48cc7c2c",
+      "sourcePath": "packages/cli/src/data-version.json",
+      "gitBlob": "162e98f1ef5fae215b44b1aa801466991df962db"
+    },
+    {
+      "path": "data-version.ts.txt",
+      "bytes": 1067,
+      "sha256": "d346f84e7b4edd3c7ab1210085e4717ae4b52d7578e8004104cafe9e30f2d6a1",
+      "sourcePath": "packages/cli/src/data-version.ts",
+      "gitBlob": "1cc96f1fe6992be46dca5cbe11e4d061f4b10de3"
+    }
+  ]
+}

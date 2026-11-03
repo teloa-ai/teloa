@@ -33,7 +33,7 @@ test('工作台冷恢复补齐绑定原请求与API代际，失败使需要你�
  assert.match(body,/context\.key===currentKey\(\)/)
  assert.match(body,/generation===pendingMarketReadGeneration\.current/)
  assert.match(body,/catch\(\(\)=>\{if\(isCurrent\(\)\)setPendingMarketReadFailure/)
- assert.match(body,/known:pendingMarketKnown&&/)
+ assert.match(body,/known:[^,\n]*&&pendingMarketKnown&&/)
  assert.match(body,/retryAttention=\(\)=>\{retryPendingMarketRead/)
  assert.doesNotMatch(body,/\.recover\(|\.create\(|\.install\(/)
 })

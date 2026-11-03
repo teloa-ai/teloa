@@ -1,3 +1,5 @@
+// @ts-expect-error 本机可信文档夹具为 MJS 模块。
+import {setLocalDocument} from './fixtures/local-document.mjs'
 import test,{type TestContext} from 'node:test'
 import assert from 'node:assert/strict'
 import {mkdtemp,writeFile,rm} from 'node:fs/promises'
@@ -22,7 +24,7 @@ function App(){const [state,setState]=React.useState({items:[],intents:[]}),[sel
  const bundle=Array.isArray(result)?result[0]:result;assert.ok(bundle&&'output'in bundle)
  const script=bundle.output.find(item=>item.type==='chunk')!.code,browser=await loadPlaywright().chromium.launch(launchOptions());t.after(()=>browser.close())
  const page=await browser.newPage({viewport:{width:1280,height:1000}}),errors:string[]=[];page.setDefaultTimeout(3000);page.on('pageerror',(error:Error)=>errors.push(error.message));await page.route('**/*',(route:any)=>route.abort())
- const mount=async(category='apps',mode='immediate')=>{await page.setContent('<!doctype html><html><body><div id="root"></div></body></html>');await page.evaluate((value:{category:string;mode:string})=>{(window as any).personalInitialCategory=value.category;(window as any).personalHydrateMode=value.mode},{category,mode});await page.addScriptTag({content:script});await page.waitForFunction(()=>(window as any).personalEvidence.listed>0);await page.getByRole('heading',{name:category==='apps'?'应用':'已添加',exact:true}).waitFor()}
+ const mount=async(category='apps',mode='immediate')=>{await setLocalDocument(page,'<!doctype html><html><body><div id="root"></div></body></html>');await page.evaluate((value:{category:string;mode:string})=>{(window as any).personalInitialCategory=value.category;(window as any).personalHydrateMode=value.mode},{category,mode});await page.addScriptTag({content:script});await page.waitForFunction(()=>(window as any).personalEvidence.listed>0);await page.getByRole('heading',{name:category==='apps'?'应用':'已添加',exact:true}).waitFor()}
  return {page,mount,errors}
 }
 
@@ -47,7 +49,7 @@ test('原未安装个人技能与应用包可从我的应用找回，同名不�
  await detail.locator('summary').filter({hasText:'来源与版本'}).click()
  assert.match(await detail.innerText(),/原作者/);assert.match(await detail.innerText(),/MIT/)
  assert.equal(await detail.getByRole('link',{name:'original-author/original-skills',exact:true}).getAttribute('href'),'https://github.com/original-author/original-skills')
- await page.keyboard.press('Escape');await page.getByRole('button',{name:/^个人事实应用/}).click();await page.getByRole('dialog',{name:'个人事实应用',exact:true}).waitFor().catch(async (error:Error)=>{throw Error(error.message+'\n'+await page.locator('body').innerText()+'\n'+JSON.stringify({evidence:await page.evaluate(()=>(window as any).personalEvidence),errors}))})
+ await page.keyboard.press('Escape');await page.getByRole('button',{name:/^个人事实应用/}).click();await page.getByRole('dialog').getByRole('button',{name:'查看',exact:true}).click();await page.getByRole('dialog',{name:'个人事实应用',exact:true}).waitFor().catch(async (error:Error)=>{throw Error(error.message+'\n'+await page.locator('body').innerText()+'\n'+JSON.stringify({evidence:await page.evaluate(()=>(window as any).personalEvidence),errors}))})
  assert.equal((await page.evaluate(()=>(window as any).personalEvidence.opens)).at(-1),'stored-33333333-3333-4333-8333-333333333333')
  await mount('intents');assert.equal(await page.getByRole('heading',{name:'还没有添加模板',exact:true}).count(),0);await page.getByRole('button',{name:'我的应用与技能',exact:true}).click();await page.getByRole('button',{name:/^internal-comms/}).nth(0).click();await page.getByRole('dialog',{name:'internal-comms',exact:true}).waitFor();assert.match(await page.getByRole('dialog').innerText(),/Original private skill 0/)
  assert.deepEqual(await page.evaluate(()=>(window as any).personalEvidence.writes),[]);assert.deepEqual(errors,[])

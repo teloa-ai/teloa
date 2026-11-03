@@ -1,7 +1,7 @@
 import {marketFunctionKeys,type ConnectorAuth,type MarketCatalogCompatibility,type MarketCatalogConnectorEntry,type MarketCatalogSkillEntry,type MarketCatalogUnsupportedComponent,type MarketCatalogUpstreamSkillEntry,type MarketFunctionKey} from '@teloa/contract'
 import {catalogText,type MarketCatalogItem,type MarketCatalogRanking} from './market-catalog-api.js'
 import type {ManagedMcpConnectionRecord} from './mcp-connections-api.js'
-import type {SkillInstallationRecord} from './skill-install-api.js'
+import type {SkillInstallationRecord,SkillInstallSourceIdentity} from './skill-install-api.js'
 import type {IndustryManifest} from './industry-manifest.js'
 import type {IndustryLoadRecord} from './industry-load-api.js'
 import {localizedIndustryResourceTitle} from './industry-template-presentation.js'
@@ -49,6 +49,7 @@ export type AppsRow={
  packageId?:string
  installationId?:string
  nativeName?:string
+ installedSource?:SkillInstallSourceIdentity
  contentId?:string
  savedState?:'saved'|'saved-pending-install'|'installing'
  pack?:AppsPack
@@ -214,7 +215,7 @@ export function appsDirectoryRows(input:{items:readonly MarketCatalogItem[];conn
  }
  for(const record of foldInstalledSkillRecords((input.installations??[]).filter(record=>record.state==='installed'&&!(record.source.kind==='atomic'&&catalogContent.has(record.source.contentId))))){
   const title=installedSkillTitle(record,input.packages??[],input.loads??[],locale)
-  rows.push({key:'installed:'+record.id,kind:'installed-skill',installationId:record.id,nativeName:record.native.name,title,summary:record.native.description,categories:[],connectors:[],skills:[{title,summary:record.native.description,added:true,installed:true,builtin:false}],entryIds:[],mine:true})
+  rows.push({key:'installed:'+record.id,kind:'installed-skill',installationId:record.id,nativeName:record.native.name,installedSource:record.source,title,summary:record.native.description,categories:[],connectors:[],skills:[{title,summary:record.native.description,added:true,installed:true,builtin:false}],entryIds:[],mine:true})
  }
  for(const declared of input.packages??[]){
   if(input.storedContents?.some(content=>content.itemId===declared.id))continue
@@ -271,6 +272,7 @@ export type AppsRowAction=
  | {kind:'open-connection';entryId:string;entry:MarketCatalogConnectorEntry}
  | {kind:'add-skill';entryId:string;item:MarketCatalogItem}
  | {kind:'open-content';entryId:string;contentId:string}
+ | {kind:'open-source';entryId:string;installationId:string;source:SkillInstallSourceIdentity}
  | {kind:'open-package';packageId:string}
  | {kind:'install-pack';key:string;members:{entryId:string;entry:MarketCatalogUpstreamSkillEntry;contentId:string|null}[]}
  | {kind:'detail'}
@@ -284,6 +286,7 @@ function appUnavailable(row:AppsRow):boolean{
 /** 行上的主动作与真实状态一致：应用直接进入原连接设置，由本人明确连接；技能先添加为内容，状态未知或不支持时只打开详情。 */
 export function appsRowAction(row:AppsRow):AppsRowAction{
  if(row.customConnection)return {kind:'detail'}
+ if(row.installationId&&row.installedSource)return {kind:'open-source',entryId:row.key,installationId:row.installationId,source:row.installedSource}
  if(row.contentId)return {kind:'open-content',entryId:row.key,contentId:row.contentId}
  if(row.kind==='app'){
   const connector=row.connectors[0]!,state=connector.state
@@ -324,10 +327,10 @@ export function skillStatus(skill:AppsSkill):string{
  * 从目录行解析可单独分享的能力：官方目录技能按条目 id 与版本固定引用，连接器按声明的 serverName 与工具列表；
  * 本机安装技能与声明资源包没有可读静态正文，由调用方经分享来源端口解析或如实标注不可用。
  */
-export type AppsShareSource={subject:'skill'|'app'|'mcp';skills:{name:string;title:string;resourceId:string;version:string;publicId:string}[];connections:ShareConnectionSource[]}
+export type AppsShareSource={subject:'skill'|'app'|'mcp';skills:{name:string;title:string;resourceId:string;version:string;publicId:string}[];connections:ShareConnectionSource[];contentId?:string}
 export function appsRowShareSource(row:AppsRow):AppsShareSource|undefined{
  if(row.customConnection)return undefined
- if(row.kind==='bundle')return undefined
+ if(row.kind==='bundle')return row.contentId?{subject:'app',skills:[],connections:[],contentId:row.contentId}:undefined
  // 公共引用写原技能名与固定版本（契约 localId），不写含点的目录 id；接收方按「名 + 版本」唯一解析回目录条目。
  const skills=row.skills.flatMap(skill=>skill.item?.entry.kind==='skill'&&skill.entryId&&!skill.builtin?[{name:skill.item.entry.skill.name,title:skill.title,resourceId:skill.item.entry.skill.name,version:skill.item.entry.version,publicId:skill.item.entry.skill.name}]:[])
  const connections=row.connectors.flatMap(connector=>connector.entry&&connector.tools.length?[{serverName:connector.entry.connector.serverName,title:connector.title,version:connector.entry.version,tools:connector.tools.map(tool=>tool.name),setup:catalogConnectionShareSetup(connector.entry)}]:[])

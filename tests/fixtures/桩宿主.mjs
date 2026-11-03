@@ -29,7 +29,7 @@ const decoy = createServer((request, response) => {
   request.on('end', () => {
     const envelope = JSON.parse(body)
     response.writeHead(200, { 'content-type': 'application/json' })
-    response.end(JSON.stringify({ type: 'server-response', rpcId: envelope.rpcId, result: { ok: true, value: [] } }))
+    response.end(JSON.stringify({ type: 'server-response', rpcId: envelope.rpcId, result: { ok: true, value: { schema: 'teloa.runtime-readiness/v1', ready: true } } }))
   })
 })
 
@@ -40,7 +40,7 @@ const host = createServer((request, response) => {
     response.writeHead(303, { 'set-cookie': 'dsh-session=stub; Path=/; HttpOnly', location: '/' }).end()
     return
   }
-  if (request.method === 'POST' && url.pathname === '/teloa/conversations/list') {
+  if (request.method === 'POST' && url.pathname === '/teloa/runtime/readiness') {
     if (request.headers.cookie !== 'dsh-session=stub') { response.writeHead(401).end(); return }
     // (b)(d) 插件挂载失败：真实宿主此时由静态前端接管，非 GET/HEAD 一律 405。
     if (mode === '未挂载' || mode === '诱饵') { response.writeHead(405).end(); return }
@@ -50,7 +50,7 @@ const host = createServer((request, response) => {
     request.on('end', () => {
       const envelope = JSON.parse(body)
       response.writeHead(200, { 'content-type': 'application/json' })
-      response.end(JSON.stringify({ type: 'server-response', rpcId: envelope.rpcId, result: { ok: true, value: [] } }))
+      response.end(JSON.stringify({ type: 'server-response', rpcId: envelope.rpcId, result: { ok: true, value: { schema: 'teloa.runtime-readiness/v1', ready: true } } }))
       // 自检已经通过，桩宿主收工退出，免得进程级用例悬在这里。
       setTimeout(() => { host.close(); decoy.close(); process.exit(0) }, 50)
     })

@@ -7,7 +7,7 @@ import {tmpdir} from 'node:os'
 import {createRequire} from 'node:module'
 import {Context} from '@deepseek-ai/cordis'
 import {LlmRuntime,LlmAdapter,createUserMessage,ToolCallId,type GenerateOptions,type StreamChunk} from '@deepseek-ai/dsh-llm'
-import {SessionStore,SessionId,SessionSeq,type SessionEvent} from '@deepseek-ai/dsh-session'
+import {SessionStore,SessionId,SessionSeq,interruptedTurnClosers,type SessionEvent} from '@deepseek-ai/dsh-session'
 import {SessionProjectionRegistry} from '@deepseek-ai/dsh-session-projection'
 import * as JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
 import {SystemPrompt} from '@deepseek-ai/dsh-system-prompt'
@@ -25,14 +25,18 @@ import {registerTaskToolGuard,type TaskToolPolicy} from '../src/task-tool-guard.
 import {teamDelegationTools} from '../src/role-tool-grants.ts'
 import type {SubagentDelegationPorts} from '../src/subagent-delegation.ts'
 import {taskRunTeamContinuations} from '../src/task-run-team-records.ts'
-import {observeTaskRun} from '../src/task-run-observation.ts'
+import {observeTaskRun,isTaskRunReconcileEndReason} from '../src/task-run-observation.ts'
 import TeloaAttachmentStore from '../src/attachment-guard.ts'
 import {dshTaskRunPorts} from '../src/task-run-dsh.ts'
 import {assertSafeTaskRunRetry} from '../src/task-run-retry-proof.ts'
+import {TaskRunDriver} from '../src/task-run-driver.ts'
+import {taskRunRuntimeId} from '../src/task-run-background.ts'
+import {readEndedTaskRunSession,readTaskRunSessionForReconcile} from '../src/task-run-cold-session.ts'
 
 class WaitingAdapter extends LlmAdapter{
  calls=0
  fail=false
+ maxTokens=false
  private released=false
  private waiters:Array<()=>void>=[]
  finish(){this.released=true;for(const resolve of this.waiters)resolve()}
@@ -44,7 +48,7 @@ class WaitingAdapter extends LlmAdapter{
   yield {type:'block-start',index:0,blockType:'text'}
   yield {type:'text-delta',index:0,text:'完成'}
   yield {type:'block-end',index:0,block:{type:'text',text:'完成'}}
-  yield {type:'finish',reason:{kind:'stop'}}
+  yield {type:'finish',reason:{kind:this.maxTokens?'max-tokens':'stop'}}
  }
 }
 
@@ -95,6 +99,191 @@ async function coldFailure(t:TestContext,meta:Record<string,unknown>={}){
  assert.equal(evidence.state,'ended');assert.equal(env.adapter.calls,1)
  return {...env,run:{...env.run,state:'ended',evidence},events}
 }
+
+async function coldCompletedActive(t:TestContext,pending?:'inbox'|'task'|'grant'){
+ const env=await setup(t,true)
+ env.finish()
+ env.root.followup(createUserMessage({content:[{type:'text',text:'合成冷态对账'}],source:{kind:'user',rpcId:'native'}}))
+ await env.root.whenIdle()
+ const events=env.root.session.snapshotEvents(),terminal=observeTaskRun(events,'native')
+ assert.ok(terminal.state==='ended'&&terminal.reason==='completed')
+ const run={...env.run,inputText:'合成冷态对账',evidence:{state:'active' as const,turn:terminal.turn,messageSeq:terminal.messageSeq}}
+ await env.links.put({runId:run.id,kind:'job',nativeId:'owner:'+taskRunRuntimeId+':'+run.sessionId,sessionId:run.sessionId,payload:{record:'owner',runtimeId:taskRunRuntimeId,requestId:run.nativeRequestId}})
+ if(pending==='inbox')env.root.inbox.append('next-turn',createUserMessage({content:[{type:'text',text:'保留的后续待办'}],source:{kind:'user',rpcId:'later'}}))
+ if(pending==='task')await env.ctx.agentTeams.createTask(env.root,{subject:'尚未完成',description:'不能当作空闲'})
+ if(pending==='grant')await env.links.put({runId:run.id,kind:'team',nativeId:'pending-grant',sessionId:run.sessionId,payload:{reservationId:'pending-grant',requestId:'native',name:'reviewer'}})
+ const queued=pending==='inbox'?[...env.root.session.snapshotEvents()].reverse().find(event=>event.type==='agent/inbox/spliced'&&event.data.inserted.length>0):undefined
+ await env.handle.dispose()
+ if(queued){
+  // 复用官方 Inbox 的真实追加事件，模拟宿主尚未来得及持久化取消的冷待办。
+  const writer=await env.ctx.sessionPersistence.open(env.root.id,'write')
+  try{const history=(await writer.read()).events;await writer.append([{...queued,seq:SessionSeq(history.length),time:Date.now()}]);await writer.flush()}finally{await writer.close()}
+ }
+ return {...env,run,events,terminal}
+}
+
+async function coldFailedActive(t:TestContext,reason:'error'|'interrupted'|'aborted'|'max-tokens',pending?:'inbox'|'task'|'grant',oldOwner=false){
+ const env=await setup(t,true)
+ env.adapter.fail=reason==='error'||reason==='interrupted'
+ env.adapter.maxTokens=reason==='max-tokens'
+ if(reason!=='aborted')env.finish()
+ env.root.followup(createUserMessage({content:[{type:'text',text:'合成冷态失败核对'}],source:{kind:'user',rpcId:'native'}}))
+ if(reason==='aborted'){
+  for(let i=0;i<1000&&env.adapter.calls===0;i++)await new Promise(resolve=>setTimeout(resolve,1))
+  assert.equal(env.adapter.calls,1);env.root.cancel({kind:'user'})
+ }
+ await env.root.whenIdle()
+ let events=env.root.session.snapshotEvents(),terminal=observeTaskRun(events,'native')
+ assert.ok(terminal.state==='ended'&&terminal.reason===(reason==='interrupted'?'error':reason))
+ if(pending==='inbox')env.root.inbox.append('next-turn',createUserMessage({content:[{type:'text',text:'尚未处理的输入'}],source:{kind:'user',rpcId:'later'}}))
+ if(pending==='task')await env.ctx.agentTeams.createTask(env.root,{subject:'尚未完成',description:'不能结束'})
+ if(pending==='grant')await env.links.put({runId:env.run.id,kind:'team',nativeId:'unsettled-grant',sessionId:env.run.sessionId,payload:{reservationId:'unsettled-grant',requestId:'native',name:'reviewer'}})
+ const queued=pending==='inbox'?[...env.root.session.snapshotEvents()].reverse().find(event=>event.type==='agent/inbox/spliced'&&event.data.inserted.length):undefined
+ await env.handle.dispose()
+ let sessionId=env.run.sessionId
+ if(reason==='interrupted'){
+  // 用真实 Loop 的崩溃前前缀和官方恢复 closer 建立独立冷日志，不伪造生产终态或恢复 Agent。
+  const fixed=await env.ctx.sessionController.inspect(env.root.id)
+  sessionId=SessionId('team-crash-recovery')
+  const prefix=fixed.events.slice(0,terminal.endSeq)
+  events=[...prefix,...interruptedTurnClosers(prefix)]
+  const writer=await env.ctx.sessionPersistence.create({...fixed.meta,id:SessionId(sessionId)})
+  try{await writer.append(events);await writer.flush()}finally{await writer.close()}
+ }
+ if(queued){const writer=await env.ctx.sessionPersistence.open(env.root.id,'write');try{const history=(await writer.read()).events;await writer.append([{...queued,seq:SessionSeq(history.length),time:Date.now()}]);await writer.flush()}finally{await writer.close()}}
+ events=[...(await env.ctx.sessionController.inspect(SessionId(sessionId))).events]
+ terminal=observeTaskRun(events,'native')
+ assert.ok(terminal.state==='ended'&&terminal.reason===reason)
+ const message=events[terminal.messageSeq]
+ assert.ok(message?.type==='user/message'&&message.data.content[0]?.type==='text')
+ const run={...env.run,sessionId,state:'active' as const,inputText:message.data.content[0].text,evidence:{state:'active' as const,turn:terminal.turn,messageSeq:terminal.messageSeq}}
+ const runtimeId=oldOwner?'old-native-owner':taskRunRuntimeId
+ await env.links.put({runId:run.id,kind:'job',nativeId:'owner:'+runtimeId+':'+run.sessionId,sessionId:run.sessionId,payload:{record:'owner',runtimeId,requestId:run.nativeRequestId}})
+ return {...env,run,events,terminal}
+}
+
+test('普通终态分类只认固定 SDK 执行结尾，不接受 forked 或未知插件原因',()=>{
+ for(const reason of ['completed','aborted','blocked','error','max-tokens','interrupted'])assert.equal(isTaskRunReconcileEndReason(reason),true)
+ for(const reason of ['forked','unknown-plugin','','error '])assert.equal(isTaskRunReconcileEndReason(reason),false)
+})
+
+for(const reason of ['error','interrupted','aborted','max-tokens'] as const)for(const oldOwner of [false,true])test('冷态 active Run 从真实 '+reason+' 终态正常对账，保留原 reason 且不恢复执行'+(oldOwner?'（旧 owner）':''),async t=>{
+ const env=await coldFailedActive(t,reason,undefined,oldOwner),before=await env.ctx.sessionController.inspect(SessionId(env.run.sessionId))
+ let resolutions=0,records=0,current=env.run as TaskRun
+ env.ctx.sessionController.resolveAgent=async()=>{resolutions++;throw Error('只读对账不得恢复执行')}
+ const ports=dshTaskRunPorts(env.ctx,'owner',async()=>({ownerId:'owner',sessionId:env.run.sessionId,status:'ready'}),undefined,undefined,undefined,undefined,undefined,undefined,env.links)
+ const nativeBackground=ports.backgroundState!
+ ports.backgroundState=async run=>{const [jobs,team]=await Promise.all([nativeBackground(run),env.team.state(run)]);return {outstanding:jobs.outstanding||team.outstanding,interrupted:jobs.interrupted||team.interrupted}}
+ ports.subagentState=async()=> 'none';ports.flowState=async()=> 'none';ports.goalObservation=async()=>undefined
+ const service={get:async()=>current,executionScope:async()=>{throw Error('不可重新领取')},claim:async()=>{throw Error('不可重新领取')},requestStop:async()=>{throw Error('不可改写原停止意图')},record:async(_owner:string,input:{evidence:NonNullable<TaskRun['evidence']>})=>{records++;current={...current,state:input.evidence.state,evidence:input.evidence};return current}}
+ for(const control of ['active','paused'] as const){
+  current=env.run;ports.controlState=async()=>control
+  const result=await new TaskRunDriver(service,ports).reconcile('owner',{runId:env.run.id})
+  assert.equal(result.state,'ended');assert.deepEqual(result.evidence,env.terminal)
+ }
+ assert.equal(records,2);assert.equal(resolutions,0);assert.equal(env.ctx.agents.get(SessionId(env.run.sessionId)),undefined)
+ assert.equal(env.adapter.calls,1);assert.equal(env.bodies(),0);assert.deepEqual(env.calls,[])
+ assert.deepEqual((await env.ctx.sessionController.inspect(SessionId(env.run.sessionId))).events,before.events)
+})
+
+test('真实 pre-step blocked 没有原输入锚点，不能借普通终态分类伪造 active 结束',async t=>{
+ const env=await setup(t,true)
+ env.ctx.on('agent/pre-step',async()=>({kind:'reject' as const}))
+ env.root.followup(createUserMessage({content:[{type:'text',text:'尚未发布的原输入'}],source:{kind:'user',rpcId:'native'}}))
+ await env.root.whenIdle();await env.handle.dispose()
+ const fixed=await env.ctx.sessionController.inspect(env.root.id),end=fixed.events.find(event=>event.type==='turn/end')
+ assert.ok(end?.type==='turn/end'&&end.data.reason.kind==='blocked');assert.equal(observeTaskRun(fixed.events,'native').state,'unobserved')
+ await assert.rejects(readTaskRunSessionForReconcile(env.ctx,{...env.run,inputText:'尚未发布的原输入',evidence:{state:'active',turn:end.data.turn,messageSeq:end.seq}}),{code:'teloa/session-unavailable'})
+ assert.equal(env.adapter.calls,0);assert.equal(env.bodies(),0);assert.deepEqual((await env.ctx.sessionController.inspect(env.root.id)).events,fixed.events)
+})
+
+test('失败冷态仍拒绝外来身份、输入或序列损坏、forked/未知结尾与未完成 Goal',async t=>{
+ const env=await coldFailedActive(t,'error'),inspect=env.ctx.sessionController.inspect.bind(env.ctx.sessionController),fixed=await inspect(SessionId(env.run.sessionId))
+ for(const run of [{...env.run,id:'foreign-run'},{...env.run,nativeRequestId:'foreign-request'},{...env.run,inputText:'另一请求'},{...env.run,evidence:{...env.run.evidence,messageSeq:env.run.evidence.messageSeq+1}},{...env.run,stopRequestedAt:'2026-11-01T00:00:00Z'},{...env.run,agentPresetId:'foreign'}])await assert.rejects(env.team.state(run))
+ const variations=[fixed.events.slice(0,env.terminal.endSeq),fixed.events.map((event,index)=>index===1?{...event,seq:SessionSeq(event.seq+1)}:event),...['forked','unknown-plugin'].map(kind=>fixed.events.map(event=>event.type==='turn/end'?{...event,data:{...event.data,reason:{kind}}}:event))] as SessionEvent[][]
+ try{for(const events of variations){env.ctx.sessionController.inspect=async()=>({...fixed,events});await assert.rejects(env.team.state(env.run))}}finally{env.ctx.sessionController.inspect=inspect}
+ await assert.rejects(readEndedTaskRunSession(env.ctx,env.run),{code:'teloa/session-unavailable'})
+ await assert.rejects(readTaskRunSessionForReconcile(env.ctx,env.run,async()=>({binding:{ownerId:'owner',runId:env.run.id,sessionId:env.run.sessionId,goalId:'goal',revision:1,hostGeneration:1,controlId:'control',controlGeneration:1},continuations:[],goalPhase:'active',activation:'disarmed',pendingRound:false,childrenOutstanding:false})),{code:'teloa/session-unavailable'})
+ env.setPolicy({allowedTools:[],nativeRequestId:'foreign'});await assert.rejects(env.team.state(env.run))
+ assert.equal(env.adapter.calls,1);assert.equal(env.bodies(),0);assert.equal(env.ctx.agents.get(SessionId(env.run.sessionId)),undefined);assert.deepEqual((await inspect(SessionId(env.run.sessionId))).events,fixed.events)
+})
+
+test('失败冷态的 Inbox、Team、flow 或子级未收口时不记 ended',async t=>{
+ for(const pending of ['inbox','task','grant','flow','subagent'] as const)await t.test(pending,async t=>{
+  const env=await coldFailedActive(t,'error',pending==='flow'||pending==='subagent'?undefined:pending),before=await env.ctx.sessionController.inspect(SessionId(env.run.sessionId));let records=0
+  const ports=dshTaskRunPorts(env.ctx,'owner',async()=>({ownerId:'owner',sessionId:env.run.sessionId,status:'ready'}),undefined,undefined,undefined,undefined,undefined,undefined,env.links),nativeBackground=ports.backgroundState!
+  ports.backgroundState=async run=>{const [jobs,team]=await Promise.all([nativeBackground(run),env.team.state(run)]);return {outstanding:jobs.outstanding||team.outstanding,interrupted:jobs.interrupted||team.interrupted}}
+  ports.controlState=async()=> 'paused';ports.subagentState=async()=>pending==='subagent'?'outstanding':'none';ports.flowState=async()=>pending==='flow'?'outstanding':'none';ports.goalObservation=async()=>undefined
+  const service={get:async()=>env.run,executionScope:async()=>{throw Error('不能领取')},claim:async()=>{throw Error('不能领取')},requestStop:async()=>{throw Error('不能停止')},record:async()=>{records++;throw Error('未收口不能记终态')}}
+  try{const result=await new TaskRunDriver(service,ports).reconcile('owner',{runId:env.run.id});assert.equal(result.state,'active')}catch(error){assert.equal((error as {code?:string}).code,'teloa/session-unavailable')}
+  assert.equal(records,0);assert.equal(env.adapter.calls,1);assert.equal(env.bodies(),0);assert.equal(env.ctx.agents.get(SessionId(env.run.sessionId)),undefined);assert.deepEqual((await env.ctx.sessionController.inspect(SessionId(env.run.sessionId))).events,before.events)
+ })
+})
+
+test('143 冷态 active Run 从真实 completed 日志对账，不恢复 Agent 或重发原请求',async t=>{
+ const env=await coldCompletedActive(t)
+ const before=await env.ctx.sessionController.inspect(env.root.id)
+ let resolutions=0,records=0,current=env.run as TaskRun
+ env.ctx.sessionController.resolveAgent=async()=>{resolutions++;throw Error('只读对账不得恢复执行')}
+ const ports=dshTaskRunPorts(env.ctx,'owner',async()=>({ownerId:'owner',sessionId:env.run.sessionId,status:'ready'}),undefined,undefined,undefined,undefined,undefined,undefined,env.links)
+ const nativeBackground=ports.backgroundState!
+ ports.backgroundState=async run=>{const [jobs,team]=await Promise.all([nativeBackground(run),env.team.state(run)]);return {outstanding:jobs.outstanding||team.outstanding,interrupted:jobs.interrupted||team.interrupted}}
+ ports.subagentState=async()=> 'none';ports.flowState=async()=> 'none';ports.goalObservation=async()=>undefined;ports.controlState=async()=> 'active'
+ const service={get:async(owner:string,input:{runId:string})=>{assert.equal(owner,'owner');assert.equal(input.runId,current.id);return current},executionScope:async()=>{throw Error('不可重新领取')},claim:async()=>{throw Error('不可重新领取')},requestStop:async()=>{throw Error('不可停止已结束的原生轮')},record:async(_owner:string,input:{evidence:NonNullable<TaskRun['evidence']>})=>{records++;current={...current,state:input.evidence.state,evidence:input.evidence};return current}}
+ assert.deepEqual(await env.team.state(env.run),{outstanding:false,interrupted:false})
+ const result=await new TaskRunDriver(service,ports).reconcile('owner',{runId:env.run.id})
+ assert.equal(result.state,'ended');assert.deepEqual(result.evidence,env.terminal);assert.equal(records,1)
+ current=env.run;ports.controlState=async()=> 'paused'
+ assert.equal((await new TaskRunDriver(service,ports).reconcile('owner',{runId:env.run.id})).state,'ended');assert.equal(records,2)
+ current=env.run;ports.controlState=async()=> 'active';ports.subagentState=async()=> 'outstanding'
+ assert.equal((await new TaskRunDriver(service,ports).reconcile('owner',{runId:env.run.id})).state,'active')
+ current=env.run;ports.subagentState=async()=> 'none';ports.flowState=async()=> 'outstanding'
+ assert.equal((await new TaskRunDriver(service,ports).reconcile('owner',{runId:env.run.id})).state,'active')
+ current=env.run;ports.flowState=async()=> 'none';const background=ports.backgroundState!
+ ports.backgroundState=async run=>({...await background(run),outstanding:true})
+ assert.equal((await new TaskRunDriver(service,ports).reconcile('owner',{runId:env.run.id})).state,'active')
+ current=env.run;ports.backgroundState=async run=>({...await background(run),interrupted:true})
+ const oldHost=await new TaskRunDriver(service,ports).reconcile('owner',{runId:env.run.id})
+ assert.equal(oldHost.evidence?.state==='ended'?oldHost.evidence.reason:undefined,'interrupted','有工具的旧宿主仍由原后台规则判中断，不伪装 completed')
+ assert.equal(resolutions,0);assert.equal(env.ctx.agents.get(env.root.id),undefined);assert.equal(env.adapter.calls,1);assert.equal(env.bodies(),0)
+ assert.deepEqual((await env.ctx.sessionController.inspect(env.root.id)).events,before.events)
+})
+
+test('143 冷态 active 候选核本人策略、精确 Run owner 回执、请求锚点和停止状态',async t=>{
+ const env=await coldCompletedActive(t),before=await env.ctx.sessionController.inspect(env.root.id)
+ const denied=createTaskRunTeam(env.ctx,{} as SubagentDelegationPorts,async()=>null,env.links);t.after(denied.dispose)
+ await assert.rejects(denied.state(env.run),{code:'teloa/session-unavailable'},'另一人没有本人策略，不能借用同一个原生日志')
+ for(const run of [{...env.run,id:'other-run'},{...env.run,nativeRequestId:'other-request'},{...env.run,sessionId:'other-session'},{...env.run,inputText:'另一任务的固定输入'},{...env.run,evidence:{...env.run.evidence,messageSeq:env.run.evidence.messageSeq+1}},{...env.run,agentPresetId:'other-preset'},{...env.run,stopRequestedAt:'2026-11-01T00:00:00Z'}])await assert.rejects(env.team.state(run))
+ env.setPolicy({allowedTools:[],nativeRequestId:'native',stopRequested:true});await assert.rejects(env.team.state(env.run))
+ env.setPolicy({allowedTools:[],nativeRequestId:'native'})
+ await env.links.put({runId:env.run.id,kind:'job',nativeId:'owner:'+taskRunRuntimeId+':'+env.run.sessionId,sessionId:'other-session',payload:{record:'owner',runtimeId:taskRunRuntimeId,requestId:'native'}})
+ await assert.rejects(env.team.state(env.run),{code:'teloa/session-unavailable'})
+ assert.equal(env.ctx.agents.get(env.root.id),undefined);assert.equal(env.adapter.calls,1);assert.equal(env.bodies(),0);assert.deepEqual((await env.ctx.sessionController.inspect(env.root.id)).events,before.events)
+})
+
+test('143 冷态 active 候选拒绝截断、序列缺口、无结尾及未完成 Goal；原 ended 读口仍严格',async t=>{
+ const env=await coldCompletedActive(t),inspect=env.ctx.sessionController.inspect.bind(env.ctx.sessionController),fixed=await inspect(env.root.id)
+ const variations=[
+  fixed.events.slice(0,env.terminal.endSeq),
+  fixed.events.map((event,index)=>index===1?{...event,seq:SessionSeq(event.seq+1)}:event),
+  [...fixed.events,{type:'turn/start',seq:SessionSeq(fixed.events.length),time:Date.now(),data:{turn:env.terminal.turn+1}}] as SessionEvent[],
+  fixed.events.map(event=>event.type==='user/message'&&event.data.source.kind==='user'?{...event,data:{...event.data,source:{kind:'user' as const,rpcId:'foreign'}}}:event),
+ ]
+ try{for(const events of variations){env.ctx.sessionController.inspect=async()=>({...fixed,events});await assert.rejects(env.team.state(env.run))}}finally{env.ctx.sessionController.inspect=inspect}
+ await assert.rejects(readEndedTaskRunSession(env.ctx,env.run),{code:'teloa/session-unavailable'},'不把 active 输入伪造成已保存 ended')
+ await assert.rejects(readTaskRunSessionForReconcile(env.ctx,env.run,async()=>({binding:{ownerId:'owner',runId:env.run.id,sessionId:env.run.sessionId,goalId:'goal',revision:1,hostGeneration:1,controlId:'control',controlGeneration:1},continuations:[],goalPhase:'active',activation:'disarmed',pendingRound:false,childrenOutstanding:false})),{code:'teloa/session-unavailable'})
+ assert.equal(env.ctx.agents.get(env.root.id),undefined);assert.equal(env.adapter.calls,1);assert.equal(env.bodies(),0);assert.deepEqual((await inspect(env.root.id)).events,fixed.events)
+})
+
+test('143 冷态 active 候选仍保留真实 Inbox、Team 任务与授权未收口状态',async t=>{
+ for(const pending of ['inbox','task','grant'] as const)await t.test(pending,async t=>{
+  const env=await coldCompletedActive(t,pending),before=await env.ctx.sessionController.inspect(env.root.id)
+  const state=await env.team.state(env.run)
+  assert.ok(state.outstanding||state.interrupted)
+  assert.equal(env.ctx.agents.get(env.root.id),undefined);assert.equal(env.adapter.calls,1);assert.equal(env.bodies(),0);assert.deepEqual(env.calls,[])
+  assert.deepEqual((await env.ctx.sessionController.inspect(env.root.id)).events,before.events)
+ })
+})
 
 test('官方 Controller 只读冷 root：真实 Loop 失败后卸载仍能证明 Team 空闲且不恢复或重放',async t=>{
  const env=await coldFailure(t)

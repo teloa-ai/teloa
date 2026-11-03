@@ -14,20 +14,25 @@ export function securityActionReadId(input:unknown,key:'taskId'|'actionId'):stri
 }
 
 /** 单个一致快照；损坏关联仍参与读取，不能被 owner JOIN 条件静默过滤。 */
-export async function readSecurityActionGraph(db:PoolClient,principal:SecurityPrincipal,catalog:SecurityActionDefinitionCatalog){
- const rows=(await db.query(`select a.* from teloa_security_actions a
-  where a.owner_id=$1
+export async function readSecurityActionGraph(db:PoolClient,principal:SecurityPrincipal,catalog:SecurityActionDefinitionCatalog,actionIds?:readonly string[]){
+  const rows=(await db.query(`with recursive selected as (
+    select id,supersedes_action_id from teloa_security_actions where id=any($2::uuid[])
+    union select a.id,a.supersedes_action_id from teloa_security_actions a join selected s on a.id=s.supersedes_action_id
+   ) select a.* from teloa_security_actions a
+   where (a.owner_id=$1
    or exists(select 1 from teloa_tasks t where t.id=a.task_id and t.owner_id=$1)
-   or exists(select 1 from teloa_business_task_sources s where s.task_id=a.task_id and s.owner_id=$1)
-  order by a.updated_at desc,a.id asc`,[principal.ownerId])).rows
+    or exists(select 1 from teloa_business_task_sources s where s.task_id=a.task_id and s.owner_id=$1))
+    and ($2::uuid[] is null or a.id in(select id from selected))
+   order by a.updated_at desc,a.id asc`,[principal.ownerId,actionIds??null])).rows
  const actions=rows.map(readStoredSecurityAction),byId=new Map(actions.map(action=>[action.id,action])),ids=actions.map(action=>action.id)
  if(byId.size!==actions.length||actions.some(action=>action.ownerId!==principal.ownerId))throw securityStorageError()
  const chains=new Map<string,Awaited<ReturnType<typeof readSecurityBusinessChain>>>()
  for(const taskId of new Set(actions.map(action=>action.taskId))){
   try{chains.set(taskId,await readSecurityBusinessChain(db,principal,taskId,false))}catch{throw securityStorageError()}
  }
- const related=[principal.ownerId,ids]
- const approvalRows=(await db.query('select * from teloa_security_approvals where owner_id=$1 or action_id=any($2::uuid[]) order by created_at,id',related)).rows
+ // 仅选中决定及必要的 supersedes 祖先；不扩大到同任务未选决定，也不重判当前执行许可。
+ const related=[principal.ownerId,ids,actionIds===undefined]
+ const approvalRows=(await db.query('select * from teloa_security_approvals where ($3::boolean and owner_id=$1) or action_id=any($2::uuid[]) order by created_at,id',related)).rows
  const approvals=approvalRows.map(readStoredSecurityApproval)
  // 到期时刻只从已经查出来的 approvalRows 里取，不多查一次库；它不进 SecurityApproval 契约类型，
  // 所以只能走这条旁路（规格 §3.2 a：加进契约会打断 record_digest 与 result_snapshot 两处不可变事实）。
@@ -36,7 +41,7 @@ export async function readSecurityActionGraph(db:PoolClient,principal:SecurityPr
   if(!(row.expires_at instanceof Date))throw securityStorageError()
   approvalExpiry.set(String(row.action_id),row.expires_at.toISOString())
  }
- const executionRows=(await db.query('select * from teloa_security_action_executions where owner_id=$1 or action_id=any($2::uuid[]) order by created_at,operation_id',related)).rows
+ const executionRows=(await db.query('select * from teloa_security_action_executions where ($3::boolean and owner_id=$1) or action_id=any($2::uuid[]) order by created_at,operation_id',related)).rows
  const receipts=(await db.query('select * from teloa_security_action_execution_receipts where operation_id=any($1::uuid[])',[executionRows.map(row=>row.operation_id)])).rows
  const usedReceipts=new Set<string>()
  const executions=executionRows.map(row=>{
@@ -73,7 +78,7 @@ export async function readSecurityActionGraph(db:PoolClient,principal:SecurityPr
   const audit=(await db.query('select * from teloa_security_action_execution_audit where operation_id=$1 and revision=$2',[execution.operationId,execution.revision])).rows
   if(!request||!isRecord(request.request_spec)||request.command!=='execute'||request.request_spec.command!=='execute'||request.request_spec.actionId!==execution.actionId||request.request_spec.approverId!==principal.approverId||request.request_spec.expectedActionVersion!==execution.approvalVersion+1||securityParamFingerprint(request.request_spec)!==row.request_spec_digest||audit.length!==1||audit[0].owner_id!==principal.ownerId||audit[0].result_digest!==securityParamFingerprint(execution)||audit[0].result_digest!==securityParamFingerprint(audit[0].result_snapshot))throw securityStorageError()
  }
- const ackRows=(await db.query('select * from teloa_security_action_attention_acknowledgements where owner_id=$1 or action_id=any($2::uuid[])',related)).rows,acknowledged=new Set<string>()
+ const ackRows=(await db.query('select * from teloa_security_action_attention_acknowledgements where ($3::boolean and owner_id=$1) or action_id=any($2::uuid[])',related)).rows,acknowledged=new Set<string>()
  for(const row of ackRows){
   const action=byId.get(row.action_id)
   if(!action||acknowledged.has(action.id)||action.state!=='failed'||row.owner_id!==principal.ownerId||row.approver_id!==principal.approverId||row.action_version!==action.version)throw securityStorageError()

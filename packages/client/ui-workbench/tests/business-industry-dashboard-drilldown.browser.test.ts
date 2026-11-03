@@ -1,3 +1,5 @@
+// @ts-expect-error 本机可信文档夹具为 MJS 模块。
+import {setLocalDocument} from './fixtures/local-document.mjs'
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import {mkdtemp,writeFile,rm,mkdir} from 'node:fs/promises'
@@ -50,7 +52,7 @@ state.change=patch=>{const previous=state.owner;Object.assign(state,patch);if(st
   const script=result.output.find(item=>item.type==='chunk')!.code,styles=result.output.flatMap(item=>item.type==='asset'&&item.fileName.endsWith('.css')?[String(item.source)]:[]).join('\n')
   browser=await loadPlaywright().chromium.launch(launchOptions());const page=await browser.newPage({viewport:{width:1360,height:900}});page.setDefaultTimeout(3000)
   const errors:string[]=[],requests:string[]=[];page.on('pageerror',(error:Error)=>errors.push(error.message));await page.route('**/*',(route:any)=>{requests.push(route.request().url());return route.abort()})
-  await page.setContent('<html lang="zh-CN"><body><div id="root"></div></body></html>');await page.addStyleTag({content:':root{--teloa-border:#ddd;--teloa-surface:#fff;--teloa-subtle:#f5f5f2;--teloa-text:#252823;--teloa-muted:#646a62;--teloa-accent:#475e55;--teloa-font-caption:13px;--teloa-font-body:14px}body{margin:0;font-family:system-ui}#root{height:100vh}'+styles});await page.addScriptTag({content:script})
+  await setLocalDocument(page,'<html lang="zh-CN"><body><div id="root"></div></body></html>');await page.addStyleTag({content:':root{--teloa-border:#ddd;--teloa-surface:#fff;--teloa-subtle:#f5f5f2;--teloa-text:#252823;--teloa-muted:#646a62;--teloa-accent:#475e55;--teloa-font-caption:13px;--teloa-font-body:14px}body{margin:0;font-family:system-ui}#root{height:100vh}'+styles});await page.addScriptTag({content:script})
   const change=(patch:unknown)=>page.evaluate((p:unknown)=>(window as any).industryFixture.change(p),patch),release=()=>page.evaluate(()=>(window as any).industryFixture.release())
   const calls=()=>page.evaluate(()=>(window as any).industryFixture.calls)
   for(const [scope,title] of [['content-ops','原内容待审批'],['b2b-sales','原商机待跟进']]){

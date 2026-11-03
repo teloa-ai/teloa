@@ -1,3 +1,5 @@
+import {initializeKnowledgeCopies} from './knowledge-copy.ts'
+import {initializeLocalKnowledgeCopies} from './local-knowledge-copy.ts'
 import type { Pool } from 'pg'
 import {initializeMarkdownKnowledge} from './markdown-knowledge.ts'
 import {initializeKnowledgeResources} from './knowledge-resources.ts'
@@ -52,6 +54,8 @@ export async function initializeResources(pool:Pool):Promise<void>{
   }catch(error){await client.query('rollback');throw error}finally{client.release()}
   await initializeMarkdownKnowledge(pool)
   await initializeKnowledgeResources(pool)
+  await initializeKnowledgeCopies(pool)
+  await initializeLocalKnowledgeCopies(pool)
   // 本地检索索引外键指向 teloa_resources，随资料底座一起建。
   await initializeRetrievalIndex(pool)
   await initializeEmployeeKnowledge(pool)

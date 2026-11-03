@@ -1,0 +1,22 @@
+{
+  "schema": "teloa.dsh-compat-patch/v1",
+  "package": "@deepseek-ai/dsh-experimental-tool-agent-team",
+  "version": "0.2.1-rc.2",
+  "upstreamCommit": "687f282e8625c6b8d11ff58211a90524be2e4317",
+  "patchSha256": "379c588024707fd88ea5030ed0a07cb1760a5708aeb7a8f98e10f9976c031d1a",
+  "files": [
+    {
+      "path": "lib/index.js",
+      "beforeSha256": "cac22fe5f83a179056469cf329def58393c7620eae23b018c66f42c37d849f63",
+      "afterSha256": "247447d877bd4b051a5dfbd9bc316b585d9085bf59b598be82d38e06c3e74849"
+    }
+  ],
+  "api": [
+    "team.identity.taskScopedRouting"
+  ],
+  "scope": {
+    "presentation": "Generate conditional native Team routing context at the required provider, including final refreshContext admission.",
+    "identity": "Preserve exact live role, name and lead routing identities for both leads and teammates.",
+    "boundary": "Preserve all Team tools, authorization, subagent contexts, lifecycle and messaging protocols. Team presence alone never requires roster enumeration or tool probes."
+  }
+}

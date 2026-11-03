@@ -6,7 +6,7 @@ import {homedir,tmpdir} from 'node:os'
 import {join} from 'node:path'
 import {PostgreSqlContainer,type StartedPostgreSqlContainer} from '@testcontainers/postgresql'
 import {readBusinessSourceMappingDefinition,type BusinessObjectTypeDefinition,type BusinessSourceMappingDefinition} from '@teloa/contract'
-import {BusinessSyncService,BusinessWarehouseService,currentVersionSubquery,initializeBusinessData,initializeBusinessDefinitions,initializeBusinessSync,initializeBusinessWarehouse,openResourceDatabase} from '@teloa/backend'
+import {BusinessSyncService,BusinessWarehouseService,currentVersionSubquery,initializeBusinessSpaces,initializeBusinessScopes,initializeBusinessData,initializeBusinessDefinitions,initializeBusinessSync,initializeBusinessWarehouse,openResourceDatabase} from '@teloa/backend'
 import {createMcpSyncSource,type ManagedMcpToolInvoker} from '../src/business-mcp-sync-source.ts'
 import {BusinessSourceAuthorityController} from '../src/business-source-authority.ts'
 import {OAuthFlowManager} from '../src/managed-mcp-oauth.ts'
@@ -28,6 +28,7 @@ before(async()=>{
  await initializeBusinessWarehouse(pool)
  await initializeBusinessDefinitions(pool)
  await initializeBusinessSync(pool)
+ await initializeBusinessSpaces(pool);await initializeBusinessScopes(pool)
 },{timeout:120000})
 after(async()=>{await pool?.end();await container?.stop();if(root)await rm(root,{recursive:true,force:true})})
 

@@ -14,7 +14,7 @@ test('资料管理→真实history适配→固定原消息抽屉→原会话端�
  const address=server.address();assert.ok(address&&typeof address==='object');const url='http://127.0.0.1:'+address.port
  const browser=await loadPlaywright().chromium.launch(launchOptions());t.after(()=>browser.close());const page=await browser.newPage({viewport:{width:1440,height:960}});page.setDefaultTimeout(8000)
  const errors:string[]=[];page.on('pageerror',(error:Error)=>errors.push(error.message));await page.route('**/*',(route:any)=>route.request().url().startsWith(url)?route.continue():route.abort())
- await page.goto(url);const citation=page.getByRole('button',{name:'原引用会话',exact:true});await citation.waitFor().catch(async(error:unknown)=>{t.diagnostic(JSON.stringify({errors,text:await page.locator('body').innerText()}));throw error});await citation.click()
+ await page.goto(url);await page.getByRole('button',{name:'文件信息',exact:true}).click();await page.getByText('使用记录',{exact:true}).click();const citation=page.getByRole('button',{name:'原引用会话',exact:true});await citation.waitFor().catch(async(error:unknown)=>{t.diagnostic(JSON.stringify({errors,text:await page.locator('body').innerText()}));throw error});await citation.click()
  const drawer=page.getByRole('dialog',{name:'原消息',exact:true});await drawer.getByText('这是第1条原消息',{exact:false}).waitFor().catch(async(error:unknown)=>{t.diagnostic(JSON.stringify({errors,text:await page.locator('body').innerText(),calls:await page.evaluate(()=>(window as any).resourceMessageFixture.calls)}));throw error});assert.match(await drawer.innerText(),/历史资料1 · v1/);assert.doesNotMatch(await drawer.innerText(),/当前资料正文|\[\[teloa-resource:/)
  assert.deepEqual(await page.evaluate(()=>(window as any).resourceMessageFixture.opened),[],'查看原消息本身不选会话或执行')
  await page.screenshot({path:process.env.TELOA_RESOURCE_MESSAGE_SCREENSHOT??'/tmp/teloa-resource-original-message.png'})
@@ -30,7 +30,7 @@ test('资料管理→真实history适配→固定原消息抽屉→原会话端�
   await page.evaluate((kind:string)=>{const f=(window as any).resourceMessageFixture;f.mode='ready';kind==='select'?f.select(1):f.connection()},change);await drawer.waitFor({state:'detached'});await page.evaluate(()=>(window as any).resourceMessageFixture.pending.shift()())
   assert.equal(await drawer.count(),0);assert.equal(await page.getByText('这是第1条原消息',{exact:false}).count(),0)
   if(change==='connection')await page.evaluate(()=>(window as any).resourceMessageFixture.select(1))
-  await citation.waitFor()
+  await page.getByRole('button',{name:'文件信息',exact:true}).click();await page.getByText('使用记录',{exact:true}).click();await citation.waitFor()
  }
  await page.getByRole('button',{name:'原引用群',exact:true}).click();assert.deepEqual(await page.evaluate(()=>(window as any).resourceMessageFixture.groups),[['33333333-3333-4333-a333-333333333333','','44444444-4444-4444-a444-444444444444']])
  assert.equal(await page.evaluate(()=>(window as any).resourceMessageFixture.writes),0);assert.equal(await page.evaluate(()=>(window as any).resourceMessageFixture.released),(await page.evaluate(()=>(window as any).resourceMessageFixture.calls)).filter((row:any[])=>row[0]==='retain').length);assert.deepEqual(errors,[])

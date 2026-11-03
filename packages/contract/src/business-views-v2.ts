@@ -163,7 +163,7 @@ export function readBusinessViewResultV2(value:unknown):BusinessViewResultV2{ret
   for(const [index,value] of row.objects.entries()){
    const o=exact(value,['id','title','source','observedAt','receivedAt','quality','version','snapshotHash','summary','fields'])
    if(o.id!==rows[index]!.dimension||!plainText(o.id,200)||!plainText(o.title,500)||!plainText(o.source,120)||!plainText(o.summary,4000)||!stamp(o.observedAt)||!stamp(o.receivedAt)||!['complete','missing'].includes(String(o.quality))||!natural(o.version)||o.version<1||!hash(o.snapshotHash)||!Array.isArray(o.fields)||o.fields.length>50)throw bad()
-   for(const value of o.fields){const f=exact(value,['label','value']);if(!plainText(f.label,120)||!plainText(f.value,4000))throw bad()}
+   for(const value of o.fields){const f=exact(value,['label','value']);if(!plainText(f.label,120)||!(typeof f.value==='boolean'||typeof f.value==='number'&&Number.isFinite(f.value)||plainText(f.value,4000)))throw bad()}
   }
  }
  return {...row,measures,rows,coverage} as BusinessViewResultV2

@@ -445,7 +445,7 @@ test('BusinessPage自主总览不读取ledger，项目和历史任务入口保�
  assert.equal(await page.evaluate(()=>(window as any).surfaceFixture.calls.filter((c:any)=>c[1]==='business-configuration/current').length),before)
 })
 
-test('正式看板经真实go打开对象清单、匹配清单和固定对象，不被正式首页吞回',async t=>{
+test('正式看板在原页下钻对象清单、匹配清单和记录，关闭回到原看板',async t=>{
  const page=await browserFixture(t)
  const openDashboard=async()=>{
   await page.evaluate(()=>(window as any).surfaceFixture.change({whole:true,dashboard:true,owner:'A',section:'overview',objectType:undefined,id:undefined,match:undefined}))
@@ -455,18 +455,25 @@ test('正式看板经真实go打开对象清单、匹配清单和固定对象，
  for(const kind of ['all','match','id']){
   await openDashboard()
   const before=await page.evaluate(()=>(window as any).surfaceFixture.calls.filter((c:any)=>c[1]==='business-configuration/current').length)
+  const navigationBefore=await page.evaluate(()=>(window as any).surfaceFixture.actions.filter((a:any)=>a[0]==='go').length)
   if(kind==='all')await page.getByRole('button',{name:'查看对象',exact:true}).first().click()
   else await page.getByRole('button',{name:kind==='match'?'查看 ready':'查看 record-one',exact:true}).click()
   const expected:BusinessTarget={scope:'sales',section:'data',objectType:'order',...(kind==='match'?{match:{field:'stage',value:'ready'}}:kind==='id'?{id:'record-one',match:{field:'_id',value:'record-one'}}:{})}
   await page.waitForFunction(()=> (window as any).surfaceFixture.calls.some((c:any)=>c[1]==='ledger'&&c[2].objectType==='order'))
-  assert.deepEqual(await page.evaluate(()=>(window as any).surfaceFixture.actions.filter((a:any)=>a[0]==='go').at(-1)[1]),expected)
-  await page.getByRole('button',{name:'工单 record-one',exact:true}).waitFor()
-  if(kind==='match')assert.match(await page.locator('[data-ledger-match]').innerText(),/ready/)
-  if(kind==='id'){const drawer=page.getByRole('dialog',{name:'工单 record-one',exact:true});await drawer.waitFor();await drawer.getByRole('heading',{level:3,name:'工单 record-one',exact:true}).waitFor();await drawer.getByRole('button',{name:'关闭',exact:true}).click();assert.equal(await drawer.count(),0);await page.getByRole('button',{name:'工单 record-one',exact:true}).waitFor()}
+  assert.equal(await page.evaluate(()=>(window as any).surfaceFixture.actions.filter((a:any)=>a[0]==='go').length),navigationBefore)
+  const drawer=page.getByRole('dialog');await drawer.waitFor();assert.equal(await drawer.count(),1)
+  if(kind==='id'){
+   await drawer.getByRole('heading',{level:3,name:'工单 record-one',exact:true}).waitFor()
+   await drawer.getByRole('button',{name:'返回订单目录',exact:true}).click()
+   await drawer.getByRole('button',{name:'工单 record-one',exact:true}).waitFor()
+  }else await drawer.getByRole('button',{name:'工单 record-one',exact:true}).waitFor()
+  if(kind==='match')assert.match(await drawer.locator('[data-ledger-match]').innerText(),/ready/)
+  assert.equal(await page.locator('[data-dashboard="statistics"]').count(),1,'下钻期间原看板仍挂载')
+  await drawer.getByRole('button',{name:'关闭',exact:true}).click();assert.equal(await drawer.count(),0)
   const calls=await page.evaluate(()=>(window as any).surfaceFixture.calls)
   assert.ok(calls.some((c:any)=>c[1]==='ledger'&&c[2].objectType==='order'&&JSON.stringify(c[2].match)===JSON.stringify(expected.match)))
   assert.equal(calls.filter((c:any)=>c[1]==='business-configuration/current').length,before)
-  assert.equal(await page.getByRole('heading',{level:2,name:'订单统计',exact:true}).count(),0)
+  assert.equal(await page.getByRole('heading',{level:2,name:'订单统计',exact:true}).count(),1)
  }
 })
 

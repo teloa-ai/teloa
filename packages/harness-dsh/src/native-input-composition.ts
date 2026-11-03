@@ -18,6 +18,7 @@ import type {SessionController} from '@deepseek-ai/dsh-api-session-controller'
 import type {SubagentRuntime} from '@deepseek-ai/dsh-subagent'
 import type {TeloaNativeInput,nativeInputRecoveryCandidate} from './native-input-provider.ts'
 import type {createTaskRunGoal} from './task-run-goal.ts'
+import {employeeMentionTitlePatches} from './employee-mention-title.ts'
 
 /** 宿主据此确认所加载的核心提供本接口及以下语义。 */
 export const nativeInputCompositionVersion=1
@@ -151,6 +152,7 @@ export async function composeNativeInput(rows:readonly unknown[],options:NativeI
  const loaderConfig=loader.config??{},listed=record(loaderConfig)?loaderConfig.packages??[]:undefined
  if(!Array.isArray(listed)||listed.some(name=>typeof name!=='string'||!name))throw refuse('远程调用描述加载器的配置格式无效。')
  const patches:Record<string,unknown>[]=[
+  ...employeeMentionTitlePatches(rows),
   {insert:[{id:inputRowId,name:inputProvider}]},
   // 代理循环自身也能启动代理，不能只让会话控制器等待准入。
   {id:'agent-loop',name:'@deepseek-ai/dsh-agent-loop',inject:withNativeInput(loop.inject),config:{...structuredClone(loopConfig),requireRestoreAdmission:true}},

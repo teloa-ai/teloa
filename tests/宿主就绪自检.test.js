@@ -7,7 +7,7 @@ import { mkdir, mkdtemp, readdir, readFile, realpath, rm, stat, symlink, writeFi
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { findStartupUrl, authorizeSession, assertTeloaReady, guardTeloaReadiness } from '../scripts/核对宿主就绪.mjs'
+import { findStartupUrl, authorizeSession, assertTeloaReady, guardTeloaReadiness, probeTeloaChannel } from '../scripts/核对宿主就绪.mjs'
 import {retryStartupPort} from './fixtures/startup-port-retry.mjs'
 
 const root = fileURLToPath(new URL('../', import.meta.url))
@@ -99,7 +99,7 @@ function startStub(mounted) {
       response.writeHead(302, { 'set-cookie': 'dsh-session=stub; Path=/; HttpOnly', location: '/' }).end()
       return
     }
-    if (request.method === 'POST' && url.pathname === '/teloa/conversations/list') {
+    if (request.method === 'POST' && url.pathname === '/teloa/runtime/readiness') {
       if (request.headers.cookie !== 'dsh-session=stub') { response.writeHead(401).end(); return }
       // 插件挂载失败时真实宿主由静态前端接管，非 GET/HEAD 回的是 405 而不是 404。
       probes += 1
@@ -110,7 +110,7 @@ function startStub(mounted) {
       request.on('end', () => {
         const envelope = JSON.parse(body)
         response.writeHead(200, { 'content-type': 'application/json' })
-        response.end(JSON.stringify({ type: 'server-response', rpcId: envelope.rpcId, result: { ok: true, value: [] } }))
+        response.end(JSON.stringify({ type: 'server-response', rpcId: envelope.rpcId, result: { ok: true, value: { schema: 'teloa.runtime-readiness/v1', ready: true } } }))
       })
       return
     }
@@ -199,6 +199,111 @@ test('一次探针都没成功回过话时给出固定中文超时文案，不�
   const error = await assertTeloaReady('http://127.0.0.1:1/?token=unused', { fetch: send, mountTimeout: 200 }).then(() => undefined, failure => failure)
   assert.ok(error instanceof Error)
   assert.equal(error.message, 'Teloa 工作通道在就绪窗口内没有回包，拒绝按就绪对外服务。')
+})
+
+// 真实 HTTP/fetch 接缝：只发送固定的 runtime/readiness，不启动宿主或数据库。
+async function startReadProbeFixture(t, reply) {
+  const calls = { authorize: 0, probes: 0 }
+  const server = createServer((request, response) => {
+    if (request.method === 'GET' && request.url === '/?token=stub') {
+      calls.authorize += 1
+      response.writeHead(303, { 'set-cookie': 'dsh-session=stub; Path=/' }).end()
+      return
+    }
+    assert.equal(request.url, '/teloa/runtime/readiness')
+    assert.equal(request.headers.cookie, 'dsh-session=stub')
+    let body = ''
+    request.setEncoding('utf8')
+    request.on('data', chunk => { body += chunk })
+    request.on('end', () => {
+      const envelope = JSON.parse(body)
+      assert.equal(envelope.method, 'runtime/readiness')
+      assert.deepEqual(envelope.payload, {})
+      calls.probes += 1
+      reply(response, envelope, calls.probes)
+    })
+  })
+  await new Promise(done => server.listen(0, '127.0.0.1', done))
+  t.after(async () => { server.closeAllConnections(); await new Promise(done => server.close(done)) })
+  return { calls, url: 'http://127.0.0.1:' + server.address().port + '/?token=stub' }
+}
+const readyReply = (response, envelope) => response.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ type: 'server-response', rpcId: envelope.rpcId, result: { ok: true, value: { schema: 'teloa.runtime-readiness/v1', ready: true } } }))
+
+test('就绪探针只接受具名健康回执，历史目录数组或宽松ok不能代替健康',async()=>{
+ for(const value of [[],{},true,{schema:'wrong',ready:true},{schema:'teloa.runtime-readiness/v1',ready:false},{schema:'teloa.runtime-readiness/v1',ready:true,extra:'unexpected'}]){
+  const send=async(url,init)=>{
+   assert.equal(new URL(url).pathname,'/teloa/runtime/readiness')
+   const request=JSON.parse(init.body);assert.equal(request.method,'runtime/readiness');assert.deepEqual(request.payload,{})
+   return Response.json({type:'server-response',rpcId:request.rpcId,result:{ok:true,value}})
+  }
+  await assert.rejects(probeTeloaChannel('http://127.0.0.1:1','session=stub',{fetch:send}),/就绪回执无效/)
+ }
+})
+
+test('启动只读探针短超时后在总窗口内重试，授权令牌只消费一次', async t => {
+  const stub = await startReadProbeFixture(t, (response, envelope, attempt) => { if (attempt > 1) readyReply(response, envelope) })
+  await assertTeloaReady(stub.url, { timeout: 50, mountTimeout: 700, retryInterval: 10 })
+  assert.equal(stub.calls.authorize, 1)
+  assert.equal(stub.calls.probes, 2)
+})
+
+test('启动只读探针响应正文超时也可重试，不误报为 JSON 损坏', async t => {
+  const stub = await startReadProbeFixture(t, (response, envelope, attempt) => {
+    if (attempt > 1) readyReply(response, envelope)
+    else { response.writeHead(200, { 'content-type': 'application/json' }); response.write('{') }
+  })
+  await assertTeloaReady(stub.url, { timeout: 50, mountTimeout: 700, retryInterval: 10 })
+  assert.equal(stub.calls.authorize, 1)
+  assert.equal(stub.calls.probes, 2)
+})
+
+test('启动只读探针持续超时只等总 deadline，不重授 Cookie 或无限重试', async t => {
+  const stub = await startReadProbeFixture(t, () => {})
+  const started = Date.now()
+  await assert.rejects(assertTeloaReady(stub.url, { timeout: 40, mountTimeout: 170, retryInterval: 10 }), /在就绪窗口内没有回包/)
+  const elapsed = Date.now() - started
+  assert.ok(elapsed >= 140 && elapsed < 1000, '应在一个总窗口内终止')
+  assert.ok(stub.calls.probes >= 2, '短探针超时应先等剩余窗口')
+  assert.equal(stub.calls.authorize, 1)
+})
+
+test('启动只读探针重试后遇 auth/schema/业务硬失败仍立即拒绝', async () => {
+  const failures = [
+    { response: () => new Response(null, { status: 401 }), message: /HTTP 401/ },
+    { response: () => new Response(null, { status: 500 }), message: /HTTP 500/ },
+    { response: () => new Response('not json'), message: /不是合法 JSON/ },
+    { response: () => Response.json({ type: 'server-response', rpcId: 'wrong', result: { ok: true } }), message: /身份不符/ },
+    { response: rpcId => Response.json({ type: 'server-response', rpcId, result: { ok: false, error: { code: 'teloa/forbidden' } } }), message: /teloa\/forbidden/ },
+  ]
+  for (const failure of failures) {
+    let authorize = 0, probes = 0
+    const send = async (_, init) => {
+      if (!init.method) { authorize++; return new Response(null, { status: 303, headers: { 'set-cookie': 'dsh-session=stub' } }) }
+      probes++
+      if (probes === 1) return new Promise((_done, reject) => init.signal.addEventListener('abort', () => reject(init.signal.reason), { once: true }))
+      return failure.response(JSON.parse(init.body).rpcId)
+    }
+    await assert.rejects(assertTeloaReady('http://127.0.0.1:1/?token=unused', { fetch: send, timeout: 20, mountTimeout: 700, retryInterval: 1 }), failure.message)
+    assert.equal(authorize, 1)
+    assert.equal(probes, 2, '硬失败不能再发第三次探针')
+  }
+})
+
+test('启动只读探针不把外部 abort/假 TimeoutError 或授权失败当作可重试超时', async () => {
+  for (const name of ['AbortError', 'TimeoutError']) {
+    let probes = 0
+    const failure = new DOMException('external cancellation', name)
+    const send = async (_, init) => {
+      if (!init.method) return new Response(null, { status: 303, headers: { 'set-cookie': 'dsh-session=stub' } })
+      probes++; throw failure
+    }
+    await assert.rejects(assertTeloaReady('http://127.0.0.1:1/?token=unused', { fetch: send, timeout: 50, mountTimeout: 700, retryInterval: 1 }), error => error === failure)
+    assert.equal(probes, 1)
+  }
+  let calls = 0
+  const failure = new DOMException('authorize timed out', 'TimeoutError')
+  await assert.rejects(assertTeloaReady('http://127.0.0.1:1/?token=unused', { fetch: async () => { calls++; throw failure } }), error => error === failure)
+  assert.equal(calls, 1)
 })
 
 test('自检失败时终止子进程并给出非零退出码；成功时不打印也不终止', async () => {

@@ -8,6 +8,8 @@ import {join} from 'node:path'
 import {PostgreSqlContainer,type StartedPostgreSqlContainer} from '@testcontainers/postgresql'
 import {createHardwareStore,initializeHardwareDevices,createDirectDeviceStore} from '@teloa/backend'
 import {hardwareScopes,type HardwareBinding} from '@teloa/contract'
+import {Context} from '@deepseek-ai/cordis'
+import * as xiaozhiPlugin from '../../xiaozhi-mcp/src/index.ts'
 let pool:Parameters<typeof initializeHardwareDevices>[0],container:StartedPostgreSqlContainer
 before(async()=>{container=await new PostgreSqlContainer('postgres:17-alpine').start();pool=new Pool({connectionString:container.getConnectionUri()});await initializeHardwareDevices(pool)},{timeout:120000})
 after(async()=>{await pool?.end();await container?.stop()})
@@ -49,6 +51,38 @@ test('撤销同步关闭准入；更早等待中的启用不能重新开放授�
  f.release();await rejected;await revoked
  assert.equal((await lease.snapshot()).enabled,false)
  assert.equal(f.inputs,0);await lease.close()
+})
+test('E06：可选小智插件的连接测试经正式管理租约，不隐式授权、不泄露接入点',{timeout:15000},async t=>{
+ const f=await fixture(),ctx=new Context(),signal=new AbortController().signal,secrets=new Map<string,string>()
+ let starts=0,stops=0
+ await assert.rejects(f.host.handle('devices/mcp/test',{},signal),{code:'teloa/dependency-unavailable'})
+ ctx.provide('teloaAssistantChannels',f.host.service)
+ ctx.provide('credentials',{
+  describe:async(ref:string)=>({configured:secrets.has(ref),writable:true}),
+  resolve:async(ref:string)=>secrets.has(ref)?{value:secrets.get(ref),source:'fixture'}:undefined,
+  set:async(ref:string,value:string)=>{secrets.set(ref,value)},
+ })
+ // 仅桥传输为替身；插件管理分支、宿主租约、授权和持久存储均为正式实现。
+ const fiber=ctx.plugin(xiaozhiPlugin,{createBridge:()=>({state:'idle' as const,start:()=>{starts++},stop:async()=>{stops++}})})
+ await fiber;t.after(async()=>{await ctx.fiber.dispose();await f.host.close()})
+ const call=(route:string,payload:unknown={},cancel=signal)=>f.host.handle(route,payload,cancel)
+ await assert.rejects(call('devices/mcp/test'),{code:'teloa/unavailable'});assert.equal(starts,0)
+ const endpoint='wss://api.xiaozhi.me/mcp/?token=synthetic-management-secret'
+ await call('devices/mcp/save',{endpoint})
+ await assert.rejects(call('devices/mcp/test'),{code:'teloa/forbidden'})
+ assert.equal(await f.store.current(),null);assert.equal(f.ensures,0);assert.equal(starts,0)
+ await call('devices/grant/update',{scopes:hardwareScopes})
+ const before=await f.store.current(),startCount=starts
+ const status=await call('devices/mcp/test') as {available:boolean;configured:boolean;authorization:{enabled:boolean}}
+ assert.equal(status.available,true);assert.equal(status.configured,true);assert.equal(status.authorization.enabled,true)
+ assert.equal(starts,startCount+1);assert.deepEqual(await f.store.current(),before);assert.equal(f.ensures,1);assert.equal(f.inputs,0)
+ assert.doesNotMatch(JSON.stringify(status),/synthetic-management-secret|wss:|credential|token/)
+ const stopped=stops
+ for(const payload of [{endpoint},{ownerId:'other'},{scopes:hardwareScopes}])await assert.rejects(call('devices/mcp/test',payload),{code:'teloa/invalid-input'})
+ await assert.rejects(call('devices/mcp/test',{},AbortSignal.abort()),{name:'AbortError'})
+ assert.equal(stops,stopped);assert.equal(starts,startCount+1)
+ await call('devices/revoke');await assert.rejects(call('devices/mcp/test'),{code:'teloa/forbidden'})
+ assert.equal((await f.store.current())?.status,'revoked');assert.equal(f.inputs,0)
 })
 test('已有硬件来源时身份缺失或不匹配须拒绝，不能生成新身份漏掉冷恢复来源',async t=>{
  const root=await mkdtemp(join(tmpdir(),'teloa-hardware-identity-'));t.after(()=>rm(root,{recursive:true,force:true}))

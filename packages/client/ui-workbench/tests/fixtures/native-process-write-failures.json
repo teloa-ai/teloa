@@ -1,0 +1,90 @@
+{
+  "schema": "teloa.native-process-frozen-failure-fixture/v1",
+  "provenance": "Native failed-write regression fixture derived from a frozen synthetic failure. Result error flags/text retained; call identifiers, timestamps, target path and proposed file body normalized. Original native evidence is retained separately.",
+  "events": [
+    {
+      "type": "tool/call",
+      "seq": 27,
+      "time": 0,
+      "data": {
+        "turn": 1,
+        "step": 2,
+        "callId": "frozen-write-call-1",
+        "name": "write",
+        "arguments": "{\"file_path\": \"recovery-note.md\", \"content\": \"# Synthetic write fixture\\n\"}"
+      }
+    },
+    {
+      "type": "tool/result",
+      "seq": 28,
+      "time": 1,
+      "data": {
+        "turn": 1,
+        "step": 2,
+        "message": {
+          "role": "tool",
+          "source": {
+            "kind": "tool",
+            "callId": "frozen-write-call-1"
+          },
+          "toolCallId": "frozen-write-call-1",
+          "content": [
+            {
+              "type": "text",
+              "text": "Error: [sandbox: file access denied under read-only mode]\n[sandbox: escalation available — retry this exact operation once with sandbox_permissions (the narrowest wider mode that suffices) + justification; the approval prompt asks the user]"
+            }
+          ],
+          "isError": true
+        },
+        "error": {
+          "name": "FsError",
+          "code": "FS_SANDBOX_DENIED"
+        }
+      },
+      "sourceEventSeqs": [
+        27
+      ],
+      "surfaceOp": "append"
+    },
+    {
+      "type": "tool/call",
+      "seq": 32,
+      "time": 2,
+      "data": {
+        "turn": 1,
+        "step": 3,
+        "callId": "frozen-write-call-2",
+        "name": "write",
+        "arguments": "{\"file_path\": \"recovery-note.md\", \"content\": \"# Synthetic write fixture\\n\", \"sandbox_permissions\": \"workspace-write\", \"justification\": \"Write the authorized synthetic recovery note.\"}"
+      }
+    },
+    {
+      "type": "tool/result",
+      "seq": 33,
+      "time": 3,
+      "data": {
+        "turn": 1,
+        "step": 3,
+        "message": {
+          "role": "tool",
+          "source": {
+            "kind": "tool",
+            "callId": "frozen-write-call-2"
+          },
+          "toolCallId": "frozen-write-call-2",
+          "content": [
+            {
+              "type": "text",
+              "text": "Error: 工具参数超出本次任务授权的数据范围或版本。"
+            }
+          ],
+          "isError": true
+        }
+      },
+      "sourceEventSeqs": [
+        32
+      ],
+      "surfaceOp": "append"
+    }
+  ]
+}

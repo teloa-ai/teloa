@@ -1,3 +1,4 @@
+import {planSkipReasonKeys} from './plan-schedule-summary.ts'
 import type {SavedPlan} from './plan-api.js'
 import type {PlanScheduleSummary,PlanScheduleSkip} from './plan-schedule-summary.js'
 import type {PlanExecutionHistoryItem} from './plan-execution-history.js'
@@ -52,11 +53,15 @@ export function planStatusBox(input:PlanStatusInput):PlanStatusBoxModel{
  const latestSkip=overview?.latestSkip
  // 跳过晚于最近一次成功领取才算「当前被卡住」；更早的跳过已被后来的领取解开，落到第 5–7 行。
  if(overview&&latestSkip&&(!overview.latest||latestSkip.scheduledAt>overview.latest.occurrence.scheduledAt)){
+  if(latestSkip.reason==='no-work-evidence'||latestSkip.reason==='digest-exists')return {
+   tone:'good',sentence:overview.nextAt?t('plan.status.active',{time:stamp(overview.nextAt),timezone}):t('plan.status.activeNoNext'),
+   detail:t(planSkipReasonKeys[latestSkip.reason]),primary:trigger,secondary:pause,
+  }
   const taskId=latestSkip.taskId??overview.latest?.task?.id
   return {
    tone:'warn',
    sentence:t('plan.status.blocked',{date:stamp(latestSkip.scheduledAt),count:consecutiveSkips(skips,latestSkip)}),
-   detail:t(latestSkip.reason==='previous-pending'?'plan.schedule.skipPending':'plan.schedule.skipRunning'),
+   detail:t(planSkipReasonKeys[latestSkip.reason]),
    hint:t('plan.status.blockedHint'),
    ...(taskId?{primary:{label:t('plan.status.action.openTask'),action:{kind:'open-task',taskId}}}:{}),
   }

@@ -1,6 +1,6 @@
 {
   "name": "@teloa/cli",
-  "version": "0.2.10",
+  "version": "0.2.11-rc.4",
   "private": true,
   "type": "module",
   "exports": {
@@ -9,7 +9,7 @@
     "./gateway": "./src/runtime-gateway.ts"
   },
   "scripts": {
-    "build": "tsc -b",
+    "build": "tsc -b && node scripts/build-maintenance-helper.mjs",
     "test": "node --test tests/*.test.ts"
   },
   "engines": {

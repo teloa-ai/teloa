@@ -34,7 +34,7 @@ export class BusinessChangeSetService{
    if(prior){if(prior.request_hash!==requestHash)throw error('teloa/conflict','同一指令已准备另一份修改。');return prior.document}
    const existing=input.changeSetId?await this.row(db,actor,input.changeSetId,true):undefined
    if(existing&&(existing.document.scope!==input.scope||existing.document.revision!==input.expectedRevision||existing.document.state==='applied'))throw error('teloa/version-conflict','草稿已改变或已采用，请重新读取。')
-   const batch={scope:input.scope,requestId:existing?.document.batch.requestId??this.identity.id(),operations:input.operations}
+   const batch=await this.records.normalizeBatchInTransaction(db,actor,{scope:input.scope,requestId:existing?.document.batch.requestId??this.identity.id(),operations:input.operations})
    const preview=await this.records.previewBatchInTransaction(db,actor,batch),id=existing?.document.id??this.identity.id(),revision=(existing?.document.revision??0)+1,now=this.identity.now()
    const document:BusinessChangeSet={schema:'teloa.business-change-set/v1',id,scope:input.scope,revision,digest:hash({id,revision,batch,preview,origin}),state:'draft',sessionId:origin.sessionId,batch,preview,createdAt:existing?.document.createdAt??now,updatedAt:now}
    if(Buffer.byteLength(JSON.stringify(document))>131072)throw new WorkError('teloa/invalid-input','完整预览超过 128 KiB，请缩小修改批次。')

@@ -36,3 +36,29 @@ test('退役对象的关联面板只读：可打开历史，但不能创建、�
  assert.equal(button(rows[1],'objectConversations.unlink').props.disabled,true)
  assert.ok(nodes(tree).some(node=>node.type==='p'&&node.children.includes('objectConversations.readOnly')))
 })
+
+test('手工关联候选排除自动运行与只读投影，任务和员工仍可选择普通会话并打开原只读历史',async()=>{
+ for(const kind of ['task','role'] as const){
+  const row=(id:string,extra:Record<string,unknown>={})=>({id,sessionId:id+'-session',title:id,status:'ready',...extra})
+  const ordinary=row('普通会话'),automatic=row('自动运行',{purpose:'task-run'}),derived=row('只读投影'),canonical=row('原只读历史',{purpose:'task-run'}),linked=row('已关联'),archived=row('已归档'),pending=row('未就绪',{status:'pending'}),calls:unknown[][]=[]
+  const rows=[ordinary,automatic,derived,canonical,linked,archived,pending],links=[
+   {kind,objectId:'current',objectVersion:1,conversationId:linked.id,sessionId:linked.sessionId},
+   {kind:'role',objectId:'another-role',objectVersion:1,conversationId:derived.id,sessionId:derived.sessionId,readOnly:true},
+   ...(kind==='role'?[{kind,objectId:'current',objectVersion:1,conversationId:canonical.id,sessionId:canonical.sessionId,readOnly:true}]:[]),
+  ]
+  const app=mount('ObjectConversations.tsx',{'./work-presentation.js':{presentConversations:(values:typeof rows)=>values.map(conversation=>({conversation,title:conversation.title,updatedAt:0}))}})
+  const directory={rows},managed={archived:[archived.sessionId]},work={subscribe:()=>()=>{},getDirectorySnapshot:()=>directory},management={subscribe:()=>()=>{},getSnapshot:()=>managed}
+  const render=()=>app.render('ObjectConversations',{object:{kind,id:'current',title:'当前对象',version:1,canStart:true},links,work,management,useSessions:()=>({}),prepare:async(value:unknown)=>{calls.push(['prepare',value])},open:async(id:string)=>{calls.push(['open',id])},unlink:async(id:string)=>{calls.push(['unlink',id])},link:async(value:typeof ordinary)=>{calls.push(['link',value.id])},create:()=>{calls.push(['create'])}})
+  render();for(const effect of app.effects)effect()
+  const tree=render(),linkButton=nodes(tree).find(node=>node.props['aria-label']==='objectConversations.link')!
+  linkButton.props.onClick()
+  const popup=nodes(render()).find(node=>node.props.role==='dialog'&&node.props['aria-label']==='objectConversations.link')!,options=nodes(popup).filter(node=>node.type==='button')
+  assert.deepEqual(options.map(node=>nodes(node).find(child=>child.type==='span')?.children.join('')),['普通会话'],kind+'只列仍可手工关联的普通会话')
+  options[0]!.props.onClick();await settle();assert.deepEqual(calls,[['link',ordinary.id]],kind+'正常手工选择保持原回调')
+  if(kind==='role'){
+   const history=nodes(render()).find(node=>node.type==='li'&&nodes(node).some(child=>child.type==='button'&&child.children.includes(canonical.title)))!
+   const buttons=nodes(history).filter(node=>node.type==='button');assert.equal(buttons.length,1,'只读历史只保留原打开入口')
+   buttons[0]!.props.onClick();await settle();assert.deepEqual(calls,[['link',ordinary.id],['open',canonical.sessionId]])
+  }
+ }
+})

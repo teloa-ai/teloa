@@ -27,7 +27,7 @@ export class IndustryReferenceCatalog{
   const client=await this.pool.connect().catch(()=>{throw new WorkError('teloa/storage-unavailable','行业资料目录数据库暂不可用。')})
   try{await client.query('begin isolation level repeatable read');const result=await operation(client);await client.query('commit');return result}catch(error){await client.query('rollback').catch(()=>{});throw error}finally{client.release()}
  }
- private async resolve(sourceId:string,context:ResourceSourceContext):Promise<ReferenceInfo&{text:string}>{
+ private async resolve(sourceId:string,context:ResourceSourceContext):Promise<ReferenceInfo&{text:string;copyOrigin:{sourceTitle:string;contentId:string;contentHash:string;packageVersion:string;localId:string;publisher:string;license:import('../market/content-store.ts').MarketSourceTrust['license']}}>{
   const match=sourcePattern.exec(sourceId);if(!match)throw unavailable('行业资料来源身份不存在。')
   const actor=this.actor(context),load=await this.loads.getInTransaction(context.client!,actor.ownerId,{loadId:match[1]})
   if(!actor.scopeIds.includes(load.space.scope)||!context.scopeIds?.includes(load.space.scope))throw forbidden()
@@ -45,11 +45,16 @@ export class IndustryReferenceCatalog{
   let text:string;try{text=new TextDecoder('utf-8',{fatal:true,ignoreBOM:true}).decode(file.bytes)}catch{throw unavailable('行业资料正文不是有效 UTF-8。')}
   const version=createHash('sha256').update(file.bytes).digest('hex')
   if(version!==file.hash)throw new WorkError('teloa/storage-corrupt','行业资料固定文件摘要不一致。')
-  return {id:sourceId,title:item.title,source:`market:${load.contentId}/${item.localId}`,version,bytes:file.bytes.byteLength,text}
+  return {id:sourceId,title:item.title,source:`market:${load.contentId}/${item.localId}`,version,bytes:file.bytes.byteLength,text,copyOrigin:{sourceTitle:item.title,contentId:content.id,contentHash:content.hash,packageVersion:manifest.version,localId:item.localId,publisher:content.trust.publisher,license:content.trust.license}}
+ }
+ /** 只供本人显式派生副本，仍逐次核对固定加载与内容身份。 */
+ async copySource(id:string,version:string,context:ResourceSourceContext){
+  const actor=this.actor(context)
+  return this.client({...context,actor},async client=>{const result=await this.resolve(id,{...context,actor,client});if(result.version!==version)throw new WorkError('teloa/version-conflict','行业资料来源版本已变化。');return result})
  }
  async read(id:string,version:string,context?:ResourceSourceContext){
   const actor=this.actor(context)
-  return this.client({...context!,actor},async client=>{const result=await this.resolve(id,{...context!,actor,client});if(result.version!==version)throw new WorkError('teloa/version-conflict','行业资料来源版本已变化。');return {schema:'teloa.reference/v1' as const,...result}})
+  return this.client({...context!,actor},async client=>{const result=await this.resolve(id,{...context!,actor,client});if(result.version!==version)throw new WorkError('teloa/version-conflict','行业资料来源版本已变化。');const {copyOrigin:_,...reference}=result;return {schema:'teloa.reference/v1' as const,...reference}})
  }
  async list(context?:ResourceSourceContext){
   const actor=this.actor(context)
@@ -60,7 +65,7 @@ export class IndustryReferenceCatalog{
    if((await client.query('select name from unnest($1::text[]) as name where to_regclass(name) is not null',[names])).rows.length!==names.length)return {schema:'teloa.reference-list/v1' as const,references:[]}
    const rows=(await client.query(`select distinct l.id,i.instance_id from teloa_industry_loads l join teloa_industry_load_items i on i.load_id=l.id where l.owner_id=$1 and l.scope=any($2::text[]) and i.kind='knowledge' and i.status='pending-adapter' order by l.id,i.instance_id`,[actor.ownerId,actor.scopeIds])).rows
    const references:ReferenceInfo[]=[]
-   for(const row of rows){const sourceId=industryReferenceId(row.id,row.instance_id);try{const result=await this.resolve(sourceId,{actor,client,scopeIds:actor.scopeIds});const {text:_,...info}=result;references.push(info)}catch(error){if(error instanceof WorkError&&error.code==='teloa/forbidden')continue;throw error}}
+   for(const row of rows){const sourceId=industryReferenceId(row.id,row.instance_id);try{const result=await this.resolve(sourceId,{actor,client,scopeIds:actor.scopeIds});const {text:_,copyOrigin:_origin,...info}=result;references.push(info)}catch(error){if(error instanceof WorkError&&error.code==='teloa/forbidden')continue;throw error}}
    return {schema:'teloa.reference-list/v1' as const,references}
   })
  }

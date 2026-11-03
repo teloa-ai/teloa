@@ -31,7 +31,7 @@ test('hourly / daily / cron 的键集与取值范围严格',()=>{
  assert.deepEqual(readBusinessSyncSchedule({kind:'hourly',minute:59}).schedule,{kind:'hourly',minute:59})
  for(const minute of [-1,60,1.5,'0'])invalid(()=>readBusinessSyncSchedule({kind:'hourly',minute}))
  assert.deepEqual(readBusinessSyncSchedule({kind:'daily',time:'02:30',timezone:'Asia/Shanghai'}).schedule,{kind:'daily',time:'02:30',timezone:'Asia/Shanghai'})
- for(const patch of [{time:'24:00'},{time:'2:30'},{time:'02:60'},{timezone:'America/New_York'},{timezone:'asia/shanghai'}])invalid(()=>readBusinessSyncSchedule({kind:'daily',time:'02:30',timezone:'Asia/Shanghai',...patch}),JSON.stringify(patch))
+ for(const patch of [{time:'24:00'},{time:'2:30'},{time:'02:60'},{timezone:'Etc/Not_A_Zone'},{timezone:'asia/shanghai'}])invalid(()=>readBusinessSyncSchedule({kind:'daily',time:'02:30',timezone:'Asia/Shanghai',...patch}),JSON.stringify(patch))
  invalid(()=>readBusinessSyncSchedule({kind:'daily',time:'02:30'}),'daily 缺时区应拒绝')
  const cron=readBusinessSyncSchedule({kind:'cron',expression:'0 9 * * 1-5',timezone:'Asia/Shanghai'}).schedule
  assert.deepEqual(cron,{kind:'cron',expression:'0 9 * * 1-5',timezone:'Asia/Shanghai'})
@@ -99,4 +99,17 @@ test('cron 读取即核对可达性：日、月、周的组合永远不触发即
  for(const expression of ['0 0 31 2 *','0 0 30 2 *','0 0 31 4,6,9,11 *'])invalid(()=>readBusinessSyncSchedule({kind:'cron',expression,timezone:'UTC'}),expression+' 永不触发')
  // 闰日四年一次仍可达；日与周同时限定按「或」，2 月 31 日加周一照样可达。
  for(const expression of ['0 0 29 2 *','0 0 31 2 1','0 0 31 1-12 *'])assert.equal(readBusinessSyncSchedule({kind:'cron',expression,timezone:'UTC'}).schedule.kind,'cron',expression)
+})
+
+test('AD02-DST：共用时区的daily与cron按纽约春跳和秋复接续',()=>{
+ for(const [time,expression,after,at]of [
+  ['02:30','30 2 * * *','2026-03-08T06:59:59.999Z','2026-03-09T06:30:00.000Z'],
+  ['01:30','30 1 * * *','2026-11-01T05:29:59.999Z','2026-11-01T05:30:00.000Z'],
+  ['01:30','30 1 * * *','2026-11-01T05:30:00.000Z','2026-11-02T06:30:00.000Z'],
+ ] as const){
+  const daily=readBusinessSyncSchedule({kind:'daily',time,timezone:'America/New_York'}).schedule
+  const cron=readBusinessSyncSchedule({kind:'cron',expression,timezone:'America/New_York'}).schedule
+  assert.equal(nextBusinessSyncOccurrence(daily,after),at)
+  assert.equal(nextBusinessSyncOccurrence(cron,after),at)
+ }
 })

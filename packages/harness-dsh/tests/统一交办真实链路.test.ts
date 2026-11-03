@@ -53,7 +53,7 @@ test('统一交办：普通主会话→真实岗位Task/Run→结果回原会话
  const model=new WorkModel(),invocation=nativeToolInvocation(ctx,{providers:['scripted-work'],adapter:model})
  const workspaces=new Map<string,{id:string;path:string}>()
  ctx.provide('workspaceRegistry',{create:async(path:string)=>{const prior=[...workspaces.values()].find(x=>x.path===path);if(prior)return prior;const value={id:randomUUID(),path};workspaces.set(value.id,value);return value},get:(id:string)=>workspaces.get(id),list:()=>[...workspaces.values()]})
- ctx.provide('agentPresets',{serviceFor:()=>undefined,acquireScope:async()=>({key:{},async [Symbol.asyncDispose](){}}),resolve:async(id?:string)=>({id:id??'teloa-standard'})})
+ ctx.provide('agentPresets',{serviceFor:()=>undefined,composedPreset:(scope:Context)=>ctx.agents.list().find(agent=>agent.ctx===scope)?.session.header.agentPreset,acquireScope:async()=>({key:{},async [Symbol.asyncDispose](){}}),resolve:async(id?:string)=>({id:id??'teloa-standard'})})
  ctx.provide('fileReferences',{})
  let loseRunResponse=true
  ctx.provide('sessionController',{

@@ -1,12 +1,12 @@
 /**
  * 随附官方扩展的即时启停：宿主不开 hmr 文件监听（`patchReload` 钉不变），只在本人点「启用/停用」时
- * 显式调一次官方 `reconcileProfilePatches`，调用前后用装配期同一套函数复验。
+ * 显式调一次官方 `recomposeProfile`，调用前后用装配期同一套函数复验。
  *
  * 可热套用的只有一种变化：新补丁代与当前生效代相比，**只多出或少掉**该扩展 bundle 自带的那一行
  * （`{id,name}`，不带 config/inject/isolate）。其它任何差别（本人改过 profile 补丁文件、第三方 bundle 变化等）
  * 都不在这里生效，退回「重启后生效」，由下次启动的完整核对处理。
  */
-import {prepareProfilePatches,readProfilePatches,reconcileProfilePatches} from '@deepseek-ai/dsh-app-boot'
+import {prepareProfilePatches,readProfilePatches,recomposeProfile,ProfileRuntimeResolution} from '@deepseek-ai/dsh-app-boot'
 import {WorkError} from '@teloa/contract'
 
 /** 一代补丁在 Loader 根 Include 里的形态：`prepareProfilePatches` 输出的单个 insert 行列表。 */
@@ -19,7 +19,9 @@ export type BundledHotApplyPorts={
  read():unknown[]
  /** 官方 prepareProfilePatches：兼容性预检后折成 `[{insert:rows}]`。 */
  prepare(patches:unknown[],parentURL:string):PatchGeneration
- /** 官方 reconcileProfilePatches：套用整代补丁并等待 Loader 激活结果；requiredIds 的激活失败同样抛出。 */
+ /** 正式宿主重组不得顺带重试旧的失败/等待条目；不适用时只写 bundles、等待重启。 */
+ canRecompose?():boolean
+ /** 官方 recomposeProfile：套用整代补丁并等待 Loader 激活结果；requiredIds 的激活失败同样抛出。 */
  reconcile(patches:PatchGeneration,requiredIds:readonly string[]):Promise<void>
  /** 装配期同一套复验：来源核对、链接核对、生效组合安全钉（含 hmr 服务事实）与待启用清单；任一不符即抛出。 */
  verify():Promise<void>
@@ -89,6 +91,7 @@ export async function hotApplyBundledExtension(ports:BundledHotApplyPorts,change
  try{next=ports.prepare(ports.read(),current.parentURL)}
  catch(error){throw new BundledHotApplyError('读取扩展配置失败，官方扩展状态未改变。','failed',true,{cause:error})}
  if(!onlyExtensionRowDiffers(current.patches,next,change))return 'restart-required'
+ if(ports.canRecompose&&!ports.canRecompose())return 'restart-required'
  const previous=structuredClone(current.patches) as PatchGeneration
  const rollback=async(reason:string,kind:'refused'|'failed',cause:unknown):Promise<never>=>{
   let restored=true
@@ -125,7 +128,7 @@ export function bundledHotApplyWorkError(error:BundledHotApplyError):WorkError{
   :new WorkError('teloa/dependency-unavailable',error.message+suffix,{reason:'load-failed',rolledBack:error.rolledBack})
 }
 
-type LoaderEntry={id?:unknown;disabled?:unknown;options?:Record<string,unknown>;parent?:{tree?:{ctx?:{baseUrl?:unknown}}}}
+type LoaderEntry={id?:unknown;disabled?:unknown;options?:Record<string,unknown>;fiber?:{state?:unknown};parent?:{tree?:{ctx?:{baseUrl?:unknown}}}}
 /**
  * 真实宿主上的端口：根 Include 取自 Loader（根层条目 id 为 `include`、模块为 `cordis:include`），
  * profile 上下文取自根上下文的 `profileContext`（官方 dsh 启动器提供）。任一取不到即视为不支持热套用。
@@ -153,9 +156,24 @@ export function hostBundledHotApplyPorts(ctx:unknown,ports:Pick<BundledHotApplyP
   },
   read:()=>readProfilePatches('dsh',get('profileContext') as Parameters<typeof readProfilePatches>[1]),
   prepare:(patches,parentURL)=>prepareProfilePatches(root as Parameters<typeof prepareProfilePatches>[0],patches as Parameters<typeof prepareProfilePatches>[1],parentURL,'dsh'),
+  canRecompose(){
+   const packages=get('pluginPackages'),loader=record(root)?Reflect.get(root,'loader'):undefined
+   // 官方 recompose 会先正常移出目标行，再重组；reconcile 直接卸载会被 Loader 当成配置编辑，
+   // 将生成树写回本人的 base。仅在正式 profile resolution 且其它已启用行都运行时热套用，
+   // 避免 recompose 顺带重试旧的失败或等待条目；否则保持原「重启后生效」回退。
+   if(!record(packages)||!(packages.resolution instanceof ProfileRuntimeResolution)||!record(loader)||typeof loader.entries!=='function')return false
+   // 固定 SDK 的公开 Fiber.state：2 为 running；uid 存在也可能仍在等待注入或已经失败。
+   try{for(const entry of (loader.entries as ()=>Iterable<LoaderEntry>)())if(!entry.disabled&&entry.fiber?.state!==2)return false}
+   catch{return false}
+   return true
+  },
   reconcile:async(patches,requiredIds)=>{
    let warnings:string[]
-   try{warnings=await reconcileProfilePatches(root as Parameters<typeof reconcileProfilePatches>[0],structuredClone([...patches]) as Parameters<typeof reconcileProfilePatches>[1],'dsh',requiredIds)}
+   try{
+    const result=await recomposeProfile(root as Parameters<typeof recomposeProfile>[0],structuredClone([...patches]) as Parameters<typeof recomposeProfile>[1],'dsh',{requiredIds})
+    if(result.restartReason)throw new BundledHotApplyUnsupported('profile runtime resolution requires restart')
+    warnings=result.warnings
+   }
    catch(error){if(error instanceof Error&&rootIncludeMissing.test(error.message))throw new BundledHotApplyUnsupported(error.message,{cause:error});throw error}
    for(const warning of warnings)ports.warn(warning)
   },

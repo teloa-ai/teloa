@@ -1,7 +1,7 @@
 import {ToolbarIconButton} from './ToolbarIconButton.js'
 import {useEffect,useId,useMemo,useRef,useState,useSyncExternalStore,type FormEvent} from 'react'
 import {Archive,ArrowLeft,FileText,Plus,RefreshCw} from 'lucide-react'
-import {businessObjectReference,type BusinessObjectReference,parseBooleanValue,parseDurationSeconds,readBusinessRichFieldValue,encodeBusinessRichFieldValue,type BusinessRichFieldDefinition,type BusinessRichMoneyFieldDefinition,type BusinessRichMultiEnumFieldDefinition,type BusinessObjectSnapshot,type BusinessObjectFieldDefinition,type BusinessConfigurationPageProjectionVersioned as BusinessConfigurationPageProjection,type BusinessConfigurationPageContent,type BusinessConfigurationPageContentV2} from '@teloa/contract'
+import {businessFieldValueText,businessObjectReference,type BusinessObjectReference,parseBooleanValue,parseDurationSeconds,readBusinessRichFieldValue,encodeBusinessRichFieldValue,type BusinessRichFieldDefinition,type BusinessRichMoneyFieldDefinition,type BusinessRichMultiEnumFieldDefinition,type BusinessObjectSnapshot,type BusinessObjectFieldDefinition,type BusinessConfigurationPageProjectionVersioned as BusinessConfigurationPageProjection,type BusinessConfigurationPageContent,type BusinessConfigurationPageContentV2} from '@teloa/contract'
 import {useI18n} from './i18n/provider.js'
 import {durationText,localizedBusinessFieldLabel,localizedBusinessFieldValue,localizedBusinessObjectType,localizedBusinessPageTitle} from './business-definition-localization.js'
 import {BusinessRecordFlow,businessDurationInput,businessDurationValue,businessMoneyInput,businessMoneyValue,businessRichRecordDisplay,type BusinessDurationUnit,type BusinessRecordCapabilities,type BusinessRecordSession} from './business-record-flow.js'
@@ -75,12 +75,14 @@ function SavedRecords({page,scope,flow,importFlow,capabilities,onDispatch,taskLi
   detailGeneration.current++;detailAbort.current?.abort();setDetailLoading(false);setDetailError(false)
   setSelected(state.result);setCurrent(state.result);setFixedSelection(false);setHistoryVersion(String(Math.max(1,state.result.version-1)));void load()
  },[state.result,referenceOnly])
- const read=async(item:BusinessObjectSnapshot,version?:number)=>{
+ const read=async(item:Pick<BusinessObjectSnapshot,'id'>,version?:number)=>{
   const generation=++detailGeneration.current;detailAbort.current?.abort();const abort=new AbortController();detailAbort.current=abort
   setDetailLoading(true);setDetailError(false)
   try{
    const result=await flow.api.get({scope,type:definition.id,id:item.id,...(version===undefined?{}:{version})},abort.signal)
    if(!alive.current||generation!==detailGeneration.current)return
+   const active=session.getSnapshot()
+   if(version===undefined&&active.form&&active.form.base?.id!==result.id&&!['saving','unknown','retryable','recovery-error'].includes(active.phase))session.cancel()
    setSelected(result);if(version===undefined){setCurrent(result);setFixedSelection(false)}
   }catch{if(alive.current&&generation===detailGeneration.current)setDetailError(true)}
   finally{if(alive.current&&generation===detailGeneration.current)setDetailLoading(false)}
@@ -100,8 +102,9 @@ function SavedRecords({page,scope,flow,importFlow,capabilities,onDispatch,taskLi
   finally{if(alive.current&&generation===detailGeneration.current)setDetailLoading(false)}
  }
  useEffect(()=>{if(recordReference)void readReference()},[])
- const open=(item:BusinessObjectSnapshot)=>{setFixedSelection(false);setSelected(item);setCurrent(item);setHistoryVersion(String(Math.max(1,item.version-1)));void read(item)}
+ const open=(item:BusinessObjectSnapshot)=>{if(state.form&&!busy)session.cancel();setFixedSelection(false);setSelected(item);setCurrent(item);setHistoryVersion(String(Math.max(1,item.version-1)));void read(item)}
  const busy=['saving','unknown','retryable','recovery-error'].includes(state.phase),historical=fixedSelection||!!selected&&!!current&&selected.version!==current.version
+ const pendingRecord=busy?state.form?.base?.id:undefined
  const fields=page.definition.fields.map(name=>definition.fields.find(field=>field.name===name)).filter((field):field is RecordField=>!!field)
  const start=(kind:'create'|'edit'|'archive')=>{session.configure(definition,rights);if(kind==='create')session.create();else if(selected)session[kind](selected)}
  return <section className={css.page} aria-label={localizedBusinessPageTitle(page.definition,page.objectType,locale)}>
@@ -110,18 +113,20 @@ function SavedRecords({page,scope,flow,importFlow,capabilities,onDispatch,taskLi
   {rights.create&&importFlow&&!importing&&<p className={css.error} role="alert">{t('business.records.importUnverified')}</p>}
   {importOpen&&importing&&rights.create&&<div><div className={css.actions}><button type="button" onClick={()=>setImportOpen(false)}>{t('business.records.importClose')}</button></div><BusinessImportPanel flow={importing} scope={scope} type={definition.id} definition={definition}/></div>}
   {state.phase==='recovery-error'&&<p className={css.error} role="alert">{t(state.pending?'business.records.storageError.pending':'business.records.storageError')}</p>}
+  {state.draftError&&<p className={css.notice} role="status">{t('roleMemory.edit.storage')}</p>}
   {state.phase==='saved'&&<p className={css.success} role="status">{t(state.result?.deletedAt?'business.records.archived':'business.records.saved')}</p>}
-  {state.form&&!fixedSelection&&<RecordEditor session={session} definition={definition} api={flow.api} scope={scope} go={go}/>}
+  {state.form&&!fixedSelection&&(!selected||state.form.kind==='create'||state.form.base?.id===selected.id)&&<RecordEditor session={session} definition={definition} api={flow.api} scope={scope} go={go}/>}
   {readError&&<p className={css.error} role="alert">{t('business.records.readError')} <button type="button" disabled={loading} onClick={()=>void load()}>{t('business.records.retry')}</button></p>}
   {loading&&<p className={css.notice} role="status">{t('business.records.loading')}</p>}
   {!loading&&!readError&&!items.length&&<EmptyRecordPage {...(rights.create&&!state.form&&!busy&&!importOpen?{onCreate:()=>start('create')}:{})}/>}
-  {!!items.length&&<div className={css.list} aria-busy={loading}>{items.map(item=><button type="button" key={item.id} className={css.record} onClick={()=>open(item)} aria-pressed={selected?.id===item.id}><span className={css.recordHeading}><strong>{item.title}</strong><small>{dateTime(item.observedAt)}</small></span>{item.summary&&<span className={css.summary}>{item.summary}</span>}<span className={css.fieldStrip}>{fields.slice(0,4).map(field=><span key={field.name}><small>{localizedBusinessFieldLabel(field,locale)}</small><span>{(field.type==='reference'||field.type==='multi-reference')?<BusinessRecordReferenceValue key={listGeneration.current} api={flow.api} scope={scope} field={field} value={item.fields.find(value=>value.label===field.from)?.value??''} retryable={false}/>:displayValue(field,item,locale,t)}</span></span>)}</span></button>)}</div>}
+  {!!items.length&&<div className={css.list} aria-busy={loading}>{items.map(item=><button type="button" key={item.id} className={css.record} onClick={()=>open(item)} aria-pressed={selected?.id===item.id}><span className={css.recordHeading}><strong>{item.title}</strong><small>{dateTime(item.observedAt)}</small></span>{item.summary&&<span className={css.summary}>{item.summary}</span>}<span className={css.fieldStrip}>{fields.slice(0,4).map(field=><span key={field.name}><small>{localizedBusinessFieldLabel(field,locale)}</small><span>{(field.type==='reference'||field.type==='multi-reference')?<BusinessRecordReferenceValue key={listGeneration.current} api={flow.api} scope={scope} field={field} value={referenceValue(field,item)} retryable={false}/>:displayValue(field,item,locale,t)}</span></span>)}</span></button>)}</div>}
   {cursor&&<div className={css.more}><button type="button" disabled={loading} onClick={()=>void load(true)}>{t('business.records.more')}</button></div>}
   </>}
   {!selected&&detailLoading&&<p role="status">{t('business.records.loading')}</p>}
   {!selected&&detailError&&<p className={css.error} role="alert">{t('business.records.readError')} <button type="button" onClick={()=>void readReference()}>{t('business.records.retry')}</button></p>}
-  {selected&&(!state.form||fixedSelection)&&<RecordDetailContainer inline={referenceOnly} title={selected.title} close={()=>{detailGeneration.current++;detailAbort.current?.abort();setSelected(undefined);setCurrent(undefined);setDetailLoading(false);setDetailError(false)}}><section className={css.detail} aria-label={selected.title}>
+  {selected&&(!state.form||fixedSelection||state.form.kind!=='create'&&state.form.base?.id!==selected.id)&&<RecordDetailContainer inline={referenceOnly} title={selected.title} close={()=>{detailGeneration.current++;detailAbort.current?.abort();setSelected(undefined);setCurrent(undefined);setDetailLoading(false);setDetailError(false)}}><section className={css.detail} aria-label={selected.title}>
    <header className={css.header}><div><span className={css.badge}>{t('business.records.version',{version:selected.version})}{selected.deletedAt&&<> · {t('business.records.archived')}</>}{selected.source!=='本地记录'&&<> · {t('business.records.syncedReadOnly')}</>}</span><small> · {dateTime(selected.observedAt)}</small></div><ToolbarIconButton label={t('business.records.refresh')} icon={RefreshCw} disabled={detailLoading} onClick={()=>{void (fixedSelection?readReference():read(selected,historical?selected.version:undefined));void load()}}/></header>
+   {pendingRecord&&pendingRecord!==selected.id&&<p className={css.notice} role="status"><strong>{state.form?.title}</strong> · {t('business.records.unknown')} <button type="button" onClick={()=>void read({id:pendingRecord})}>{t('taskExecution.open')}</button></p>}
    {detailLoading&&<p role="status">{t('business.records.loading')}</p>}
    {detailError&&<p className={css.error} role="alert">{t('business.records.readError')} <button type="button" onClick={()=>void (fixedSelection?readReference():read(selected,historical?selected.version:undefined))}>{t('business.records.retry')}</button></p>}
    {selected.summary&&<p className={css.summary}>{selected.summary}</p>}
@@ -144,18 +149,20 @@ function RecordDetailContainer({inline,title,close,children}:{inline:boolean;tit
  return inline?<>{children}</>:<ContextDrawer title={title} close={close}>{children}</ContextDrawer>
 }
 type Translate=ReturnType<typeof useI18n>['t']
+function referenceValue(field:RecordField,snapshot:BusinessObjectSnapshot):string{const value=snapshot.fields.find(item=>item.label===field.from)?.value;return typeof value==='string'?value:''}
 function displayValue(field:RecordField,snapshot:BusinessObjectSnapshot,locale:string,t:Translate){
  const value=snapshot.fields.find(item=>item.label===field.from)?.value
  if(value===undefined||value===''||field.type==='reference'||field.type==='multi-reference')return '—'
- if('format'in field)return businessRichRecordDisplay(field,value,locale.startsWith('zh')?'、':', ')
- if(field.type==='boolean'){const boolean=parseBooleanValue(value);if(boolean!==undefined)return t(boolean?'business.records.yes':'business.records.no')}
- if(field.type==='datetime'&&Number.isFinite(Date.parse(value)))return new Intl.DateTimeFormat(locale,{dateStyle:'medium',timeStyle:'short'}).format(new Date(value))
- if(field.type==='duration'){const seconds=parseDurationSeconds(value);if(seconds!==undefined)return durationText(seconds,(n,options)=>new Intl.NumberFormat(locale,options).format(n))}
- return localizedBusinessFieldValue(field,value,locale)
+ if('format'in field)return businessRichRecordDisplay(field,businessFieldValueText(value),locale.startsWith('zh')?'、':', ')
+ if(field.type==='boolean'){const boolean=parseBooleanValue(typeof value==='boolean'?value:businessFieldValueText(value));if(boolean!==undefined)return t(boolean?'business.records.yes':'business.records.no')}
+ if(field.type==='datetime'&&Number.isFinite(Date.parse(businessFieldValueText(value))))return new Intl.DateTimeFormat(locale,{dateStyle:'medium',timeStyle:'short'}).format(new Date(businessFieldValueText(value)))
+ if(field.type==='duration'){const seconds=parseDurationSeconds(businessFieldValueText(value));if(seconds!==undefined)return durationText(seconds,(n,options)=>new Intl.NumberFormat(locale,options).format(n))}
+ if(field.type==='number'&&typeof value==='number'&&field.decimalScale!==undefined)return new Intl.NumberFormat(locale,{minimumFractionDigits:field.decimalScale,maximumFractionDigits:field.decimalScale}).format(value)
+ return localizedBusinessFieldValue(field,businessFieldValueText(value),locale)
 }
 function RecordFacts({definition,snapshot,api,scope,go}:{api:BusinessRecordApi;scope:string;go:BusinessRecordPageProps['go'];definition:RecordPage['objectType'];snapshot:BusinessObjectSnapshot}){
  const {locale,t}=useI18n()
- return <dl className={css.facts}>{definition.fields.map(field=><div key={field.name}><dt>{localizedBusinessFieldLabel(field,locale)}</dt><dd>{(field.type==='reference'||field.type==='multi-reference')?<BusinessRecordReferenceValue api={api} scope={scope} field={field} value={snapshot.fields.find(value=>value.label===field.from)?.value??''} go={go}/>:displayValue(field,snapshot,locale,t)}</dd></div>)}</dl>
+ return <dl className={css.facts}>{definition.fields.map(field=><div key={field.name}><dt>{localizedBusinessFieldLabel(field,locale)}</dt><dd>{(field.type==='reference'||field.type==='multi-reference')?<BusinessRecordReferenceValue api={api} scope={scope} field={field} value={referenceValue(field,snapshot)} go={go}/>:displayValue(field,snapshot,locale,t)}</dd></div>)}</dl>
 }
 function datetimeInput(value:string){
  const date=new Date(value);if(!value||!Number.isFinite(date.getTime()))return ''
@@ -166,7 +173,7 @@ function RecordEditor({session,definition,api,scope,go}:{api:BusinessRecordApi;s
  // 表单与未知原请求始终使用打开时的定义；新声明只用于保存闸和最新版本比较。
  const editingDefinition=form.definition
  const [referenceChoices,setReferenceChoices]=useState<Record<string,boolean>>({}),choosingReference=Object.values(referenceChoices).some(Boolean)
- const busy=['saving','unknown','retryable','recovery-error'].includes(state.phase),blocked=busy||state.phase==='schema-changed'||state.phase==='conflict'
+ const busy=['saving','unknown','retryable','recovery-error'].includes(state.phase),blocked=busy||state.phase==='schema-changed'||state.phase==='conflict'||state.phase==='draft-conflict'
  useEffect(()=>{formRef.current?.querySelector<HTMLElement>('input,select,textarea,button')?.focus()},[form.kind,form.base?.id])
  useEffect(()=>{formRef.current?.querySelector<HTMLElement>('[aria-invalid="true"]')?.focus()},[state.errors])
  const submit=async(event:FormEvent)=>{event.preventDefault();if(!choosingReference)await session.save()}
@@ -179,10 +186,12 @@ function RecordEditor({session,definition,api,scope,go}:{api:BusinessRecordApi;s
    {editingDefinition.fields.map(field=>{
     const value=form.values[field.name]??'',error=state.errors[field.name],hint=field.type==='duration'?'business.records.durationHint':field.type==='datetime'?'business.records.datetimeHint':field.type==='number'&&error?'business.records.numberHint':undefined,fieldId=id+'-'+field.name
     const unique=editingDefinition.format==='teloa.business-object-type/v2'&&editingDefinition.constraints?.uniqueFields.includes(field.name)
-    const common={id:fieldId,required:field.required,'aria-invalid':!!error,'aria-describedby':[hint?fieldId+'-hint':'',unique?fieldId+'-unique':'',error?fieldId+'-error':''].filter(Boolean).join(' ')||undefined}
+    const numeric=field.type==='number'&&(field.integer||field.minimum!==undefined)
+    const common={id:fieldId,required:field.required,'aria-invalid':!!error,'aria-describedby':[hint?fieldId+'-hint':'',unique?fieldId+'-unique':'',numeric?fieldId+'-numeric':'',error?fieldId+'-error':''].filter(Boolean).join(' ')||undefined}
     const change=(value:string)=>session.changeField(field.name,value)
     return <div key={field.name} className={css.field}>{field.type==='multi-enum'?<span id={fieldId+'-label'}>{localizedBusinessFieldLabel(field,locale)}{field.required&&<span aria-hidden="true"> *</span>}</span>:<label htmlFor={fieldId}>{localizedBusinessFieldLabel(field,locale)}{field.required&&<span aria-hidden="true"> *</span>}</label>}
-     {field.type==='multi-enum'?<MultiEnumField field={field} value={value} change={change} inputProps={common}/>:field.type==='money'?<MoneyField field={field} value={value} change={change} inputProps={common}/>:field.type==='enum'?<select {...common} value={value} onChange={event=>change(event.target.value)}><option value="">{t('business.records.choose')}</option>{field.values?.map(item=><option key={item} value={item}>{localizedBusinessFieldValue(field,item,locale)}</option>)}</select>:field.type==='boolean'?<select {...common} value={parseBooleanValue(value)===undefined?'':String(parseBooleanValue(value))} onChange={event=>change(event.target.value)}><option value="">{t('business.records.choose')}</option><option value="true">{t('business.records.yes')}</option><option value="false">{t('business.records.no')}</option></select>:field.type==='duration'?<DurationField value={value} change={change} label={localizedBusinessFieldLabel(field,locale)} inputProps={common}/>:(field.type==='reference'||field.type==='multi-reference')?<BusinessRecordReferenceField api={api} scope={scope} field={field} value={value} change={change} disabled={blocked} inputProps={common} onChoosing={choosing=>setReferenceChoices(previous=>previous[field.name]===choosing?previous:{...previous,[field.name]:choosing})}/>:field.type==='datetime'?<input {...common} type="datetime-local" step="0.001" value={datetimeInput(value)} onChange={event=>{const local=event.target.value;change(local&&Number.isFinite(Date.parse(local))?new Date(local).toISOString():'')}}/>:<input {...common} type="text" inputMode={field.type==='number'?'decimal':undefined} maxLength={2000} value={value} onChange={event=>change(event.target.value)}/>}
+     {field.type==='multi-enum'?<MultiEnumField field={field} value={value} change={change} inputProps={common}/>:field.type==='money'?<MoneyField field={field} value={value} change={change} inputProps={common}/>:field.type==='enum'?<select {...common} value={value} onChange={event=>change(event.target.value)}><option value="">{t('business.records.choose')}</option>{field.values?.map(item=><option key={item} value={item}>{localizedBusinessFieldValue(field,item,locale)}</option>)}</select>:field.type==='boolean'?<select {...common} value={parseBooleanValue(typeof value==='boolean'?value:businessFieldValueText(value))===undefined?'':String(parseBooleanValue(typeof value==='boolean'?value:businessFieldValueText(value)))} onChange={event=>change(event.target.value)}><option value="">{t('business.records.choose')}</option><option value="true">{t('business.records.yes')}</option><option value="false">{t('business.records.no')}</option></select>:field.type==='duration'?<DurationField value={value} change={change} label={localizedBusinessFieldLabel(field,locale)} inputProps={common}/>:(field.type==='reference'||field.type==='multi-reference')?<BusinessRecordReferenceField api={api} scope={scope} field={field} value={value} change={change} disabled={blocked} inputProps={common} onChoosing={choosing=>setReferenceChoices(previous=>previous[field.name]===choosing?previous:{...previous,[field.name]:choosing})}/>:field.type==='datetime'?<input {...common} type="datetime-local" step="0.001" value={datetimeInput(value)} onChange={event=>{const local=event.target.value;change(local&&Number.isFinite(Date.parse(local))?new Date(local).toISOString():'')}}/>:<input {...common} type="text" inputMode={field.type==='number'?(field.integer?'numeric':'decimal'):undefined} maxLength={2000} value={value} onChange={event=>change(event.target.value)}/>}
+     {field.type==='number'&&numeric&&<small id={fieldId+'-numeric'}>{field.integer&&t('business.manual.integer')}{field.integer&&field.minimum!==undefined?' · ':''}{field.minimum!==undefined?t('business.manual.minimum')+' '+field.minimum:''}</small>}
      {unique&&<small id={fieldId+'-unique'}>{t(field.type==='multi-reference'?'business.records.uniqueReference':'business.records.unique')}</small>}
      {hint&&<small id={fieldId+'-hint'}>{t(hint)}</small>}{error&&<span id={fieldId+'-error'} className={css.fieldError}>{t(error==='required'?'business.records.required':error==='unique'?'business.records.uniqueError':'business.records.invalid')}</span>}
     </div>
@@ -191,6 +200,7 @@ function RecordEditor({session,definition,api,scope,go}:{api:BusinessRecordApi;s
   {state.phase==='unknown'&&<p className={css.error} role="alert">{t('business.records.unknown')}</p>}
   {state.phase==='retryable'&&<p className={css.notice} role="status">{t('business.records.retryable')}</p>}
   {state.phase==='conflict'&&<p className={css.error} role="alert">{t('business.records.conflict')}</p>}
+  {state.phase==='draft-conflict'&&<section className={css.comparison} aria-label={t('business.records.draftConflict')}><p role="alert">{t('business.records.draftConflict')}</p>{state.draftAlternatives?.map((draft,index)=><section key={index}><h4>{index+1}. {draft.title}</h4><p className={css.summary}>{draft.summary}</p><dl className={css.facts}>{draft.definition.fields.map(field=><div key={field.name}><dt>{localizedBusinessFieldLabel(field,locale)}</dt><dd>{draft.values[field.name]??''}</dd></div>)}</dl><button type="button" onClick={()=>session.chooseDraft(index)}>{t('business.records.chooseDraft')}</button></section>)}</section>}
   {(state.phase==='schema-changed'||state.errorCode==='teloa/schema-changed')&&<p className={css.error} role="alert">{t(state.errorCode==='teloa/schema-changed'&&state.pending?'business.records.pendingSchema':'business.records.schemaChanged')}</p>}
   {state.phase==='error'&&<p className={css.error} role="alert">{t('business.records.failed')}</p>}
   {state.errorCode&&state.phase==='retryable'&&state.errorCode!=='teloa/schema-changed'&&<p className={css.error} role="alert">{t('business.records.failed')}</p>}
@@ -200,7 +210,8 @@ function RecordEditor({session,definition,api,scope,go}:{api:BusinessRecordApi;s
    {(state.phase==='unknown'||state.phase==='recovery-error'&&!!state.pending)&&<button type="button" onClick={()=>void session.recover()}>{t('business.records.recover')}</button>}
    {state.phase==='retryable'&&<><button type="button" onClick={()=>void session.recover()}>{t('business.records.recover')}</button><button type="button" onClick={()=>void session.retry()}>{t('business.records.retrySave')}</button></>}
    {state.phase==='conflict'&&<button type="button" disabled={state.comparing} onClick={()=>void session.compare()}>{t('business.records.compare')}</button>}
-   {!['unknown','retryable','conflict','recovery-error'].includes(state.phase)&&<button type="submit" className={css.primary} disabled={blocked||choosingReference}>{t(state.phase==='saving'?'business.records.saving':form.kind==='archive'?'business.records.archive':'business.records.save')}</button>}
+   {state.phase==='schema-changed'&&!state.pending&&<button type="button" onClick={()=>session.reopenWithCurrentDefinition()}>{t('business.records.reopenSchema')}</button>}
+   {!['unknown','retryable','conflict','draft-conflict','recovery-error'].includes(state.phase)&&<button type="submit" className={css.primary} disabled={blocked||choosingReference}>{t(state.phase==='saving'?'business.records.saving':form.kind==='archive'?'business.records.archive':'business.records.save')}</button>}
   </footer>
  </form>
 }

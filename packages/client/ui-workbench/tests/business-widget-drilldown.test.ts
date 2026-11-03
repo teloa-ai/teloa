@@ -186,3 +186,44 @@ test('刷新恢复：对象清单（带对象类型、无对象标识或带下�
  const guard=frame.indexOf("state.businessTarget.section==='data'&&state.businessTarget.objectType&&"),wait=frame.indexOf("if(state.businessTarget.section!=='overview'&&!tasks.business.loaded)return")
  assert.ok(guard>0&&guard<wait,'对象清单的原样落定要在等待沙盒数据之前')
 })
+
+test('看板抽屉的记录详情内联呈现，保留原对象动作与返回清单语义',async()=>{
+ const api=await import('../src/client/business-ledger-api.ts')
+ const module=load('BusinessLedger.tsx',{
+  './business-ledger-api.js':api,
+  './ContextDrawer.js':{ContextDrawer:({children}:any)=>React.createElement('dialog',null,children)},
+  './business-definition-localization.js':await import('../src/client/business-definition-localization.ts'),
+  './business-customization-presentation.js':await import('../src/client/business-customization-presentation.ts'),
+ })
+ const {ledger,block,listView,ledgerObject}=await import('./business-ledger-fixtures.ts')
+ const value=await api.readBusinessLedger(ledger({blocks:[block({views:[listView('SOC','alert-ticket',[ledgerObject('SOC','alert-ticket','a-1')])]})]}),'SOC')
+ const actions:unknown[]=[],navigation:unknown[]=[]
+ const props={ledger:value,objectType:'alert-ticket',objectId:'a-1',match:{field:'severity',value:'高'},go:(target:unknown)=>navigation.push(target),connect:()=>{},objectActions:(object:unknown,type:string)=>React.createElement('button',{'data-original-action':true,onClick:()=>actions.push({object,type})},'原对象动作')}
+ const tree=expand(React.createElement(module.BusinessLedgerView,{...props,inlineDetail:true}))
+ assert.equal(walk(tree).filter(node=>node.type==='dialog').length,0,'抽屉内容不能再创建第二个详情抽屉')
+ assert.ok(text(tree).includes('a-1'))
+ assert.equal(walk(tree).some(node=>node.props['data-ledger-match']!==undefined),false,'详情不夹带背后的整页目录')
+ assert.deepEqual(actions,[],'阅读和返回不能自动执行原对象动作')
+ walk(tree).find(node=>node.props['data-original-action'])!.props.onClick()
+ assert.equal(actions.length,1)
+ walk(tree).find(node=>node.type==='button'&&text(node.props.children).includes('business.ledger.backDirectory'))!.props.onClick()
+ assert.deepEqual(navigation,[{scope:'SOC',section:'data',objectType:'alert-ticket',match:{field:'severity',value:'高'}}])
+ const normal=expand(React.createElement(module.BusinessLedgerView,props))
+ assert.equal(walk(normal).filter(node=>node.type==='dialog').length,1,'普通台账详情仍沿用原抽屉')
+})
+
+test('看板台账抽屉在读取未完成时也可关闭，不触发导航或对象动作',async()=>{
+ const api=await import('../src/client/business-ledger-api.ts')
+ const module=load('BusinessLedger.tsx',{
+  './business-ledger-api.js':api,
+  './ContextDrawer.js':{ContextDrawer:({children,close}:any)=>React.createElement('dialog',null,React.createElement('button',{onClick:close},'close'),children)},
+  './business-definition-localization.js':await import('../src/client/business-definition-localization.ts'),
+  './business-customization-presentation.js':await import('../src/client/business-customization-presentation.ts'),
+ })
+ const events:string[]=[]
+ const tree=expand(React.createElement(module.BusinessLedgerSurface,{scope:'SOC',objectType:'alert-ticket',objectId:'a-1',api:{read:()=>new Promise(()=>{})},go:()=>events.push('navigate'),connect:()=>events.push('connect'),objectActions:()=>{events.push('action');return null},drawerClose:()=>events.push('close')}))
+ assert.equal(walk(tree).filter(node=>node.type==='dialog').length,1)
+ assert.ok(text(tree).includes('business.ledger.loading'))
+ walk(tree).find(node=>node.type==='button'&&text(node.props.children)==='close')!.props.onClick()
+ assert.deepEqual(events,['close'])
+})

@@ -63,9 +63,10 @@ function referenceValueRules(definitions:readonly (BusinessObjectTypeDefinition|
  const fields=definitions.flatMap(definition=>definition.fields),rules:string[]=[]
  if(fields.some(field=>field.type==='reference'))rules.push('reference 是同业务本地记录单选关联，fields[].value 只保存目标原始 ID 字符串，不能保存标题或 JSON。')
  if(fields.some(field=>field.type==='multi-reference'))rules.push('multi-reference 是同业务本地记录多选关联，声明 referenceType；fields[].value 为 JSON.stringify 编码的规范 JSON 字符串，内容是按 ID 字典序排列、无重复的 1–32 个真实目标原始 ID 数组，编码总长不超过2000字符，不保存标题、不截断。')
- if(!rules.length)return ''
- return rules.join('')+'先按字段 referenceType 用 list/get 读取每个真实目标标题与状态。目标须属于当前本人、当前业务与已采用本地类型，且存在、未归档；编辑提交的所有非空关联都会逐目标重查，失效旧值须清空或改绑，不能保留失效成员。可选关联用空字符串清空，required 不得省略或清空；[] 不是缺值。跨业务关联尚未支持。'
+ if(!rules.length)return scalarValueRules
+ return scalarValueRules+rules.join('')+'先按字段 referenceType 用 list/get 读取每个真实目标标题与状态。目标须属于当前本人、当前业务与已采用本地类型，且存在、未归档；编辑提交的所有非空关联都会逐目标重查，失效旧值须清空或改绑，不能保留失效成员。可选关联用空字符串清空，required 不得省略或清空；[] 不是缺值。跨业务关联尚未支持。'
 }
+const scalarValueRules='基础 number/boolean 字段使用真实 JSON 数值/布尔值，false 和 0 均不是缺失；已有记录的字符串原值可保留，不推断转换历史值。number 的 integer/minimum/decimalScale 仅按字段显式声明核验；decimalScale 是最多允许的小数位，不自动舍入。其它基础字段仍用字符串，未知可选字段省略或按清空语义处理，不编造供应商。'
 function uniqueValueRules(definitions:readonly (BusinessObjectTypeDefinition|BusinessObjectTypeDefinitionV2)[]):string{
  return definitions.some(definition=>definition.format==='teloa.business-object-type/v2'&&definition.constraints)?'constraints.uniqueFields 声明字段在同业务同类型活跃记录中独立唯一，不是组合唯一。可选空值不占用；文本、枚举、单关联精确匹配，数字按数值，布尔、时长按既有解析，金额按币种及精确金额；multi-reference 每个成员不能被另一活跃源记录占用，归档源释放占用。唯一性由后端事务按全部操作后态重新核验，允许合法交换；list 预查不能保证唯一或避免并发冲突，真实成功回执才表示保存。':''
 }
@@ -147,6 +148,7 @@ export function registerBusinessRecordTools(ctx:Context,ports:BusinessRecordTool
    if(op.operation!=='archive')for(const field of definition.fields){
     if(field.type!=='reference'&&field.type!=='multi-reference')continue
     const value=op.fields.find(value=>value.name===field.name)?.value??'',previous=before?.fields.find(value=>value.label===field.from)?.value??''
+    if(typeof value!=='string'||typeof previous!=='string')throw invalid()
     if(field.type==='reference')relations.set(field.name,{...(previous?{before:await relation(field.referenceType!,previous,false)}:{}),...(value?{value:await relation(field.referenceType!,value,true)}:{})})
     else{
      if(!('format' in field))throw invalid()

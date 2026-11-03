@@ -12,7 +12,7 @@ import {readNativeReviewChildren} from '../src/task-delivery-review-native-child
 import {leaseTaskDeliveryReview,createReviewSourceCatalog,deliveryReviewToolName,type DeliveryReviewTrace} from '../src/task-delivery-review.ts'
 import {readTaskRunGroupResult} from '../src/task-run-group-result.ts'
 
-const goal='计算37×23，给出分配律过程。',answer='37 × 23 = 37 × (20 + 3) = 740 + 111 = 851。'
+const goal='逐字返回固定短句：来源原文已保留。',answer='来源原文已保留。'
 const text=(value:string):StreamChunk[]=>[{type:'block-start',index:0,blockType:'text'},{type:'block-end',index:0,block:{type:'text',text:value}},{type:'finish',reason:{kind:'stop'}}]
 const call=(name:string,id:string,args:unknown):StreamChunk[]=>[{type:'block-start',index:0,blockType:'tool-call'},{type:'block-end',index:0,block:{type:'tool-call',name,id:ToolCallId(id),arguments:JSON.stringify(args)}},{type:'finish',reason:{kind:'tool-calls'}}]
 
@@ -25,7 +25,7 @@ test('真实原生subagent_task的固定归属和完成正文进入原R1/R2，�
   settle:async({childSessionId,stopReason})=>{const row=registrations.find(row=>row.childSessionId===childSessionId)!;Object.assign(row,{state:'ended',stopReason,endedAt:new Date().toISOString()})},
   release:async()=>{throw Error('本用例不能释放已经真实启动的子任务')},abandon:async()=>{throw Error('本用例不能把正常结果伪装为abandoned')},
  });t.after(remove)
- const parentScripts=[call('subagent_task','native-call',{description:'纯计算子任务',prompt:goal}),text(answer),call(deliveryReviewToolName,'r1',{phase:'revise',issues:[]}),call(deliveryReviewToolName,'r2',{phase:'verify',verdict:'accept',checks:['goal',1,2,3,4,5,6,7,8].map(id=>({id,status:'pass'})),changeChecks:[],findings:[]})]
+ const parentScripts=[call('subagent_task','native-call',{description:'原文回传子任务',prompt:goal}),text(answer),call(deliveryReviewToolName,'r1',{phase:'revise',issues:[]}),call(deliveryReviewToolName,'r2',{phase:'verify',verdict:'accept',checks:['goal',1,2,3,4,5,6,7,8].map(id=>({id,status:'pass'})),changeChecks:[],findings:[]})]
  f.adapter.stream=async function*(options:GenerateOptions){this.requests.push(options);const script=options.sessionId===f.parent.id?parentScripts.shift():text(answer);assert.ok(script,'不增加模型请求或复做子任务');yield* script}
  const binding={runId,sessionId:f.parent.id,requestId}
  const inspect=async(id:string,signal:AbortSignal)=>{const handle=await f.ctx.sessionPersistence.open(SessionId(id),'read',{signal});try{return {meta:handle.header,inheritedEventCount:handle.inheritedEventCount,events:(await handle.read(undefined,undefined,{signal})).events}}finally{await handle.close()}}

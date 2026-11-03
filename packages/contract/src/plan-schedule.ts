@@ -1,5 +1,11 @@
 /** 时区白名单的唯一真源：判据与界面下拉都从这里取，不各自抄一份。 */
-export const scheduleTimezones=['Asia/Singapore','Asia/Shanghai','UTC'] as const
+export const scheduleTimezones=['Asia/Singapore','Asia/Shanghai','UTC','America/New_York'] as const
+/** 日程身份沿用原固定格式；合法时区与配置/界面共用同一名单。 */
+export function isScheduledOccurrenceId(value:unknown):value is string{
+ if(typeof value!=='string')return false
+ const match=/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}\[([^\]]+)\]$/.exec(value)
+ return !!match&&(scheduleTimezones as readonly string[]).includes(match[1]!)
+}
 export type ScheduleTrigger={kind:'schedule';cadence:'daily'|'weekly';weekday:number;time:string;timezone:typeof scheduleTimezones[number]}
 export function readScheduleTrigger(value:unknown):ScheduleTrigger{
  if(!value||typeof value!=='object'||Array.isArray(value))throw Error('日程配置无效。')

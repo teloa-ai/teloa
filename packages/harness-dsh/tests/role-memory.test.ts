@@ -116,6 +116,43 @@ test('数字员工通过真实 ToolRuntime 为当前运行岗位提出候选，�
  assert.equal(env.calls.length,1)
 })
 
+for(const kind of ['employee','twin'] as const)for(const child of [false,true])test(`${kind} ${child?'子会话':'根会话'}提出本轮经验时，宿主绑定固定 Run 来源而不要求模型猜版本`,async t=>{
+ const env=await setupTool({run:async sessionId=>({id:runId,roleId,roleVersion:2,sessionId,state:'active',roleSnapshot:{kind}})});t.after(()=>env.ctx.fiber.dispose())
+ env.candidate.source={kind:'run',id:runId,version:1}
+ if(kind==='twin')env.candidate.visibility={kind:'private',scopeIds:[]} as typeof env.candidate.visibility
+ const selected=child?(await env.ctx.agents.create({sessionId:SessionId('memory-default-source-child'),meta:{origin:'subagent',parentSession:env.agent.id,delegationDepth:1},agentOptions:{provider:'test',model:'test'}})).agent:env.agent
+ if(child){selected.session.append('turn/start',{turn:0});selected.session.append('user/message',createUserMessage({content:[],source:{kind:'user'}}),{surfaceOp:'append'})}
+ const result=await env.ctx.tools.execute({agent:selected,name:roleMemoryProposalToolName,arguments:{title:'复核证据',markdown:'交付前复核证据。'},callId:ToolCallId('bound-current-run'),signal:AbortSignal.timeout(5000)})
+ assert.equal(result.isError,false,JSON.stringify(result.content))
+ assert.equal(env.calls.length,1)
+ assert.deepEqual((env.calls[0]![1] as {source:unknown}).source,{kind:'run',id:runId,version:1})
+ assert.deepEqual((env.calls[0]![1] as {visibility:unknown}).visibility,kind==='twin'?{kind:'private',scopeIds:[]}:{kind:'role',scopeIds:['SOC']})
+ assert.equal(env.candidate.state,'candidate','自动绑定来源不能自动确认记忆')
+})
+
+test('自动来源不能为缺失或结束的运行兜底，显式错误来源不能静默替换',async t=>{
+ for(const state of ['missing','ended'] as const){
+  const env=await setupTool({run:async sessionId=>state==='missing'?null:{id:runId,roleId,roleVersion:2,sessionId,state}});t.after(()=>env.ctx.fiber.dispose())
+  assert.equal((await env.call({title:'复核证据',markdown:'正文'})).isError,true);assert.equal(env.calls.length,0)
+ }
+ const env=await setupTool();t.after(()=>env.ctx.fiber.dispose())
+ for(const source of [null,{kind:'run',id:runId,version:0},{kind:'self-feedback',id:sourceId,version:1}]){
+  assert.equal((await env.call({title:'复核证据',markdown:'正文',source})).isError,true);assert.equal(env.calls.length,0)
+ }
+})
+
+test('持久化幂等回执的来源字段顺序不改变来源身份，字段值不符仍拒绝',async t=>{
+ const env=await setupTool();t.after(()=>env.ctx.fiber.dispose())
+ env.candidate.source={version:1,id:sourceId,kind:'task'}
+ const args={title:'复核证据',markdown:'交付前复核证据。',source:{kind:'task',id:sourceId,version:1}}
+ const replay=await env.call(args)
+ assert.equal(replay.isError,false,JSON.stringify(replay.content))
+ for(const source of [{version:1,id:runId,kind:'task'},{version:2,id:sourceId,kind:'task'},{version:1,id:sourceId,kind:'run'}]){
+  env.candidate.source=source
+  assert.equal((await env.call(args)).isError,true,'只能忽略属性顺序，不能接受另一个来源')
+ }
+})
+
 test('岗位记忆工具拒绝普通或结束 Run、范围身份不一致与 self-feedback 来源',async t=>{
  const cases:Partial<RoleMemoryToolPorts>[]=[
   {run:async()=>null},
@@ -150,4 +187,18 @@ test('真实分身记忆读口：任务载体投影到明确的群和视图，�
  const {groupId,...withoutGroup}=target
  assert.throws(()=>roleMemoryRunTarget(withoutGroup,role),{code:'teloa/forbidden'})
  assert.equal(roleMemoryRunTarget(target,{kind:'employee'}),'SOC')
+})
+
+test('分身语义提议以显式工具参数透传，范围由 Run 固定；JSON 正文仍逐字保留',async t=>{
+ const env=await setupTool({run:async sessionId=>({id:runId,roleId,roleVersion:2,sessionId,state:'active',roleSnapshot:{kind:'twin'}})});t.after(()=>env.ctx.fiber.dispose())
+ env.candidate.visibility={kind:'private',scopeIds:[]} as typeof env.candidate.visibility;env.candidate.source={kind:'run',id:runId,version:1}
+ const preference={kind:'one-off',basis:{kind:'owner-input',quote:'Only this task uses a table.'}}
+ const result=await env.call({title:'本次例外',markdown:'仅本任务使用表格。',preference})
+ assert.equal(result.isError,false,JSON.stringify(result.content))
+ assert.deepEqual((env.calls[0]![1] as any).preference,{...preference,schema:'teloa.preference-candidate/v1',scope:'SOC'})
+ const schema=JSON.stringify(env.ctx.tools.schemas(env.agent));assert.ok(schema.includes('habit-observation'));assert.ok(schema.includes('owner-revision'));assert.ok(schema.includes('against'))
+ for(const extra of [{scope:'other'},{taskId:sourceId},{ownerId:'other'},{permissions:['all']}])assert.equal((await env.call({title:'越界',markdown:'正文',preference:{...preference,...extra}})).isError,true)
+ const doc=JSON.stringify({schema:'teloa.preference-candidate/v1',kind:'preference',markdown:'普通 JSON 示例'})
+ assert.equal((await env.call({title:'JSON 文档',markdown:doc})).isError,false)
+ assert.equal((env.calls.at(-1)![1] as any).markdown,doc);assert.equal((env.calls.at(-1)![1] as any).preference,undefined)
 })

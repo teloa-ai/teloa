@@ -1,5 +1,6 @@
 export * from './browser-crypto.mjs'
 export * from './tasks.ts'
+export type {ConversationDirectoryPage,ConversationDirectoryPageRequest} from './conversation-directory-page.ts'
 export * from './devices.ts'
 export * from './assistant-channel.ts'
 export * from './external-harness.ts'
@@ -20,6 +21,7 @@ export * from './group-message-relation.ts'
 export * from './group-reading.ts'
 export * from './group-mentions.ts'
 export * from './group-messages.ts'
+export * from './group-message-sources.ts'
 export * from './personal-profile.ts'
 export * from './group-work-inputs.ts'
 export * from './web-access.ts'
@@ -98,6 +100,7 @@ export function isCapabilitySnapshot(value:unknown):value is CapabilitySnapshot 
 }
 
 export * from './artifacts.ts'
+export * from './artifact-availability.ts'
 export function isSkillCatalog(value:unknown):value is CapabilitySnapshot['skills']{
  return Array.isArray(value)&&value.every(skill=>record(skill)&&['name','description','source','provider'].every(k=>typeof skill[k]==='string')&&typeof skill.modelInvocable==='boolean'&&typeof skill.userInvocable==='boolean')
 }
@@ -106,7 +109,7 @@ export * from './artifact-messages.ts'
 
 export {readTaskToolArgumentRules,taskToolArgumentsAllowed,isWorkspaceFileRule,workspaceFileToolNames,type TaskToolArgumentRule} from './task-tool-arguments.ts'
 
-export {readScheduleTrigger,nextScheduleOccurrence,scheduleTimezones,type ScheduleTrigger} from './plan-schedule.ts'
+export {readScheduleTrigger,nextScheduleOccurrence,scheduleTimezones,isScheduledOccurrenceId,type ScheduleTrigger} from './plan-schedule.ts'
 export * from './work-flows.ts'
 export * from './role-memory.ts'
 export * from './role-daily-log.ts'
@@ -239,5 +242,18 @@ export * from './resource-usage.ts'
 export * from './twin-drafts.ts'
 export * from './business-setup-plan.ts'
 export * from './business-dashboard-share.ts'
+export * from './task-run-submission.ts'
+
+export * from './task-run-source-followup.ts'
+
+export * from './knowledge-copy.ts'
+export * from './local-knowledge-copy.ts'
+export * from './run-text-capability.ts'
+export * from './run-analysis-scope.ts'
+export * from './group-delivery-recovery.ts'
+export * from './artifact-input-source.ts'
+export * from './employee-mention.ts'
+
+export * from './task-run-evidence.ts'
 
 export {runContextMode,runContextNotice,runContextToolNames} from './task-run-context.ts'

@@ -45,7 +45,7 @@ test('完整生产装配+PG：结束自动task v3的原冷Run显式重试，不�
  await ctx.plugin((await official('dsh-typert-registry')).default);await ctx.plugin((await official('dsh-api-gateway')).default)
  ctx.provide('agentDefaultModel',{currentSelection:()=>({provider:'controlled',model:'fixed'}),saveSelection:async()=>{}})
  // 仅固定模型元数据和空预设；会话、控制器、循环、准入、后台/Team及所有业务端口均走生产实现。
- ctx.provide('agentPresets',{serviceFor:()=>undefined,mount:async()=>{},acquireScope:async()=>({key:{},async [Symbol.asyncDispose](){}}),resolve:async(id?:string)=>({id:id??'teloa-standard'})})
+ ctx.provide('agentPresets',{serviceFor:()=>undefined,composedPreset:(scope:Context)=>ctx.agents.list().find(agent=>agent.ctx===scope)?.session.header.agentPreset,mount:async()=>{},acquireScope:async()=>({key:{},async [Symbol.asyncDispose](){}}),resolve:async(id?:string)=>({id:id??'teloa-standard'})})
  ctx.sessionProjections.register((await official('dsh-agent-preset-registry')).agentPresetProjectionDefinition)
  ctx.provide('fileUploads',{registerAgentResolver:()=>()=>{},bindPrompt:()=>({commit(){},[Symbol.dispose](){}})});ctx.provide('fileReferences',{})
  await ctx.plugin((await official('dsh-api-remote-access')).RemoteAccessService)

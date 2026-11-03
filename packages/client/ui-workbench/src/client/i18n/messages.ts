@@ -72,7 +72,6 @@ const BASE_MESSAGE_KEYS = [
   'task.empty.none',
   'task.empty.noMatch',
   'task.detail.back',
-  'task.detail.goal',
   'continuous.directory',
   'continuous.tab.plans',
   'continuous.tab.runs',

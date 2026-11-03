@@ -17,7 +17,7 @@ const scope='sales',hash='a'.repeat(64),origin={kind:'local-configuration' as co
 const basic={name:'name',label:'姓名',from:'姓名',type:'text' as const,required:false}
 const money={format:'teloa.business-rich-field/v2' as const,name:'amount',label:'金额',from:'原金额',type:'money' as const,required:false,currencies:['SGD']}
 const tags={format:'teloa.business-rich-field/v2' as const,name:'tags',label:'方向',from:'原方向',type:'multi-enum' as const,required:false,values:['销售','开发','安全']}
-const legacyRules='新增/编辑只作用于当前业务的本地记录。编辑fields完整替换，get.values给出全部当前字段；保留未改值，空字符串显式清空。一条本人指令只确认提交一批1–50项，最多128KiB。结果未知先receipt或recent-writes核对，不能用新轮次重复写入。'
+const legacyRules='新增/编辑只作用于当前业务的本地记录。编辑fields完整替换，get.values给出全部当前字段；保留未改值，空字符串显式清空。一条本人指令只确认提交一批1–50项，最多128KiB。结果未知先receipt或recent-writes核对，不能用新轮次重复写入。基础 number/boolean 字段使用真实 JSON 数值/布尔值，false 和 0 均不是缺失；已有记录的字符串原值可保留，不推断转换历史值。number 的 integer/minimum/decimalScale 仅按字段显式声明核验；decimalScale 是最多允许的小数位，不自动舍入。其它基础字段仍用字符串，未知可选字段省略或按清空语义处理，不编造供应商。'
 async function fixture(format:'teloa.business-object-type/v1'|'teloa.business-object-type/v2',fields:Array<BusinessObjectFieldDefinition|BusinessRichFieldDefinition>){
  const definition=readBusinessObjectTypeDefinitionVersioned({format,id:'customer',version:'1.0.0',domain:scope,title:'客户',unit:'位',lead:'客户跟进',sourceId:'local',fields})
  const bundle:BusinessDefinitionBundleVersioned={origin,scope,domain:scope,objectTypes:[{definition,source:{loadId:'local',scope,localId:'customer',version:'1.0.0',contentHash:hash,fileHash:hash,definitionHash:hash,origin:'local'}}],views:[],actions:[],mappings:[],widgets:[],dashboards:[],sources:new Map([['local',{connected:true}]])}
@@ -69,16 +69,16 @@ test('只有多选字段时独立说明 JSON.stringify 编码且不宣称金额�
  for(const args of [{},{mode:'type',type:'customer'}]){
   const {rules}=JSON.parse(await f.call(args))
   assert.match(rules,/JSON.stringify/)
-  assert.doesNotMatch(rules,/money|currency|decimal/)
+  assert.doesNotMatch(rules,/\bmoney\b|\bcurrency\b|\bdecimal\b/)
  }
 })
-test('v1 目录与 type 回包保持原始 JSON 字节和 shape',async t=>{
+test('v1 目录与 type 回包保留字段身份并提供基础值说明',async t=>{
  const f=await fixture('teloa.business-object-type/v1',[basic]);t.after(()=>f.ctx.fiber.dispose())
  assert.equal(await f.call(),JSON.stringify({scope,title:'销售',types:[{type:'customer',title:'客户',readable:true,writable:true,archivable:true}],rules:legacyRules}))
- assert.equal(await f.call({mode:'type',type:'customer'}),JSON.stringify({scope,definition:f.definition,writable:true,archivable:true,origin}))
+ assert.equal(await f.call({mode:'type',type:'customer'}),JSON.stringify({scope,definition:f.definition,writable:true,archivable:true,origin,rules:legacyRules.slice(legacyRules.indexOf('基础 number/boolean'))}))
 })
 test('只有基础字段的 v2 不宣称金额或多选能力',async t=>{
  const f=await fixture('teloa.business-object-type/v2',[basic]);t.after(()=>f.ctx.fiber.dispose())
  assert.equal(JSON.parse(await f.call()).rules,legacyRules)
- assert.equal(Object.hasOwn(JSON.parse(await f.call({mode:'type',type:'customer'})),'rules'),false)
+ assert.equal(JSON.parse(await f.call({mode:'type',type:'customer'})).rules,legacyRules.slice(legacyRules.indexOf('基础 number/boolean')))
 })

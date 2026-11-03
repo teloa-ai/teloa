@@ -10,7 +10,8 @@ import type {MarketContentApi} from './market-content-api.ts'
 import {createTemplateAcceptance,type TemplateAcceptanceResult} from './employee-template-share.ts'
 import {shareIndustryItem} from './industry-directory.ts'
 import {referenceCandidates,resolveIndustryReferences} from './industry-reference.ts'
-import {hasShareSelection,isSharePackageV2,readSharePackage,sharePackageDigest,sharePackageSummary,type SharePackage,type SharePackageV2,type ShareSummary} from './share-package-plan.ts'
+import {hasShareSelection,isSharePackageV2,readSharePackage,sharePackageDigest,sharePackageSummary,shareWorkCopy,type ShareWorkMapping,type SharePackage,type SharePackageV2,type ShareSummary} from './share-package-plan.ts'
+import {shareOriginalIndustryItem} from './industry-directory.ts'
 
 /**
  * v2 分享包接收复用固定内容 → 行业加载 → 一键准备这条既有链路，不另建运行引擎：
@@ -23,10 +24,11 @@ import {hasShareSelection,isSharePackageV2,readSharePackage,sharePackageDigest,s
  * 每个子请求的 requestId 与选择先持久化再调用；恢复只能继续原选择，不改原请求参数。
  * v1 员工包仍走原 `createTemplateAcceptance` 与原恢复键。
  */
-/** needs-user：依赖应用会改动现有配置待本人查看权限、已启用待重启或固定来源变化待核对，原因见 reason。 */
+/** needs-user：实际方法尚不可用，或依赖应用待本人查看权限、重启或核对固定来源；应用原因见 reason。 */
 export type ShareAcceptItemState='done'|'pending'|'failed'|'unavailable'|'skipped'|'needs-user'
 export type ShareAcceptItem={resourceId:string;title:string;state:ShareAcceptItemState;installationId?:string;nativeName?:string;reason?:IndustryPluginHoldReason}
-export type ShareAcceptanceResult={sha256:string;complete:boolean;roleIds:string[];roles:{resourceId:string;name:string;roleId?:string;state:ShareAcceptItemState}[];coordinatorRoleId?:string;coordinator:ShareAcceptItemState;groupId?:string;loadId?:string;pendingKinds:string[];skills:ShareAcceptItem[];mcp:ShareAcceptItem[];plugins:ShareAcceptItem[];plans:ShareAcceptItem[]}
+export type ShareOriginalSource={contentId:string;contentHash:string;shareSha256:string;scope:string;targetScope:string;mappings:ShareWorkMapping[]}
+export type ShareAcceptanceResult={sha256:string;complete:boolean;roleIds:string[];roles:{resourceId:string;name:string;roleId?:string;state:ShareAcceptItemState}[];coordinatorRoleId?:string;coordinator:ShareAcceptItemState;groupId?:string;loadId?:string;pendingKinds:string[];skills:ShareAcceptItem[];mcp:ShareAcceptItem[];plugins:ShareAcceptItem[];plans:ShareAcceptItem[];knowledge?:ShareAcceptItem[];workTemplates?:ShareAcceptItem[];businessConfigurations?:ShareAcceptItem[];originalSource?:ShareOriginalSource}
 export type ShareAcceptChoice={skills:readonly string[];scope:string}
 export type ShareIndustryRole={loadId?:string;itemInstanceId:string;state:string;roleId?:string}
 export type ShareAcceptPorts={
@@ -51,9 +53,10 @@ export type ShareAcceptPorts={
  v1?:Omit<Parameters<typeof createTemplateAcceptance>[1],'createRole'>
 }
 type Install={requestId:string;state?:'installed'|'pending'|'failed';installationId?:string;nativeName?:string}
-type Progress={sha256:string;scope:string;skills:string[];contentRequestId:string;loadRequestId:string;sourceMetadataVersion?:1;completed?:true;target?:IndustryLoadCreateInput['target'];content?:{id:string;hash:string};loadId?:string;installs:Record<string,Install>}
+type Progress={sha256:string;scope:string;skills:string[];contentRequestId:string;loadRequestId:string;sourceMetadataVersion?:1;completed?:true;target?:IndustryLoadCreateInput['target'];content?:{id:string;hash:string};loadId?:string;installs:Record<string,Install>;original?:{requestId:string;content?:{id:string;hash:string};copyId:string;scope:string;targetScope:string;files:{path:string;sha256:string}[];mappings:ShareWorkMapping[]}}
 const KEY='teloa.share-accept/v3/'
 const uuid=()=>crypto.randomUUID()
+const textHash=async(text:string)=>Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(text))),byte=>byte.toString(16).padStart(2,'0')).join('')
 
 /** 官方目录里与「公共名 + 固定版本」完全对应的唯一技能条目；目录 id（如 `anthropic.x`）不等于公共名，不取第一位、不取最新。 */
 export function resolvePublicCatalogEntry<T extends {entry:MarketCatalogEntry}>(items:readonly T[],publicId:string,version:string):T{
@@ -115,7 +118,7 @@ export function createShareAcceptance(storage:WorkbenchNavigationStorage,ports:S
  }
  return {
   /** 已开始的接收沿用的原选择；界面据此锁定选择，只能继续原申请。 */
-  async choice(value:SharePackage):Promise<ShareAcceptChoice|undefined>{const pkg=readSharePackage(value);if(!isSharePackageV2(pkg))return undefined;const p=selectedProgress(await sharePackageDigest(pkg),sharePackageSummary(pkg));return p?{scope:p.scope,skills:[...p.skills]}:undefined},
+  async choice(value:SharePackage):Promise<ShareAcceptChoice|undefined>{const pkg=readSharePackage(value);if(!isSharePackageV2(pkg))return await legacy.hasRequest(pkg)?{scope:'general',skills:[]}:undefined;const p=selectedProgress(await sharePackageDigest(pkg),sharePackageSummary(pkg));return p?{scope:p.scope,skills:[...p.skills]}:undefined},
   async accept(value:SharePackage,choice:ShareAcceptChoice,intent?:TemplateShareIntent):Promise<ShareAcceptanceResult>{
   const pkg=readSharePackage(value)
   if(!isSharePackageV2(pkg)){
@@ -127,17 +130,34 @@ export function createShareAcceptance(storage:WorkbenchNavigationStorage,ports:S
   if(!industry)throw Object.assign(Error('Template installation is unavailable.'),{code:'teloa/dependency-unavailable'})
   busy=true
   try{
-   const summary=sharePackageSummary(pkg),sha256=await sharePackageDigest(pkg),key=KEY+sha256
+   const summary=sharePackageSummary(pkg),sha256=await sharePackageDigest(pkg),key=KEY+sha256,derived=shareWorkCopy(pkg,choice.scope,'copy-'+sha256),needsOriginal=!!summary.businessConfigurations?.length||derived.mappings.length>0
    // 选择只在首次确认时冻结；恢复与继续不改原范围、所选技能和任何已发出的请求参数。
    const previous=selectedProgress(sha256,summary)
-   const p:Progress=previous??{sha256,scope:choice.scope,skills:summary.skills.map(s=>s.resourceId).filter(id=>choice.skills.includes(id)),contentRequestId:uuid(),loadRequestId:uuid(),sourceMetadataVersion:1,installs:{}}
+   const p:Progress=previous??{sha256,scope:choice.scope,skills:summary.skills.map(s=>s.resourceId).filter(id=>choice.skills.includes(id)),contentRequestId:uuid(),loadRequestId:uuid(),sourceMetadataVersion:1,installs:{},...(needsOriginal?{original:{requestId:uuid(),copyId:'copy-'+sha256,scope:summary.scope,targetScope:choice.scope,files:await Promise.all(pkg.files.map(async file=>({path:file.path,sha256:await textHash(file.text)}))),mappings:derived.mappings}}:{})}
    if(!hasShareSelection(summary,p.skills))throw Object.assign(Error('Choose at least one item to add.'),{code:'teloa/validation-error'})
    // 保留原请求，但不能把界面新确认的范围或技能静默替换成旧选择。
    if(previous&&(previous.scope!==choice.scope||new Set(previous.skills).size!==new Set(choice.skills).size||previous.skills.some(id=>!choice.skills.includes(id))))throw Object.assign(Error('Continue with the original saved template selection.'),{code:'acceptance-choice-conflict'})
    const save=()=>storage.setItem(key,JSON.stringify(p))
    save()
+   let originalSource:ShareOriginalSource|undefined
+   if(p.original){
+    const original=p.original
+    if(original.copyId!=='copy-'+sha256||original.scope!==summary.scope||original.targetScope!==p.scope||JSON.stringify(original.mappings)!==JSON.stringify(derived.mappings)||original.files.length!==pkg.files.length)throw Error('Original sharing source recovery differs from the confirmed copy.')
+    const currentFiles=await Promise.all(pkg.files.map(async file=>({path:file.path,sha256:await textHash(file.text)})))
+    if(JSON.stringify(original.files)!==JSON.stringify(currentFiles))throw Error('Original sharing source file hashes changed.')
+    if(!original.content){
+     let item=await shareOriginalIndustryItem(pkg)
+     const publicSkills=summary.skills.filter(skill=>skill.source==='public')
+     if(publicSkills.length){const sources=await Promise.all(publicSkills.map(skill=>industry.publicSkill({publicId:skill.publicId!,version:skill.version}))),choices=publicSkills.map(skill=>{const found=referenceCandidates(item,sources,skill.resourceId);if(found.length!==1)throw Error('Original public source is unavailable.');return found[0]!});item=await resolveIndustryReferences(item,sources,choices)}
+     const saved=await industry.importContent(item,original.requestId)
+     if(!saved.contentStorage?.contentId||!saved.packageContent?.hash)throw Error('Original template source has not been saved.')
+     original.content={id:saved.contentStorage.contentId,hash:saved.packageContent.hash};save()
+    }
+    originalSource={contentId:original.content.id,contentHash:original.content.hash,shareSha256:sha256,scope:original.scope,targetScope:original.targetScope,mappings:original.mappings}
+   }
+   const workPackage=p.original?derived.copy:pkg
    if(!p.loadId){
-    let item=await shareIndustryItem(pkg,p)
+    let item=await shareIndustryItem(workPackage,p)
     const pub=summary.skills.filter(s=>s.source==='public'&&p.skills.includes(s.resourceId))
     if(pub.length){
      const sources=await Promise.all(pub.map(s=>industry.publicSkill({publicId:s.publicId!,version:s.version})))
@@ -170,10 +190,20 @@ export function createShareAcceptance(storage:WorkbenchNavigationStorage,ports:S
    if(installed){try{readiness=await (p.completed?industry.readiness(loadId):industry.prepare(loadId))}catch{readiness=undefined}}
    const instances=await industry.roles(loadId)
    const roles:ShareAcceptanceResult['roles']=summary.roles.map(role=>{const target=itemOf(role.resourceId),instance=target?industryTeamRole(load,target.instanceId,instances):undefined;return {resourceId:role.resourceId,name:role.name,...(instance?.roleId?{roleId:instance.roleId}:{}),state:instance?.roleId&&['active','paused'].includes(instance.state)?'done':instance?.state==='failed'?'failed':'pending'}})
-   const skills:ShareAcceptItem[]=summary.skills.map(s=>{const step=p.installs[s.resourceId];if(!p.skills.includes(s.resourceId))return {resourceId:s.resourceId,title:s.title,state:'skipped'};return {resourceId:s.resourceId,title:s.title,state:step?.state==='installed'?'done':step?.state==='failed'?'failed':'pending',...(step?.installationId?{installationId:step.installationId}:{}),...(step?.nativeName?{nativeName:step.nativeName}:{})}})
+   const skills:ShareAcceptItem[]=summary.skills.map(s=>{
+    const step=p.installs[s.resourceId],row=readiness?.rows.find(r=>r.itemInstanceId===itemOf(s.resourceId)?.instanceId)
+    if(!p.skills.includes(s.resourceId))return {resourceId:s.resourceId,title:s.title,state:'skipped'}
+    // 安装回执沿用原请求；实际可用性取本加载条目的最终清单，缺项、读取失败或同名来源冲突均不能报完成。
+    const state=step?.state==='failed'?'failed':step?.state!=='installed'?'pending':row?.state==='ready'?'done':row?.state==='needs-user'||row?.entry==='skill-confirm'?'needs-user':'pending'
+    return {resourceId:s.resourceId,title:s.title,state,...(step?.installationId?{installationId:step.installationId}:{}),...(step?.nativeName?{nativeName:step.nativeName}:{})}
+   })
    // 连接只登记定义；需要本人授权的显示为已添加，账号授权仍在连接设置完成。
    const mcp:ShareAcceptItem[]=summary.connections.map(c=>{const row=readiness?.rows.find(r=>r.itemInstanceId===itemOf(c.resourceId)?.instanceId);return {resourceId:c.resourceId,title:c.title,state:!row?(readiness?'unavailable':'pending'):row.state==='ready'||row.entry==='connector-settings'?'done':row.state==='needs-user'?'failed':'pending'}})
    const plugins:ShareAcceptItem[]=summary.plugins.map(r=>{const row=readiness?.rows.find(x=>x.itemInstanceId===itemOf(r.resourceId)?.instanceId);return {resourceId:r.resourceId,title:r.title,state:pluginState(row,!!readiness),...(row?.reason?{reason:row.reason}:{})}})
+   const knowledge:ShareAcceptItem[]=summary.knowledge.map(r=>{const row=readiness?.rows.find(x=>x.itemInstanceId===itemOf(r.resourceId)?.instanceId);return {resourceId:r.resourceId,title:r.title,state:row?.state==='ready'?'done':row?.state==='needs-user'?'failed':'pending'}})
+   // 模板定义已加载也不等于创建或启用了任务/计划。继续使用原配置入口，不自动执行。
+   const workTemplates:ShareAcceptItem[]=summary.workTemplates.map(r=>{const row=readiness?.rows.find(x=>x.itemInstanceId===itemOf(r.resourceId)?.instanceId);return {resourceId:r.resourceId,title:r.title,state:row?.entry==='task-form'?'needs-user':'pending'}})
+   const businessConfigurations:ShareAcceptItem[]=(summary.businessConfigurations??[]).map(r=>({resourceId:r.resourceId,title:r.title,state:'needs-user'}))
    let coordinator:ShareAcceptItemState='skipped',coordinatorRoleId:string|undefined
    if(summary.coordinatorResourceId){const team=teamCoordination(load,instances);if(team){coordinator='done';coordinatorRoleId=team.coordinatorRoleId}else coordinator=load.relations.some(l=>l.kind==='role-coordination')?'pending':'failed'}
    let groupId:string|undefined
@@ -183,8 +213,8 @@ export function createShareAcceptance(storage:WorkbenchNavigationStorage,ports:S
     if(seed&&roles.every(role=>role.state==='done')){try{groupId=(await industry.team?.(seed))?.groupId}catch{/* 未核对的群不冒充接收完成。 */}}
     coordinator=groupId?'done':'pending'
    }
-   const result:ShareAcceptanceResult={sha256,complete:false,...(groupId?{groupId}:{}),roleIds:roles.flatMap(r=>r.roleId?[r.roleId]:[]),roles,...(coordinatorRoleId?{coordinatorRoleId}:{}),coordinator,loadId,pendingKinds:[...new Set([...(summary.plans.length?['plan']:[]),...(summary.workTemplates.length?['work-template']:[]),...(plugins.some(p=>p.state!=='done')?['plugin']:[])])],skills,mcp,plugins,plans:empty(summary,'plans')}
-   result.complete=roles.every(r=>r.state==='done')&&[...skills,...mcp].every(i=>i.state==='done'||i.state==='skipped')&&(coordinator==='done'||coordinator==='skipped')
+   const result:ShareAcceptanceResult={sha256,complete:false,...(groupId?{groupId}:{}),roleIds:roles.flatMap(r=>r.roleId?[r.roleId]:[]),roles,...(coordinatorRoleId?{coordinatorRoleId}:{}),coordinator,loadId,pendingKinds:[...new Set([...(summary.plans.length?['plan']:[]),...(summary.workTemplates.length?['work-template']:[]),...(businessConfigurations.length?['business-configuration']:[]),...(skills.some(p=>p.state!=='done'&&p.state!=='skipped')?['skill']:[]),...(knowledge.some(p=>p.state!=='done')?['knowledge']:[]),...(plugins.some(p=>p.state!=='done')?['plugin']:[])])],skills,mcp,plugins,knowledge,workTemplates,businessConfigurations,plans:empty(summary,'plans'),...(originalSource?{originalSource}:{})}
+   result.complete=roles.every(r=>r.state==='done')&&[...skills,...mcp,...knowledge,...plugins].every(i=>i.state==='done'||i.state==='skipped')&&(coordinator==='done'||coordinator==='skipped')
    if(result.complete&&!p.completed){p.completed=true;save()}
    return result
   }finally{busy=false}

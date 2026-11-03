@@ -26,6 +26,7 @@ import {SessionId,type Session} from '@deepseek-ai/dsh-session'
 import {brandString} from '@deepseek-ai/dsh-brand'
 import type {SessionRequestId} from '@deepseek-ai/dsh-api-session-controller'
 import {PostgreSqlContainer,type StartedPostgreSqlContainer} from '@testcontainers/postgresql'
+import {SESSION_DIAGNOSTIC_PATH} from '../src/session-diagnostic-export.ts'
 import {openResourceDatabase,groupFileHandleLine,groupModelNoVisionNotice,groupReferenceNotice,readStoredRunGroupContext,runGroupContextHash,type RunGroupContext} from '@teloa/backend'
 import {groupAttachmentUploadRoutePath,groupRunMessageInput,workErrorCodes} from '@teloa/contract'
 import {apply} from '../src/index.ts'
@@ -81,6 +82,7 @@ function teloaHost(attachmentStore:unknown,dshHome:string){
  let rpc:((endpoint:string,payload:unknown,signal:AbortSignal)=>Promise<{ok:boolean;value?:unknown;error?:{code:string;message:string;details:Record<string,unknown>}}>)|undefined
 type UploadRoute={path:string;fetch:(request:Request)=>Promise<Response>}
 let uploadRoute:UploadRoute|undefined
+const fetchRoutes=new Map<string,UploadRoute>()
  /** 视觉能力三态：`undefined` 即读不出（`readModelVision` 按 `'unknown'` 判）。 */
  let modelInfo:{inputModalities:string[]}|undefined={inputModalities:['text','image']}
  /** 置真时，带 image 部件的那次 prompt 按上游的 `session/attachment-invalid` 拒绝。 */
@@ -124,13 +126,19 @@ let uploadRoute:UploadRoute|undefined
  })
  configureNativeHostTestPorts(ctx,{collectTool:definition=>{tools.push(definition as {name:string;execute:(args:unknown,exec:unknown)=>Promise<unknown>})}})
 
- ctx.provide('agentPresets',{serviceFor:()=>undefined,acquireScope:async()=>({key:{},async [Symbol.asyncDispose](){}}),resolve:async(id?:string)=>({id:id??'default-agent'})})
+ ctx.provide('agentPresets',{serviceFor:()=>undefined,composedPreset:(scope:Context)=>ctx.agents.list().find(agent=>agent.ctx===scope)?.session.header.agentPreset,acquireScope:async()=>({key:{},async [Symbol.asyncDispose](){}}),resolve:async(id?:string)=>({id:id??'default-agent'})})
  ctx.provide('tokenMeter',{measure:()=>({totalTokens:0})})
  configureNativeHostTestPorts(ctx,{modelMetadata:{resolveModelInfo:async()=>modelInfo,resolveCallConfig:async(config:unknown)=>config}})
  ctx.provide('fileReferences',{list:async()=>[]})
  // 上传走宿主注册的 /api 专用流式路由（与浏览器同一条）：收下路由，runtime.rpc 把上传端点转给它，其余端点照走 /teloa。
  ctx.provide('connection',{
-  fetch:{register:(route:UploadRoute)=>{assert.equal(route.path,groupAttachmentUploadRoutePath);uploadRoute=route;return async()=>{uploadRoute=undefined}}},
+  fetch:{register:(route:UploadRoute)=>{
+   assert.ok(route.path===groupAttachmentUploadRoutePath||route.path===SESSION_DIAGNOSTIC_PATH,'只登记正式上传与会话诊断导出路由')
+   assert.equal(fetchRoutes.has(route.path),false,'同一路由不能重复登记')
+   fetchRoutes.set(route.path,route)
+   if(route.path!==SESSION_DIAGNOSTIC_PATH){assert.equal(route.path,groupAttachmentUploadRoutePath);uploadRoute=route}
+   return async()=>{assert.equal(fetchRoutes.get(route.path),route);fetchRoutes.delete(route.path);if(route.path===groupAttachmentUploadRoutePath)uploadRoute=undefined}
+  }},
   rpc:{handle:(path:string,handler:typeof rpc)=>{assert.equal(path,'/teloa');rpc=handler;return ()=>{rpc=undefined}}},
  })
  // 真附件仓：`index.ts` 按 `Reflect.get(ctx,'attachments')` 取它，与生产同一条路。
@@ -163,8 +171,23 @@ test('群附件从上传到看图与同事贴回：真库、真端点、真附�
  process.env.TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE='/var/run/docker.sock'
  // 受管目录逐层拒绝符号链接；macOS 的 /var/tmp 恰有系统链接，临时根放在工作树内（照 production-wiring）。
  const root=await mkdtemp(join(repositoryRoot,'.tmp-群附件链路-'))
- const dshHome=await mkdtemp(join(repositoryRoot,'.tmp-群附件仓-'))
- const container=await new PostgreSqlContainer('postgres:17-alpine').withDatabase('teloa').start()
+ let ownedDshHome:string|undefined,ownedContainer:StartedPostgreSqlContainer|undefined
+ let ownedRuntime:ReturnType<typeof teloaHost>|undefined,ownedDatabase:Awaited<ReturnType<typeof openResourceDatabase>>|undefined
+ // 首个资源已创建即登记；后续装配失败也按归属关闭，并保留所有清理错误。
+ t.after(async()=>{
+  const errors:unknown[]=[]
+  for(const close of [
+   ()=>ownedRuntime?.ctx.fiber.dispose(),
+   ()=>ownedDatabase?.close(),
+   ()=>ownedContainer?.stop(),
+   ()=>rm(root,{recursive:true,force:true}),
+   ()=>ownedDshHome?rm(ownedDshHome,{recursive:true,force:true}):undefined,
+  ])try{await close()}catch(error){errors.push(error)}
+  if(previousProjectRoot===undefined)delete process.env.TELOA_PROJECT_ROOT;else process.env.TELOA_PROJECT_ROOT=previousProjectRoot
+  if(errors.length)throw new AggregateError(errors,'群附件测试资源未完整关闭。')
+ })
+ const dshHome=ownedDshHome=await mkdtemp(join(repositoryRoot,'.tmp-群附件仓-'))
+ const container=ownedContainer=await new PostgreSqlContainer('postgres:17-alpine').withDatabase('teloa').start()
  const connectionString=container.getConnectionUri()
  const config=join(root,'.runtime/teloa/database.json')
  await mkdir(join(root,'.runtime/teloa/skills'),{recursive:true,mode:0o700})
@@ -173,19 +196,11 @@ test('群附件从上传到看图与同事贴回：真库、真端点、真附�
  await writeFile(join(root,'.runtime/dsh/profiles/teloa/package.json'),JSON.stringify({dsh:{profile:{bundles:[],patchReload:'startup'}}}),{mode:0o600})
 
  const LocalAttachmentStore=await loadLocalAttachmentStore()
- const runtime=teloaHost(LocalAttachmentStore,dshHome)
+ const runtime=ownedRuntime=teloaHost(LocalAttachmentStore,dshHome)
  await runtime.ready()
  await apply(runtime.ctx,{projectRoot:root})
- const database=await openResourceDatabase(config,{id:randomUUID,now:()=>new Date().toISOString()})
+ const database=ownedDatabase=await openResourceDatabase(config,{id:randomUUID,now:()=>new Date().toISOString()})
  const pool=database.pool
- t.after(async()=>{
-  if(previousProjectRoot===undefined)delete process.env.TELOA_PROJECT_ROOT;else process.env.TELOA_PROJECT_ROOT=previousProjectRoot
-  await runtime.ctx.fiber.dispose().catch(()=>{})
-  await pool.end().catch(()=>{})
-  await container.stop()
-  await rm(root,{recursive:true,force:true})
-  await rm(dshHome,{recursive:true,force:true})
- })
 
  // ---------- RPC 调用与错误账本 ----------
  const calls=new Map<string,number>()
@@ -455,8 +470,9 @@ test('群附件从上传到看图与同事贴回：真库、真端点、真附�
   assert.ok(['image/png','image/jpeg','image/webp'].includes(String((images[0]!.attachment as Record<string,unknown>).mediaType)))
   assert.equal((images[0]!.attachment as Record<string,unknown>).name,'格式验收.jpg')
   const texts=promptOne.content.filter(part=>part.type==='text')
-  assert.equal(texts.length,3,'固定输入、运行日期与本次原目标各一个 text 部件')
-  assert.equal(texts[2]!.text,'Current task (fulfill the original goal):\n'+JSON.parse(String(texts[0]!.text)).task.goal,'任务目标逐字保留，不能用群资料代替')
+  assert.equal(texts.length,4,'固定输入、运行日期、来源展示规则与本次原目标各一个 text 部件')
+  assert.equal(texts[2]!.text,'来源追溯与答复展示：来源ID、消息ID、hash和固定版本用于工具、结构化引用与审计；保留这些真实字段不等于在正文逐项罗列技术标识。默认按本人当前要求展示业务事实或结果，必要引用使用已提供的可读资料名和版本；本人只要求状态、简短答复或指定格式时，不额外附上技术标识。本人明确要求技术标识时，仅提供已授权输入中实际存在的值，不猜造来源名或标识、不扩大权限。来源读取、撤回和固定版本校验仍须遵守，工具所需的精确引用继续保留，不隐藏必要的授权、审批或真实阻断。','来源展示规则逐字保留，不改写固定引用或扩大权限')
+  assert.equal(texts[3]!.text,'Current task (fulfill the original goal):\n'+JSON.parse(String(texts[0]!.text)).task.goal,'任务目标逐字保留，不能用群资料代替')
   assert.ok(String(texts[1]!.text).startsWith('Run date: '))
   // GIF 走文件通道（编排者裁定 1）：它既不成为 image 部件，也不带 mediaType=image/gif。
   assert.equal(images.some(part=>(part.attachment as Record<string,unknown>).name==='动画验收.gif'||(part.attachment as Record<string,unknown>).mediaType==='image/gif'),false,'GIF 不得成为 image 部件')

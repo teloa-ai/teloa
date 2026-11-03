@@ -50,7 +50,6 @@ export const enMessages = {
   'task.empty.none': 'No tasks yet',
   'task.empty.noMatch': 'No matching tasks',
   'task.detail.back': 'Back to directory',
-  'task.detail.goal': 'Task goal',
   'continuous.directory': 'Automation',
   'continuous.tab.plans': 'Plans',
   'continuous.tab.runs': 'Run history',

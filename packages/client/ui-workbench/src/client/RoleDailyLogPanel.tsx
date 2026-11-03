@@ -9,6 +9,8 @@ import type { RoleDailyLogApi } from './role-daily-log-api.js'
 import type { RoleMemoryApi } from './role-memory-api.js'
 import { useI18n } from './i18n/provider.js'
 import { localizeWorkError } from './i18n/errors.js'
+import {MarkdownPreview} from './knowledge-markdown.js'
+import markdownTypography from './MarkdownTypography.module.css'
 import css from './RoleDailyLogPanel.module.css'
 
 export type RoleDailyLogPanelProps = {
@@ -99,7 +101,6 @@ export function RoleDailyLogPanel({ roleId, kind, api, memoryApi, promote, trigg
   }
 
   const candidates = detail ? (memories ?? []).filter(memory => memory.state !== 'withdrawn' && memory.source.id === detail.id) : []
-  const paragraphs = (detail?.markdown ?? '').split(/\n{2,}/).map(part => part.trim()).filter(Boolean)
   // 上限判据与服务端 role-memory.ts 同口径：按 source.kind==='habit-digest'&&source.id===当前日志 数已取到的记忆条数，
   // 刷新后仍生效；promoteCount 只在同一会话里做乐观自增（等下一次 memories 重新拉取前，先挡住本地重复提交）。
   const promotedForDetail = detail ? (memories ?? []).filter(memory => memory.source.kind === 'habit-digest' && memory.source.id === detail.id).length : 0
@@ -117,7 +118,7 @@ export function RoleDailyLogPanel({ roleId, kind, api, memoryApi, promote, trigg
   const nextTimezone=schedule?.trigger?.timezone??'UTC'
   const short=(day:string)=>dateTime(day+'T00:00:00.000Z',{month:'2-digit',day:'2-digit',timeZone:'UTC'})
   const remaining=Math.max(0,3-promotedForDetail-promoteCount)
-  return <section className={css.panel} aria-label={t(panelTitleKey)}>
+  return <section className={css.container} aria-label={t(panelTitleKey)}><div className={css.panel}>
     <nav className={css.days} aria-label={t('dailyLog.recentCount',{count:logs?.length??0})}>
       <div className={css.daysHead}><span>{t('dailyLog.recentCount',{count:logs?.length??0})}</span></div>
       {logsError&&<p role="alert">{logsError}</p>}
@@ -134,7 +135,7 @@ export function RoleDailyLogPanel({ roleId, kind, api, memoryApi, promote, trigg
             {api.recoveryMessage()!==undefined&&<button type="button" role="menuitem" onClick={()=>{api.discardPending();setRecoveryDiscarded(true)}}>{t('recovery.discard')}</button>}
           </div></details>
         </header>
-        {paragraphs.length?paragraphs.map((paragraph,index)=><p key={index}>{paragraph}</p>):<p>{detail.markdown}</p>}
+        <div className={clsx(css.markdown,markdownTypography.typography)}><MarkdownPreview markdown={detail.markdown} images={false}/></div>
         <section aria-label={t('dailyLog.evidence')}><h4 className={css.sectionTitle}>{t('dailyLog.evidenceCount',{count:detail.evidence.length})}</h4><ul>{detail.evidence.map(item=>{const Icon=item.kind==='run'?Play:item.kind==='approval'?ShieldCheck:item.kind==='group-message'?MessageSquare:FileText;return <li className={css.evidence} key={item.kind+item.id}><Icon size={14} aria-hidden="true"/><span>{item.title}</span><small className={css.evidenceKind}>{t(evidenceKindKey(item.kind))} · v{item.version}</small></li>})}</ul></section>
         <section aria-label={t('dailyLog.candidates')}><h4 className={css.sectionTitle}>{t('dailyLog.candidateCount',{count:candidates.length})}</h4><p>{t('dailyLog.candidateHint')}</p><ul>{candidates.map(memory=><li className={css.candidate} key={memory.id}><span>{memory.title}</span><span>{t(!memory.sourceAvailable?'roleMemory.sourceGone':memory.state==='confirmed'?'team.presentation.memory.confirmed.label':'team.presentation.memory.candidate.label')}</span><span className={css.candidateActions}>
           {memoryApi&&memory.state==='candidate'&&<button type="button" disabled={!allowed||busy||!memory.sourceAvailable} onClick={()=>{if(applicationPresentation.can('people'))runMemoryAction(memoryApi.confirm(memory.id,memory.stateVersion))}}>{t('team.memory.confirm')}</button>}
@@ -162,5 +163,5 @@ export function RoleDailyLogPanel({ roleId, kind, api, memoryApi, promote, trigg
         {recoveryDiscarded&&<p role="status">{t('recovery.discarded')}</p>}
       </article>}
     </div>
-  </section>
+  </div></section>
 }

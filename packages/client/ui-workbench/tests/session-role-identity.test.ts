@@ -29,3 +29,19 @@ test('目录员工身份只来自该条原会话的正式关联；读失败、�
  assert.deepEqual(await readDirectoryRoleIdentities(['own','offline','foreign','multiple'],read,roles),{own:roles[0]})
  assert.deepEqual(await readDirectoryRoleIdentities(['own'],read,[]),{})
 })
+
+
+test('同名自动任务目录显示原业务对象名，只有只读规范投影可带入该名称',async()=>{
+ const links=async(sessionId:string)=>[{kind:'role' as const,sessionId,objectId:'role-a',active:true,readOnly:true as const,displayTitle:'告警-'+sessionId}];
+ const values=await readDirectoryRoleIdentities(['A','B','C'],links,roles);assert.deepEqual(Object.values(values).map(row=>row.conversationTitle),['告警-A','告警-B','告警-C']);assert.ok(Object.values(values).every(row=>row.id==='role-a'));
+ const manual=await readDirectoryRoleIdentities(['A'],async sessionId=>[{kind:'role',sessionId,objectId:'role-a',active:true,displayTitle:'不能冒认的名称'}],roles);assert.equal(manual.A?.conversationTitle,undefined);
+});
+
+
+test('逐条发布已核验身份：慢后会话不能阻塞首会话，失败逐项保守且原返回合同不变',async()=>{
+ let release!:(value:readonly {kind:'role';sessionId:string;objectId:string;active:boolean}[])=>void
+ const later=new Promise<readonly {kind:'role';sessionId:string;objectId:string;active:boolean}[]>(resolve=>release=resolve),published:{id:string;name:string|undefined}[]=[]
+ const result=readDirectoryRoleIdentities(['first','later','failed'],async id=>{if(id==='later')return later;if(id==='failed')throw Error('offline');return [{kind:'role',sessionId:id,objectId:'role-a',active:true}]},roles,{onResolved:(id,item)=>{published.push({id,name:item?.name})}})
+ await new Promise(resolve=>setImmediate(resolve));assert.deepEqual(published,[{id:'first',name:roles[0]!.name},{id:'failed',name:undefined}]);release([])
+ assert.deepEqual(await result,{first:roles[0]});assert.deepEqual(published.at(-1),{id:'later',name:undefined})
+})

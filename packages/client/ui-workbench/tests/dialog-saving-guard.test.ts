@@ -1,3 +1,4 @@
+import * as contract from '@teloa/contract'
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import {mount,nodes} from './market-component-harness.ts'
@@ -34,6 +35,7 @@ test('自动化保存中阻止 Esc 与重复提交，保存失败后保留输入
  let reject!:(reason:Error)=>void,calls=0,closed=0
  const saving=new Promise<void>((_,fail)=>{reject=fail})
  const app=mount('ContinuousPage.tsx',{
+  '@teloa/contract':contract,
   './business-scope-context.js':{useBusinessScopes:()=>({general:'通用工作'})},
   './continuous-preview.js':{planNotificationPolicies:['attention']},
   './role-preview.js':{canReceiveTask:()=>true},

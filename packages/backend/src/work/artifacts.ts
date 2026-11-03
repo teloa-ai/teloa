@@ -10,6 +10,7 @@ import {BusinessScopeService} from './business-scopes.ts'
 import {ArtifactMessageStore,initializeArtifactMessages} from './artifact-messages.ts'
 import {ArtifactSnapshotStore} from './artifact-snapshots.ts'
 import {taskArtifactSource} from './artifact-task-source.ts'
+import {ArtifactAvailabilityService,assertArtifactAvailable,initializeArtifactAvailability} from './artifact-availability.ts'
 const uuid=(value:unknown):value is string=>typeof value==='string'&&/^[a-f0-9]{8}-[a-f0-9]{4}-[1-5][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i.test(value)
 const sourceKey=(source:SavedArtifactSource)=>JSON.stringify([source.kind,source.id,source.scope,source.objectType??''])
 const ownerInput=(owner:string)=>{if(typeof owner!=='string'||!owner.trim()||owner.length>128)throw new WorkError('teloa/forbidden','需要有效的本人身份。')}
@@ -18,7 +19,7 @@ export async function initializeArtifacts(pool:Pool){await initializeArtifactMes
  create table if not exists teloa_artifact_versions (owner_id text not null,artifact_id uuid not null,number integer not null check(number>0),source jsonb not null,content jsonb not null,created_at timestamptz not null,primary key(owner_id,artifact_id,number),foreign key(owner_id,artifact_id) references teloa_artifacts(owner_id,id));
  create table if not exists teloa_artifact_files (owner_id text not null,artifact_id uuid not null,number integer not null,snapshot_id text not null,primary key(owner_id,artifact_id,number,snapshot_id),foreign key(owner_id,artifact_id,number) references teloa_artifact_versions(owner_id,artifact_id,number),foreign key(owner_id,snapshot_id) references teloa_artifact_snapshots(owner_id,snapshot_id));
  create table if not exists teloa_artifact_messages (owner_id text not null,artifact_id uuid not null,number integer not null,snapshot_id text not null,primary key(owner_id,artifact_id,number,snapshot_id),foreign key(owner_id,artifact_id,number) references teloa_artifact_versions(owner_id,artifact_id,number),foreign key(owner_id,snapshot_id) references teloa_artifact_message_snapshots(owner_id,snapshot_id));
-`);await initializeArtifactRevisionRequests(pool) }
+`);await initializeArtifactAvailability(pool);await initializeArtifactRevisionRequests(pool) }
 type SourceResolver=(owner:string,expected:SavedArtifactSource,client:PoolClient)=>Promise<{source:SavedArtifactSource;sessionIds:readonly string[]}>
 function read(row:Record<string,unknown>):SavedArtifactVersion{
  try{
@@ -29,6 +30,8 @@ function read(row:Record<string,unknown>):SavedArtifactVersion{
 export class ArtifactService{
  readonly pool:Pool;readonly identity:{id:()=>string;now:()=>string};readonly resolve:SourceResolver
  constructor(pool:Pool,identity:{id:()=>string;now:()=>string},resolve:SourceResolver){this.pool=pool;this.identity=identity;this.resolve=resolve}
+ availability(owner:string,input:unknown){return new ArtifactAvailabilityService(this.pool,this.identity.now).availability(owner,input)}
+ withdraw(owner:string,input:unknown){return new ArtifactAvailabilityService(this.pool,this.identity.now).withdraw(owner,input)}
  /** 冷恢复只读原运行已落定的精确回执，不把存在任意成果当作本次已发布。 */
  async ownerRunReceipt(owner:string,expected:TaskRun):Promise<boolean>{
   ownerInput(owner);if(!uuid(expected.id))throw new WorkError('teloa/invalid-input','执行身份不正确。')
@@ -59,6 +62,21 @@ export class ArtifactService{
  private async validate(client:PoolClient,owner:string,expected:SavedArtifactSource,content:ArtifactContent){
   const resolved=await this.resolve(owner,expected,client),source=savedArtifactSource(resolved.source)
   if(JSON.stringify(source)!==JSON.stringify(expected))throw new WorkError('teloa/version-conflict','成果来源已变化，请核对当前来源后保存。')
+  // 已保存的受管快照只能沿仍可用的成果继续派生。本人审计下载不授予新引用；
+  // 撤回前已成立的独立副本仍可作为自己的来源，不按相同文件字节连带撤回。
+  const origins=(await client.query(`select 'file' as kind,snapshot_id,artifact_id from teloa_artifact_files where owner_id=$1 and snapshot_id=any($2::text[])
+   union select 'message' as kind,snapshot_id,artifact_id from teloa_artifact_messages where owner_id=$1 and snapshot_id=any($3::text[])
+   order by kind,snapshot_id,artifact_id`,[owner,content.snapshotIds,content.messageSnapshotIds??[]])).rows
+  const snapshots=new Map<string,string[]>()
+  for(const row of origins){const key=row.kind+':'+row.snapshot_id;snapshots.set(key,[...snapshots.get(key)??[],row.artifact_id])}
+  for(const candidates of snapshots.values()){
+   let accepted=false,rejected:unknown
+   for(const artifactId of candidates)try{await assertArtifactAvailable(client,owner,artifactId);accepted=true;break}catch(error){
+    if(!(error instanceof WorkError)||error.code!=='teloa/source-unavailable'||error.details?.reason!=='artifact-withdrawn')throw error
+    rejected=error
+   }
+   if(!accepted)throw rejected
+  }
   let textLength=0;const messages=new Set<string>()
   for(const id of content.messageSnapshotIds??[]){const message=await new ArtifactMessageStore(client).read(owner,id);if(!resolved.sessionIds.includes(message.sessionId))throw new WorkError('teloa/forbidden','原消息不属于成果来源会话。');const key=JSON.stringify([message.sessionId,message.messageId,message.seq]);if(messages.has(key))throw new WorkError('teloa/invalid-input','同一原消息不能重复引用。');messages.add(key);textLength+=message.text.length}
   if(textLength>64000)throw new WorkError('teloa/invalid-input','原消息正文总量超过限制。')
@@ -88,6 +106,12 @@ export class ArtifactService{
   await client.query('select pg_advisory_xact_lock(hashtextextended($1,0))',[JSON.stringify(['artifact',owner,row.requestId])])
   const existing=await client.query('select *,request_spec=$3::jsonb as same_request from teloa_artifacts where owner_id=$1 and request_id=$2',[owner,row.requestId,spec])
   if(existing.rows[0]){if(!existing.rows[0].same_request)throw new WorkError('teloa/conflict','原请求已保存另一份成果。');const first=await this.readVersion(client,owner,existing.rows[0].id,1);if(JSON.stringify({source:first.source,content:first.content})!==spec)throw new WorkError('teloa/storage-corrupt','成果初版与创建回执不一致。');return first}
+  // 不允许把同一固定原来源重新包装成新对象绕过撤回；先锁住已有头，
+  // 撤回与创建只能以其中一个先提交。既有副本的修订/原成功回执不走此新建准入。
+  const origins=(await client.query(`select a.id from teloa_artifacts a where a.owner_id=$1 and exists(
+   select 1 from teloa_artifact_versions v where v.owner_id=a.owner_id and v.artifact_id=a.id
+   and v.source->>'kind'=$2 and v.source->>'id'=$3 and v.source->>'scope'=$4 and v.source->>'version'=$5) order by a.id`,[owner,source.kind,source.id,source.scope,source.version])).rows
+  for(const original of origins)await assertArtifactAvailable(client,owner,original.id)
   await this.validate(client,owner,source,content);const id=this.identity.id()
   await client.query('insert into teloa_artifacts values($1,$2,$3,$4,$5,0)',[id,owner,row.requestId,spec,sourceKey(source)])
   return this.append(client,owner,id,1,source,content)
@@ -107,6 +131,7 @@ export class ArtifactService{
    if(!head)throw new WorkError('teloa/forbidden','成果不存在或不属于本人。')
    if(head.current_version>base){const saved=await this.readVersion(client,owner,row.artifactId,base+1);if(JSON.stringify(saved.source)!==JSON.stringify(source)||JSON.stringify(saved.content)!==JSON.stringify(content))throw new WorkError('teloa/version-conflict','该版本已保存不同修改，请核对新版本。');await client.query('commit');return saved}
    if(head.current_version!==base||head.source_key!==sourceKey(source))throw new WorkError('teloa/version-conflict','成果版本或来源身份不一致。')
+   await assertArtifactAvailable(client,owner,row.artifactId,base)
    const previous=await this.readVersion(client,owner,row.artifactId,base)
    if(content.feedbackId){const feedback=await client.query('select * from teloa_artifact_feedback where owner_id=$1 and id=$2',[owner,content.feedbackId]),ref=feedback.rows[0];if(!ref||ref.artifact_id!==row.artifactId||ref.version!==base||!content.sections.some(section=>section.id===ref.section_id&&section.text!==previous.content.sections.find(old=>old.id===ref.section_id)?.text))throw new WorkError('teloa/invalid-input','反馈必须属于正在修订的原版本和已修改段落。')}
    if(JSON.stringify(previous.content)===JSON.stringify(content))throw new WorkError('teloa/conflict','成果内容未变化。')
@@ -136,6 +161,7 @@ export class ArtifactService{
    if(run.taskId!==request.task_id||run.executor?.kind!=='owner'||run.executor.grantId!==request.source_request_id||run.state!=='ended'||run.evidence?.state!=='ended'||run.evidence.reason!=='completed'||run.stopRequestedAt!==null||fixed?.requestId!==request.id||fixed.artifactId!==request.artifact_id||fixed.baseVersion!==request.base_version||fixed.sectionId!==request.section_id)throw new WorkError('teloa/forbidden','候选不是这次固定反馈工作的成功结果。')
    const admission=await authorize(db,run.id)
    const head=(await db.query('select * from teloa_artifacts where owner_id=$1 and id=$2 for update',[owner,request.artifact_id])).rows[0]
+   await assertArtifactAvailable(db,owner,request.artifact_id,request.base_version)
    const base=await this.readVersion(db,owner,request.artifact_id,request.base_version)
    const feedback=(await db.query('select * from teloa_artifact_feedback where owner_id=$1 and id=$2',[owner,request.feedback_id])).rows[0]
    if(!head||!feedback||feedback.artifact_id!==base.artifactId||feedback.version!==base.number||feedback.section_id!==request.section_id||feedback.body!==fixed.feedback||base.content.sections.find(section=>section.id===request.section_id)?.text!==fixed.originalText||head.source_key!==sourceKey(base.source))throw new WorkError('teloa/storage-corrupt','原成果、反馈与固定修订输入不一致。')

@@ -89,7 +89,7 @@ test('默认预设的完整行为进入模型请求，保留原生工具及权�
  assert.doesNotMatch(system,/Others' recorded actions require receipts from this run/)
  assert.match(JSON.stringify(adapter.requests[0]!.messages),/当前授权仅允许读取测试资料/)
  const facts=runtimeFacts(assembled)
- assert.equal(facts.behavior_version,'2026-10-21.english-identity.v5')
+ assert.equal(facts.behavior_version,'2026-10-25.evidence-calculation.v6')
  assert.deepEqual(facts.modules,['01-core','02-tools','03-planning','08-artifacts'])
  const input=adapter.requests[0]!.messages.find(message=>message.source?.kind==='user'&&message.content.some(block=>block.type==='text'&&block.text==='核对测试资料'))
  assert.ok(input,'追加规则不能把实际用户输入改成工作资料')

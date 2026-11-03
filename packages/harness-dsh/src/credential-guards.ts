@@ -32,11 +32,15 @@ const caseInsensitive=process.platform==='darwin'||process.platform==='win32'
 const fold=(path:string)=>{const nfc=path.normalize('NFC');return caseInsensitive?nfc.toLowerCase():nfc}
 const inside=(child:string,parent:string)=>{const path=relative(fold(parent),fold(child));return path===''||(!path.startsWith('..')&&!isAbsolute(path))}
 /** 不存在的路径取最近存在祖先的 realpath 再拼回剩余部分，符号链接一律按真实位置判定。 */
-function canonicalPath(path:string):string{
+function canonicalPath(path:string,resolvedAncestors?:Map<string,string>):string{
  let current=resolve(path),rest=''
  while(!existsSync(current)){const parent=dirname(current);if(parent===current)return resolve(path);rest=join(basename(current),rest);current=parent}
  // native 版返回磁盘上的真实大小写与 NFC 形式（JS 版按字面返回，`.ENV` 会与 `.env` 失配）。
- try{return join(realpathSync.native(current),rest)}catch{return resolve(path)}
+ try{
+  let canonical=resolvedAncestors?.get(current)
+  if(canonical===undefined){canonical=realpathSync.native(current);resolvedAncestors?.set(current,canonical)}
+  return join(canonical,rest)
+ }catch{return resolve(path)}
 }
 /**
  * 受保护集合（关键决定 8）：凭据文件、主密钥、密钥挂载、数据库口令文件、受管 MCP 旧凭据目录，以及含这些文件副本的备份目录。
@@ -49,7 +53,9 @@ export function protectedRootsFor(input:{providerPaths:readonly string[];runtime
   roots.push(join(input.projectRoot,'密钥'))
   try{for(const name of readdirSync(input.projectRoot))if(name.startsWith('.runtime-upgrade-backup-'))roots.push(join(input.projectRoot,name))}catch{/* 目录不可读时只守已知路径 */}
  }
- return [...new Set(roots.map(canonicalPath))]
+ // 只在本次同步解析内共用已存在祖先；每次安全边界都新建，不跨调用保留路径或授权状态。
+ const resolvedAncestors=new Map<string,string>()
+ return [...new Set([...new Set(roots)].map(path=>canonicalPath(path,resolvedAncestors)))]
 }
 function strings(value:unknown,out:string[]=[]):string[]{
  if(typeof value==='string')out.push(value)
@@ -141,10 +147,14 @@ export function guardDecision(args:unknown,input:{toolName:string;cwd:string;roo
  // 这些宿主工具只处理正文：业务结果只把经映射与授权校验的数据写入候选，交付复核回执只编辑待复核草稿；都不读写文件、不执行命令。
  // HTTP `/?query` 若走文件路径判定会误作根目录通配读取（实跑：复核回执引用 `/?soc_case=…` 被拒，整份交付失败）；真实已存密钥仍由上面的值检查拒绝。
  if(textOnlyHostTools.has(input.toolName))return undefined
- const names=protectedNames(input.roots)
+ let names:ReturnType<typeof protectedNames>,namesRead=false
  for(const text of new Set(texts.flatMap(text=>{const bare=unquoted(text);return [text,bare,braceExpanded(text),braceExpanded(bare)]}))){
   if(markers.test(text)||commandRules.some(rule=>rule.test(text)))return denial
-  if(names&&(names.pattern.test(text)||globNamesHit(text,names.list))&&(readerProgram.test(text)||readSyntax.test(text)))return denial
+  // 文件名兜底只用于读取语法；普通字面路径仍逐次过下面的真实位置检查，不必先 stat 全部凭据根。
+  if(readerProgram.test(text)||readSyntax.test(text)){
+   if(!namesRead){names=protectedNames(input.roots);namesRead=true}
+   if(names&&(names.pattern.test(text)||globNamesHit(text,names.list)))return denial
+  }
   const recursive=recursiveCommand.test(text)||recursiveTool.test(input.toolName),from=bases(text,input)
   for(const raw of pathCandidates(text,from)){
    for(const base of from){

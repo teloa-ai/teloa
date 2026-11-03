@@ -103,3 +103,17 @@ test('调度摘要保留固定汇报群与发生实例的同一任务目标，�
  assert.deepEqual(readPlanScheduleSummary(value,planId),value)
  assert.throws(()=>readPlanScheduleSummary({...value,overview:{...value.overview,latest:{occurrence:{...fixed,reportGroup:{...reportGroup,groupId:taskId}},task:null}}},planId),/调度摘要/)
 })
+
+ test('正常空日跳过可进入调度摘要，不接受虚构阻塞领取',()=>{
+  const skipped={planId,planVersion:3,configVersion:1,occurrenceId:'2026-09-14T09:00[Asia/Singapore]',scheduledAt:'2026-09-14T01:00:00.000Z',skippedAt:'2026-09-14T01:00:02.000Z',reason:'no-work-evidence',blockingClaimId:null,taskId:null}
+  const value={available:true,overview:{planId,planVersion:3,state:'active',nextAt:'2026-09-15T01:00:00.000Z',latest:null,latestSkip:skipped},health:null}
+  assert.deepEqual(readPlanScheduleSummary(value,planId).overview?.latestSkip,skipped)
+  assert.throws(()=>readPlanScheduleSummary({...value,overview:{...value.overview,latestSkip:{...skipped,blockingClaimId:occurrenceId}}},planId),/调度摘要/)
+ })
+
+test('AD02-DST：纽约领取和跳过摘要按固定来源读回',()=>{
+ const fixed={...occurrence,occurrenceId:'2026-11-01T01:30[America/New_York]',scheduledAt:'2026-11-01T05:30:00.000Z',claimedAt:'2026-11-01T05:30:01.000Z',fields:{...occurrence.fields,trigger:{...occurrence.fields.trigger,time:'01:30',timezone:'America/New_York'}}}
+ const latestSkip={planId,planVersion:3,configVersion:1,occurrenceId:fixed.occurrenceId,scheduledAt:fixed.scheduledAt,skippedAt:fixed.claimedAt,reason:'no-work-evidence',blockingClaimId:null,taskId:null}
+ const value={available:true,overview:{planId,planVersion:3,state:'active',nextAt:'2026-11-02T06:30:00.000Z',latest:{occurrence:fixed,task:{id:taskId,state:'waiting'}},latestSkip},health:null}
+ assert.deepEqual(readPlanScheduleSummary(value,planId),value)
+})

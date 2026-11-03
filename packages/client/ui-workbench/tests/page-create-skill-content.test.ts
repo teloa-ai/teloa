@@ -33,3 +33,12 @@ test('会话 Skill 草案即使在确认前被篡改，也不能绕过入口目�
  await assert.rejects(pageCreateAtomicSkillContent({id:'meeting-followup',title:'会议待办整理',version:'1.0.0',categories:[],files:[{path:'../SKILL.md',base64:base64('x')}]}))
  await assert.rejects(pageCreateAtomicSkillContent({id:'meeting-followup',title:'会议待办整理',version:'1.0.0',categories:[],files:[{path:'meeting-followup/SKILL.md',base64:'bad'}]}))
 })
+
+test('固定模型声明经过原创建草案解析与确认后完整保留，缺省继续兼容',async()=>{
+ const modelDependencies=[{catalogId:'teloa.model.sensevoice',version:'1.0.0',usage:'speech-to-text' as const,required:true}]
+ const body={id:'meeting-followup',title:'会议待办整理',version:'1.0.0',categories:[],modelDependencies,files:[{path:'SKILL.md',base64:base64('---\nname: meeting-followup\ndescription: 整理会议记录。\n---\n正文')}]}
+ assert.deepEqual((readPageCreateAtomicSkillBody(body) as typeof body).modelDependencies,modelDependencies)
+ const content=await pageCreateAtomicSkillContent(body)
+ assert.deepEqual(content.modelDependencies,modelDependencies)
+ await assert.rejects(pageCreateAtomicSkillContent({...body,modelDependencies:[]}),/模型依赖/)
+})

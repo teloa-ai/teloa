@@ -8,6 +8,11 @@ const label={
  delivery:['交付要求','交付要求','Delivery requirements','納品要件','납품 요구 사항','Yêu cầu bàn giao','Requisitos de entrega','Exigences de livraison','Lieferanforderungen','Requisitos de entrega'],
 } as const satisfies Record<string,Texts>
 export const CONTINUOUS_DETAIL_MESSAGE_ROWS=[
+ ['error.noWorkEvidence','当天没有可核对的工作，无需生成小结。','當天沒有可核對的工作，無需產生小結。','There is no work to summarize for this day.'],
+ ['continuous.detail.dismissNotice','关闭提示','關閉提示','Dismiss notice'],
+ ['plan.schedule.skipNoWork','当天没有可核对的工作，已跳过小结','當天沒有可核對的工作，已略過小結','No work to summarize for this day; summary skipped'],
+ ['plan.schedule.skipDigestExists','当天已有小结，已跳过重复运行','當天已有小結，已略過重複執行','This day already has a summary; repeat run skipped'],
+
  ['continuous.report.group','汇报群','匯報群組','Report to group'],
  ['continuous.report.none','不向群汇报','不向群組匯報','No group report'],
  ['continuous.report.unavailable','原汇报群暂不可用','原匯報群組暫時無法使用','Original report group unavailable'],

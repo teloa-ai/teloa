@@ -1,3 +1,5 @@
+// @ts-expect-error 本机可信文档夹具为 MJS 模块。
+import {setLocalDocument} from './fixtures/local-document.mjs'
 import assert from 'node:assert/strict'
 import {test,before,after} from 'node:test'
 import {mkdtemp,writeFile,rm,mkdir} from 'node:fs/promises'
@@ -50,7 +52,7 @@ async function fixture(t:any,locale='zh-CN',width=1400){
  const p=await browser.newPage({viewport:{width,height:960}});p.setDefaultTimeout(3000)
  const errors:string[]=[];p.on('pageerror',(e:Error)=>errors.push(e.message));await p.route('**/*',(r:any)=>r.abort())
  t.after(async()=>{await p.close();assert.deepEqual(errors,[])})
- await p.setContent('<html lang="'+locale+'"><body><div id="root"></div></body></html>');await p.addStyleTag({content:':root{--teloa-font-section:18px;--teloa-font-body:14px;--teloa-font-caption:12px;--teloa-font-control:14px;--teloa-weight-heading:600;--teloa-weight-medium:500;--teloa-leading-heading:1.4;--teloa-border:#ddd;--teloa-surface:#fff;--teloa-subtle:#f5f5f2;--teloa-text:#252823;--teloa-muted:#646a62;--teloa-accent:#9e4226}body{font-family:system-ui;margin:16px}'+styles});await p.addScriptTag({content:script})
+ await setLocalDocument(p,'<html lang="'+locale+'"><body><div id="root"></div></body></html>');await p.addStyleTag({content:':root{--teloa-font-section:18px;--teloa-font-body:14px;--teloa-font-caption:12px;--teloa-font-control:14px;--teloa-weight-heading:600;--teloa-weight-medium:500;--teloa-leading-heading:1.4;--teloa-border:#ddd;--teloa-surface:#fff;--teloa-subtle:#f5f5f2;--teloa-text:#252823;--teloa-muted:#646a62;--teloa-accent:#9e4226}body{font-family:system-ui;margin:16px}'+styles});await p.addScriptTag({content:script})
  await p.getByRole('button',{name:locale==='en'?/Customer order/:/客户订单/}).click();await p.waitForFunction(()=>(window as any).dispatchFixture.calls.length===1)
  return p
 }
@@ -129,7 +131,7 @@ test('对象任务列表→真实TaskDetail→固定来源版本；收到成果�
  await p.evaluate(()=>{const s=(window as any).dispatchFixture;s.tasks=true;s.goTask=true;s.render()})
  await p.getByRole('button',{name:'查看任务与成果',exact:true}).click()
  await p.getByRole('heading',{name:'Review order',exact:true}).waitFor()
- await p.getByRole('button',{name:'资料与关联会话',exact:true}).click()
+ await p.getByRole('button',{name:'任务信息',exact:true}).click()
  const returned=p.getByRole('button',{name:'返回来源工作',exact:true})
  await returned.click()
  await p.getByRole('button',{name:'返回当前版本',exact:true}).waitFor()

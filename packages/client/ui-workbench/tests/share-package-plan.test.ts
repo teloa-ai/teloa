@@ -9,6 +9,17 @@ const role=(id:string,name:string,skills:string[]=[])=>({id,name,kind:'employee'
 const base={publisher:'Max',license:'CC-BY-4.0',connections:[],plugins:[]}
 const skillText='---\nname: research-notes\ndescription: Keep notes\n---\n# Research notes\nCollect sources.'
 
+test('F24 明确选取的员工知识正文与关系随包，未选资料不冒充完整知识',()=>{
+ const markdown='# Reviewed procedure\nUse only the supplied evidence.\n'
+ const input={...base,subject:'employee' as const,roles:[role('a','Reviewer')],skills:[],knowledge:[{referenceId:'private-knowledge-id',id:'review-guide',title:'Review guide',version:'1.0.0',text:markdown,roleIds:['a'],sourceVersion:'a'.repeat(64)}]}
+ const pkg=buildSharePlan(input),summary=sharePackageSummary(pkg)
+ assert.equal(summary.knowledge.length,1)
+ assert.deepEqual(summary.roles[0]!.knowledge,['review-guide'])
+ assert.equal(pkg.files.find(file=>file.path==='review-guide.md')?.text,markdown)
+ assert.ok(!JSON.stringify(pkg).includes('private-knowledge-id'))
+ assert.ok(!pkg.requirements.some(value=>value.includes('knowledge sources (1)')))
+})
+
 test('employee plan keeps real skill identity and license, excludes private knowledge, runtime and owner identity',async()=>{
  const pkg=buildSharePlan({...base,subject:'employee',roles:[role('owner-role-id','Researcher',['research-notes','untracked-skill'])],skills:[{name:'research-notes',title:'Research notes',resourceId:'research-notes',version:'1.2.0',text:skillText,license:'MIT',publisher:'Upstream Author',sourceUrl:'https://example.org/skills'}]})
  assert.equal(pkg.format,'teloa.template-share/v2');assert.equal(pkg.subject,'employee')

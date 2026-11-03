@@ -1,5 +1,6 @@
 import {WorkError,isRecord,isBusinessScopeKey} from './index.ts'
-export type BusinessRecordFieldValue={name:string;value:string}
+import type {BusinessFieldValue} from './business-data.ts'
+export type BusinessRecordFieldValue={name:string;value:BusinessFieldValue}
 export type BusinessRecordTarget={scope:string;type:string}
 export type BusinessRecordCreate=BusinessRecordTarget&{requestId:string;title:string;summary:string;fields:BusinessRecordFieldValue[]}
 export type BusinessRecordEdit=BusinessRecordTarget&{id:string;expectedVersion:number;requestId:string;title?:string;summary?:string;fields:BusinessRecordFieldValue[]}
@@ -11,6 +12,7 @@ export const businessRecordDatetimeFormat='YYYY-MM-DDTHH:mm:ss.sssZ'
 export const businessRecordDatetimeExample='2026-10-28T15:11:38.000Z'
 const invalid=()=>new WorkError('teloa/invalid-input','本地业务记录参数不正确。')
 const text=(v:unknown,max:number,empty=false):v is string=>typeof v==='string'&&v===v.trim()&&(empty||v.length>0)&&v.length<=max&&!/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/.test(v)
+const fieldValue=(v:unknown):v is BusinessFieldValue=>typeof v==='boolean'||typeof v==='number'&&Number.isFinite(v)||text(v,2000,true)
 const version=(v:unknown)=>Number.isSafeInteger(v)&&Number(v)>0&&Number(v)<=2147483647
 const uuid=(v:unknown):v is string=>typeof v==='string'&&/^[a-f0-9]{8}-[a-f0-9]{4}-[1-8][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i.test(v)
 function exact(value:unknown,keys:string[]):Record<string,unknown>{if(!isRecord(value)||Object.keys(value).some(k=>!keys.includes(k)))throw invalid();return value}
@@ -23,7 +25,7 @@ function assertTextLength(value:unknown,field:string,maxLength:number):void{
 }
 function fields(value:unknown):BusinessRecordFieldValue[]{
  if(!Array.isArray(value)||value.length>50)throw invalid()
- const result=value.map(v=>{const row=exact(v,['name','value']);if(!text(row.name,80))throw invalid();assertTextLength(row.value,row.name,businessRecordValueLimits.field);if(!text(row.value,businessRecordValueLimits.field,true))throw invalid();return {name:row.name,value:row.value}})
+ const result=value.map(v=>{const row=exact(v,['name','value']);if(!text(row.name,80))throw invalid();assertTextLength(row.value,row.name,businessRecordValueLimits.field);if(!fieldValue(row.value))throw invalid();return {name:row.name,value:row.value}})
  if(new Set(result.map(f=>f.name)).size!==result.length)throw invalid()
  return result.sort((a,b)=>a.name<b.name?-1:a.name>b.name?1:0)
 }
@@ -62,7 +64,7 @@ export function readBusinessRecordSnapshot(value:unknown,scope?:string):import('
  const r=value,keys=['scope','type','id','version','snapshotHash','title','source','observedAt','receivedAt','quality','summary','fields']
  if(keys.some(k=>!Object.hasOwn(r,k))||Object.keys(r).some(k=>!keys.includes(k)&&k!=='deletedAt')||!isBusinessScopeKey(r.scope)||r.scope==='general'||scope!==undefined&&r.scope!==scope||!text(r.type,80)||!isBusinessRecordId(r.id)||!version(r.version)||typeof r.snapshotHash!=='string'||!/^[a-f0-9]{64}$/.test(r.snapshotHash)||!text(r.title,240)||!text(r.source,120)||!stamp(r.observedAt)||!stamp(r.receivedAt)||r.receivedAt<r.observedAt||!['complete','missing'].includes(String(r.quality))||!text(r.summary,4000,true)||!Array.isArray(r.fields)||r.fields.length>50||Object.hasOwn(r,'deletedAt')&&!stamp(r.deletedAt))throw bad()
  const labels:string[]=[]
- for(const field of r.fields){if(!isRecord(field)||Object.keys(field).length!==2||!text(field.label,120)||!text(field.value,2000,true))throw bad();labels.push(field.label)}
+ for(const field of r.fields){if(!isRecord(field)||Object.keys(field).length!==2||!text(field.label,120)||!fieldValue(field.value))throw bad();labels.push(field.label)}
  if(new Set(labels).size!==labels.length)throw bad()
  return r as import('./business-data.ts').BusinessObjectSnapshot
 }

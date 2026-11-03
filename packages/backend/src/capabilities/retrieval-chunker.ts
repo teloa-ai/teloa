@@ -1,22 +1,23 @@
 import {createHash} from 'node:crypto'
 
 /**
- * 端侧中文检索分块器 `teloa.chunk.zh/v1`（规格 §6.4）。
+ * 端侧中文检索分块器 `teloa.chunk.zh/v2`（规格 §6.4）。
  *
  * 规范化换行后按 Markdown 标题与空行切段，段落按字符数合并：目标 300、上限 450；
  * 单个段落超过上限时在句末优先切开，相邻块重叠 60 字。区间以规范化文本的 UTF-16 下标计（半开），
  * 行号从 0 起、含首尾；索引只存区间与摘要，命中后按区间回读原文。参数全部进入版本串，改参数即新索引。
+ * v2 正确匹配代码围栏的类型与长度；边界变化使用新绑定，旧索引由现有对账回收。
  */
 export const retrievalChunkerParameters={target:300,max:450,overlap:60,headingMax:200} as const
 const {target,max,overlap,headingMax}=retrievalChunkerParameters
-export const retrievalChunker=`teloa.chunk.zh/v1;target=${target};max=${max};overlap=${overlap};heading=${headingMax}`
+export const retrievalChunker=`teloa.chunk.zh/v2;target=${target};max=${max};overlap=${overlap};heading=${headingMax}`
 
 export type RetrievalChunk={ordinal:number;start:number;end:number;startLine:number;endLine:number;heading:string|null;text:string;textSha256:string}
 
 export const normalizeRetrievalText=(text:string)=>text.replace(/\r\n?/g,'\n')
 
 const headingLine=/^ {0,3}(#{1,6})(?:[ \t]+(.*))?$/
-const fenceLine=/^ {0,3}(?:```|~~~)/
+const fenceLine=/^ {0,3}(`{3,}|~{3,})(.*)$/
 const sentenceEnd=new Set(['。','！','？','；','!','?',';','\n'])
 const isHigh=(code:number)=>code>=0xd800&&code<=0xdbff
 const isLow=(code:number)=>code>=0xdc00&&code<=0xdfff
@@ -34,13 +35,18 @@ type Section={start:number;end:number;heading:string|null;paragraphs:[number,num
 
 function sections(text:string):Section[]{
  const result:Section[]=[],stack:{level:number;title:string}[]=[]
- let current:Section={start:0,end:0,heading:null,paragraphs:[]},paragraph:[number,number]|null=null,fenced=false,offset=0
+ let current:Section={start:0,end:0,heading:null,paragraphs:[]},paragraph:[number,number]|null=null,offset=0
+ let fence:{marker:string;length:number}|null=null
  const close=()=>{if(paragraph){current.paragraphs.push(paragraph);paragraph=null}}
  for(const line of text.split('\n')){
   const lineStart=offset,lineEnd=offset+line.length
   offset=lineEnd+1
-  const match=fenced?null:headingLine.exec(line)
-  if(fenceLine.test(line))fenced=!fenced
+  const match=fence?null:headingLine.exec(line),delimiter=fenceLine.exec(line)
+  if(delimiter){
+   const marker=delimiter[1]![0]!,length=delimiter[1]!.length,tail=delimiter[2]!
+   if(fence){if(marker===fence.marker&&length>=fence.length&&/^[ \t]*$/.test(tail))fence=null}
+   else if(marker!=='`'||!tail.includes('`'))fence={marker,length}
+  }
   if(match){
    close();current.end=lineStart;result.push(current)
    const level=match[1]!.length,title=(match[2]??'').replace(/[ \t]+#+[ \t]*$/,'').replace(/^#+$/,'').trim()

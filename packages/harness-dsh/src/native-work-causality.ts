@@ -3,7 +3,8 @@ import type {Context} from '@deepseek-ai/cordis'
 import type {Agent} from '@deepseek-ai/dsh-agent'
 import {BasicCompactionEngine} from '@deepseek-ai/dsh-compaction-basic'
 import * as NativeAutoReview from '@deepseek-ai/dsh-experimental-auto-review'
-import {isAgentLoopRequest,type GenerateOptions,type StreamChunk} from '@deepseek-ai/dsh-llm'
+import {createUserMessage,isAgentLoopRequest,type GenerateOptions,type StreamChunk} from '@deepseek-ai/dsh-llm'
+import type {ContextFormed} from '@deepseek-ai/dsh-llm/message'
 import {Session,SessionId,SessionLogOffset,interruptedTurnClosers,type SessionEvent,type SessionHeader,type SessionStore,type UserMessage} from '@deepseek-ai/dsh-session'
 import type {ToolExecution,ToolExecutionInput,ToolExecutionResult,ToolRunContext} from '@deepseek-ai/dsh-tools'
 import type {WorkAccessLease} from '@teloa/backend'
@@ -12,14 +13,17 @@ import {WorkError} from '@teloa/contract'
 import {assertNativeInputAcceptanceCurrent,nativeInputIdentity,type NativeInputAcceptance,type NativeInputIdentity} from './native-input-access.ts'
 import {admitNativeResourceCleanup,enterNativeResourceCleanup,isNativeResourceCleanupScope} from './native-resource-cleanup.ts'
 import type {NativeInputCheckpoint,NativeInputCheckpointInput,NativeInputRoot,NativeProgressCheckpoint,NativeProgressCheckpointInput,NativeInputRestore} from './native-input-checkpoint.ts'
-import {nativeInputRecoveryCandidate} from './native-input-recovery-candidate.ts'
+import {nativeInputRecoveryCandidate,nativePendingInputOccurrence} from './native-input-recovery-candidate.ts'
 import {readSessionEvents} from './session-events.ts'
 import {projectRuntimeInputHooks} from './project-runtime-context.ts'
 import {parseHarnessDirective} from './harness-routing.ts'
+import {assessArithmetic,type ArithmeticReceipt} from './native-arithmetic-verification.ts'
+
+declare module '@deepseek-ai/dsh-llm' {interface MessageSourceMap {'plugin:teloa.arithmetic-verification':{kind:'plugin:teloa.arithmetic-verification'}&ContextFormed}}
 
 type Step={number:number;signal:AbortSignal}
-type InputCause={session:Session;event:Readonly<SessionEvent>;assertCurrent:()=>void}
-type Turn={agent:Agent;session:Session;number:number;signal:AbortSignal;roots:Set<InputCause>;step:Step|undefined}
+type InputCause={session:Session;event:Readonly<SessionEvent>;assertCurrent:()=>void;ordinary?:boolean}
+type Turn={agent:Agent;session:Session;number:number;signal:AbortSignal;roots:Set<InputCause>;step:Step|undefined;calculations:ArithmeticReceipt[];arithmeticReview?:{requests:number}}
 type Model={turn:Turn;step:Step|undefined;options:GenerateOptions;assertCurrent:()=>void;entered:boolean;active:boolean;requestSignal?:AbortSignal;reviewCallId?:string}
 type ToolCause={turn:Turn;step:Step;exec:ToolRunContext;signal:AbortSignal;parent:ToolRunContext['parent'];token:ToolRunContext['token'];agent:Agent;callId:string;rootCallId:string;name:string;arguments:unknown;active:boolean}
 type PendingInput={receipt:InputCause;roots:readonly InputCause[]}
@@ -75,10 +79,23 @@ export function createNativeWorkCausality(ctx:Context,publishContinuation:Publis
  const received=new WeakSet<NativeInputAcceptance>(),acceptedIds=new WeakMap<Session,Set<string>>()
  // 保留同一份真实受理证明，claim 只消费待办，不抹掉后续只读核对所需的根归属。
  const acceptedInputs=new WeakMap<Session,Map<string,PendingInput>>()
- const remember=(message:UserMessage,input:PendingInput)=>{
-  const rows=acceptedInputs.get(input.receipt.session)??new Map<string,PendingInput>()
-  if(rows.has(message.id))throw denied()
-  rows.set(message.id,input);acceptedInputs.set(input.receipt.session,rows)
+ const prepareRemember=(message:UserMessage,input:PendingInput)=>{
+  const {session,event}=input.receipt,previous=acceptedInputs.get(session)?.get(message.id)
+  const events=readSessionEvents(session),after=nativePendingInputOccurrence(events.slice(0,event.seq+1),message.id)
+  if(!after||after.event.seq!==event.seq||canonical(after.message)!==canonical(message))throw denied()
+  let replaced:UserMessage|undefined
+  if(previous){
+   previous.receipt.assertCurrent()
+   const before=nativePendingInputOccurrence(events.slice(0,event.seq),message.id)
+   if(!before||before.event.seq!==previous.receipt.event.seq||pending.get(before.message)!==previous)throw denied()
+   replaced=before.message
+  }
+  // 先完成重复/替换核验及项目 accepted 回调，再同步提交全部内存受理状态。
+  return ()=>{
+   const rows=acceptedInputs.get(session)??new Map<string,PendingInput>()
+   if(replaced)pending.delete(replaced)
+   pending.set(message,input);rows.set(message.id,input);acceptedInputs.set(session,rows)
+  }
  }
  const models=new WeakMap<GenerateOptions,Model>(),planned=new WeakMap<ToolExecutionInput,{turn:Turn;step:Step}>()
  const auxiliaryModels=new WeakMap<object,{entered:boolean;active:boolean;assertCurrent:()=>void}>(),usedAuxiliary=new WeakSet<object>()
@@ -247,7 +264,7 @@ export function createNativeWorkCausality(ctx:Context,publishContinuation:Publis
    request.signal.throwIfAborted()
    if(request.kind==='turn-start'){
     if(turns.has(agent))throw denied()
-    turns.set(agent,{agent,session:agent.session,number:request.turn,signal:request.signal,roots:new Set(),step:undefined});projectRuntimeInputHooks(ctx)?.turnStart(agent);return
+    turns.set(agent,{agent,session:agent.session,number:request.turn,signal:request.signal,roots:new Set(),step:undefined,calculations:[]});projectRuntimeInputHooks(ctx)?.turnStart(agent);return
    }
    if(request.kind==='claim'){
     const turn=turns.get(agent),input=pending.get(request.message)
@@ -416,16 +433,19 @@ export function createNativeWorkCausality(ctx:Context,publishContinuation:Publis
      const actualMessages=agent.inbox.nextTurn
      if(agent.inbox.nextStep.length||canonical(actualMessages)!==canonical(messages))throw denied()
      assertCurrent();publishSignal?.throwIfAborted()
-     bound=agent;published=true
-     const ids=new Set<string>()
+     const ids=new Set<string>(),commits:Array<()=>void>=[]
      for(let index=0;index<actualMessages.length;index++){
       const message=actualMessages[index]!,event=readSessionEvents(agent.session).find(event=>event.seq===events[index]!.seq)
       if(!event||canonical(event)!==canonical(events[index]))throw denied()
       const receipt:InputCause=Object.freeze({session:agent.session,event,assertCurrent})
+      const input={receipt,roots:[receipt]},commit=prepareRemember(message,input)
       projectRuntimeInputHooks(ctx)?.accepted(agent,message)
-      const input={receipt,roots:[receipt]};pending.set(message,input);remember(message,input);ids.add(message.id)
+      commits.push(commit);ids.add(message.id)
      }
-     acceptedIds.set(agent.session,ids);assertCurrent()
+     assertCurrent();publishSignal?.throwIfAborted()
+     bound=agent;published=true
+     for(const commit of commits)commit()
+     acceptedIds.set(agent.session,ids)
     }}
     recovering.set(request.sessionId,proof)
     request.signal.addEventListener('abort',()=>{if(recovering.get(request.sessionId)===proof)recovering.delete(request.sessionId)},{once:true})
@@ -462,6 +482,41 @@ export function createNativeWorkCausality(ctx:Context,publishContinuation:Publis
   assertTool(cause)
   return activeTool.run(cause,next)
  },{global:true,prepend:true})
+ // 只登记实际执行对象的最终成功回执；日志里同名工具或旧轮次不能产生证明。
+ ctx.on('tools/result',(exec,result)=>{
+  const cause=executions.get(exec as ToolRunContext)
+  if(!cause||result.isError||!/^(?:bash|python|run_code|calculate|calculator)$/.test(cause.name)||!cause.turn.roots.size||[...cause.turn.roots].some(root=>!root.ordinary))return
+  assertTool(cause)
+  cause.turn.calculations.push({name:cause.name,arguments:structuredClone(cause.arguments),text:result.content.filter(block=>block.type==='text').map(block=>block.text).join('\n').slice(0,64000)})
+  if(cause.turn.calculations.length>64)cause.turn.calculations.shift()
+ },{global:true})
+ ctx.on('agent/pre-step',async(payload,next)=>{
+  const turn=turns.get(payload.agent)
+  if(turn?.arithmeticReview&&++turn.arithmeticReview.requests>4)throw new WorkError('teloa/conflict','本轮算术核验未在限定步骤内完成，结果仍待核对。')
+  return next()
+ },{global:true})
+ ctx.on('agent/turn-stopping',({agent,turn:turnNumber,signal})=>{
+  const turn=turns.get(agent)
+  if(!turn||turn.number!==turnNumber||turn.signal!==signal||!turn.roots.size||[...turn.roots].some(root=>!root.ordinary||root.session!==turn.session))return
+  current(turn)
+  if(agent.inbox.nextStep.length||agent.inbox.nextTurn.length)return
+  const events=readSessionEvents(turn.session),latest=[...events].reverse(),start=latest.find(event=>event.type==='turn/start'&&event.data.turn===turnNumber)
+  if(!start)return
+  const answer=latest.find(event=>event.type==='assistant/message'&&event.seq>start.seq)
+  if(answer?.type!=='assistant/message'||answer.data.interrupted)return
+  const input=[...turn.roots].flatMap(root=>root.event.type==='agent/inbox/spliced'?root.event.data.inserted.flatMap(message=>message.content.filter(block=>block.type==='text').map(block=>block.text)):[]).join('\n')
+  const result=assessArithmetic(input,answer.data.message.content.filter(block=>block.type==='text').map(block=>block.text).join('\n'),turn.calculations)
+  if(result==='none'||result==='verified'||result==='unverified')return
+  if(turn.arithmeticReview)throw new WorkError('teloa/conflict','本轮算术结论尚未取得一致的实际核验，结果仍待核对；不能作为已完成成果。')
+  turn.arithmeticReview={requests:0}
+  const message=createUserMessage({source:{kind:'plugin:teloa.arithmetic-verification',form:'notice',summary:'算术结论需要实际核验'},content:[{type:'text',text:'This turn contains a derived arithmetic conclusion without matching successful calculation evidence, or an inconsistent equation. Verify the original inputs using an actually authorized calculation tool, then make the complete answer consistent with its actual result. For code-based verification, use one side-effect-free Python print of a pure arithmetic expression with scalar-only stdout; use separate invocations for separate results. Multi-statement programs, variables, labels and additional output cannot establish this bounded receipt check. This is one bounded verification opportunity, not a new task or permission grant. Preserve the current model and reasoning setting. Respect all owner restrictions, including NoCode and denied tools; do not seek wider access or unrelated sources. If verification is unavailable, clearly state that the calculation remains unverified or unknown instead of claiming completion.'}]})
+  const captured=[...turn.roots],identity=nativeInputIdentity(message)
+  const lease=Object.freeze({assertCurrent:()=>current(turn),assertContinuationCurrent:()=>fixedRoots(captured)})
+  const previous=contextPublication,publication:ContextPublication={session:turn.session,identity,roots:captured,accepted:false}
+  contextPublication=publication
+  try{publishContinuation(agent,message,lease,()=>agent.steer(message));if(!publication.accepted)throw denied()}
+  finally{contextPublication=previous}
+ },{global:true})
  installed.add(ctx)
  const assertReady=():void=>{if(closed||!loopReady)throw denied()}
  return Object.freeze({
@@ -555,7 +610,7 @@ export function createNativeWorkCausality(ctx:Context,publishContinuation:Publis
     entry.published=publication?.accepted===true;entry.consumed=true;entry.inFlight=false
    }
   },
-  accept(receipt:NativeInputAcceptance):void{
+  accept(receipt:NativeInputAcceptance,ordinary=false):void{
    assertNativeInputAcceptanceCurrent(receipt)
    const {session,event}=receipt,agent=ctx.agents.get(session.id)
    if(closed||!loopReady||received.has(receipt)||!agent||agent.session!==session||sessions().get(session.id)!==session||event.type!=='agent/inbox/spliced'||event.data.inserted.length!==1)throw denied()
@@ -563,15 +618,15 @@ export function createNativeWorkCausality(ctx:Context,publishContinuation:Publis
    if(publication){
     const identity=nativeInputIdentity(message)
     if(publication.accepted||publication.session!==session||publication.identity.messageId!==identity.messageId||publication.identity.payloadSha256!==identity.payloadSha256)throw denied()
-    publication.accepted=true
    }
-   received.add(receipt)
-   const ids=acceptedIds.get(session)??new Set<string>();ids.add(message.id);acceptedIds.set(session,ids)
    // child 首次输入跨 Session，保留它自己的不可伪造回执；不按 source/lineage 授权。
-   const cause:InputCause=Object.freeze({session,event,assertCurrent:()=>assertNativeInputAcceptanceCurrent(receipt)})
+   const cause:InputCause=Object.freeze({session,event,assertCurrent:()=>assertNativeInputAcceptanceCurrent(receipt),ordinary})
    const input={receipt:cause,roots:publication?.roots??[cause]}
-   pending.set(message,input);remember(message,input)
+   const commit=prepareRemember(message,input)
    projectRuntimeInputHooks(ctx)?.accepted(agent,message,publication!==undefined)
+   commit();received.add(receipt)
+   const ids=acceptedIds.get(session)??new Set<string>();ids.add(message.id);acceptedIds.set(session,ids)
+   if(publication)publication.accepted=true
   },
   /** 捕获真实工具的原受理根；后台通知仍属于原工作，不能成为新的根。 */
   captureToolCompletion(sender:Agent){

@@ -1,4 +1,4 @@
-import type {BusinessObjectSnapshot} from '@teloa/contract'
+import {businessFieldValueText,type BusinessObjectSnapshot} from '@teloa/contract'
 
 /**
  * 业务对象快照进入对话输入前的投影与长度上限。
@@ -52,7 +52,7 @@ export function projectTaskSnapshotBusiness(object:BusinessObjectSnapshot|null|u
  const kept=object.fields.slice(0,TASK_SNAPSHOT_FIELD_COUNT_MAX)
  let clipped=title.clipped||summary.clipped||kept.length<object.fields.length
  const fields=kept.map(field=>{
-  const label=clip(field.label,TASK_SNAPSHOT_FIELD_LABEL_MAX),value=clip(field.value,TASK_SNAPSHOT_FIELD_VALUE_MAX)
+  const label=clip(field.label,TASK_SNAPSHOT_FIELD_LABEL_MAX),value=clip(businessFieldValueText(field.value),TASK_SNAPSHOT_FIELD_VALUE_MAX)
   clipped=clipped||label.clipped||value.clipped
   return {label:label.text,value:value.text}
  })

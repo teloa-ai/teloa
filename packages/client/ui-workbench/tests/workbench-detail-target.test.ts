@@ -99,7 +99,7 @@ test('Frame 只从唯一目标呈现宿主，成果关闭保留目标与组件�
  assert.doesNotMatch(frame,/railShown&&<div/)
  assert.match(frame,/open=\{artifactOpen\}/)
  assert.match(panel,/open = true/)
- assert.match(panel,/\[open, targetKey, inline, expanded, portal\]/)
+ assert.match(panel,/\[open, entryKey, inline, expanded, portal\]/)
 })
 
 // 回归：刷新后落在会话页、页签由 state.detail 重开，而任务与岗位台账只在四个目录视图上装载，
@@ -126,7 +126,7 @@ test('Frame 的任务 / 岗位 / 安全待处理台账装载都接上会话页�
   // 判据要同时进条件与依赖：只改条件，装载不会因为详情打开而重跑。
   assert.match(frame,new RegExp("includes\\(state\\.view\\)\\|\\|(?:state\\.view==='messages'&&state\\.messageMode==='groups'\\|\\|)?conversationLedger\\)void "+load+"\\("),load+' 的装载条件没有接上会话页判据')
   const file=ts.createSourceFile('WorkbenchFrame.tsx',frame,ts.ScriptTarget.Latest,true,ts.ScriptKind.TSX),effects:ts.CallExpression[]=[]
-  const visit=(node:ts.Node)=>{if(ts.isCallExpression(node)&&node.expression.getText(file)==='useEffect'&&node.arguments[0]?.getText(file).includes(load+'('))effects.push(node);ts.forEachChild(node,visit)}
+  const visit=(node:ts.Node)=>{if(ts.isCallExpression(node)&&node.expression.getText(file)==='useEffect'&&node.arguments[0]?.getText(file).includes('||conversationLedger)void '+load+'('))effects.push(node);ts.forEachChild(node,visit)}
   visit(file);assert.equal(effects.length,1,load+' 只有一份装载effect')
   const dependencies=effects[0]!.arguments[1];assert.ok(dependencies&&ts.isArrayLiteralExpression(dependencies))
   assert.ok(dependencies.elements.some(node=>node.getText(file)==='conversationLedger'),load+' 的依赖里缺会话页判据')

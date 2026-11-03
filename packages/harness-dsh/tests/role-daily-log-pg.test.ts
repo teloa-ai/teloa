@@ -16,6 +16,8 @@ import {SessionProjectionRegistry} from '@deepseek-ai/dsh-session-projection'
 import {openResourceDatabase,AutoDreamHabitService,readAutoDreamSetting,AUTO_DREAM_DEFAULT_TRIGGER,ObjectConversationService,PlanOccurrenceService,RoleDailyLogService,RoleMemoryService,RoleService,TaskRunService,TaskService,initializeResources,initializeRoles,initializeTasks,initializeObjectConversations,initializeTaskRuns,initializeArtifactSnapshots,initializeArtifacts,initializeMarkdownKnowledge,initializeRoleMemory,initializeCollaboration,initializePlans,initializePlanOccurrences,initializeBusinessData,initializeBusinessTasks,initializeSecurityRequests,initializeSecurityActions,initializeSecurityApprovals,initializeRoleDailyLogs} from '@teloa/backend'
 import {createRoleDailyLogHandler,registerRoleDailyDigestTools,roleDayEvidenceToolName} from '../src/role-daily-log.ts'
 import {testRoleResponsibility} from './role-test-fixture.ts'
+import {BusinessSpaceService,initializeBusinessSpaces} from '@teloa/backend'
+import {bindArtifactInputSources} from '../src/artifact-input-guard.ts'
 
 let container:StartedPostgreSqlContainer,pool:RoleDailyLogService['pool'],temporary:string
 const identity={id:randomUUID,now:()=>new Date().toISOString()}
@@ -32,6 +34,7 @@ before(async()=>{
  await initializeBusinessData(pool);await initializeBusinessTasks(pool)
  await initializeSecurityRequests(pool);await initializeSecurityActions(pool);await initializeSecurityApprovals(pool)
  await initializeRoleDailyLogs(pool)
+ await initializeBusinessSpaces(pool)
 },{timeout:120000})
 after(async()=>{await pool?.end();await container?.stop();if(temporary)await rm(temporary,{recursive:true,force:true})})
 
@@ -45,6 +48,7 @@ const noonUtc=(day:string)=>day+'T04:00:00.000Z' // 12:00 Asia/Singapore
 async function world(){
  const owner='local:'+randomUUID(),roles=new RoleService(pool,identity)
  const employee=await roles.create(owner,{requestId:randomUUID(),fields:{name:'调查岗',kind:'employee',scopes:['SOC'],duty:'核对来源',dataScope:'已授权资料',executionScope:'代拟',skills:[],knowledge:[],responsibility:testRoleResponsibility,runtimeConfig:{agentPresetId:'standard'}}})
+ await new BusinessSpaceService(pool,identity).ensurePersonal(owner)
  const twin=await roles.create(owner,{requestId:randomUUID(),fields:{name:'我的分身',kind:'twin',scopes:['general'],duty:'代拟',dataScope:'个人工作资料',executionScope:'仅代拟，不执行',skills:[],knowledge:[],responsibility:testRoleResponsibility}})
  // Auto Dream 的开关与时刻只有一个载体：在岗同事的 system-digest 计划。
  const definition={title:'Auto Dream · 每日小结',goal:'习惯观察设置载体。',scope:'SOC',dataScope:'本人已授权资料。',delivery:'结论与证据。',roleId:employee.id,trigger:AUTO_DREAM_DEFAULT_TRIGGER,notificationPolicy:'silent'}
@@ -53,9 +57,7 @@ async function world(){
   values($1,$2,$3,$4,$5,$6,'silent',$7,1,'SOC',1,1,'active',null,null,$8,$8)`,
   [randomUUID(),owner,randomUUID(),JSON.stringify({fields:{...definition,expectedRoleVersion:1},source}),JSON.stringify(definition),JSON.stringify(source),employee.id,nowIso])
  // 证据第 3 类（交办文案）：本人直接建、不经持续计划领取的任务。
- for(const shift of [0,-1])await pool.query(`insert into teloa_tasks(id,owner_id,request_id,request_spec,definition,version,state,created_at,updated_at)
-  values($1,$2,$3,'{}'::jsonb,$4,1,'ready',$5,$5)`,
-  [randomUUID(),owner,randomUUID(),JSON.stringify({title:'核对处置记录',goal:'核对处置记录，需要写验收标准。',scope:'SOC',groupId:null,skills:[]}),noonUtc(singaporeDay(shift))])
+ for(const shift of [0,-1])await new TaskService(pool,{id:randomUUID,now:()=>noonUtc(singaporeDay(shift))}).create(owner,{requestId:randomUUID(),fields:{title:'核对处置记录',goal:'核对处置记录，需要写验收标准。',scope:'SOC'}})
  const logs=new RoleDailyLogService(pool,identity,new RoleMemoryService(pool,identity))
  const habits=new AutoDreamHabitService(pool,identity,logs,readAutoDreamSetting)
  // 与正式宿主同形接线：目录读口先取岗位，分身才惰性生成当天那一条。
@@ -105,6 +107,7 @@ test('习惯观察生成失败不影响目录读取',{timeout:120000},async()=>{
 async function digestWorld(){
  const owner='local:'+randomUUID(),roles=new RoleService(pool,identity),planId=randomUUID(),nowIso=new Date().toISOString()
  const employee=await roles.create(owner,{requestId:randomUUID(),fields:{name:'调查岗',kind:'employee',scopes:['SOC'],duty:'核对来源',dataScope:'已授权资料',executionScope:'代拟',skills:[],knowledge:[],responsibility:testRoleResponsibility,runtimeConfig:{agentPresetId:'standard'}}})
+ await new BusinessSpaceService(pool,identity).ensurePersonal(owner)
  const definition={title:'Auto Dream · 每日小结',goal:'收口今天的工作并提出记忆候选。',scope:'SOC',dataScope:'本人已授权资料。',delivery:'结论与证据。',roleId:employee.id,trigger:AUTO_DREAM_DEFAULT_TRIGGER,notificationPolicy:'silent'}
  const source={kind:'system-digest',roleId:employee.id}
  await pool.query(`insert into teloa_plans(id,owner_id,request_id,request_spec,definition,source,notification_policy,role_id,role_version,scope,version,config_version,state,archived_reason,archived_at,created_at,updated_at)
@@ -135,6 +138,7 @@ async function digestGate(owner:string,sessionId:string,inspect:()=>Promise<{id:
   run:id=>runs.skillScope(owner,{sessionId:id}),
   digestRun:id=>logs.digestRun(owner,{runId:id}),
   evidence:value=>logs.dayEvidence(owner,value),
+  bindSourceInput:(current,evidence)=>{assert.equal(current,sessionId);return bindArtifactInputSources(owner,pool,current,evidence)},
   submit:(value,requestId,input)=>logs.submitDigest(owner,value,requestId,input),
  })
  return {ctx,read:()=>ctx.tools.execute({agent,name:roleDayEvidenceToolName,arguments:{},callId:ToolCallId('digest-1'),signal:AbortSignal.timeout(30000)})}
@@ -142,6 +146,8 @@ async function digestGate(owner:string,sessionId:string,inspect:()=>Promise<{id:
 
 test('立即运行派出的 system-digest 运行被判成小结运行，当日证据读得出来',{timeout:120000},async t=>{
  const f=await digestWorld(),now=new Date().toISOString()
+ const work=await new TaskService(pool,identity).create(f.owner,{requestId:randomUUID(),fields:{title:'核对处置记录',goal:'核对当日告警',scope:'SOC'},assignee:{roleId:f.employee.id,expectedVersion:1}})
+ const business=await startRun(f.owner,f.employee.id,work.id,randomUUID())
  const occurrences=new PlanOccurrenceService(pool,identity)
  const {occurrence}=await occurrences.trigger(f.owner,{planId:f.planId,requestId:randomUUID(),expectedVersion:1,expectedConfigVersion:1,now})
  assert.match(occurrence.occurrenceId,/^manual:/)
@@ -155,7 +161,8 @@ test('立即运行派出的 system-digest 运行被判成小结运行，当日�
  const evidence=JSON.parse(text.text) as {day:string;roleId:string;runs:{id:string}[]}
  assert.equal(evidence.roleId,f.employee.id)
  assert.equal(evidence.day,singaporeDay(0))
- assert.ok(evidence.runs.some(item=>item.id===started.run.id))
+ assert.ok(evidence.runs.some(item=>item.id===business.run.id))
+ assert.ok(!evidence.runs.some(item=>item.id===started.run.id))
 })
 
 test('普通任务的运行里两个小结工具一律拒绝',{timeout:120000},async t=>{
@@ -166,4 +173,10 @@ test('普通任务的运行里两个小结工具一律拒绝',{timeout:120000},a
  const result=await gate.read()
  assert.equal(result.isError,true)
  assert.match(JSON.stringify(result),/这两个工具只能在 Auto Dream 的每日小结运行里使用。/)
+})
+
+test('空工作日立即运行在建任务和原生运行前拒绝，不把日结自身算工作',{timeout:120000},async()=>{
+ const f=await digestWorld(),now=new Date().toISOString(),occurrences=new PlanOccurrenceService(pool,identity)
+ await assert.rejects(occurrences.trigger(f.owner,{planId:f.planId,requestId:randomUUID(),expectedVersion:1,expectedConfigVersion:1,now}),{code:'teloa/no-work-evidence'})
+ for(const table of ['teloa_plan_occurrences','teloa_tasks','teloa_task_runs','teloa_role_daily_logs'])assert.equal((await pool.query('select count(*)::int n from '+table+' where owner_id=$1',[f.owner])).rows[0].n,0)
 })

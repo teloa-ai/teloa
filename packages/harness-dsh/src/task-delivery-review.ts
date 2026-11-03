@@ -1,3 +1,4 @@
+import {hasTaskRunApprovalContextReceipt} from './task-run-approval-context.ts'
 import {createHash} from 'node:crypto'
 import {isDeepStrictEqual} from 'node:util'
 import type {Agent} from '@deepseek-ai/dsh-agent'
@@ -826,6 +827,11 @@ export function isDeliveryReviewInProgress(agent:Pick<Agent,'ctx'|'session'>):bo
  const gate=reviewSubmissionGates.get(agent)
  return !!gate&&gate.reviewing()&&agent.ctx.tools.get(deliveryReviewToolName,agent)===gate.definition
 }
+/** 组装发生在 pre-step 之前：可见性只核本 Agent 的存活租约与精确登记定义，不代替执行准入。 */
+export function ownsDeliveryReviewToolDefinition(agent:Pick<Agent,'ctx'>):boolean{
+ const gate=reviewSubmissionGates.get(agent)
+ return !!gate&&agent.ctx.tools.get(deliveryReviewToolName,agent)===gate.definition
+}
 /**
  * 任务工具闸的精确准入：仅当调用方 agent 持有存活复核租约、该租约正在接收本单元唯一一次提交，且执行的就是该租约在
  * 本 agent 作用域登记的同一工具定义时为真。不按名称前缀放行，不改岗位授权清单，其他 agent、旧请求或租约释放后一律为假。
@@ -875,7 +881,14 @@ export function leaseTaskDeliveryReview(agent:Pick<Agent,'ctx'|'session'>,lease:
  // corrected：整租约唯一一次纠正名额，由 schema 纠参、语义校验纠正与漏交补交共享。reviewBase：复核开始前本轮已用的起草步数。
  let schemaFailure:string|undefined,bodyFailure:string|undefined,corrected=false,reviewBase=0
  const releases:Array<()=>void>=[]
- const release=()=>{for(const dispose of releases.splice(0))dispose()}
+ let restoreReviewPresentation:(()=>void)|undefined
+ const restorePresentation=()=>{const dispose=restoreReviewPresentation;restoreReviewPresentation=undefined;dispose?.()}
+ const release=()=>{try{restorePresentation()}finally{for(const dispose of releases.splice(0))dispose()}}
+ const ensureReviewPresentation=()=>{
+  // run_code 是 SDK 保留的呈现 transport，不能被工具登记或过滤伪造；公开 get 按当前作用域解析。
+  // 已有 native（含固定文本/小结的同层租约）不再声明，避免覆盖调用方的呈现或触发同层冲突。
+  if(!restoreReviewPresentation&&agent.ctx.tools.get('run_code',agent))restoreReviewPresentation=agent.ctx.tools.presentAs('native')
+ }
  const reviewing=()=>phase==='rewrite'
  const accepting=()=>reviewing()&&entered!==undefined&&submission===undefined&&rejected===undefined
  const roundPrefix=()=>current?.round===1?'rewrite':'rewrite-r'+current?.round
@@ -989,6 +1002,7 @@ export function leaseTaskDeliveryReview(agent:Pick<Agent,'ctx'|'session'>,lease:
  }
  const fail=(reason:string,message:string):never=>{
   lease.trace({runId:lease.runId,state:'failed',...reviewing()?{phase:'rewrite' as const,round:current?.round??rounds.length+1,...metadata(),...pending?{unit:pending.unit}:{}}:{},reason,draftMessageId})
+  restorePresentation()
   throw new WorkError('teloa/conflict',message)
  }
  const notice=(summary:string,text:string)=>createUserMessage({source:{kind:deliveryReviewSource,form:'notice',summary,runId:lease.runId,draftMessageId,...summary==='待校正草稿'&&!('skip'in material)&&material.toolEvidence?{toolEvidence:material.toolEvidence}:{}},content:[{type:'text',text}]})
@@ -1022,6 +1036,10 @@ export function leaseTaskDeliveryReview(agent:Pick<Agent,'ctx'|'session'>,lease:
   for(const seq of shadowed){
    if(allowed.has(seq))continue
    const index=events.findIndex(event=>event.seq===seq),event=events[index]
+   if(event?.type==='user/message'&&prior.steps.some(step=>{
+    const prompt=events.find(row=>row.type==='user/message'&&row.data.id===step.prompt.id)
+    return prompt?.type==='user/message'&&hasTaskRunApprovalContextReceipt(agent,{id:lease.runId,sessionId:String(agent.session.id),nativeRequestId:lease.requestId},event,step,prompt.seq)
+   })){allowed.add(seq);continue}
    // 只接纳官方为本次 review-only 声明紧随 request/header 生成的精确 registry 过渡。
    // 不按 developer 角色或工具名批删；额外文案、伪造引用、非本步与未知过渡都收错。
    if(event?.type!=='developer/message'||event.data.message.source.kind!=='tool-registry'||!prior.steps.some(step=>step.turn===event.data.turn&&step.step===event.data.step))return refuse()
@@ -1046,11 +1064,12 @@ export function leaseTaskDeliveryReview(agent:Pick<Agent,'ctx'|'session'>,lease:
   signal.throwIfAborted()
   const {round,text,units,blocks,tag}=current!,sha=draftSha256(text),{first,last}=unitBlocks(unit)
   const message=notice(planSummary,deliveryReviewPrompt(material as ReviewMaterial,{index:unit,total:units.length,blockCount:blocks.length,tag,...round>=3?{round}:{},...units[unit]!.criteria?{criteria:units[unit]!.criteria}:{},blocks:blocks.slice(first,last+1).map((block,offset)=>({id:first+offset+1,text:text.slice(block.start,block.end)}))},reviewPhase(),reviewPhase()==='verify'?requiredIssues(unit):[])+(reviewPhase()==='verify'?'\n宿主当前依赖块核对表：'+JSON.stringify(requiredBlocks(unit)):''))
+  ensureReviewPresentation()
   pending={message,unit,...replace?{replace}:{}};entered=undefined;submission=undefined;rejected=undefined;schemaFailure=undefined;bodyFailure=undefined;phase='rewrite'
   try{await lease.publish(message,signal)}
   catch(error){
    lease.trace({runId:lease.runId,state:'failed',phase:'rewrite',round,unit,draftMessageId,reason:error instanceof Error?error.name:'Error'})
-   phase='done';pending=undefined
+   phase='done';pending=undefined;restorePresentation()
    throw error
   }
   lease.trace({runId:lease.runId,state:'requested',phase:'rewrite',round,unit,draftMessageId,inputSha256:sha,...metadata()})
@@ -1179,7 +1198,7 @@ export function leaseTaskDeliveryReview(agent:Pick<Agent,'ctx'|'session'>,lease:
      try{await lease.publish(reminder,signal)}
      catch(error){
       lease.trace({runId:lease.runId,state:'failed',phase:'rewrite',round,unit,draftMessageId,reason:error instanceof Error?error.name:'Error'})
-      phase='done';pending=undefined
+      phase='done';pending=undefined;restorePresentation()
       throw error
      }
      lease.trace({runId:lease.runId,state:'requested',phase:'rewrite',round,unit,draftMessageId,reason:'correction:'+step.skip,inputSha256:draftSha256(text),...metadata()})
@@ -1256,7 +1275,7 @@ export function leaseTaskDeliveryReview(agent:Pick<Agent,'ctx'|'session'>,lease:
    const edits=rounds.reduce((total,entry)=>total+entry.edits,0)
    agent.session.append('user/message',createUserMessage({source:{kind:deliveryReviewSource,form:'notice',summary:appliedSummary,runId:lease.runId,draftMessageId,planMessageId:step.messageId,draftSha256:draftSha256(draftText),deliverySha256:draftSha256(output),edits,rounds:[...rounds],protocol:protocol(),phase:'verify',verdict:'accepted',sourceCatalogSha256,checks,...!('skip'in material)&&material.toolEvidence?{toolEvidence:material.toolEvidence}:{}},content:[{type:'text',text:output}]}),{surfaceOp:'append',sourceEventSeqs:[draftSeq!,...planSeqs]})
    lease.trace({runId:lease.runId,state:'delivered',phase:'rewrite',round,draftMessageId,edits,outputSha256:draftSha256(output),...metadata(),verdict:'accepted'})
-   phase='done';pending=undefined
+   phase='done';pending=undefined;restorePresentation()
   }))
  }catch(error){release();throw error}
  return release

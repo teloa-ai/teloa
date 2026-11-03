@@ -3,6 +3,7 @@ import type {Pool} from 'pg'
 import {WorkError} from '@teloa/contract'
 import {readRunRoleMemories,type RunRoleMemory} from './role-memory.ts'
 import type {MemoryProvider} from './hindsight-memory.ts'
+import {ArtifactAvailabilityService} from './artifact-availability.ts'
 
 export type RoleExperienceInput={ownerId:string;roleId:string;roleVersion:number;scope:string;query:string;load:()=>Promise<RunRoleMemory[]>;signal?:AbortSignal}
 export type RoleExperienceContext={mode:'confirmed'|'recalled';text:string;sources:RunRoleMemory[]}
@@ -44,7 +45,7 @@ function confirmed(memories:RunRoleMemory[]):RoleExperienceContext{
  return {mode:'confirmed',sources,text:contents.length?JSON.stringify({notice,mode:'confirmed',contents}):''}
 }
 
-/** 只消费调用方已核验的授权快照；外部请求不持有业务事务或数据库连接。 */
+/** 消费调用方已核验的快照；成果派生经验外发期间单独持有来源准入锁，避免撤回穿过发送。 */
 export class RoleExperienceService{
  private readonly pool:Pool;private readonly provider:MemoryProvider;private readonly options:{providerKey:string;timeoutMs?:number}
  constructor(pool:Pool,provider:MemoryProvider,options:{providerKey:string;timeoutMs?:number}){this.pool=pool;this.provider=provider;this.options=options}
@@ -59,6 +60,13 @@ export class RoleExperienceService{
   const fingerprintBefore=fingerprint(initial)
   try{
    const signal=AbortSignal.any([AbortSignal.timeout(this.options.timeoutMs??4000),...(input.signal?[input.signal]:[])])
+   const references=initial.flatMap(memory=>memory.source.kind==='artifact'?[{artifactId:memory.source.id,version:memory.source.version}]:[])
+   const withSources=async<T>(operation:()=>Promise<T>):Promise<T>=>{
+    // Task/Run 来源的独立确认经验不连带撤回；只有实际 artifact 固定来源进入此准入。
+    const admission=references.length?await new ArtifactAvailabilityService(this.pool,()=>new Date().toISOString()).admitInput(input.ownerId,{references}):undefined
+    try{signal.throwIfAborted();return await operation()}finally{await admission?.release()}
+   }
+   const retain=(operationId:string)=>withSources(()=>this.provider.retain(bankId,operationId,documents(initial),signal))
    const installation=(await this.pool.query('select id from teloa_memory_installation where singleton=true')).rows[0]?.id
    if(typeof installation!=='string')throw Error()
    const bankId='teloa_'+digest([installation,this.options.providerKey,input.ownerId,input.roleId,input.roleVersion,input.scope,fingerprintBefore])
@@ -67,20 +75,20 @@ export class RoleExperienceService{
    if(!state)throw Error()
    if(state.state!=='ready'){
     // 相同 operation_id 在回执丢失或重启后重试，不新增提炼任务。
-    if(inserted.rows.length){await this.provider.retain(bankId,state.operation_id,documents(initial),signal);return freshConfirmed()}
+    if(inserted.rows.length){await retain(state.operation_id);return freshConfirmed()}
     const status=await this.provider.operation(bankId,state.operation_id,signal)
-    if(status==='not_found'){await this.provider.retain(bankId,state.operation_id,documents(initial),signal);return freshConfirmed()}
+    if(status==='not_found'){await retain(state.operation_id);return freshConfirmed()}
     if(status==='failed'||status==='cancelled'){
      // 只对明确终止的操作更换身份；冷恢复也保留 5 分钟间隔与最多三次的预算。
      await this.pool.query("update teloa_role_experience_indexes set retry_after=now()+interval '5 minutes' where bank_id=$1 and operation_id=$2 and retry_after is null",[bankId,state.operation_id])
      const retry=await this.pool.query("update teloa_role_experience_indexes set operation_id=$3,attempts=attempts+1,retry_after=null where bank_id=$1 and operation_id=$2 and state='pending' and attempts<3 and retry_after<=now() returning operation_id",[bankId,state.operation_id,randomUUID()])
-     if(retry.rows[0])await this.provider.retain(bankId,retry.rows[0].operation_id,documents(initial),signal)
+     if(retry.rows[0])await retain(retry.rows[0].operation_id)
      return freshConfirmed()
     }
     if(status!=='completed')return freshConfirmed()
     await this.pool.query("update teloa_role_experience_indexes set state='ready' where bank_id=$1 and operation_id=$2",[bankId,state.operation_id])
    }
-   const facts=await this.provider.recall(bankId,input.query.slice(0,8000),signal)
+   const facts=await withSources(()=>this.provider.recall(bankId,input.query.slice(0,8000),signal))
    const currentRows=await input.load()
    if(Array.isArray(currentRows)&&currentRows.length>512)return freshConfirmed()
    const current=validate(currentRows)
@@ -97,7 +105,7 @@ export class RoleExperienceService{
    return text.length<=24000?{mode:'recalled',text,sources}:confirmed(current)
   }catch(error){
    input.signal?.throwIfAborted()
-   if(error instanceof WorkError&&['teloa/forbidden','teloa/storage-corrupt','teloa/version-conflict','teloa/conflict'].includes(error.code))throw error
+   if(error instanceof WorkError&&['teloa/forbidden','teloa/storage-corrupt','teloa/version-conflict','teloa/conflict','teloa/source-unavailable'].includes(error.code))throw error
    return freshConfirmed()
   }
  }

@@ -53,7 +53,7 @@ props.pageCreateApi=createPageCreateApi(async(endpoint,input)=>{
  throw Error('Unexpected page-create endpoint: '+endpoint)
 });
 props.planDraftApi=createPlanDraftApi(async()=>{throw Error('员工原稿不得进入计划确认')});a.openOriginal=()=>props.planDraftApi.openDraft(pageDraft(first));a.replaceRoleApi=()=>{props.roleApi=new Proxy(props.roleApi,{});commitRoleApiReplacement(()=>renderFrame())};
-const oldRoles=props.roleApi;props.roleApi=new Proxy(oldRoles,{get:(target,key)=>key==='list'?async()=>a.created:key==='create'?async fields=>{a.calls.push({endpoint:'roles/create',fields});const id='created-'+(fields.name==='资料研究员甲'?first:second),row={...fields,id,ownerId:'self',state:'active',version:1,createdAt:a.readAt,updatedAt:a.readAt};a.created.push(row);return row}:Reflect.get(target,key)});
+const oldRoles=props.roleApi;props.roleApi=new Proxy(oldRoles,{get:(target,key)=>key==='list'?async()=>a.created:key==='create'?async fields=>{a.calls.push({endpoint:'roles/create',fields});const id='created-'+(fields.name==='资料研究员甲'?first:second),row={...fields,id,ownerId:'self',state:'active',version:1,createdAt:a.readAt,updatedAt:a.readAt};a.created.push(row);if(a.mode==='hold-create'){a.createPending=true;await new Promise(resolve=>a.releaseCreate=resolve)}return row}:Reflect.get(target,key)});
 // 真实员工详情会复制资料API；须提供有自有方法的正式空目录，不能沿用空Proxy冒充。
 props.resourceApi={directory:async()=>({drafts:[],resources:[]}),sources:async()=>[]};
 const before={scope:'sales',type:'customer',id:'one',version:1,snapshotHash:'a'.repeat(64),title:'固定客户',source:'本地记录',observedAt:a.readAt,receivedAt:a.readAt,quality:'complete',summary:'原备注',fields:[{label:'备注',value:'原备注'}]};
@@ -67,7 +67,7 @@ a.nextGeneration=()=>{a.generation++;a.items=[rowDraft(second)];for(const listen
  entry=patch(entry,"const frameRoot=",setup+"const frameRoot=")
  temp=await mkdtemp(join(root,'.runtime-work-attention-frame-'));await writeFile(join(temp,'fixture.tsx'),entry)
  const stubbed=new Set(isolated.map(name=>join(client,name+'.tsx')))
- const built=await build({configFile:false,root,logLevel:'error',define:{'process.env.NODE_ENV':'"development"'},plugins:[{name:'isolate-unrelated-pages',enforce:'pre',load:async id=>{if(!stubbed.has(id))return;const text=await readFile(id,'utf8');return [...text.matchAll(/export (?:async )?(?:function|const|class) (\w+)/g)].map(match=>'export const '+match[1]+'=()=>null;').join('\n')}}],build:{write:false,minify:false,rollupOptions:{external:(id:string)=>id.startsWith('node:'),treeshake:{moduleSideEffects:false}},lib:{entry:join(temp,'fixture.tsx'),name:'WorkAttentionFrameFixture',formats:['iife']}}})
+ const built=await build({configFile:false,root,logLevel:'error',define:{'process.env.NODE_ENV':'"development"'},plugins:[{name:'isolate-unrelated-pages',enforce:'pre',load:async id=>{if(id===join(client,'WorkbenchFrame.tsx'))return patch(await readFile(id,'utf8'),'const [tasks,setTasks]=useState(emptyTaskPreview)','const [tasks,setTasks]=useState(emptyTaskPreview);(window as any).frameFixture.taskState=()=>tasks');if(!stubbed.has(id))return;const text=await readFile(id,'utf8');return [...text.matchAll(/export (?:async )?(?:function|const|class) (\w+)/g)].map(match=>'export const '+match[1]+'=()=>null;').join('\n')}}],build:{write:false,minify:false,rollupOptions:{external:(id:string)=>id.startsWith('node:'),treeshake:{moduleSideEffects:false}},lib:{entry:join(temp,'fixture.tsx'),name:'WorkAttentionFrameFixture',formats:['iife']}}})
  const bundle=Array.isArray(built)?built[0]:built;assert.ok(bundle&&'output'in bundle)
  script=bundle.output.find(item=>item.type==='chunk')!.code;styles=bundle.output.flatMap(item=>item.type==='asset'&&item.fileName.endsWith('.css')?[String(item.source)]:[]).join('\n')
  browser=await loadPlaywright().chromium.launch(launchOptions())
@@ -98,7 +98,7 @@ test('真实WorkHome到需要你原草案，settle成功才关闭来源并打开
  await page.evaluate(()=>(window as any).frameFixture.attention.releaseSettle())
  await page.waitForFunction(()=>(window as any).frameFixture.state().rolePreview?.id==='created-10000000-0000-4000-8000-000000000001')
  const created=page.getByRole('dialog',{name:'资料研究员甲',exact:true});await created.waitFor()
- await created.getByText('核对本轮资料',{exact:true}).waitFor()
+ await created.getByRole('complementary',{name:'员工档案',exact:true}).getByText('核对本轮资料',{exact:true}).waitFor()
  assert.equal((await calls(page,'page-create-drafts/settle')).length,1)
  assert.equal((await calls(page,'page-create-drafts/settle'))[0].input.expectedBodyHash,'a'.repeat(64))
  assert.equal(await page.getByRole('button',{name:'打开对象 原草案甲',exact:true}).count(),0)
@@ -166,6 +166,35 @@ test('会话员工原稿读取中更换角色API，旧结果不得打开新本�
  await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))))
  assert.equal(await page.getByRole('dialog').count(),0)
  assert.deepEqual(await calls(page,'roles/create'),[]);assert.deepEqual(await calls(page,'page-create-drafts/settle'),[])
+})
+
+test('已经打开的员工原稿更换角色API后立即关闭，不重新读取并借新身份确认',async t=>{
+ const page=await mount(t)
+ await page.evaluate(()=>(window as any).frameFixture.attention.openOriginal())
+ const source=page.getByRole('dialog');await source.getByRole('button',{name:'确认',exact:true}).waitFor()
+ const reads=(await calls(page,'page-create-drafts/read')).length
+ await page.evaluate(()=>(window as any).frameFixture.attention.replaceRoleApi())
+ await source.waitFor({state:'hidden'})
+ assert.equal((await calls(page,'page-create-drafts/read')).length,reads)
+ assert.deepEqual(await calls(page,'roles/create'),[]);assert.deepEqual(await calls(page,'page-create-drafts/settle'),[])
+})
+
+test('员工创建已受理但回执迟到时换角色API，旧员工不合并进新工作台或落定旧稿',async t=>{
+ const page=await mount(t)
+ await page.evaluate(()=>(window as any).frameFixture.attention.openOriginal())
+ const source=page.getByRole('dialog');await source.getByRole('button',{name:'确认',exact:true}).waitFor()
+ await page.evaluate(()=>(window as any).frameFixture.attention.mode='hold-create')
+ await source.getByRole('button',{name:'确认',exact:true}).click()
+ await page.waitForFunction(()=>(window as any).frameFixture.attention.createPending)
+ await page.evaluate(()=>{const a=(window as any).frameFixture.attention;a.created=[];a.replaceRoleApi()})
+ await source.waitFor({state:'hidden'})
+ await page.evaluate(()=>(window as any).frameFixture.attention.releaseCreate())
+ await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))))
+ const state=await page.evaluate(()=>(window as any).frameFixture.state())
+ assert.equal(await page.evaluate(()=>(window as any).frameFixture.taskState().roles.some((role:any)=>role.id.startsWith('created-'))),false)
+ assert.equal(state.rolePreview,null)
+ assert.equal((await calls(page,'roles/create')).length,1)
+ assert.deepEqual(await calls(page,'page-create-drafts/settle'),[])
 })
 
 

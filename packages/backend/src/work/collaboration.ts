@@ -1,8 +1,10 @@
 import {readActiveGroupWorkResource} from './group-work-resources.ts'
 import {createHash} from 'node:crypto'
+import {assertArtifactAvailable} from './artifact-availability.ts'
 import type {Pool,PoolClient} from 'pg'
 import {presentGroupMessages,readStoredGroupMessage as readMessage} from './group-message-presentation.ts'
 import {GroupMessagePageService} from './group-message-pages.ts'
+import {readMessageSources} from './group-message-sources.ts'
 import {GroupReadingService,initializeGroupReading} from './group-reading.ts'
 import {GroupMentionService} from './group-mentions.ts'
 import {groupMessageBodyInput,type GroupMessageBody} from '@teloa/contract'
@@ -401,6 +403,7 @@ export class CollaborationService{
 
   messagePage(owner:string,input:unknown){return new GroupMessagePageService(this.pool).page(owner,input)}
   messageSearch(owner:string,input:unknown){return new GroupMessagePageService(this.pool).search(owner,input)}
+  messageSources(owner:string,input:unknown){return readMessageSources(this.pool,owner,input)}
 
   /** 认证工作台按原群、原消息读取固定全文；不会触发运行、路由或改动任何消息。 */
   async messageBody(owner:string,input:unknown):Promise<GroupMessageBody>{
@@ -697,6 +700,7 @@ export class CollaborationService{
         // 契约只保证 36 位十六进制与连字符，未必是合法 uuid；先判形状再查，避免把格式问题变成数据库异常。
         const found=uuid(reference.id)?(await client.query('select 1 from teloa_artifact_versions where owner_id=$1 and artifact_id=$2 and number=$3 for share',[owner,reference.id,reference.version])).rows[0]:undefined
         if(!found)throw new WorkError('teloa/forbidden',referenceInvisible)
+        await assertArtifactAvailable(client,owner,reference.id,reference.version)
       }
     }
   }

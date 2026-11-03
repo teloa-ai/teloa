@@ -18,7 +18,8 @@ test('明确指定且仍可访问的成果优先，并默认进入预览',()=>{
  const rows=[{id:'main',primary:true,updatedAt:'2026-09-12T00:00:00Z'},{id:'fixed',primary:false,updatedAt:'2026-09-11T00:00:00Z'}]
  assert.deepEqual(artifactPanelStart(rows,'fixed'),{mode:'read',selected:'fixed'})
  assert.deepEqual(artifactPanelViews(),['preview','files','versions'])
- assert.match(source,/useState<ArtifactPanelView>\('preview'\)/)
+ assert.match(source,/useState<ArtifactReaderDrawer\|null>\(null\)/)
+ assert.match(source,/<ArtifactReader[^>]*selection=\{readerSelection\}/)
 })
 
 test('指定成果不存在时不回退打开另一份成果',()=>{
@@ -36,7 +37,7 @@ test('关闭成果不渲染 dialog，面板不再自行读取文件；切换宿�
  assert.match(source,/if \(!open \|\| !target\)\s+return null/)
  assert.doesNotMatch(source,/artifactFileApi\.read\(/)
  assert.match(source,/useLayoutEffect\(\(\) => \{\s+if \(!open \|\| !target\)/)
- assert.match(source,/\[targetKey, open\]/)
+ assert.match(source,/\[entryKey, open\]/)
  assert.doesNotMatch(source,/setDrafts\(\{\}\)|setFileDrafts\(\{\}\)/)
 })
 
@@ -80,11 +81,13 @@ test('更多操作按组合渲染真实表单、按钮和能力边界',()=>{
  assert.doesNotMatch(previewActive,/aria-label="follow"|ACTIVE|LOCKED/)
 })
 
-test('既有成果使用三段信息架构，低频操作按需展开',()=>{
- assert.match(source,/aria-label=\{t\("artifact\.panel\.text\.044"\)\}/)
- assert.match(source,/onClick=\{\(\) => setView\('preview'\)\}>\{t\("artifact\.panel\.text\.045"\)\}<\/button>/)
- assert.match(source,/onClick=\{\(\) => setView\('files'\)\}>\{t\("artifact\.panel\.text\.046"\)\}<\/button>/)
- assert.match(source,/onClick=\{\(\) => setView\('versions'\)\}>\{t\("artifact\.panel\.text\.047"\)\}<\/button>/)
- assert.match(source,/<summary>\{t\("artifact\.panel\.text\.082"\)\}<\/summary>/)
+test('既有成果默认阅读，版本、来源、附件与低频操作按需打开',async()=>{
+ const reader=await readFile(new URL('../src/client/ArtifactReader.tsx',import.meta.url),'utf8')
+ for(const view of ['history','details','files','advanced']){
+  assert.ok(source.includes("readerDrawer==='"+view+"'"),view+' drawer')
+  assert.ok(reader.includes("drawer('"+view+"')"),view+' entry')
+ }
+ assert.match(reader,/<div className=\{css\.body\}>/)
+ assert.doesNotMatch(reader,/text\.044|setView\(/)
  assert.doesNotMatch(source,/<button[^>]*>\{t\("artifact\.panel\.text\.027"\)\}<\/button>/)
 })

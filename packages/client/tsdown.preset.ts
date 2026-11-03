@@ -1,6 +1,6 @@
 // Teloa 社区版客户端构建预设；输出遵循 DSH 模块加载协议。
 import { readFile } from 'node:fs/promises'
-import { basename, dirname, resolve as resolvePath } from 'node:path'
+import { basename, dirname, relative, resolve as resolvePath } from 'node:path'
 import { transform } from 'lightningcss'
 import type { TsdownPlugin, UserConfig } from 'tsdown'
 
@@ -57,7 +57,14 @@ function styleInjectionModule(
   return source.join('\n')
 }
 
-function cssModulesInlinePlugin(id: string, registrationModule?: string): TsdownPlugin {
+function cssModulesInlinePlugin(id: string, assetRoot: string, registrationModule?: string): TsdownPlugin {
+  // 绝对路径只供构建进程读取；虚拟模块名与 CSS 哈希使用相对路径，避免泄露本机目录。
+  const files = new Map<string,string>()
+  const virtualFile = (prefix:string,file:string,suffix='') => {
+    const key=prefix+relative(assetRoot,file).split('\\').join('/')+suffix
+    files.set(key,file)
+    return key
+  }
   return {
     name: 'teloa-css-modules-inline',
     // 只解析 emitted 路径，不像 vendor 版 sourceAssetPath() 那样在缺失时反查
@@ -65,24 +72,26 @@ function cssModulesInlinePlugin(id: string, registrationModule?: string): Tsdown
     // importer 永远不会落在 lib/types 下。这条前提只在 entry 固定时成立——
     // 未来若引入 host/client 两阶段构建（entry 改指向编译产物），这里要补回反查分支。
     resolveId(source: string, importer: string | undefined) {
-      if (/\.(svg|jpe?g|webp|png)$/i.test(source)) return '\0teloa-image:' + resolvePath(dirname(importer || ''), source)
+      if (/\.(svg|jpe?g|webp|png)$/i.test(source)) return virtualFile('\0teloa-image:',resolvePath(dirname(importer || ''), source))
       if (!source.endsWith('.module.css')) return null
       const abs = importer !== undefined ? resolvePath(dirname(importer), source) : source
-      return CSS_VIRTUAL_PREFIX + abs + CSS_VIRTUAL_SUFFIX
+      return virtualFile(CSS_VIRTUAL_PREFIX,abs,CSS_VIRTUAL_SUFFIX)
     },
     async load(virtualId: string) {
       if (virtualId.startsWith('\0teloa-image:')) {
-        const fileId = virtualId.slice('\0teloa-image:'.length)
+        const fileId = files.get(virtualId)
+        if(!fileId)throw Error('图片虚拟模块没有登记来源。')
         const asset = await readFile(fileId)
         const mimeType = fileId.endsWith('.svg') ? 'image/svg+xml' : fileId.endsWith('.webp') ? 'image/webp' : fileId.endsWith('.png') ? 'image/png' : 'image/jpeg'
         return 'export default ' + JSON.stringify(`data:${mimeType};base64,${asset.toString('base64')}`)
       }
       if (!virtualId.startsWith(CSS_VIRTUAL_PREFIX)) return null
-      const fileId = virtualId.slice(CSS_VIRTUAL_PREFIX.length, -CSS_VIRTUAL_SUFFIX.length)
+      const fileId = files.get(virtualId)
+      if(!fileId)throw Error('样式虚拟模块没有登记来源。')
       this.addWatchFile(fileId)
       const source = await readFile(fileId)
       const { code, exports: cssExports } = transform({
-        filename: fileId,
+        filename: relative(assetRoot,fileId).split('\\').join('/'),
         code: source,
         cssModules: { pattern: '[hash]_[local]' },
         minify: true,
@@ -101,7 +110,7 @@ export function standaloneClientBundle(packageId: string, entry: string, styleRu
     dts: false, clean: false, minify: true,
     define: {'process.env.NODE_ENV': JSON.stringify('production')},
     deps: {neverBundle: () => false, alwaysBundle: () => true},
-    plugins: [cssModulesInlinePlugin(`${packageId}/guest`, resolvePath(styleRuntime))],
+    plugins: [cssModulesInlinePlugin(`${packageId}/guest`, dirname(resolvePath(entry)), resolvePath(styleRuntime))],
     inputOptions: {resolve: {mainFields: ['module', 'browser', 'main']}},
     outputOptions: {entryFileNames: 'guest.js', codeSplitting: false},
   }
@@ -140,7 +149,7 @@ export function clientBundle(packageId: string, clientEntry: string): UserConfig
       neverBundle: isRequested,
       alwaysBundle: (specifier: string) => !isRequested(specifier),
     },
-    plugins: [cssModulesInlinePlugin(packageId)],
+    plugins: [cssModulesInlinePlugin(packageId,dirname(resolvePath(clientEntry)))],
     /*
      * 优先走依赖的 ESM 入口。
      *
@@ -191,7 +200,7 @@ export function clientChunk(packageId: string, name: string, entry: string): Use
       neverBundle: isRequested,
       alwaysBundle: (specifier: string) => !isRequested(specifier),
     },
-    plugins: [cssModulesInlinePlugin(packageId)],
+    plugins: [cssModulesInlinePlugin(packageId,dirname(resolvePath(entry)))],
     inputOptions: {
       resolve: { mainFields: ['module', 'browser', 'main'] },
     },

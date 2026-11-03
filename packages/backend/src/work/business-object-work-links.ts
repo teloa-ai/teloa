@@ -3,6 +3,7 @@ import type {Pool,PoolClient} from 'pg'
 import {WorkError,readBusinessWorkLink,readBusinessWorkResultPublish,readBusinessRecordReceipt,readBusinessRecordGet,businessObjectReference,readBusinessWorkCursor,readBusinessResultCursor,type BusinessWorkCursor,type BusinessResultCursor,type BusinessWorkPage,type BusinessObjectWorkLink,type BusinessWorkResultVersion} from '@teloa/contract'
 import {businessObjectSnapshotHash,readBusinessObjectSnapshot} from './business-data.ts'
 import type {BusinessChangeSetOrigin} from './business-change-sets.ts'
+import {assertArtifactAvailable} from './artifact-availability.ts'
 type Actor={ownerId:string;scopeIds:string[]}
 type Ports={authorizeSession:(db:PoolClient,actor:Actor,scope:string,sessionId:string)=>Promise<void>}
 const digest=(value:unknown)=>createHash('sha256').update(JSON.stringify(value)).digest('hex')
@@ -48,7 +49,7 @@ export class BusinessObjectWorkLinkService{
     if(!current||current.object_version!==ref.version||current.snapshot_hash!==ref.snapshotHash)throw new WorkError('teloa/version-conflict','原业务对象已更新，请基于当前来源开始工作。')
     const revision=(await db.query('select coalesce(max(revision),0)::int revision from teloa_business_work_results where owner_id=$1 and work_link_id=$2 and slot=$3',[actor.ownerId,link.id,input.slot])).rows[0].revision
     if(revision!==input.expectedRevision)throw new WorkError('teloa/version-conflict','已有更新成果，请读取固定版本后继续。')
-    for(const artifact of input.artifactVersions){const stored=(await db.query('select source from teloa_artifact_versions where owner_id=$1 and artifact_id=$2 and number=$3',[actor.ownerId,artifact.artifactId,artifact.number])).rows[0];if(!stored||stored.source.kind!=='session'||stored.source.id!==source.sessionId)throw new WorkError('teloa/forbidden','成果版本不属于原本人工作会话。')}
+    for(const artifact of input.artifactVersions){await assertArtifactAvailable(db,actor.ownerId,artifact.artifactId,artifact.number);const stored=(await db.query('select source from teloa_artifact_versions where owner_id=$1 and artifact_id=$2 and number=$3',[actor.ownerId,artifact.artifactId,artifact.number])).rows[0];if(!stored||stored.source.kind!=='session'||stored.source.id!==source.sessionId)throw new WorkError('teloa/forbidden','成果版本不属于原本人工作会话。')}
     const result:BusinessWorkResultVersion={workLinkId:link.id,slot:input.slot,revision:revision+1,digest:digest({input,source,reference:link.reference}),summary:input.summary,state:input.state,source:{sessionId:source.sessionId,messageId:source.messageId,seq:source.seq},artifactVersions:input.artifactVersions,createdAt:this.identity.now()}
     await db.query('insert into teloa_business_work_results values($1,$2,$3,$4,$5)',[actor.ownerId,link.id,input.slot,result.revision,JSON.stringify(result)]);return result
    })

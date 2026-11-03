@@ -16,6 +16,9 @@ import {AUTO_DREAM_DEFAULT_TRIGGER,AUTO_DREAM_PLAN_TITLE,ensureAutoDreamPlan,pau
 import {testRoleResponsibility} from './role-test-fixture.ts'
 import {initializeCollaboration} from '../src/work/collaboration.ts'
 import {initializeGroupAgentGrants} from '../src/work/group-agent-grants.ts'
+import {workAccess} from '../src/work/work-access.ts'
+import {initializeTeloaDatabase} from '../src/work/initialize-database.ts'
+import {insertRoleRun} from './role-work-test-fixture.ts'
 
 let container:StartedPostgreSqlContainer,pool:Pool
 const identity={id:randomUUID,now:()=>new Date().toISOString()}
@@ -24,7 +27,7 @@ before(async()=>{
  container=await new PostgreSqlContainer('postgres:17-alpine').start();pool=new Pool({connectionString:container.getConnectionUri()})
  await initializeRoles(pool);await initializeCollaboration(pool);await initializeGroupAgentGrants(pool);await initializeTasks(pool);await initializeRoleLifecycle(pool);await initializePlans(pool)
  // 标签表在场，未登记范围的判据才真实生效（缺表时 `registered` 整体放行）。
- await initializeBusinessSpaces(pool);await initializeBusinessScopes(pool);await initializePlanOccurrences(pool)
+ await initializeBusinessSpaces(pool);await initializeBusinessScopes(pool);await initializePlanOccurrences(pool);await initializeTeloaDatabase(pool)
 })
 after(async()=>{await pool?.end();await container?.stop()})
 const inTransaction=async<T>(run:(client:PoolClient)=>Promise<T>):Promise<T>=>{
@@ -38,6 +41,12 @@ const services=()=>{const plans=new PlanService(pool,identity),ports={plans};ret
 const employee=(scopes:string[])=>({name:'调查岗',kind:'employee' as const,scopes,duty:'调查',dataScope:'资料',executionScope:'仅声明',skills:[],knowledge:[],responsibility:testRoleResponsibility})
 const command=(roleId:string,expectedVersion:number,action:string)=>({roleId,expectedVersion,action,reason:'本人调整职责安排'})
 const systemPlans=async(owner:string)=>(await new PlanService(pool,identity).list(owner,{})).filter(plan=>plan.source.kind==='system-digest')
+// 系统小结只在已有工作证据的日期领取，不能用空日冒充可执行周期。
+async function seedDailyWork(owner:string,roleId:string,roleVersion:number){
+ const task=await new TaskService(pool,identity).create(owner,{requestId:randomUUID(),fields:{title:'合成工作来源',goal:'核对合成来源',scope:'general'},assignee:{roleId,expectedVersion:roleVersion}})
+ const runId=await insertRoleRun(pool,owner,roleId,task.id)
+ await pool.query('update teloa_task_runs set role_version=$2,created_at=$3 where id=$1',[runId,roleVersion,'2029-12-31T10:00:00.000Z'])
+}
 
 test('新同事在岗即带一条启用的 Auto Dream 每日小结计划，范围取升序第一个',async()=>{
  const owner=randomUUID(),{roles}=services()
@@ -103,6 +112,45 @@ test('新同事沿用最早系统计划的时刻与时区，即使那条已被�
  const second=await roles.create(owner,{requestId:randomUUID(),fields:{...employee(['SOC']),name:'核对岗'}})
  const plan=(await systemPlans(owner)).find(item=>item.roleId===second.id)!
  assert.equal(plan.state,'active');assert.deepEqual(plan.trigger,trigger)
+})
+
+test('Auto Dream 时刻更新不授予执行权：职责换版、暂停、移出范围与退役不锁死全局时刻',async()=>{
+ const owner=randomUUID(),{roles,plans,lifecycle}=services()
+ let role=await roles.create(owner,{requestId:randomUUID(),fields:employee(['SOC','general'])})
+ let plan=(await systemPlans(owner))[0]!
+ const update=async(time:string)=>{
+  const previous=plan
+  plan=await plans.change(owner,{planId:plan.id,requestId:randomUUID(),expectedVersion:plan.version,expectedConfigVersion:plan.configVersion,action:'update',fields:{title:plan.title,goal:plan.goal,dataScope:plan.dataScope,delivery:plan.delivery,trigger:{...plan.trigger,time},notificationPolicy:plan.notificationPolicy,completionPolicy:plan.completionPolicy}})
+  assert.equal(plan.state,previous.state);assert.equal(plan.roleVersion,previous.roleVersion)
+  assert.equal(plan.configVersion,previous.configVersion+1);assert.equal(plan.trigger.time,time)
+ }
+ role=await roles.edit(owner,{roleId:role.id,expectedVersion:role.version,fields:{...employee(['SOC','general']),duty:'更新后的只读核对职责'}})
+ assert.notEqual(role.version,plan.roleVersion)
+ await update('20:10')
+ role=(await lifecycle.change(owner,command(role.id,role.version,'pause'))).role;plan=(await systemPlans(owner))[0]!
+ await update('20:20');assert.equal(plan.state,'paused')
+ role=await roles.edit(owner,{roleId:role.id,expectedVersion:role.version,fields:employee(['general'])})
+ role=(await lifecycle.change(owner,command(role.id,role.version,'resume'))).role;plan=(await systemPlans(owner))[0]!
+ await update('20:30');assert.equal(plan.state,'paused')
+ await assert.rejects(plans.change(owner,{planId:plan.id,requestId:randomUUID(),expectedVersion:plan.version,action:'enable'}),{code:'teloa/forbidden'})
+ role=(await lifecycle.change(owner,command(role.id,role.version,'retire'))).role;plan=(await systemPlans(owner))[0]!
+ await update('20:40');assert.equal(plan.state,'paused')
+ await assert.rejects(plans.change(owner,{planId:plan.id,requestId:randomUUID(),expectedVersion:plan.version,action:'enable'}),{code:'teloa/conflict'})
+ for(const changed of [{goal:'越界业务任务'},{trigger:{...plan.trigger,cadence:'weekly'}},{completionPolicy:{kind:'manual'}}]){
+  await assert.rejects(plans.change(owner,{planId:plan.id,requestId:randomUUID(),expectedVersion:plan.version,expectedConfigVersion:plan.configVersion,action:'update',fields:{title:plan.title,goal:plan.goal,dataScope:plan.dataScope,delivery:plan.delivery,trigger:plan.trigger,notificationPolicy:plan.notificationPolicy,completionPolicy:plan.completionPolicy,...changed}}),{code:'teloa/forbidden'})
+  assert.deepEqual((await systemPlans(owner))[0],plan)
+ }
+ const fresh=await roles.create(owner,{requestId:randomUUID(),fields:{...employee(['general']),name:'新在岗核对员'}})
+ assert.equal((await systemPlans(owner)).find(row=>row.roleId===fresh.id)?.trigger.time,'20:40')
+ assert.equal((await roles.get(owner,role.id))?.state,'retired')
+})
+
+test('普通计划时刻更新仍核对冻结岗位版本，不能借系统小结规则绕过',async()=>{
+ const owner=randomUUID(),{roles,plans}=services(),role=await roles.create(owner,{requestId:randomUUID(),fields:employee(['general'])})
+ const plan=await plans.create(owner,{requestId:randomUUID(),fields:{title:'本人计划',goal:'核对已给资料',scope:'general',dataScope:'本人资料',delivery:'私有核对稿',roleId:role.id,expectedRoleVersion:role.version,trigger:AUTO_DREAM_DEFAULT_TRIGGER,notificationPolicy:'silent'},source:{kind:'manual'}})
+ await roles.edit(owner,{roleId:role.id,expectedVersion:role.version,fields:{...employee(['general']),duty:'修订职责'}})
+ await assert.rejects(plans.change(owner,{planId:plan.id,requestId:randomUUID(),expectedVersion:plan.version,expectedConfigVersion:plan.configVersion,action:'update',fields:{title:plan.title,goal:plan.goal,dataScope:plan.dataScope,delivery:plan.delivery,trigger:{...plan.trigger,time:'20:00'},notificationPolicy:plan.notificationPolicy}}),{code:'teloa/version-conflict'})
+ assert.equal((await plans.list(owner,{})).find(row=>row.id===plan.id)?.trigger.time,'23:30')
 })
 
 test('本人手动暂停的小结不会因员工复岗重新启用，已有日程和修订号不变',async()=>{
@@ -180,7 +228,7 @@ test('未登记的业务范围不拖垮招聘：取升序第一个已登记的�
 
 test('复岗后系统计划仍能领到日程，同一次岗位版本变化仍挡住人类计划',async()=>{
  const owner=randomUUID(),{roles,lifecycle,plans}=services()
- const role=await roles.create(owner,{requestId:randomUUID(),fields:employee(['SOC'])})
+ const role=await roles.create(owner,{requestId:randomUUID(),fields:employee(['general','SOC'])})
  // 人类自建的普通计划与系统计划并排，经历同一次暂停/复岗（岗位版本 1→3）。
  const manual=await plans.create(owner,{requestId:randomUUID(),fields:{title:'每日资料核对',goal:'核对新增资料并形成明确结论。',scope:'SOC',dataScope:'已授权资料。',delivery:'变化与待核对项。',roleId:role.id,expectedRoleVersion:1,trigger:{kind:'schedule',cadence:'daily',weekday:1,time:'09:00',timezone:'Asia/Singapore'},notificationPolicy:'attention'},source:{kind:'manual'}})
  const enabled=await plans.change(owner,{planId:manual.id,requestId:randomUUID(),expectedVersion:manual.version,action:'enable'})
@@ -191,6 +239,7 @@ test('复岗后系统计划仍能领到日程，同一次岗位版本变化仍�
  assert.equal(system.state,'active');assert.equal(system.roleVersion,1)
  const occurrences=new PlanOccurrenceService(pool,identity),now='2030-01-01T00:00:00.000Z'
  // 系统计划的 role_version 恒为创建时的 1，但它随岗位生命周期走，领取不该被岗位版本挡住。
+ await seedDailyWork(owner,role.id,resumed.role.version)
  const claimed=await occurrences.claim(owner,{planId:system.id,now})
  assert.ok(claimed.occurrence);assert.equal(claimed.dispatch,true)
  assert.equal(claimed.occurrence.roleVersion,resumed.role.version)
@@ -205,14 +254,16 @@ test('复岗后系统计划仍能领到日程，同一次岗位版本变化仍�
 
 test('系统计划领取后岗位再次变化，旧领取不得改绑新版本派发',async()=>{
  const owner=randomUUID(),{roles,lifecycle}=services()
- const role=await roles.create(owner,{requestId:randomUUID(),fields:employee(['SOC'])})
+ const role=await roles.create(owner,{requestId:randomUUID(),fields:employee(['general','SOC'])})
  const plan=(await systemPlans(owner))[0]!,occurrences=new PlanOccurrenceService(pool,identity),now='2030-01-01T00:00:00.000Z'
+ await seedDailyWork(owner,role.id,role.version)
  const {occurrence}=await occurrences.claim(owner,{planId:plan.id,now})
  assert.ok(occurrence)
  await lifecycle.change(owner,command(role.id,1,'pause'))
  await lifecycle.change(owner,command(role.id,2,'resume'))
+ const beforeTasks=await new TaskService(pool,identity).list(owner,{})
  await assert.rejects(occurrences.dispatchTask(owner,{claimId:occurrence.id,taskRequestId:occurrence.taskRequestId,now}),{code:'teloa/version-conflict'})
- assert.equal((await new TaskService(pool,identity).list(owner,{})).length,0)
+ assert.deepEqual(await new TaskService(pool,identity).list(owner,{}),beforeTasks,'旧领取不得创建任务，也不改已有工作来源')
 })
 
 test('零业务范围与零计划的直呼路径都返回 undefined，不报错',async()=>{
@@ -228,4 +279,17 @@ test('私有系统小结不能通过普通计划编辑扩大发布到群',async(
  const owner=randomUUID(),{roles,plans}=services();await roles.create(owner,{requestId:randomUUID(),fields:employee(['general'])})
  const plan=(await systemPlans(owner))[0]!
  await assert.rejects(plans.change(owner,{planId:plan.id,requestId:randomUUID(),expectedVersion:plan.version,expectedConfigVersion:plan.configVersion,action:'update',fields:{title:plan.title,goal:plan.goal,dataScope:plan.dataScope,delivery:plan.delivery,trigger:plan.trigger,notificationPolicy:plan.notificationPolicy,completionPolicy:plan.completionPolicy,groupId:randomUUID()}}),{code:'teloa/forbidden'})
+})
+
+test('系统小结只改时刻也必须通过 automation edit 许可，拒绝时不写新版本',async()=>{
+ const owner=randomUUID(),{roles,plans}=services();await roles.create(owner,{requestId:randomUUID(),fields:employee(['general'])})
+ const plan=(await systemPlans(owner))[0]!,requests:unknown[]=[]
+ let mode:'deny'|'revoke'='deny',checks=0
+ workAccess.installPolicy(async request=>{if(request.kind==='capability'&&request.ownerId===owner&&request.capability==='automation'&&request.operation==='edit'){requests.push(request);if(mode==='deny')throw Error('本轮测试拒绝编辑');return {assertCurrent(){if(++checks===3)throw Error('写入后提交前失效')}}}return {assertCurrent(){}}})
+ await assert.rejects(plans.change(owner,{planId:plan.id,requestId:randomUUID(),expectedVersion:plan.version,expectedConfigVersion:plan.configVersion,action:'update',fields:{title:plan.title,goal:plan.goal,dataScope:plan.dataScope,delivery:plan.delivery,trigger:{...plan.trigger,time:'20:00'},notificationPolicy:plan.notificationPolicy,completionPolicy:plan.completionPolicy}}),{code:'teloa/forbidden'})
+ assert.equal(requests.length,1);assert.deepEqual((await systemPlans(owner))[0],plan)
+ mode='revoke';const requestId=randomUUID()
+ await assert.rejects(plans.change(owner,{planId:plan.id,requestId,expectedVersion:plan.version,expectedConfigVersion:plan.configVersion,action:'update',fields:{title:plan.title,goal:plan.goal,dataScope:plan.dataScope,delivery:plan.delivery,trigger:{...plan.trigger,time:'20:00'},notificationPolicy:plan.notificationPolicy,completionPolicy:plan.completionPolicy}}),{code:'teloa/forbidden'})
+ assert.equal(checks,3);assert.deepEqual((await systemPlans(owner))[0],plan)
+ assert.equal((await pool.query('select 1 from teloa_plan_changes where owner_id=$1 and request_id=$2',[owner,requestId])).rowCount,0)
 })

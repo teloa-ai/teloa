@@ -64,3 +64,11 @@ test('任务上下文按来源回执读取 AppSec 固定对象，不回落 SOC �
  const context=await createObjectConversationApi(async()=>({task,role:null,link:row,business:{source,object}})).taskContext(id,id,1)
  assert.deepEqual(context.business,{source,object})
 })
+
+
+test('自动执行会话投影是只读关联，目录接受而变更回执不能冒充手工写成功',async()=>{
+ const projected={...row,kind:'role',sessionId:'task-run-original',conversationId:'canonical-conversation',readOnly:true,displayTitle:'合成告警-A'};
+ const api=createObjectConversationApi(async()=>[projected]);assert.equal((await api.list('role',id))[0]?.readOnly,true);assert.equal((await api.bySession(projected.sessionId))[0]?.readOnly,true);assert.equal((await api.list('role',id))[0]?.displayTitle,'合成告警-A');
+ await assert.rejects(createObjectConversationApi(async()=>projected).change({...request,kind:'role',sessionId:projected.sessionId}),/只读/);
+ for(const patch of [{readOnly:false},{readOnly:'true'},{kind:'task'}])await assert.rejects(createObjectConversationApi(async()=>[{...projected,...patch}]).list(patch.kind==='task'?'task':'role',id),/关联/);
+});

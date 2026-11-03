@@ -5,6 +5,7 @@ import {readFileSync} from 'node:fs'
 import {registerHooks} from 'node:module'
 import ts from 'typescript'
 import * as React from 'react'
+import * as markdownCore from '../src/client/knowledge-markdown-core.ts'
 import {employeeCopy} from '../src/client/employee-copy.ts'
 import {twinDraftCopy} from '../src/client/i18n/locales/twin-drafts.ts'
 import {personalAvatarInitials,personalDisplayName} from '../src/client/personal-identity.ts'
@@ -263,6 +264,12 @@ function mountPanel(initial:PanelProps){
   if(id.endsWith('.module.css'))return {default:cssProxy}
   if(id==='lucide-react')return {Play:()=>null,ShieldCheck:()=>null,MessageSquare:()=>null,FileText:()=>null,MoreHorizontal:()=>null,TriangleAlert:()=>null}
   if(id.endsWith('auto-dream-day.js'))return {autoDreamObservationDay:(nowIso:string)=>nowIso.slice(0,10)}
+  if(id.endsWith('knowledge-markdown-core.js'))return markdownCore
+  if(id.endsWith('knowledge-markdown.js')){
+   const source=readFileSync(new URL('../src/client/knowledge-markdown.tsx',import.meta.url),'utf8'),exported:Record<string,unknown>={}
+   new Function('require','exports','React',ts.transpileModule(source,{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.React}}).outputText)(require,exported,hooks)
+   return exported
+  }
   if(id.endsWith('i18n/provider.js'))return {useI18n:()=>({t:zh,locale:'zh-CN',dateTime:(value:string)=>String(value).slice(0,10)})}
   if(id.endsWith('i18n/errors.js'))return {localizeWorkError:(_locale:string,cause:unknown)=>cause instanceof Error?cause.message:String(cause)}
   throw Error('未声明的组件依赖：'+id)

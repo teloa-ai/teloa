@@ -118,17 +118,16 @@ function ConnectionCatalog({connections,i18n}:Pick<CapabilitySnapshot,'connectio
   </div>
 }
 
-export function BindingStatus({sessionId,useInput,work,i18n}:PropsRuntime<'conversation.input.dock'> & WorkInjected & I18nInjected) {
+export function BindingStatus({sessionId,work,i18n}:PropsRuntime<'conversation.input.dock'> & WorkInjected & I18nInjected) {
   useSyncExternalStore(i18n.subscribe,i18n.getSnapshot)
   const t=i18n.t
   const state=useSyncExternalStore(work.subscribe,work.getSnapshot)
-  const pendingAttachments=useInput(input=>input.attachmentIds.length)
   if(state.sessionId!==sessionId||state.status==='idle')return null
-  if(state.status==='ready'&&pendingAttachments===0)return null
+  // 原生附件数量不能证明 IndexedDB 是否保存成功；草稿通知与逐项恢复由附件所有者负责。
+  if(state.status==='ready')return null
   return <div className={`${css.binding} ${dock.strip}${state.status==='failed'?' '+dock.danger:''}`} role={state.status==='failed'?'alert':'status'}>
-    {state.status!=='ready'&&<span>{state.status==='loading'?t('capabilities.binding.loadingDetailed'):localizeWorkError(i18n.getSnapshot().locale,state.error)}</span>}
+    <span>{state.status==='loading'?t('capabilities.binding.loadingDetailed'):localizeWorkError(i18n.getSnapshot().locale,state.error)}</span>
     {state.status==='failed'&&<button type="button" className={css.trigger} onClick={()=>void work.retry()}>{t('capabilities.binding.retry')}</button>}
-    {pendingAttachments>0&&<span>{t('capabilities.attachments.pending',{count:pendingAttachments})}</span>}
   </div>
 }
 

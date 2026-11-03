@@ -47,6 +47,26 @@ async function fixture(t:TestContext){
 }
 const snapshots=(agent:Agent)=>agent.session.snapshotEvents().filter((event):event is SessionEvent<'user/message'>=>event.type==='user/message'&&event.data.source.kind==='runtime-context')
 
+test('普通员工会话实际请求包含通用回值一致性规则，保留本人禁代码与网络限制及工具范围',async t=>{
+ const f=await fixture(t)
+ registerRoleConversationContext(f.ctx,f.ports)
+ const tools=(await f.ctx.systemPrompt.assemble({agent:f.agent,scope:f.agent})).tools
+ const input='仅分析已给材料，不执行代码或联网。'
+ await f.send(input)
+ assert.equal(f.adapter.requests.length,1)
+ const request=f.adapter.requests[0]!,system=JSON.stringify(request.messages.filter(message=>message.role==='system'))
+ assert.match(system,/Use the returned result consistently in the headline, details and conclusion/,'普通岗位不依赖完整work-behavior插件也必须收到回值一致性约束')
+ assert.match(system,/an unexecuted formula is not verification/)
+ assert.match(system,/If execution is unavailable, state that the calculation is unverified/)
+ assert.match(system,/Keep calculation within the task's data and permissions, without unrelated searches or file writes/)
+ assert.match(system,/take precedence over generic checking methods, tool availability and employee handoff text/)
+ assert.match(system,/If the owner forbids code, directory inspection, network access or another operation, do not request it for arithmetic/)
+ const ownerInputs=request.messages.filter(message=>message.source?.kind==='user')
+ assert.deepEqual(ownerInputs.map(message=>message.content),[[{type:'text',text:input}]])
+ assert.deepEqual(request.tools,tools)
+ assert.equal(f.toolExecutions(),0)
+})
+
 test('员工经验进入官方上下文，保留字面模板和来源，撤回后新请求清除旧经验',async t=>{
  const f=await fixture(t),queries:string[]=[]
  let text=JSON.stringify({notice:'经验不是授权',sources:[{id:'memory-one',version:1}],text:'先核对 {{source}} 版本'})

@@ -276,13 +276,13 @@ Teloa 是用于组建、管理和运行 AI 员工团队的 **AI-Native Team Stud
 
 </details>
 
-社区版 **0.2.10** 是 0.2.9 的补丁版：原生包的发行清单补齐固定的 DSH 版本号，与清单 schema 一致；功能与 0.2.9 相同——输入框「下一条建议」在回复后于空输入框内以灰字给出模型生成的下一步，按 Tab 才放入草稿且不会发送，开始输入即消失，可在「设置 → 通用」关闭。SDK 继续兼容 `@teloa/sdk@0.2.4`。
+本源码树正在准备社区版测试候选 **0.2.11-rc.4**，尚未发布；计划使用 npm `next` 与 GitHub prerelease，不作为稳定版 0.2.11 或生产达标声明；SDK 继续兼容 `@teloa/sdk@0.2.4`。
 
 ## 快速开始
 
 需要自备模型服务与 API 密钥，模型调用费用由对应服务商收取；社区版软件许可不包含推理额度。
 
-当前社区版正式版本为 **0.2.10**。[GitHub Release](https://github.com/teloa-ai/teloa/releases/tag/v0.2.10)、[npm](https://www.npmjs.com/package/@teloa/cli/v/0.2.10) 与 [Docker Hub](https://hub.docker.com/r/teloa/teloa) 均已发布；原生包已在 macOS ARM64 验证，镜像已在 Linux ARM64 验证。下方仍保留源码构建方式。
+下方 0.2.11-rc.4 原生安装命令用于对应工件发布后；当前已发布版本仍为 [0.2.10](https://github.com/teloa-ai/teloa/releases/tag/v0.2.10)。[npm](https://www.npmjs.com/package/@teloa/cli?activeTab=versions) 与 [Docker Hub](https://hub.docker.com/r/teloa/teloa) 的可用版本分别以实际渠道为准。下方仍保留源码构建方式。
 
 ### 本次更新重点
 
@@ -311,13 +311,13 @@ Teloa 是用于组建、管理和运行 AI 员工团队的 **AI-Native Team Stud
 ```sh
 mkdir teloa-command
 cd teloa-command
-npm install --ignore-scripts https://github.com/teloa-ai/teloa/releases/download/v0.2.10/teloa-cli-0.2.10.tgz
+npm install --ignore-scripts https://github.com/teloa-ai/teloa/releases/download/v0.2.11-rc.4/teloa-cli-0.2.11-rc.4.tgz
 ./node_modules/.bin/teloa up
 ./node_modules/.bin/teloa doctor
 ./node_modules/.bin/teloa status
 ```
 
-Teloa 与 DSH 在电脑上原生运行。启动后打开 Web 界面，在设置中配置模型；默认 Web 端口为 3100。新安装端口被占用时，使用 `./node_modules/.bin/teloa up --port 3101`。发行页同时列出安装包的 SHA-256 校验值。升级已有安装（例如 0.2.0-alpha.7）并保留其数据与身份：把 0.2.10 安装包装入新的命令目录，在该目录运行 `teloa stop`，再运行 `teloa upgrade --to 0.2.10`（自定义安装继续传入原 `--home`）。升级会在切换前自动备份。启停操作见[安装指南](https://docs.teloa.ai/start/quickstart)，备份见[备份与升级](https://docs.teloa.ai/deploy/backup)。也可从 npm 安装同版：`npm install --ignore-scripts @teloa/cli@0.2.10`。
+Teloa 与 DSH 在电脑上原生运行。启动后打开 Web 界面，在设置中配置模型；默认 Web 端口为 3100。新安装端口被占用时，使用 `./node_modules/.bin/teloa up --port 3101`。发行页同时列出安装包的 SHA-256 校验值。升级已有安装（例如 0.2.0-alpha.7）并保留其数据与身份：把 0.2.11-rc.4 安装包装入新的命令目录，在该目录运行 `teloa stop`，再运行 `teloa upgrade --to 0.2.11-rc.4`（自定义安装继续传入原 `--home`）。升级会在切换前自动备份。启停操作见[安装指南](https://docs.teloa.ai/start/quickstart)，备份见[备份与升级](https://docs.teloa.ai/deploy/backup)。也可从 npm 安装同版：`npm install --ignore-scripts @teloa/cli@0.2.11-rc.4`。
 
 <details>
 <summary><strong>Docker Hub + Compose（0.2.10）</strong></summary>

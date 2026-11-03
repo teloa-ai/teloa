@@ -9,11 +9,24 @@ export type RecoveryCandidate={controlId:string;expectedGeneration:number;runId:
  */
 export type RecoveryInspection=RecoveryCandidate&{resumable?:boolean}
 export type WorkControlChange={requestId:string;controlId:string;expectedVersion:number;action:'pause'|'resume'|'stop';scope:'round'|'definition';roundControlId:string|null}
+/** 本人在原任务明确恢复接收来源更新；不恢复或重新发送已结束的 Run。 */
+export type WorkSourceTaskResume={taskId:string;expectedTaskVersion:number;roleId:string;expectedRoleVersion:number;sessionId:string;expectedControlGeneration:number}
+/** 固定历史字节；摘要由宿主注入，契约包不引入服务端加密依赖。 */
+export function plannedRestartResumeRequestId(restartId:string,controlId:string,sha256:(text:string)=>string):string{
+ const s=sha256(JSON.stringify(['teloa/planned-restart-resume',restartId,controlId]))
+ if(!/^[a-f0-9]{64}$/.test(s))throw new WorkError('teloa/invalid-input','计划重启恢复摘要不正确。')
+ return s.slice(0,8)+'-'+s.slice(8,12)+'-5'+s.slice(13,16)+'-a'+s.slice(17,20)+'-'+s.slice(20,32)
+}
 const uuid=(v:unknown):v is string=>typeof v==='string'&&/^[a-f0-9]{8}-[a-f0-9]{4}-[1-8][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i.test(v)
 const positive=(v:unknown):v is number=>Number.isSafeInteger(v)&&Number(v)>0
 const text=(v:unknown):v is string=>typeof v==='string'&&!!v.trim()&&v===v.trim()&&v.length<=512&&!/[\x00-\x1f]/.test(v)
 const invalid=()=>new WorkError('teloa/invalid-input','整项工作控制或恢复请求不正确。')
 const exact=(value:unknown,keys:readonly string[])=>{if(!value||typeof value!=='object'||Array.isArray(value)||Object.keys(value).length!==keys.length||keys.some(key=>!Object.hasOwn(value,key))||Object.keys(value).some(key=>!keys.includes(key)))throw invalid();return value as Record<string,unknown>}
+export function readWorkSourceTaskResume(value:unknown):WorkSourceTaskResume{
+ const r=exact(value,['taskId','expectedTaskVersion','roleId','expectedRoleVersion','sessionId','expectedControlGeneration'])
+ if(!uuid(r.taskId)||!positive(r.expectedTaskVersion)||!uuid(r.roleId)||!positive(r.expectedRoleVersion)||typeof r.sessionId!=='string'||!/^[-a-zA-Z0-9_]{1,128}$/.test(r.sessionId)||!positive(r.expectedControlGeneration))throw invalid()
+ return {taskId:r.taskId,expectedTaskVersion:r.expectedTaskVersion,roleId:r.roleId,expectedRoleVersion:r.expectedRoleVersion,sessionId:r.sessionId,expectedControlGeneration:r.expectedControlGeneration}
+}
 function ids(value:unknown,check:(v:unknown)=>v is string):string[]{if(!Array.isArray(value)||value.some(v=>!check(v))||new Set(value).size!==value.length)throw invalid();return [...value]}
 export function readWorkControl(value:unknown):WorkControl{
  const r=exact(value,['id','ownerId','generation','version','state','scope','pendingRunIds','unknownOperationIds'])

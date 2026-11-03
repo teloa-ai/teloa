@@ -1,3 +1,4 @@
+import {taskRunStates} from '@teloa/contract'
 import {WorkError,businessMcpSourceIdMaxLength,businessObjectReference,isBusinessScopeKey,isRecord,taskDefinition,taskInput,workTaskStates,type BusinessObjectReference,type WorkTask} from '@teloa/contract'
 import type {BusinessObjectSnapshot,BusinessTaskActionSource,BusinessTaskRecord,BusinessTaskListItem,BusinessTaskListPage,BusinessTaskService,BusinessTaskSource} from '@teloa/backend'
 
@@ -60,7 +61,7 @@ function readSummary(value:unknown,owner:string,scope:string):BusinessTaskListIt
 function readProgress(value:unknown):BusinessTaskListItem['progress']{
  if(value===null)return null
  const row=exact(value,['runId','state','reason','stopRequestedAt'])
- if(!uuid(row.runId)||!['prepared','submitting','accepted','active','ended','withdrawn','configuration_failed'].includes(row.state as string)||(row.state==='ended'?!text(row.reason,128):row.reason!==null)||(row.stopRequestedAt!==null&&!stamp(row.stopRequestedAt)))throw invalid()
+ if(!uuid(row.runId)||!taskRunStates.includes(row.state as string)||(row.state==='ended'?!text(row.reason,128):row.reason!==null)||(row.stopRequestedAt!==null&&!stamp(row.stopRequestedAt)))throw invalid()
  return row as BusinessTaskListItem['progress']
 }
 function readCompletion(value:unknown,task:BusinessTaskListItem['task']):BusinessTaskListItem['completion']{

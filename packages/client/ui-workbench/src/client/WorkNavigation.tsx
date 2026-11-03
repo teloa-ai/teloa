@@ -10,6 +10,7 @@ import type { WorkbenchActions, WorkbenchView } from './store.js'
 import type { BindingClient } from './binding-client.js'
 import type { ConversationManagement } from './conversation-management.js'
 import { presentConversations } from './work-presentation.js'
+import {useTaskRunConversationTitles,type TaskRunChatPresentationDirectory} from './task-run-chat-presentation.js'
 import {WorkbenchNavigationBrand,WorkbenchNavigationItems} from './WorkbenchNavigationChrome.js'
 import {usePersonalProfile} from './use-personal-profile.js'
 import {applicationPresentation} from './application-presentation.js'
@@ -26,7 +27,7 @@ type Props={beforeNavigate?:(()=>Promise<boolean>)|undefined;marketApps?:boolean
 const shortcutSectionKey={overview:'business.home.title',projects:'business.section.projects',data:'business.section.data',work:'business.section.work',analysis:'business.section.analysis',execution:'business.section.execution',dashboards:'business.section.dashboards',employees:'navigation.team',groups:'collaboration.saved.title'} as const
 /** 固定的看板在左栏显示「范围 · 看板标题」：标题表以 `businessDashboardTitleKey` 为键，没读到标题时显示看板标识。 */
 export const businessDashboardTitleKey=(scope:string,dashboardId:string)=>JSON.stringify([scope,dashboardId])
-export function WorkNavigation({beforeNavigate,marketApps=false,assistantName='Teloa',renameAssistant,conversationPlans,openAssistant,assistantSelected=false,assistantActive=false,setAssistantActive,onSearch,view,colorScheme,actions,work,management,useSessions,create,creating,needCount,attentionKnown=true,createTask,createGroup,openTwin,setTheme,businessShortcuts=[],businessScopeNames={},businessTarget,openBusinessShortcut=()=>{},unpinBusinessShortcut=()=>{},businessDashboardTitles={}}:Props){
+export function WorkNavigation({beforeNavigate,marketApps=false,assistantName='Teloa',renameAssistant,conversationPlans,taskRunChat,openAssistant,assistantSelected=false,assistantActive=false,setAssistantActive,onSearch,view,colorScheme,actions,work,management,useSessions,create,creating,needCount,attentionKnown=true,createTask,createGroup,openTwin,setTheme,businessShortcuts=[],businessScopeNames={},businessTarget,openBusinessShortcut=()=>{},unpinBusinessShortcut=()=>{},businessDashboardTitles={}}:Props&{taskRunChat?:TaskRunChatPresentationDirectory|undefined}){
  const groupsAllowed=useApplicationCapability('groups')
   const {locale,t}=useI18n()
   const navigate=(run:()=>void)=>{if(!beforeNavigate){run();return}void beforeNavigate().then(allowed=>{if(allowed)run()},error=>setError(localizeWorkError(locale,error)))}
@@ -76,7 +77,9 @@ export function WorkNavigation({beforeNavigate,marketApps=false,assistantName='T
   const closeNewWorkMenu=()=>{setNewWorkMenuOpen(false);newWorkTrigger.current?.focus()}
   useDismissible(newWorkGroup,newWorkMenuOpen,closeNewWorkMenu)
   const fromNewWorkMenu=(action:()=>void)=>{newWorkTrigger.current?.focus();setNewWorkMenuOpen(false);navigate(action)}
-  const rows=managed.baseline?presentConversations(directory.rows,Object.values(native),'','all').filter(row=>row.status!=='blank'&&row.conversation.status==='ready'&&!managed.archived.includes(row.conversation.sessionId)&&!hiddenRecentIds.includes(row.conversation.sessionId)).slice(0,3):[]
+  const recentRows=managed.baseline?presentConversations(directory.rows,Object.values(native),'','all').filter(row=>row.status!=='blank'&&row.conversation.status==='ready'&&!managed.archived.includes(row.conversation.sessionId)&&!hiddenRecentIds.includes(row.conversation.sessionId)).slice(0,3):[]
+  const taskTitles=useTaskRunConversationTitles(recentRows.map(row=>row.conversation),taskRunChat)
+  const rows=presentConversations(recentRows.map(row=>row.conversation),Object.values(native),'','all',undefined,taskTitles)
   const activeShortcutKey=view==='spaces'&&businessTarget?businessShortcutKey({scope:businessTarget.scope,section:businessTarget.section,...(businessTarget.section==='dashboards'&&businessTarget.dashboardId?{dashboardId:businessTarget.dashboardId}:{})}):undefined
   return <>
   <aside className={css.navigation} aria-label={t('navigation.main')}>

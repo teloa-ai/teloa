@@ -40,3 +40,30 @@ test('确认升级先安装不可变目标再切换全局选择，并固定行�
  assert.deepEqual(calls.map(([method])=>method),['skill-installations/install','skill-selections/preview','skill-selections/change'])
  const change=calls[2]![1] as Record<string,unknown>;assert.equal(change.currentInstallationId,id);assert.equal(change.targetInstallationId,targetInstallation.id);assert.equal(change.expectedImpactDigest,selectionDigest);assert.deepEqual(change.industryUsages,[usage])
 })
+
+test('已安装目标带来源审查元数据时按原请求恢复版本切换',async()=>{
+ const trust={publisher:'local-fixture',repository:null,license:{status:'missing'},signature:{status:'unverified',signer:null},compatibility:{teloa:'未声明',dsh:'未声明'},plugins:[],externalCapabilities:[],permissions:[],review:{conclusion:'needs-review',summary:'本地来源待审查'}},trustHash=sha('trust')
+ const old={...installation,trust,trustHash},next={...installation,id:'dddddddd-dddd-4ddd-8ddd-dddddddddddd',source:target.source,bundleHash:target.bundleHash,trust,trustHash},selection={ownerId:'owner',nativeName:'review',installationId:id,version:1,updatedAt:at},impact={nativeName:'review',selection:{installationId:id,version:1},current:{installationId:id,installationVersion:2,bundleHash:old.bundleHash,availability:'enabled',availabilityVersion:1},target:{installationId:next.id,installationVersion:2,bundleHash:next.bundleHash,availability:'enabled',availabilityVersion:1},industryUsages:[]},impactDigest=sha('selection-impact')
+ const pending={installRequestId:'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee',switchRequestId:'ffffffff-ffff-4fff-8fff-ffffffffffff',currentInstallationId:id,target:{kind:'atomic',contentId:newContent},expectedTargetBundleHash:next.bundleHash,expectedTargetTrustHash:trustHash,industryUsages:[]},storage={value:JSON.stringify({schema:'teloa.skill-upgrade/v1',request:pending}) as string|null}
+ const calls:Array<[string,Record<string,unknown>]>=[]
+ const api=createSkillUpgradeApi(async(method,payload)=>{
+  const command=payload as Record<string,unknown>;calls.push([method,command])
+  if(method==='skill-installations/install')return {installation:next,source:next.source}
+  if(method==='skill-selections/preview')return {selection,current:old,target:next,impact,impactDigest}
+  if(method==='skill-selections/change'){const result={...selection,installationId:next.id,version:2};return {receipt:{requestId:command.requestId,nativeName:'review',before:selection,result,migratedIndustryUsages:[],impact,impactDigest,createdAt:at},current:result}}
+  throw Error(method)
+ },{read:()=>storage.value,write:value=>{storage.value=value},clear:()=>{storage.value=null}})
+ const result=await api.recover()
+ assert.equal(result.selection.installationId,next.id);assert.equal(result.selection.version,2);assert.deepEqual(result.installation.trust,trust);assert.equal(result.installation.trustHash,trustHash);assert.equal(storage.value,null)
+ assert.deepEqual(calls.map(([method])=>method),['skill-installations/install','skill-selections/preview','skill-selections/change'])
+ assert.equal(calls[0]![1].requestId,pending.installRequestId);assert.equal(calls[2]![1].requestId,pending.switchRequestId);assert.equal(calls[2]![1].expectedSelectionVersion,1)
+})
+
+test('选择预览中的安装身份和审查元数据损坏时不提交版本切换',async()=>{
+ const trust={publisher:'local-fixture',repository:null,license:{status:'missing'},signature:{status:'unverified',signer:null},compatibility:{teloa:'未声明',dsh:'未声明'},plugins:[],externalCapabilities:[],permissions:[],review:{conclusion:'needs-review',summary:'本地来源待审查'}},trustHash=sha('trust'),old={...installation,trust,trustHash},next={...installation,id:'dddddddd-dddd-4ddd-8ddd-dddddddddddd',source:target.source,bundleHash:target.bundleHash,trust,trustHash},selection={ownerId:'owner',nativeName:'review',installationId:id,version:1,updatedAt:at}
+ for(const changed of [{current:{...old,trustHash:'bad'}},{target:{...next,trust:{publisher:'incomplete'}}},{current:{...old,ownerId:'other-owner'}},{target:{...next,native:{...next.native,name:'other'}}}]){
+  let switched=false
+  const api=createSkillUpgradeApi(async(method)=>{if(method==='skill-installations/install')return {installation:next,source:next.source};if(method==='skill-selections/preview')return {selection,current:old,target:next,impact:{nativeName:'review',industryUsages:[]},impactDigest:sha('impact'),...changed};if(method==='skill-selections/change')switched=true;throw Error(method)})
+  await assert.rejects(api.apply({currentInstallationId:id,target:{kind:'atomic',contentId:newContent},expectedTargetBundleHash:next.bundleHash,expectedTargetTrustHash:trustHash,industryUsages:[]}));assert.equal(switched,false)
+ }
+})

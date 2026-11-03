@@ -50,7 +50,6 @@ export const zhCNMessages = {
   'task.empty.none': '还没有任务',
   'task.empty.noMatch': '没有匹配的任务',
   'task.detail.back': '返回目录',
-  'task.detail.goal': '任务目标',
   'continuous.directory': '自动化',
   'continuous.tab.plans': '计划',
   'continuous.tab.runs': '执行记录',

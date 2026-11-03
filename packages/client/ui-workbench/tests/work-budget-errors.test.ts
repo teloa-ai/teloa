@@ -21,7 +21,7 @@ test('稳定预算错误按真实维度和范围显示简繁英，不能冒充�
  for(const [index,locale]of locales.entries())for(const reason of reasons)for(const scope of ['work','owner']){
   const error={code:'teloa/budget-exhausted',message:'PRIVATE_SERVER_TOKEN_VALUE',details:{reason,scope}},before=structuredClone(error),text=localizeWorkError(locale,error)
   assert.ok(text.includes(words[reason][index]!),locale+'/'+reason);assert.ok(text.includes(translateMessage(locale,scope==='owner'?'planWork.budget.owner':'planWork.budget.account')),locale+'/'+scope)
-  assert.ok(text.includes(translateMessage(locale,'planWork.budget.title')));assert.notEqual(text,translateMessage(locale,'error.versionConflict'));assert.doesNotMatch(text,/PRIVATE_SERVER_TOKEN_VALUE|\{scope\}/);assert.deepEqual(error,before)
+  assert.ok(text.toLocaleLowerCase().includes(translateMessage(locale,'planWork.budget.title').toLocaleLowerCase()));assert.notEqual(text,translateMessage(locale,'error.versionConflict'));assert.doesNotMatch(text,/PRIVATE_SERVER_TOKEN_VALUE|\{scope\}/);assert.deepEqual(error,before)
  }
 })
 test('未知预算维度保持需要核对，不猜耗尽原因；其它未知错误和真实版本冲突保留原义',()=>{

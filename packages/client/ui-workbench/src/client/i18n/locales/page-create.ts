@@ -12,6 +12,8 @@
 /** 新增词条只定稿三语，其余列使用英文回退。 */
 const fallbackRow=<K extends string>(key:K,cn:string,tw:string,en:string):readonly[K,string,string,string,string,string,string,string,string,string,string]=>[key,cn,tw,en,en,en,en,en,en,en,en]
 const rows = [
+ fallbackRow('create.role.materialUnverified','未能核对这份资料；请在确认前检查引用。','未能核對這份資料；請在確認前檢查引用。','This material could not be verified. Check the reference before confirming.'),
+ fallbackRow('create.role.skillUnverified','未能核对这项技能；请在确认前检查引用。','未能核對這項技能；請在確認前檢查引用。','This skill could not be verified. Check the reference before confirming.'),
  fallbackRow('create.entity.app','自定义应用连接','自訂應用程式連線','Custom app connection'),
  fallbackRow('create.sentence.placeholder.mcpApp','接入我的日志服务，地址是 https://mcp.example.com/mcp，使用 API Key 认证。这里不填写密钥。','連接我的日誌服務，網址是 https://mcp.example.com/mcp，使用 API Key 驗證。請勿在此填寫金鑰。','Connect my log service at https://mcp.example.com/mcp using an API key. Do not enter keys here.'),
  fallbackRow('create.next.app','核对连接后填写认证，添加并连接','核對連線後填寫驗證資料，加入並連接','Check the connection, enter authentication details, then add and connect'),

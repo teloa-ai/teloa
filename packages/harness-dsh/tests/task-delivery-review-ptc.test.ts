@@ -29,13 +29,15 @@ async function fixture(t:TestContext,language:'typescript'|'python',mode:'load'|
  // 与正式PTC预设一致，由tools组合配置选择呈现；Agent自身保留复核期原生覆盖层。
  await ctx.plugin(ToolRuntime,{mode:execution?.presentation??'ptc'});await ctx.plugin(AgentLoop,{agents:[]});await installNativeWorkingDirectory(ctx)
  const {agent}=await ctx.agents.create({sessionId:SessionId('review-ptc-'+language+'-'+mode),agentOptions:{provider:'test',model:'test'}})
- const goal='本轮合成目标',ownerRun=execution?.kind==='text'||execution?.kind==='knowledge',skills=ownerRun?[]:[skill]
+ const goal='本轮合成目标',ownerRun=execution?.kind==='knowledge',skills=ownerRun||execution?.kind==='text'?[]:[skill]
  const body='本轮固定资料正文',knowledge=execution?.kind==='knowledge'?readRunKnowledge([{id:'22222222-2222-4222-8222-222222222222',version:1,title:'合成资料',sourceId:'fixture',sourceVersion:sha(body),scopeIds:['general'],text:body}]):[]
  const groupContext={taskId:'task',groupId:'group',groupVersion:1,roleId:'role',roleVersion:1,grantVersion:1,source:{messageId:'source',rootId:'source',createdAt:'2026-11-02T00:00:00.000Z',text:goal},messages:[],files:[]}
  const run={id:'run',taskId:'task',taskVersion:1,linkVersion:1,nativeRequestId:'rpc',sessionId:agent.id,contextMode:runContextMode,state:'active',stopRequestedAt:null,skills,knowledge,allowedTools:[],...(ownerRun?{executor:{kind:'owner'}}:{groupContext}),inputText:JSON.stringify({schema:ownerRun?'teloa.task-run-input/v3':'teloa.task-run-input/v2',contextMode:runContextMode,contextNotice:runContextNotice,task:{id:'task',version:1,goal},skills:runSkillCatalog(skills),knowledge:runKnowledgeCatalog(knowledge),...(ownerRun?{planContext:{occurrenceId:'11111111-1111-4111-8111-111111111111',goal,dataScope:'general',delivery:'正文'}}:{})})} as unknown as TaskRun
  registerTaskRunContextTools(ctx,async()=>run)
+ let ptcRuns=0
  // 使用真实官方PTC派发桥；运行器仅替代语言求值，不伪造子调用日志。
  ctx.provide('ptcRuntime',{language,isolation:'fixture',resolve:(request:unknown)=>request,run:async(spec:{bindings:Array<{functions:Record<string,(args:Record<string,unknown>)=>Promise<unknown>>}>})=>{
+  ptcRuns++
   if(mode!=='print-only'){
    if(execution?.kind==='knowledge'){const doc=knowledge[0]!;await spec.bindings[0]!.functions.teloa_knowledge_read!({resourceId:doc.id,resourceVersion:doc.version,sourceVersion:doc.sourceVersion})}
    else await spec.bindings[0]!.functions.teloa_skill_load!({name:skill.name,sha256:skill.sha256})
@@ -72,7 +74,7 @@ async function fixture(t:TestContext,language:'typescript'|'python',mode:'load'|
   ctx.provide('sessionController',{resolveAgent:async()=>({agent}),prompt:async(request:{requestId:string;content:Parameters<typeof createUserMessage>[0]['content']})=>{agent.followup(createUserMessage({source:{kind:'user',rpcId:request.requestId},content:request.content}));return {accepted:true}}} as never)
   const input:DshTaskNativeInput={withNewInput:async(_agent,_message,_context,submit)=>submit(),readReviewState:()=>({continuationMessageIds:[],pendingJobCompletion:false,pendingInput:false})}
   const ports=dshTaskRunPorts(ctx,'owner',async sessionId=>({ownerId:'owner',sessionId,status:'ready'}),async()=>knowledge,undefined,undefined,undefined,undefined,undefined,links,undefined,undefined,input)
-  ports.subagentState=async()=> 'none';ports.flowState=async()=> 'none';ports.isDigestRun=async()=>execution.kind==='digest'
+  ports.subagentState=async()=> 'none';ports.flowState=async()=> 'none';ports.isDigestRun=async()=>execution.kind==='digest';ports.isReplyRun=async()=>execution.kind==='text'
   if(execution.enforceGuard)registerTaskToolGuard(ctx,async()=>({allowedTools:run.allowedTools,nativeRequestId:run.nativeRequestId}),runContextToolNames)
   await ports.send(run,AbortSignal.timeout(5000),{taskId:'task',taskVersion:1,linkVersion:1,sessionId:agent.id,scope:'general'})
  }else agent.followup(createUserMessage({source:{kind:'user',rpcId:'rpc'},content:[{type:'text',text:'本轮合成目标'}]}))
@@ -90,7 +92,7 @@ async function fixture(t:TestContext,language:'typescript'|'python',mode:'load'|
   assert.ok(!assembly.tools.some(tool=>tool.name===deliveryReviewToolName),'复核工具不残留')
   assert.ok(!assembly.sections.some(section=>section.text.includes(content)),'已加载方法的复核租约正文不残留')
  }
- return {prefix,snapshot,binding,material,events,run,requests:adapter.requests,traces}
+ return {prefix,snapshot,binding,material,events,run,requests:adapter.requests,traces,ptcRuns:()=>ptcRuns}
 }
 
 for(const language of ['typescript','python'] as const)test('官方PTC桥的成功加载激活固定方法且冷读可重放：'+language,async t=>{
@@ -154,8 +156,9 @@ test('真实Run原生模式不冻结PTC传输，纯文本/digest拒绝仅打印�
  assert.ok(!evidence.execution.allowedTools.includes('run_code'))
  for(const kind of ['text','digest'] as const){
   const f=await fixture(t,'typescript','print-only',false,{presentation:'ptc',kind})
-  assert.equal(f.requests.length,2)
-  assert.ok(f.traces.some(row=>row&&typeof row==='object'&&String(Reflect.get(row,'reason')).endsWith('tool-identity')),kind)
+  assert.equal(f.events.filter(event=>event.type==='tool/call'&&event.data.name==='run_code').length,1,kind+' 不重复尝试未授权工具')
+  assert.equal(f.ptcRuns(),0,kind+' 不执行未授权PTC正文')
+  assert.ok(f.events.some(event=>event.type==='tool/result'&&event.data.message.isError===true),kind+' 保留实际原生拒绝回执')
   assert.equal(readTaskRunGroupResult(f.events,'rpc',undefined,undefined,{requireReview:true,runId:'run'}),undefined)
  }
 })

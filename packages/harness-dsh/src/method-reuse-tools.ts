@@ -19,6 +19,8 @@ export type MethodReuseToolsPorts={
  skillCreator:BuiltinSkillCreator|null
   defaultPlanBudget?:()=>Promise<WorkBudgetPolicy>
  source:(input:SourceInput,signal:AbortSignal)=>Promise<{source:MethodReuseSource;artifact:SavedArtifactVersion}>
+ /** 宿主在真实当前会话登记受管来源；先完成此步，压缩/续办才不会遗失撤回约束。 */
+ bindSourceInput:(sessionId:string,source:MethodReuseSource)=>Promise<void>
  /** 同次创建器正文；正式服务再核成果/认可来源并与原草稿同事务保存。 */
  prepare:(input:PreparedInput,signal:AbortSignal,assertCurrent:()=>Promise<void>)=>Promise<PageCreateDraft>
 }
@@ -73,12 +75,14 @@ export function registerMethodReuseTools(ctx:Context,ports:MethodReuseToolsPorts
    await current()
    const source=readMethodReuseSource(result.source),artifact=result.artifact
    if(artifact.ownerId!==ports.owner||artifact.artifactId!==input.artifactId||source.artifactId!==input.artifactId||artifact.number!==source.version||input.version!==undefined&&source.version!==input.version||await methodReuseBasisHash(artifact)!==source.basisHash)throw new WorkError('teloa/invalid-host-response','成果来源回执与指定版本不一致。')
+   await ports.bindSourceInput(authorization.sessionId,source)
    await current()
    return JSON.stringify({source,artifact,sourceRole:'method-draft-provenance'})
   }
   const input=await reuseInput(args,ports.defaultPlanBudget);creator(exec,input.target)
   const accepted=acceptedSource(exec,authorization),requestId=conversationInstructionMutationRequestId(authorization,name,exec.callId)
   await current()
+  await ports.bindSourceInput(authorization.sessionId,input.source)
   const draft=await ports.prepare({...input,acceptedSource:accepted,requestId},exec.signal,current)
   await current()
   if(draft.ownerId!==ports.owner||draft.requestId!==requestId||draft.entity!==input.target)throw new WorkError('teloa/invalid-host-response','方法草稿回执与原请求不一致。')

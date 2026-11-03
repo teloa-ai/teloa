@@ -1,0 +1,59 @@
+import assert from 'node:assert/strict'
+import {randomUUID,createHash} from 'node:crypto'
+import type {PoolClient} from 'pg'
+import {taskDefinition,readPlanWorkDefinition,readRunPlanEventContext,errorRecoveryNotice,stoppedContinuationNotice,readTaskRunSourceFollowup,type TaskRunSourceFollowup} from '@teloa/contract'
+import {readBusinessSourceGoalEdit,readStoredPlanOccurrence} from '../../src/work/plan-occurrences.ts'
+import {readStoredTask,taskRequestSpec} from '../../src/work/tasks.ts'
+import {businessTaskSourceUpdateRunRequestId} from '../../src/work/business-task-source-updates.ts'
+import {workEventDigest} from '../../src/work/work-event-digest.ts'
+import {readStoredTaskRun} from '../../src/work/task-runs.ts'
+import {businessObjectSnapshotHash} from '../../src/work/business-data.ts'
+import {businessContextNotice,runBusinessContextHash} from '../../src/work/task-run-business-context.ts'
+
+const hash=(v:string)=>createHash('sha256').update(v).digest('hex')
+export function goalEditFixture(){
+ const owner=randomUUID(),now='2026-09-01T01:00:00.000Z',taskId=randomUUID(),roleId=randomUUID(),claimId=randomUUID(),planId=randomUUID(),requestId=randomUUID(),eventId=randomUUID(),scope='business_'+randomUUID().replaceAll('-',''),oldGoal='核对合成来源v1',newGoal='核对同源v2并保留旧报告'
+ const original=taskDefinition({title:'合成来源任务',goal:oldGoal,scope}),edited=taskDefinition({...original,goal:newGoal})
+ const object=(version:number)=>{const raw={scope,type:'alert',id:'AL01',version,title:'合成告警',source:'test-source',observedAt:now,receivedAt:now,quality:'complete' as const,summary:'合成验收',fields:[{label:'risk',value:version===1?87:45}]};return{...raw,snapshotHash:businessObjectSnapshotHash(raw)}}
+ const first=object(1),second=object(2),event=readRunPlanEventContext({event:{schema:'teloa.work-event/v2',id:eventId,ownerId:owner,kind:'business-object-version',sourceRef:{kind:'business-object',scope,type:'alert',id:'AL01'},sourceEventId:'business:test-v1',sourceVersion:'1',basisHash:first.snapshotHash,createdAt:now},controlGeneration:1,data:{object:first,configuration:{kind:'local-configuration',configurationHash:'b'.repeat(64),configurationVersion:1},definitionHash:'c'.repeat(64)}})
+ const fields={title:original.title,goal:oldGoal,scope,dataScope:'仅此合成告警',delivery:'合成报告',roleId,trigger:{kind:'schedule' as const,cadence:'daily' as const,weekday:1,time:'09:00',timezone:'Asia/Singapore'}}
+ const workDefinition=readPlanWorkDefinition({schema:'teloa.plan-work/v3',definitionVersion:1,definitionControlId:randomUUID(),budgetAccountId:randomUUID(),authorization:{kind:'delegation',delegationId:randomUUID(),delegationVersion:1},completion:{kind:'manual'},triggers:[{kind:'local-event',eventKind:'business-object-version',sourceRef:{kind:'business-object-type',scope,type:'alert'},coalesce:'latest'}],budget:{money:null,maxTokens:32000000,maxRetries:0,maxElapsedMs:600000,maxConcurrent:1,maxGoalRounds:2,stagnationRounds:2},overlap:'independent',missed:'coalesce',safeRecovery:false})
+ const snapshot={event,fields,source:{kind:'manual'},roleVersion:2,workDefinition},claim={id:claimId,owner_id:owner,plan_id:planId,plan_version:1,config_version:1,occurrence_id:'event:'+eventId,scheduled_at:new Date(now),claimed_at:new Date(now),task_request_id:requestId,snapshot,snapshot_hash:hash(JSON.stringify(snapshot))}
+ const taskRow={id:taskId,owner_id:owner,request_id:requestId,request_spec:taskRequestSpec(original,{roleId,expectedVersion:2}),definition:edited,version:7,content_version:2,state:'paused',assignee_role_id:roleId,assignee_role_version:2,created_at:new Date(now),updated_at:new Date(now)}
+ const link={owner_id:owner,task_id:taskId,claim_id:claimId,task_request_id:requestId},edit={task_id:taskId,base_version:3,request_spec:taskRequestSpec(edited,null).fields,result:{...taskRow,version:4,created_at:now,updated_at:now}}
+ const updateId=randomUUID(),runId=randomUUID(),nativeId=randomUUID(),sessionId='source-goal-'+randomUUID(),runRequest=businessTaskSourceUpdateRunRequestId(owner,updateId),context={taskId,sourceId:'test-source',object:first,updates:[second]},inputText=JSON.stringify({schema:'teloa.task-run-input/v2',lineage:{schema:'teloa.work-lineage/v1',ownerId:owner,rootTaskId:taskId,definition:{planId,definitionVersion:1,occurrenceId:claimId},parentRunId:null,definitionControlId:workDefinition.definitionControlId,roundControlId:randomUUID(),controlGeneration:1,budgetAccountId:workDefinition.budgetAccountId},task:{id:taskId,version:5,title:original.title,goal:newGoal,scope},role:{schema:'teloa.run-role/v2',id:roleId,version:2,kind:'employee',name:'合成员工',scopes:[scope],duty:'核对来源',dataScope:'仅本来源',executionScope:'只读',skills:[],knowledge:[],responsibility:{triggers:[],autonomousActions:[],confirmationPoints:[],escalationRules:[],deliveryChecks:[]},runtimeConfig:{agentPresetId:'teloa-standard'},authorization:{kind:'task',taskId,taskContentVersion:2},twinConsent:null},businessContext:{...context,notice:businessContextNotice}})
+ const runRow={id:runId,owner_id:owner,task_id:taskId,task_version:5,role_id:roleId,role_version:2,link_version:1,session_id:sessionId,native_request_id:nativeId,request_id:runRequest,request_spec:{requestId:runRequest,taskId,expectedTaskVersion:5,roleId,expectedRoleVersion:2,sessionId,expectedLinkVersion:1},state:'withdrawn',evidence:null,stop_requested_at:new Date(now),created_at:new Date(now),allowed_tools:[],agent_preset_id:'teloa-standard',input_text:inputText,business_context_hash:runBusinessContextHash(context)}
+ const update={id:updateId,owner_id:owner,task_id:taskId,run_id:runId,task_version:5,plan_id:planId,scope_id:scope,object_type:'alert',object_id:'AL01',object_version:2,snapshot_hash:second.snapshotHash,event_id:randomUUID(),state:'needs-user',reason:'teloa/run-not-accepted'}
+ const attempt={attempt_id:randomUUID(),runtime_id:randomUUID(),state:'not-published',settled_at:new Date(now),session_id:sessionId,native_request_id:nativeId,input_sha256:hash(inputText)},receipt={schema:'teloa.task-run-unpublished-cancellation/v1',requestId:randomUUID(),identity:{runId,sessionId,nativeRequestId:nativeId,inputSha256:hash(inputText)},runtimeId:attempt.runtime_id,attemptIds:[attempt.attempt_id],latestAttemptId:attempt.attempt_id,logCut:-1,logSha256:hash('[]'),stopRequestedAt:now,cancelledAt:now},cancellation={request_id:receipt.requestId,receipt,audit:null}
+ const childRows=new Map<string,Record<string,any>>()
+ const state={receipt:true,current:true,effect:false,following:[] as Record<string,any>[],budgetRunId:null as string|null,budgetState:'reserved',lastBudgetParams:[] as unknown[]}
+ function records(){return state.following.map(record=>{const f=record.binding as TaskRunSourceFollowup;let row=childRows.get(f.requestId);if(!row){const body=JSON.parse(inputText);body.task.version=f.taskVersion;body.sourceFollowup=f;row={...runRow,id:randomUUID(),task_version:f.taskVersion,native_request_id:randomUUID(),request_id:f.requestId,request_spec:{...runRow.request_spec,requestId:f.requestId,expectedTaskVersion:f.taskVersion,sourceFollowup:f},state:'prepared',evidence:null,stop_requested_at:null,input_text:JSON.stringify(body)};childRows.set(f.requestId,row)}return{owner_id:owner,run_id:row.id,request_id:f.requestId,original_run_id:f.originalRunId,source_update_id:f.sourceUpdateId,...record,binding:record.binding}})}
+ function appendFollowing(parent:Record<string,any>=runRow,kind:'error-recovery'|'stopped-continuation'='error-recovery'){const prior=parent.id===runRow.id,proof=prior?workEventDigest({domain:'teloa.source-followup-unpublished-cancellation/v1',receipt}):workEventDigest(parent.evidence),f=readTaskRunSourceFollowup({schema:'teloa.task-run-source-followup/v1',kind,requestId:randomUUID(),taskId,taskVersion:parent.task_version+2,sessionId,originalRunId:parent.id,originalNativeRequestId:parent.native_request_id,originalInputSha256:hash(parent.input_text),originalEvidenceSha256:proof,...(kind==='stopped-continuation'?{originalStopRequestedAt:new Date(parent.stop_requested_at).toISOString()}:{}),sourceUpdateId:update.id,sourceTaskVersion:5,sourceEventId:update.event_id,reference:{scope,type:'alert',id:'AL01',version:2,snapshotHash:second.snapshotHash},instruction:newGoal,confirmedAt:now,notice:kind==='stopped-continuation'?stoppedContinuationNotice:errorRecoveryNotice});state.following.push({binding:f});records();const row=childRows.get(f.requestId)!;taskRow.version=Math.max(taskRow.version,f.taskVersion);return{binding:f,row}}
+ const query=async(sql:string,args:unknown[]=[])=>{let rows:unknown[]=[]
+  if(sql.startsWith('select * from teloa_tasks'))rows=args[0]===owner?[taskRow]:[]
+  else if(sql.startsWith('select * from teloa_plan_task_links'))rows=[link]
+  else if(sql.startsWith('select * from teloa_plan_occurrences'))rows=[claim]
+  else if(sql.startsWith('select task_version from teloa_business_task_source_updates'))rows=['continued','accepted'].includes(update.state)?[update]:[]
+  else if(sql.startsWith('select * from teloa_business_task_source_updates'))rows=[update]
+  else if(sql.startsWith('select request_id from teloa_task_runs'))rows=[{request_id:runRequest}]
+  else if(sql.startsWith('select s.*'))rows=[{scope_id:scope,object_type:'alert',object_id:'AL01',object_version:1}]
+  else if(sql.startsWith('select max(object_version)'))rows=[{version:update.object_version}]
+  else if(sql.startsWith('select base_version,request_spec,result'))rows=[edit]
+  else if(sql.startsWith('select * from teloa_task_runs')){records();rows=state.current?[runRow,...childRows.values()].filter(x=>x.owner_id===args[0]&&x.id===args[1]):[]}
+  else if(sql.startsWith('select id from teloa_task_runs'))rows=state.current?[{id:runId}]:[]
+  else if(sql.startsWith('select request_id,receipt,audit'))rows=state.receipt?[cancellation]:[]
+  else if(sql.startsWith('select * from teloa_task_run_submissions'))rows=[attempt]
+  else if(sql.startsWith('select binding from teloa_task_run_source_followups'))rows=records()
+  else if(sql.startsWith('select f.binding from teloa_task_run_source_followups'))rows=records().filter(x=>{const r=childRows.get(x.request_id)!;return r.task_version<=Number(args[5])}).sort((a,b)=>childRows.get(b.request_id)!.task_version-childRows.get(a.request_id)!.task_version).slice(0,1)
+  else if(sql.startsWith('select * from teloa_task_run_source_followups'))rows=records().filter(x=>x.owner_id===args[0]&&(sql.includes('request_id=$2')?x.request_id===args[1]:x.run_id===args[1]))
+  else if(sql.startsWith('select run_id from teloa_task_run_source_followups'))rows=records().filter(x=>x.owner_id===args[0]&&x.original_run_id===args[1])
+  else if(sql.startsWith('select u.*,s.snapshot')){const {snapshotHash,...snapshot}=second;rows=[{...update,snapshot}]}
+  else if(sql.startsWith('select 1 from teloa_work_budget_reservations')){state.lastBudgetParams=args;if(state.budgetRunId){const f=records().find(x=>x.run_id===state.budgetRunId);const matches=sql.includes('not exists(')&&f&&f.request_id===args[2]&&JSON.stringify(f.binding)===args[3]&&f.original_run_id===args[4]&&f.binding.taskId===args[5]&&f.binding.sessionId===args[6];if(!matches||state.budgetState==='unknown'&&sql.includes("b.state='unknown' or"))rows=[{one:1}]}}
+
+  else if(sql.startsWith('select 1 from teloa_task_run_flows')&&state.effect)rows=[{one:1}]
+  else if(!sql.startsWith('select * from teloa_task_run_runtime_links')&&!sql.startsWith('select 1 from '))throw Error('未处理查询 '+sql)
+  return{rows,rowCount:rows.length}
+ }
+ const task=readStoredTask(taskRow);readStoredPlanOccurrence(claim);readStoredTaskRun(runRow)
+ return{owner,get task(){return readStoredTask(taskRow)},taskRow,claim,update,runRow,attempt,receipt,cancellation,edit,state,childRows,records,appendFollowing,db:{query} as unknown as PoolClient,read:()=>readBusinessSourceGoalEdit({query} as unknown as PoolClient,owner,readStoredTask(taskRow),claimId,oldGoal)}
+}
