@@ -1321,7 +1321,7 @@ async function applyHost(ctx:Context,projectRoot:string):Promise<void> {
    readArtifactImageBytes:async ref=>{
     const client=await(await resources.database()).pool.connect()
     try{
-     await client.query('begin isolation level repeatable read read only')
+     await client.query('begin isolation level repeatable read')
      const bytes=await readRunGroupArtifactImageBytes(client,owner,{kind:'artifact',id:ref.artifactId,version:ref.version,sha256:ref.sha256,mime:ref.mediaType,bytes:ref.bytes,name:ref.name})
      await client.query('commit')
      return bytes
