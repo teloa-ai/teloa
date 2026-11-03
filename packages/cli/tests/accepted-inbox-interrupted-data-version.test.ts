@@ -1,9 +1,10 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import {canUpgradeData,canUseData,dataVersionMetadata,supportedDataVersion} from '../src/data-version.ts'
+import {frozenData15} from './frozen-data15-reader.ts'
 import {frozenData14} from './frozen-data14-reader.ts'
 
 test('输入发布前中断的新持久证据由data15保护，保留原91边且仅追加1..14到15',async t=>{
+ const {old:{canUpgradeData,canUseData,dataVersionMetadata,supportedDataVersion}}=await frozenData15(t)
  const {old}=await frozenData14(t)
  assert.equal(old.dataVersionMetadata.dataVersion,14)
  assert.equal(old.dataVersionMetadata.migrations.length,91)
@@ -24,6 +25,7 @@ test('输入发布前中断的新持久证据由data15保护，保留原91边且
 })
 
 test('真实冻结data14读者拒绝15，兼容数组不能绕过读者能力或执行未来迁移',async t=>{
+ const {old:{canUpgradeData,canUseData,dataVersionMetadata,supportedDataVersion}}=await frozenData15(t)
  const {old}=await frozenData14(t)
  assert.equal(old.canUseData(old.dataVersionMetadata,14),true)
  assert.equal(old.supportedDataVersion(15),false)
