@@ -118,7 +118,7 @@ export function createShareAcceptance(storage:WorkbenchNavigationStorage,ports:S
  }
  return {
   /** 已开始的接收沿用的原选择；界面据此锁定选择，只能继续原申请。 */
-  async choice(value:SharePackage):Promise<ShareAcceptChoice|undefined>{const pkg=readSharePackage(value);if(!isSharePackageV2(pkg))return undefined;const p=selectedProgress(await sharePackageDigest(pkg),sharePackageSummary(pkg));return p?{scope:p.scope,skills:[...p.skills]}:undefined},
+  async choice(value:SharePackage):Promise<ShareAcceptChoice|undefined>{const pkg=readSharePackage(value);if(!isSharePackageV2(pkg))return await legacy.hasRequest(pkg)?{scope:'general',skills:[]}:undefined;const p=selectedProgress(await sharePackageDigest(pkg),sharePackageSummary(pkg));return p?{scope:p.scope,skills:[...p.skills]}:undefined},
   async accept(value:SharePackage,choice:ShareAcceptChoice,intent?:TemplateShareIntent):Promise<ShareAcceptanceResult>{
   const pkg=readSharePackage(value)
   if(!isSharePackageV2(pkg)){

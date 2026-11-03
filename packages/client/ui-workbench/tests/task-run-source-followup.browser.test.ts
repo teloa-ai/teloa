@@ -1,6 +1,8 @@
 import {test,before,after} from 'node:test'
 import assert from 'node:assert/strict'
 import {fileURLToPath} from 'node:url'
+import {tmpdir} from 'node:os'
+import {join} from 'node:path'
 import {build} from 'vite'
 // @ts-expect-error 复用工作树无头浏览器加载器。
 import {launchOptions,loadPlaywright} from './fixtures/load-playwright.mjs'
@@ -26,9 +28,9 @@ for(const kind of ['unknown','result','error','stopped'])test('本人后续核�
  const open=page.getByRole('button',{name:kind==='unknown'?'在原会话核验':kind==='stopped'?'停止后发起新续办':kind==='error'?'在原会话继续失败工作':'按本轮来源再核验',exact:true});assert.ok(await open.count(),await page.locator('body').innerText());await open.click();const dialog=page.getByRole('dialog'),input=dialog.getByRole('textbox',{name:kind==='error'||kind==='stopped'?'本轮需要如何继续？':'本轮需要核验什么？'});await input.fill('只核对固定v2证据并保存成果，不重做此前动作。')
  await page.keyboard.press('Escape');await dialog.waitFor({state:'hidden'});assert.equal(await page.evaluate(()=>Reflect.get(window,'followupFixture').prepared),0)
  await open.click();assert.equal(await input.inputValue(),'只核对固定v2证据并保存成果，不重做此前动作。');await page.mouse.click(50,500);await dialog.waitFor({state:'hidden'})
- await open.click();await dialog.getByText('SOC-ALERT-002',{exact:false}).waitFor();await page.screenshot({path:'/private/tmp/teloa-source-followup-'+kind+'.png',fullPage:true})
+ await open.click();await dialog.getByText('SOC-ALERT-002',{exact:false}).waitFor();await page.screenshot({path:join(tmpdir(),'teloa-source-followup-'+kind+'.png'),fullPage:true})
  const body=await dialog.innerText();assert.ok(kind==='unknown'?body.includes('可能已经执行并产生费用'):kind==='stopped'?body.includes('原执行已按你的要求停止'):kind==='error'?body.includes('原执行已失败'):body.includes('原执行已经完成'))
- await dialog.getByRole('button',{name:kind==='unknown'?'确认并准备后续核验':kind==='stopped'?'确认并准备新续办':kind==='error'?'确认并准备继续':'确认并准备核验',exact:true}).click();await page.locator('[data-teloa-run-id="new-run"]').waitFor();assert.equal(await page.evaluate(()=>Reflect.get(window,'followupFixture').prepared),1);assert.equal(await page.evaluate(()=>Reflect.get(window,'followupFixture').started),0);assert.equal(await page.locator('[data-teloa-run-id="new-run"]').getByText('只核对固定v2证据并保存成果，不重做此前动作。',{exact:true}).isVisible(),true);await page.screenshot({path:'/private/tmp/teloa-source-followup-prepared-'+kind+'.png',fullPage:true})
+ await dialog.getByRole('button',{name:kind==='unknown'?'确认并准备后续核验':kind==='stopped'?'确认并准备新续办':kind==='error'?'确认并准备继续':'确认并准备核验',exact:true}).click();await page.locator('[data-teloa-run-id="new-run"]').waitFor();assert.equal(await page.evaluate(()=>Reflect.get(window,'followupFixture').prepared),1);assert.equal(await page.evaluate(()=>Reflect.get(window,'followupFixture').started),0);assert.equal(await page.locator('[data-teloa-run-id="new-run"]').getByText('只核对固定v2证据并保存成果，不重做此前动作。',{exact:true}).isVisible(),true);await page.screenshot({path:join(tmpdir(),'teloa-source-followup-prepared-'+kind+'.png'),fullPage:true})
  await page.getByRole('button',{name:'开始',exact:true}).click();assert.equal(await page.evaluate(()=>Reflect.get(window,'followupFixture').started),1)
  await page.locator('[data-teloa-run-id="new-run"]').getByRole('button',{name:'打开',exact:true}).click();assert.deepEqual(await page.evaluate(()=>Reflect.get(window,'followupFixture').opened),['original-session'])
 })

@@ -224,7 +224,8 @@ export class GroupRoutingOutboxService{
  async list(owner:string,input:unknown):Promise<GroupDispatchItem[]>{actor(owner);const request=groupRoutingListInput(input);if(!(await this.pool.query('select 1 from teloa_groups where owner_id=$1 and id=$2',[owner,request.groupId])).rowCount)throw new WorkError('teloa/forbidden','群不属于当前本人。');return (await this.pool.query('select * from teloa_group_routing_outbox where owner_id=$1 and group_id=$2 and message_id=any($3::uuid[]) order by message_id,role_id',[owner,request.groupId,request.messageIds])).rows.map(item)}
  async claim(owner:string,input:{itemId:string;expectedLeaseGeneration:number}):Promise<GroupDispatchItem|null>{
   actor(owner);exact(input,['itemId','expectedLeaseGeneration']);if(!uuid(input.itemId)||!Number.isSafeInteger(input.expectedLeaseGeneration)||input.expectedLeaseGeneration<0)throw invalid()
-  return this.transaction(async db=>{const row=(await db.query(`update teloa_group_routing_outbox set state='leased',attempts=attempts+1,lease_generation=lease_generation+1,dispatch_control_snapshot=null,next_attempt_at=$4::timestamptz+interval '30 seconds'
+  // 未物化交接可随新租约重新核验；已有Task/Run的固定许可须沿原确认保留，不能借重新领取换代。
+  return this.transaction(async db=>{const row=(await db.query(`update teloa_group_routing_outbox set state='leased',attempts=attempts+1,lease_generation=lease_generation+1,dispatch_control_snapshot=case when task_id is null and run_id is null then null else dispatch_control_snapshot end,next_attempt_at=$4::timestamptz+interval '30 seconds'
    where owner_id=$1 and id=$2 and lease_generation=$3 and state in ('pending','leased','unknown','submitted') and (next_attempt_at is null or next_attempt_at<=$4) returning *`,[owner,input.itemId,input.expectedLeaseGeneration,this.identity.now()])).rows[0];return row?item(row):null})
  }
  async assertDispatch(owner:string,input:{itemId:string;leaseGeneration:number}):Promise<void>{

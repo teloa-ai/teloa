@@ -344,8 +344,8 @@ export function WorkbenchFrame({assistantActivity,assistantChat,sessionDiagnosti
   const workAttention=useWorkAttention(workAttentionApi,attentionIdentity)
   const planDraftConnection=useMemo(()=>({planDraftApi,pageCreateApi,planApi,roleApi,conversationPlans,attentionIdentity}),[planDraftApi,pageCreateApi,planApi,roleApi,conversationPlans,attentionIdentity])
   const [attentionSourceSelection,setAttentionSourceSelection]=useState<{source:WorkAttentionOriginalSource;identity:typeof attentionIdentity;creationConnection?:typeof planDraftConnection}>()
-  // 草案读取身份固定在原本人连接；确认服务换代保留选择并重新只读核验，旧确认仍由原 connection 守卫隔离。
-  const attentionOriginalSource=attentionSourceSelection?.identity===attentionIdentity&&(!attentionSourceSelection.creationConnection||attentionSourceSelection.creationConnection.pageCreateApi===pageCreateApi)?attentionSourceSelection.source:undefined
+  // 确认服务重挂可保留原稿重读；员工 API 换代则隔离旧身份，迟到确认仍由原 connection 守卫拒绝。
+  const attentionOriginalSource=attentionSourceSelection?.identity===attentionIdentity&&(!attentionSourceSelection.creationConnection||attentionSourceSelection.creationConnection.pageCreateApi===pageCreateApi&&(attentionSourceSelection.source.kind!=='page-create-draft'||attentionSourceSelection.source.entity!=='role'||attentionSourceSelection.creationConnection.roleApi===roleApi))?attentionSourceSelection.source:undefined
   const planDraftEntry=JSON.stringify([state.view,state.detail,state.rolePreview])
   const planDraftFrame=useRef({connection:planDraftConnection,selection:attentionSourceSelection,entry:planDraftEntry})
   planDraftFrame.current={connection:planDraftConnection,selection:attentionSourceSelection,entry:planDraftEntry}
