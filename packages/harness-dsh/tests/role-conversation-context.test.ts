@@ -7,13 +7,15 @@ import {Context} from '@deepseek-ai/cordis'
 import {AgentRegistry,type Agent} from '@deepseek-ai/dsh-agent'
 import {AgentLoop} from '@deepseek-ai/dsh-agent-loop'
 import {LlmAdapter,LlmRuntime,createUserMessage,type ContextFormed,type GenerateOptions,type StreamChunk} from '@deepseek-ai/dsh-llm'
-import {SessionId,SessionStore,type SessionEvent} from '@deepseek-ai/dsh-session'
+import {SessionId,SessionSeq,SessionStore,type SessionEvent} from '@deepseek-ai/dsh-session'
 import * as JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
 import {SessionProjectionRegistry} from '@deepseek-ai/dsh-session-projection'
 import {SystemPrompt} from '@deepseek-ai/dsh-system-prompt'
 import {ToolRuntime,defineTool} from '@deepseek-ai/dsh-tools'
+import {ApprovalService} from '@deepseek-ai/dsh-user-approval'
 import {WorkError,type DigitalRole} from '@teloa/contract'
 import {registerRoleConversationContext,type RoleContextPorts} from '../src/role-conversation-context.ts'
+import {roleToolApprovalFacts} from '../src/role-tool-approval-context.ts'
 
 // rc.1 的 agent-loop 公开入口未引入其 runtime-context 声明；按官方来源类型注册，不导入私有路径。
 declare module '@deepseek-ai/dsh-llm' {
@@ -24,17 +26,19 @@ const owner='local:teloa-owner',roleId='11111111-1111-4111-8111-111111111111'
 const reply:StreamChunk[]=[{type:'block-start',index:0,blockType:'text'},{type:'text-delta',index:0,text:'收到'},{type:'block-end',index:0,block:{type:'text',text:'收到'}},{type:'finish',reason:{kind:'stop'}}]
 class Adapter extends LlmAdapter{
  requests:GenerateOptions[]=[]
+ scripts:StreamChunk[][]=[]
  override async resolveModel(provider:string,model:string){return {provider,id:model,name:model,inputModalities:['text'] as const}}
- async *stream(options:GenerateOptions){this.requests.push(options);yield* reply}
+ async *stream(options:GenerateOptions){this.requests.push(options);yield* (this.scripts.shift()??reply)}
 }
 function role(fields:Partial<DigitalRole>={}):DigitalRole{return {id:roleId,ownerId:owner,name:'研判同事',kind:'employee',scopes:['general'],duty:'核对 {{foo}} 告警',dataScope:'已授权资料',executionScope:'只读核对',skills:[],knowledge:[],version:1,state:'active',createdAt:'2026-10-01T00:00:00.000Z',updatedAt:'2026-10-01T00:00:00.000Z',...fields}}
-async function fixture(t:TestContext){
+async function fixture(t:TestContext,persistence?:{root:string;resume?:boolean}){
  const ctx=new Context();t.after(()=>ctx.fiber.dispose())
  await ctx.plugin(LlmRuntime);await ctx.plugin(SessionStore);await ctx.plugin(SessionProjectionRegistry);await ctx.plugin(SystemPrompt);await ctx.plugin(ToolRuntime);await ctx.plugin(AgentRegistry);await ctx.plugin(AgentLoop,{agents:[]})
+ if(persistence)await ctx.plugin(JsonlSessionPersistence,{root:persistence.root,compression:'none'})
  const adapter=new Adapter();ctx.llm.registerAdapter(['mock'],adapter)
  let toolExecutions=0
  ctx.tools.register(defineTool({name:'read_public_fixture',description:'读取无敏感信息的固定夹具',parameters:{},output:{schema:{type:'string'},render:(_args,value)=>[{type:'text',text:value}]},execute:async()=>{toolExecutions++;return 'public fixture'}}))
- const {agent}=await ctx.agents.create({sessionId:SessionId('role-context-test'),agentOptions:{provider:'mock',model:'mock'}})
+ const {agent}=await (persistence?.resume?ctx.agents.resume({resumeSessionId:SessionId('role-context-test'),agentOptions:{provider:'mock',model:'mock'}}):ctx.agents.create({sessionId:SessionId('role-context-test'),agentOptions:{provider:'mock',model:'mock'}}))
  const state={requested:roleId as string|null,links:[{kind:'role' as const,objectId:roleId,conversationId:'conversation-one',sessionId:agent.session.id,scopeId:'general' as string|null,active:true}],role:role() as DigitalRole|null,failure:null as Error|null,roleFailure:null as Error|null,bindingOwner:owner,bindingMissing:false,purpose:undefined as 'task-run'|undefined,calls:{conversation:0,requested:0,links:0,role:0}}
  const ports:RoleContextPorts={owner,
   conversation:async()=>{state.calls.conversation++;if(state.bindingMissing)throw new WorkError('teloa/not-bound','missing');return {id:'conversation-one',ownerId:state.bindingOwner,sessionId:agent.session.id,status:'ready',...(state.purpose===undefined?{}:{purpose:state.purpose})}},
@@ -336,4 +340,73 @@ test('官方 JSONL 冷恢复后关闭经验服务，新请求移除历史经验�
  assert.doesNotMatch(JSON.stringify(second.adapter.requests[0]!.messages),/冷恢复前的固定经验正文/)
  assert.match(JSON.stringify(second.adapter.requests[0]!.messages),/核对 \{\{foo\}\} 告警/)
  assert.ok(restored.session.snapshotEvents().some(event=>event.type==='user/message'&&JSON.stringify(event.data).includes('冷恢复前的固定经验正文')),'审计事件保留原始来源')
+})
+
+
+test('普通员工真实拒绝事实在generic继续保留，无关工具不受禁用',{timeout:15000},async t=>{
+ const f=await fixture(t)
+ await f.ctx.plugin(ApprovalService,{policy:'ask'})
+ registerRoleConversationContext(f.ctx,f.ports)
+ let asks=0,requireApproval=true,unrelatedReads=0
+ f.ctx.tools.register(defineTool({name:'read_other_fixture',description:'读取另一份已授权夹具',parameters:{},output:{schema:{type:'string'},render:(_args,value)=>[{type:'text',text:value}]},execute:async()=>{unrelatedReads++;return 'other fixture'}}))
+ f.ctx.on('approval/request',async()=>{asks++;return 'rejected'})
+ f.ctx.on('tools/pre-execute',async(exec,next)=>exec.name==='read_public_fixture'&&requireApproval?{kind:'ask',reason:'核对本次只读操作'}:next())
+ const call:StreamChunk[]=[{type:'block-start',index:0,blockType:'tool-call'},{type:'tool-call-delta',index:0,id:'approval-call',name:'read_public_fixture',argumentsDelta:'{}'},{type:'block-end',index:0,block:{type:'tool-call',id:'approval-call',name:'read_public_fixture',arguments:'{}'}},{type:'finish',reason:{kind:'tool-calls'}}]
+ f.adapter.scripts.push(call,reply)
+ await f.send('核对本次只读操作')
+ assert.equal(asks,1);assert.equal(f.toolExecutions(),0)
+ const tools=(await f.ctx.systemPrompt.assemble({agent:f.agent,scope:f.agent})).tools
+ await f.send('继续')
+ const section=snapshots(f.agent).at(-1)!.data.source.sections.find(row=>row.name==='teloa/role-tool-approval-facts')
+ assert.ok(section,'普通员工真实下一请求必须含结构化拒绝事实')
+ const facts=JSON.parse(section.text)
+ assert.equal(facts.rejectedAttempts.length,1);assert.equal(facts.rejectedAttempts[0].callId,'approval-call');assert.equal(facts.actor,'not-recorded')
+ assert.match(JSON.stringify(f.adapter.requests.at(-1)!.messages),/teloa.role-tool-approval-context\/v1/)
+ assert.deepEqual((await f.ctx.systemPrompt.assemble({agent:f.agent,scope:f.agent})).tools,tools)
+ requireApproval=false;f.adapter.scripts.push(call.map(chunk=>chunk.type==='tool-call-delta'?{...chunk,id:'unrelated-call',name:'read_other_fixture'}:chunk.type==='block-end'&&chunk.block.type==='tool-call'?{...chunk,block:{...chunk.block,id:'unrelated-call',name:'read_other_fixture'}}:chunk),reply)
+ await f.send('另行读取可用夹具')
+ assert.equal(unrelatedReads,1);assert.equal(f.toolExecutions(),0);assert.equal(asks,1)
+})
+
+
+async function recordedApproval(t:TestContext,outcome:'rejected'|'cancelled'|'unavailable'|'allowed-once',persistence?:{root:string}){
+ const f=await fixture(t,persistence)
+ await f.ctx.plugin(ApprovalService,{policy:'ask'})
+ f.ctx.on('approval/request',async()=>outcome)
+ f.ctx.on('tools/pre-execute',async(exec,next)=>exec.name==='read_public_fixture'?{kind:'ask',reason:'核对本次只读操作'}:next())
+ f.adapter.scripts.push([{type:'block-start',index:0,blockType:'tool-call'},{type:'tool-call-delta',index:0,id:'fixed-call',name:'read_public_fixture',argumentsDelta:'{}'},{type:'block-end',index:0,block:{type:'tool-call',id:'fixed-call',name:'read_public_fixture',arguments:'{}'}},{type:'finish',reason:{kind:'tool-calls'}}],reply)
+ await f.send('核对原操作')
+ return f
+}
+const approvalScope=(sessionId:string)=>({ownerId:owner,sessionId,conversationId:'conversation-one',roleId})
+
+test('拒绝事实只读fold区分取消与不可用；缺证、损坏、继承或错session不补猜',async t=>{
+ for(const outcome of ['rejected','cancelled','unavailable','allowed-once'] as const){
+  const f=await recordedApproval(t,outcome),events=f.agent.session.snapshotEvents(),scope=approvalScope(f.agent.session.id)
+  const facts=roleToolApprovalFacts(events,f.agent.session,scope)
+  assert.equal(facts.totalRejected,outcome==='rejected'?1:0);assert.equal(facts.actor,'not-recorded');assert.equal(facts.coverage,'verified')
+  if(outcome!=='rejected')continue
+  assert.equal(roleToolApprovalFacts(events,f.agent.session,{...scope,sessionId:'other'}).totalRejected,null)
+  assert.doesNotMatch(JSON.stringify(facts),/核对原操作|核对本次只读操作|arguments/,'只输出工具和固定指纹，不带原始参数或理由')
+  const inherited={...f.agent.session,id:f.agent.session.id,seq:events.length,inheritedEventCount:events.length,isOwnSeq:()=>false}
+  assert.equal(roleToolApprovalFacts(events,inherited,scope).totalRejected,0)
+  const decision=events.find(event=>event.type==='approval/decided')!,incomplete=events.slice(0,-1)
+  for(const changed of [incomplete,events.filter(event=>event.type!=='tool/call').map((event,index)=>({...event,seq:SessionSeq(index)})),events.filter(event=>event.type!=='approval/asked').map((event,index)=>({...event,seq:SessionSeq(index)})),events.map(event=>event.type==='approval/decided'?{...event,data:{...event.data,id:'unmatched'}}:event),events.map(event=>event.type==='tool/call'?{...event,data:{...event.data,arguments:'not json'}}:event),events.map(event=>event.type==='tool/result'?{...event,sourceEventSeqs:[]}:event),[...events, {...decision,seq:SessionSeq(events.length)}]] as readonly SessionEvent[][]){
+   const result=roleToolApprovalFacts(changed,{id:scope.sessionId,seq:changed===incomplete?events.length:changed.length,inheritedEventCount:0,isOwnSeq:()=>true},scope)
+   assert.equal(result.coverage,'unknown');assert.equal(result.totalRejected,null);assert.ok(result.issues.length)
+  }
+ }
+})
+
+test('普通员工拒绝事实经官方JSONL冷读不被新消息清空，跨本人或另一session不可混入',{timeout:15000},async t=>{
+ const directory=await mkdtemp(join(tmpdir(),'teloa-role-approval-'));t.after(()=>rm(directory,{recursive:true,force:true}))
+ const first=await recordedApproval(t,'rejected',{root:directory}),original=roleToolApprovalFacts(first.agent.session.snapshotEvents(),first.agent.session,approvalScope(first.agent.session.id))
+ await first.ctx.fiber.dispose()
+ const restored=await fixture(t,{root:directory,resume:true});registerRoleConversationContext(restored.ctx,restored.ports)
+ await restored.send('继续')
+ const section=snapshots(restored.agent).at(-1)!.data.source.sections.find(row=>row.name==='teloa/role-tool-approval-facts')!
+ assert.deepEqual(JSON.parse(section.text).rejectedAttempts,original.rejectedAttempts)
+ restored.state.bindingOwner='other';const count=restored.adapter.requests.length;await restored.send('继续');assert.equal(restored.adapter.requests.length,count,'错误owner在发模型前拒绝')
+ const fresh=await fixture(t);registerRoleConversationContext(fresh.ctx,fresh.ports);await fresh.send('继续')
+ assert.doesNotMatch(JSON.stringify(fresh.adapter.requests[0]!.messages),/fixed-call|operationFingerprint/)
 })

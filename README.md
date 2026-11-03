@@ -280,7 +280,7 @@ Community 0.2.4 · 32 views · Actual interfaces with example data. Click an ima
 
 Bring your own model service and API key. Model usage is billed by your provider; the Community software license does not include inference credits.
 
-**0.2.11-rc.4** is being prepared as a prerelease for testing and has not been published. Its planned channels are npm `next` and a GitHub prerelease; stable 0.2.11 is not released by this candidate. The versioned native-package commands below are for use after its release; the currently published release remains [0.2.10](https://github.com/teloa-ai/teloa/releases/tag/v0.2.10). The SDK remains compatible at `@teloa/sdk@0.2.4`. Availability on [npm](https://www.npmjs.com/package/@teloa/cli?activeTab=versions) and [Docker Hub](https://hub.docker.com/r/teloa/teloa) must be checked separately.
+**0.2.11-rc.4** is available as a [GitHub prerelease](https://github.com/teloa-ai/teloa/releases/tag/v0.2.11-rc.4) for testing. Its npm package has not been published; a future npm candidate is intended for `next`. This is not stable 0.2.11; the latest stable release remains [0.2.10](https://github.com/teloa-ai/teloa/releases/tag/v0.2.10). The GitHub native-package commands below are available now; npm commands require that exact version to be published first. The SDK remains compatible at `@teloa/sdk@0.2.4`. Availability on [npm](https://www.npmjs.com/package/@teloa/cli?activeTab=versions) and [Docker Hub](https://hub.docker.com/r/teloa/teloa) must be checked separately.
 
 ### What changes in this release
 

@@ -92,7 +92,7 @@ function exampleContext(draft:BusinessConfigurationDraft){
  return {sourceId,fresh,head:{version:'1.0.0',domain:draft.scope},capacity}
 }
 /** 形状示例必须由当前版本的同一契约读取器校验；仅说明格式，不生成业务数据或扩大能力。 */
-function patchProtocol(draft:BusinessConfigurationDraft){
+function patchProtocol(draft:BusinessConfigurationDraft,delivery:'tool'|'preview'='tool'){
  const {sourceId,fresh,head,capacity}=exampleContext(draft)
  const objectType=fresh('example-record'),viewId=fresh('example-status'),widgetId=fresh('example-widget'),dashboardId=fresh('example-dashboard'),homePageId=fresh('example-home'),recordsPageId=fresh('example-records')
  const canAdd=capacity.definitionsRemaining>=4&&capacity.pagesRemaining>=2
@@ -111,7 +111,7 @@ function patchProtocol(draft:BusinessConfigurationDraft){
   ],
   upsertPages:[{id:homePageId,title:'首页',kind:'dashboard',dashboardId},{id:recordsPageId,title:'记录',kind:'records',objectType,fields:['name','date','owner','status'],allowCreate:true,allowEdit:true,allowArchive:true}],homePageId,pageOrder:[...draft.candidate.pages.map(item=>item.id),homePageId,recordsPageId],
  }:existingPage?{upsertPages:[existingPage]}:{title:draft.candidate.title},draft.candidate.format)
- return {input:'patchJson',legacyInput:'patch',exactlyOne:true,maxUtf8Bytes:businessConfigurationLimits.canonicalBytes,exampleOnly:true,exampleMode:canAdd?'add-complete':'modify-existing',capacity,exampleJson:JSON.stringify(patch),rules:(canAdd?'当前容量允许完整新增形状示例；按目标调整内容，使用新标识以免覆盖原定义。':'当前剩余容量不足完整新增示例，只展示现有页面或标题的合法修改形状；没有新增或移除定义、页面，不改原页面顺序。')+'示例未保存或执行，须保留已有页面及配置。patchJson 是 JSON.stringify(patch) 得到的一个字符串，不是嵌套对象或 Markdown。数组使用 []，布尔为 true/false；字段标签为 label，from 必填；lead 是说明字符串，sourceId 与它同级；定义 version 使用三段字符串如 1.0.0；对象、页面与定义 id 使用字母数字和连字符，字段 name 可用下划线。baseVersion=0 是新业务草案，可以新增定义和页面；数量上限包括现有配置，不通过升级绕过容量或输入格式错误。'}
+ return {...(delivery==='preview'?{output:'patch-object' as const}:{input:'patchJson' as const,legacyInput:'patch' as const,exactlyOne:true}),pageContract:{records:{required:['id','title','kind','objectType','fields','allowCreate','allowEdit','allowArchive'],booleans:['allowCreate','allowEdit','allowArchive'],nullable:false},homePageId:'省略表示保留原首页，不是清空；合并后的页面非空时必须绑定一个现有页面，首次新增页面且原无首页时必须显式提供 homePageId。空页面集不得指定首页；homePageId 不接受 null。记录页操作开关必须明确填写原生 true/false，不能省略、用 null 或按示例推断授权。'},maxUtf8Bytes:businessConfigurationLimits.canonicalBytes,exampleOnly:true,exampleMode:canAdd?'add-complete':'modify-existing',capacity,exampleJson:JSON.stringify(patch),rules:(canAdd?'当前容量允许完整新增形状示例；按目标调整内容，使用新标识以免覆盖原定义。':'当前剩余容量不足完整新增示例，只展示现有页面或标题的合法修改形状；没有新增或移除定义、页面，不改原页面顺序。')+'示例未保存或执行，须保留已有页面及配置。'+(delivery==='preview'?'直接返回完整 JSON patch 对象，不返回字符串、Markdown 或 patch 包装；exampleJson 仅是对象形状的序列化示例。':'patchJson 是 JSON.stringify(patch) 得到的一个字符串，不是嵌套对象或 Markdown。')+'数组使用 []，布尔为 true/false；字段标签为 label，from 必填；lead 是说明字符串，sourceId 与它同级；定义 version 使用三段字符串如 1.0.0；对象、页面与定义 id 使用字母数字和连字符，字段 name 可用下划线。baseVersion=0 是新业务草案，可以新增定义和页面；数量上限包括现有配置，不通过升级绕过容量或输入格式错误。'}
 }
 /** 同步与成果协议按需读取，避免空草案只能用失败写请求逐字段试探。 */
 function sourceMappingProtocol(draft:BusinessConfigurationDraft){
@@ -143,7 +143,7 @@ function draftCapabilities(draft:BusinessConfigurationDraft){
  return {...capabilities,format:businessConfigurationFormatV2,fieldTypes:[...businessFieldTypes,'money','multi-enum','multi-reference'],richFieldFormat:businessRichFieldFormat,viewFormats:['teloa.business-view/v1',businessViewFormatV2],richViewFieldCapabilities:businessRichViewFieldCapabilities,rules:'保留目录分配的 scope 与 sources；definition.domain 必须等于 scope，object-type.sourceId 必须引用原 local-records 来源。object-type 使用 teloa.business-object-type/v2；富字段使用 teloa.business-rich-field/v2，基础字段沿现有协议。money 声明 currencies（允许的三字母大写币种），multi-enum 声明 values（选项及固定顺序）；每个字段仍含 name/label/from/type/required。金额记录值为规范 JSON 字符串 {"currency":"CNY","decimal":"123.45"}，不转浮点数；多选为按 values 顺序的非空 JSON 数组字符串。金额、多选统计使用 teloa.business-view/v2，引用真实对象字段并按 richViewFieldCapabilities 生成；金额 sum/avg/min/max 的每项 measure 必须显式 currency，不合并或换算不同币种，avg 使用四位小数 half-even。multi-enum 可作为 distribution 维度，单条记录可能包含多个标签，各标签成员数不能相加作为互斥总量；筛选 contains 为一个声明成员、overlaps 为多个声明成员。看板复用 teloa.business-widget/v1 的 view-ref 和 teloa.business-dashboard/v1，v2 看板目前只支持 view-ref，旧 SQL 不支持 rich；保留现有页面和定义，无法支持的旧 SQL 页面应解释限制，不得为绕过校验删除。'+relationRulesV2+numericRules+'附件尚未支持。草案格式固定，不能用 patch 改为另一格式。'}
 }
 /** 仅当前本人草案的版本化生成协议；不读取记录、员工、连接或本机文件。 */
-export function businessBuilderGenerationSchema(draft:BusinessConfigurationDraft){return {candidate:draft.candidate,capabilities:{...draftCapabilities(draft),patchProtocol:patchProtocol(draft)}}}
+export function businessBuilderGenerationSchema(draft:BusinessConfigurationDraft,delivery:'tool'|'preview'='tool'){return {candidate:draft.candidate,capabilities:{...draftCapabilities(draft),patchProtocol:patchProtocol(draft,delivery)}}}
 function read(draft:BusinessConfigurationDraft,input:ReturnType<typeof query>){
  const base={draftId:draft.id,revision:draft.revision,baseVersion:draft.baseVersion,hash:draft.hash,status:draft.status,title:draft.candidate.title,scope:draft.scope,sources:draft.candidate.sources}
  if('protocol' in input)return encoded({...base,protocol:sourceMappingProtocol(draft)})

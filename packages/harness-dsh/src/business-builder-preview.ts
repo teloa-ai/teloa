@@ -79,7 +79,7 @@ export function registerBusinessBuilderPreview(ctx:Context,ports:BusinessBuilder
   if(current.draft.status!=='draft')throw denied()
   const messages=decision.messages.filter(message=>message.source.kind==='user')
   if(messages.length!==1||messages[0]!.content.some(part=>part.type!=='text')||Reflect.get(messages[0]!.source,'principal')!==undefined)throw denied()
-  const message=messages[0]!,schema=businessBuilderGenerationSchema(current.draft),text=JSON.stringify(schema)
+  const message=messages[0]!,schema=businessBuilderGenerationSchema(current.draft,'preview'),text=JSON.stringify(schema)
   if(Buffer.byteLength(text,'utf8')>businessConfigurationLimits.canonicalBytes)throw invalid()
   const prepared:Prepared={kind:'prepared',owner:ports.owner,sessionId:agent.id,draftId:current.draft.id,messageId:message.id,turn,step,revision:current.draft.revision,draftHash:current.draft.hash,fingerprint:current.fingerprint,modeRequestId:selected.requestId,requestId:requestId(['business-builder-host-preview/v1',ports.owner,agent.id,message.id,current.draft.id,current.draft.revision])}
   const prior=records(agent).find(r=>r.kind==='prepared'&&r.messageId===message.id)
