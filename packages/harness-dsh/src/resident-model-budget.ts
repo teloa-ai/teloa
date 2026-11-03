@@ -1,12 +1,14 @@
+import {isDeepStrictEqual} from 'node:util'
 import {createHash,randomUUID} from 'node:crypto'
 import type {Context} from '@deepseek-ai/cordis'
 import {LlmError,type GenerateOptions,type StreamChunk,type TokenUsage,type LlmFailure} from '@deepseek-ai/dsh-llm'
 import type {} from '@deepseek-ai/dsh-llm-retry'
 import {SessionId,type SessionEvent} from '@deepseek-ai/dsh-session'
 import {WorkError,workBudgetExhaustedCode} from '@teloa/contract'
-import {WorkRetryService,combineWorkAccessLeases,type TaskRunService,type TaskRun,type WorkControlService,type WorkBudgetService,type WorkAccessLease,type RunBudgetTerminal} from '@teloa/backend'
+import {WorkRetryService,combineWorkAccessLeases,taskRunEvidenceProofEnd,type TaskRunService,type TaskRun,type WorkControlService,type WorkBudgetService,type WorkAccessLease,type RunBudgetTerminal} from '@teloa/backend'
 import type {createNativeWorkInput} from './native-work-input.ts'
 import {readSessionEvents} from './session-events.ts'
+import {acceptedInboxErrorEvidence} from './task-run-inbox-error.ts'
 import {observeTaskRunTimeline} from './task-run-observation.ts'
 
 type Position={sessionId:string;turn:number;step:number;reviewCallId?:string}
@@ -25,11 +27,17 @@ async function reserveOrExplain<T>(reserve:()=>Promise<T>):Promise<T>{
 /** 只读同一原生 Run 的持久结束锚点；修复器回填的 turn/end 时间不能替代其正式封口时刻。 */
 export function runBudgetTerminal(run:TaskRun,snapshot:{sessionId:string;events:readonly SessionEvent[];inheritedEventCount:number}):RunBudgetTerminal|null{
  const evidence=run.evidence
- if(run.state!=='ended'||evidence?.state!=='ended'||snapshot.sessionId!==run.sessionId||!count(snapshot.inheritedEventCount)||evidence.messageSeq<snapshot.inheritedEventCount||snapshot.events.length<evidence.endSeq+1)return null
+ if(run.state!=='ended'||evidence?.state!=='ended'||snapshot.sessionId!==run.sessionId||!count(snapshot.inheritedEventCount)||evidence.messageSeq<snapshot.inheritedEventCount||snapshot.events.length<taskRunEvidenceProofEnd(evidence)+1)return null
  // 原 Run 的结束锚点冻结在此前缀；后续独立输入不归入原 Run 的消耗。
- const events=snapshot.events.slice(0,evidence.endSeq+1)
+ const events=snapshot.events.slice(0,taskRunEvidenceProofEnd(evidence)+1)
  try{
   if(events.some((event,index)=>event.seq!==index||!count(event.time)))return null
+  if(evidence.inputAnchor){
+   // 新中断锚以官方恢复seal计封口时间；endSeq/turnEndSeq仍保留真实turn/end。
+   const fixed=acceptedInboxErrorEvidence(run,events,snapshot.inheritedEventCount)
+   if(!fixed||!isDeepStrictEqual(fixed,evidence))return null
+   return {schema:'teloa.work-budget-terminal/v1',runId:run.id,sessionId:run.sessionId,nativeRequestId:run.nativeRequestId,turn:evidence.turn,messageSeq:evidence.messageSeq,endSeq:evidence.endSeq,turnEndSeq:evidence.endSeq,terminalKind:'turn/end',endedAt:new Date(events[taskRunEvidenceProofEnd(evidence)]!.time).toISOString(),inputAnchor:evidence.inputAnchor}
+  }
   const observed=observeTaskRunTimeline(events,run.nativeRequestId).observation
   if(observed.state!=='ended'||observed.turn!==evidence.turn||observed.messageSeq!==evidence.messageSeq||observed.reason!==evidence.reason)return null
   const message=events[evidence.messageSeq],turnEnd=events[observed.endSeq],terminal=events[evidence.endSeq]

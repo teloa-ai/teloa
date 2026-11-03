@@ -11,6 +11,7 @@ import {renderToStaticMarkup} from 'react-dom/server'
 import type {RoleDailyLog, RoleDailyLogKind, RoleDailyLogSummary, RoleMemory} from '@teloa/contract'
 import type {RoleDailyLogApi} from '../src/client/role-daily-log-api.ts'
 import type {RoleMemoryApi} from '../src/client/role-memory-api.ts'
+import * as markdownCore from '../src/client/knowledge-markdown-core.ts'
 
 /**
  * 功能验证（2026-09-21 AutoDream 一期与群提及）：同事「工作日志」页签与判断力样本分组。
@@ -55,6 +56,12 @@ function mount(initial:Props){
   if(id.endsWith('auto-dream-day.js'))return {autoDreamObservationDay:(nowIso:string)=>nowIso.slice(0,10)}
   if(id.endsWith('i18n/provider.js'))return {useI18n:()=>({t:zh,locale:'zh-CN',dateTime:(value:string)=>String(value).slice(0,10)})}
   if(id.endsWith('i18n/errors.js'))return {localizeWorkError:(_locale:string,cause:unknown)=>cause instanceof Error?cause.message:String(cause)}
+  if(id.endsWith('knowledge-markdown-core.js'))return markdownCore
+  if(id.endsWith('knowledge-markdown.js')){
+   const source=readFileSync(new URL('../src/client/knowledge-markdown.tsx',import.meta.url),'utf8'),exported:Record<string,unknown>={}
+   new Function('require','exports','React',ts.transpileModule(source,{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.React}}).outputText)(require,exported,hooks)
+   return exported
+  }
   throw Error('未声明的组件依赖：'+id)
  }
  const source=readFileSync(new URL('../src/client/RoleDailyLogPanel.tsx',import.meta.url),'utf8')
@@ -81,7 +88,7 @@ function mount(initial:Props){
  }
  const contentOf=(node:React.ReactNode):string=>{
   if(Array.isArray(node))return node.map(contentOf).join('')
-  if(React.isValidElement<Record<string,any>>(node))return contentOf((node.props as {children?:React.ReactNode}).children)
+  if(React.isValidElement<Record<string,any>>(node))return typeof node.type==='function'?contentOf((node.type as (p:unknown)=>React.ReactNode)(node.props)):contentOf((node.props as {children?:React.ReactNode}).children)
   return typeof node==='string'||typeof node==='number'?String(node):''
  }
  return {

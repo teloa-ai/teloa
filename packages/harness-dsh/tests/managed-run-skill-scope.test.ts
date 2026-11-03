@@ -97,6 +97,18 @@ test('agent scope 固定旧安装并覆盖全局新版，同 run ensure 幂等�
  await assert.rejects(manager.ensure(agent,{...run,id:randomUUID()},new AbortController().signal),{code:'teloa/conflict'})
 })
 
+test('已核验续报释放旧Run技能作用域后可装配新Run，其他告警作用域保留',async t=>{
+ const value=await setup(t),agent=value.agent(),other=value.agent(),signal=new AbortController().signal
+ const manager=createManagedRunSkillScope(value.ctx,{managedRoot:value.managedRoot,verify:value.verify});t.after(()=>manager.dispose())
+ const first={id:randomUUID(),sessionId:agent.session.id,skills:[value.skill]},independent={id:randomUUID(),sessionId:other.session.id,skills:[value.skill]}
+ await manager.ensure(agent,first,signal);await manager.ensure(other,independent,signal)
+ await manager.release(first.id)
+ await manager.ensure(agent,{...first,id:randomUUID()},signal)
+ assert.equal((await value.ctx.skills.get('fixed-method',{cwd:value.root,scope:agent}))?.content,'旧版正文')
+ assert.equal((await value.ctx.skills.get('fixed-method',{cwd:value.root,scope:other}))?.content,'旧版正文')
+ await manager.ensure(other,independent,signal)
+})
+
 test('子 Agent pre-step 经真实固定 Skill scope 读取父 Run 旧版，拒绝伪造归属与断链',async t=>{
  const value=await setup(t),parent=value.agent(),child=value.agent(),run={id:randomUUID(),sessionId:parent.session.id,skills:[value.skill]}
  Object.assign(child.session.header,{origin:'subagent',parentSession:parent.session.id,delegationDepth:1})

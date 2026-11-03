@@ -1,6 +1,6 @@
 import {useEffect,useState,type ReactNode} from 'react'
 import {ArrowLeft,ArrowUpRight} from 'lucide-react'
-import type {BusinessActionRecord,BusinessLedger,BusinessLedgerBlock,BusinessLedgerObject,BusinessObjectTypeDefinition,BusinessViewCoverage,BusinessViewResult} from '@teloa/contract'
+import {businessFieldValueText,type BusinessActionRecord,BusinessLedger,BusinessLedgerBlock,BusinessLedgerObject,BusinessObjectTypeDefinition,BusinessViewCoverage,BusinessViewResult} from '@teloa/contract'
 import {businessLedgerBlockUpdated,businessLedgerCacheKeys,businessLedgerFailureKey,ledgerListTruncation,readBusinessLedgerDirectory,type BusinessLedgerApi} from './business-ledger-api.js'
 import {durationText,localizedBusinessActionTitle,localizedBusinessFieldLabel,localizedBusinessFieldValue,localizedBusinessObjectType,localizedBusinessView} from './business-definition-localization.js'
 import {blockLocalCustomized} from './business-customization-presentation.js'
@@ -169,7 +169,7 @@ export function ViewList({view,definition,sourceLabel,select,selected}:{view:Bus
  const {t,number,dateTime,locale}=useI18n()
  const localizedView=localizedBusinessView(view,definition,locale),objects=localizedView.objects??[],measure=localizedView.measures[0]!
  const stageField=definition.progress?definition.fields.find(field=>field.name===definition.progress!.stageField&&field.type==='enum'):undefined
- const stageValue=(object:BusinessLedgerObject)=>{const value=stageField?object.fields.find(field=>field.label===stageField.from)?.value:undefined;return value===undefined?'—':localizedBusinessFieldValue(stageField!,value,locale)}
+ const stageValue=(object:BusinessLedgerObject)=>{const value=stageField?object.fields.find(field=>field.label===stageField.from)?.value:undefined;return value===undefined?'—':localizedBusinessFieldValue(stageField!,businessFieldValueText(value),locale)}
  return <div className={css.listView} data-view-list={localizedView.viewId}>
   <div className={css.tableWrap}><table className={css.table}>
    <thead><tr><th scope="col">{t('business.ledger.column.object')}</th>{stageField&&<th scope="col">{localizedBusinessFieldLabel(stageField,locale)}</th>}<th scope="col">{t('business.ledger.column.sourceAndTime')}</th><th scope="col">{t('business.ledger.column.completeness')}</th><th scope="col">{measure.label}</th></tr></thead>
@@ -261,7 +261,7 @@ function ObjectSheet({object,definition,sourceLabel}:{object:BusinessLedgerObjec
  const {t,dateTime,locale}=useI18n()
  const copy=localizedBusinessObjectType(definition,locale)
  // 字段按声明的标签与顺序排，声明里没有的快照字段排在后面一组，原样显示、不丢。
- const declared=definition.fields.map(field=>{const value=object.fields.find(row=>row.label===field.from)?.value??'';return {key:field.name,label:localizedBusinessFieldLabel(field,locale),value:value?localizedBusinessFieldValue(field,value,locale):''}})
+ const declared=definition.fields.map(field=>{const value=object.fields.find(row=>row.label===field.from)?.value??'';return {key:field.name,label:localizedBusinessFieldLabel(field,locale),value:value!==''?localizedBusinessFieldValue(field,businessFieldValueText(value),locale):''}})
  const extra=object.fields.filter(row=>!definition.fields.some(field=>field.from===row.label))
  return <article className={css.sheet} aria-label={t('business.ledger.objectDetail')}>
   <header><span>{copy.title}</span><h3>{object.title}</h3></header>
@@ -272,8 +272,8 @@ function ObjectSheet({object,definition,sourceLabel}:{object:BusinessLedgerObjec
    <dt>{t('business.real.observedAt')}</dt><dd>{dateTime(new Date(object.observedAt))}</dd>
    <dt>{t('business.real.receivedAt')}</dt><dd>{dateTime(new Date(object.receivedAt))}</dd>
    <dt>{t('business.ledger.column.completeness')}</dt><dd>{object.quality==='complete'?t('business.data.quality.complete'):t('business.real.missingData')}</dd>
-   {declared.map(field=><div className={css.fact} key={field.key}><dt>{field.label}</dt><dd>{field.value||t('business.real.notProvided')}</dd></div>)}
-   {extra.map(field=><div className={css.fact} key={field.label}><dt>{field.label}</dt><dd>{field.value||t('business.real.notProvided')}</dd></div>)}
+   {declared.map(field=><div className={css.fact} key={field.key}><dt>{field.label}</dt><dd>{businessFieldValueText(field.value)||t('business.real.notProvided')}</dd></div>)}
+   {extra.map(field=><div className={css.fact} key={field.label}><dt>{field.label}</dt><dd>{businessFieldValueText(field.value)||t('business.real.notProvided')}</dd></div>)}
   </dl>
   <details><summary>{t('business.real.verifyPinnedDigest')}</summary><code>{object.snapshotHash}</code></details>
  </article>
@@ -297,10 +297,12 @@ type ViewProps={
  objectActions?:((object:BusinessLedgerObject,objectType:string,block:BusinessLedgerBlock)=>ReactNode)|undefined
  /** 一条声明都没有时的空态：调用方给就用它（业务页给的是「还差一步」接入引导），不给就用台账自己那一句。 */
  empty?:ReactNode|undefined
+ /** 已有外层看板抽屉时，详情直接在其内容区呈现，避免第二个模态层。 */
+ inlineDetail?:boolean|undefined
 }
 
 /** 已经读到台账之后的那一层：五档空态与五个组件全在这里，读取与缓存留在外面一层。 */
-export function BusinessLedgerView({ledger,catalog=ledger,objectType:requestedType,objectId,updated,match,go,connect,objectActions,empty}:ViewProps){
+export function BusinessLedgerView({ledger,catalog=ledger,objectType:requestedType,objectId,updated,match,go,connect,objectActions,empty,inlineDetail=false}:ViewProps){
  const {t,locale}=useI18n()
  const scope=ledger.scope as BusinessTarget['scope']
  // 详情只是同一目录的另一层；返回时保留筛选，不把上一个对象类型的筛选带进新类型。
@@ -341,10 +343,12 @@ export function BusinessLedgerView({ledger,catalog=ledger,objectType:requestedTy
   const current=list?.objects?.find(object=>object.id===objectId)
   // 已经固定进台账的对象不因实时来源暂时未连接而消失；连接状态只影响继续同步与执行动作。
   const closeObject=()=>go({scope,section:'data',objectType:definition.id,...(match?{match}:{})})
-  const detail=objectId?<ContextDrawer title={current?.title??t('business.ledger.objectDetail')} close={closeObject}><div className={css.objectDrawer}>
+  const detailContent=objectId?<div className={css.objectDrawer}>
    <button type="button" className={light.back} onClick={closeObject}><ArrowLeft size={14} aria-hidden/>{t('business.ledger.backDirectory',{type:copy.title})}</button>
    {current?<><ObjectSheet object={current} definition={definition} sourceLabel={sourceName}/>{objectActions?.(current,definition.id,block)}</>:<p role="status" className={base.empty}>{t('error.notFound')}</p>}
-  </div></ContextDrawer>:null
+  </div>:null
+  if(inlineDetail&&objectId)return detailContent
+  const detail=objectId?<ContextDrawer title={current?.title??t('business.ledger.objectDetail')} close={closeObject}>{detailContent}</ContextDrawer>:null
   return <section className={css.surface} aria-label={copy.title}>
    {navigation}{snapshotNotice}
    {updated?.has(definition.id)&&<p className={css.note} data-definition-updated>{t('business.ledger.definitionUpdated')}</p>}
@@ -393,15 +397,16 @@ export function BusinessLedgerView({ledger,catalog=ledger,objectType:requestedTy
  * 声明版本一变旧结果整条作废，不做增量合并，块上标「声明已更新」（规格 §4.3、§8 第 5 条）。
  * 读不出来就停在这里并写明原因，不以空台账替代（规格 §8 第 7 条）。
  */
-export function BusinessLedgerSurface({scope,objectType,objectId,match,api,go,connect,objectActions,empty,refreshKey=0}:{
+export function BusinessLedgerSurface({scope,objectType,objectId,match,api,go,connect,objectActions,empty,refreshKey=0,drawerClose}:{
  scope:BusinessTarget['scope'];objectType?:string|undefined;objectId?:string|undefined;match?:BusinessTarget['match'];api:BusinessLedgerApi
  go:(target:BusinessTarget)=>void;connect:(sourceId:string)=>void
  /** 第三个入参给出所属块：能不能对这一类对象发起动作由服务端算好的 `defaultAction.available` 说。 */
  objectActions?:((object:BusinessLedgerObject,objectType:string,block:BusinessLedgerBlock)=>ReactNode)|undefined
  empty?:ReactNode|undefined
  refreshKey?:number
+ drawerClose?:(()=>void)|undefined
 }){
- const {t}=useI18n()
+ const {t,locale}=useI18n()
  const [state,setState]=useState<SurfaceState>({status:'loading'})
  const [attempt,setAttempt]=useState(0)
  // 依赖取筛选的两个取值而不是对象本身：上层每次重渲染都会给一个新对象，不能因此重读。
@@ -418,8 +423,10 @@ export function BusinessLedgerSurface({scope,objectType,objectId,match,api,go,co
   },error=>{if(!controller.signal.aborted)setState({status:'failed',reason:businessLedgerFailureKey(error)})})
   return ()=>controller.abort()
  },[api,scope,objectType,matchField,matchValue,attempt,refreshKey])
- if(state.status==='loading')return <div className={base.empty} aria-label={t('business.ledger.title')}><h3>{t('business.ledger.loading')}</h3></div>
  // 按宿主回的错误码选一条固定文案；`details` 不碰，原始 message 与内部错误码都不上屏。
- if(state.status==='failed')return <div className={base.error} role="alert"><span>{t(state.reason)}</span><button type="button" onClick={()=>setAttempt(value=>value+1)}>{t('business.ledger.retry')}</button></div>
- return <BusinessLedgerView ledger={state.ledger} catalog={state.catalog} updated={state.updated} go={go} connect={connect} {...(objectType?{objectType}:{})} {...(objectId?{objectId}:{})} {...(match?{match}:{})} {...(objectActions?{objectActions}:{})} {...(empty?{empty}:{})}/>
+ const content=state.status==='loading'?<div className={base.empty} aria-label={t('business.ledger.title')}><h3>{t('business.ledger.loading')}</h3></div>:state.status==='failed'?<div className={base.error} role="alert"><span>{t(state.reason)}</span><button type="button" onClick={()=>setAttempt(value=>value+1)}>{t('business.ledger.retry')}</button></div>:<BusinessLedgerView ledger={state.ledger} catalog={state.catalog} updated={state.updated} go={go} connect={connect} inlineDetail={!!drawerClose} {...(objectType?{objectType}:{})} {...(objectId?{objectId}:{})} {...(match?{match}:{})} {...(objectActions?{objectActions}:{})} {...(empty?{empty}:{})}/>
+ if(!drawerClose)return content
+ const block=state.status==='ready'?state.ledger.blocks.find(block=>block.objectType.definition.id===objectType):undefined
+ const object=block?.views.find(view=>view.kind==='list')?.objects?.find(object=>object.id===objectId)
+ return <ContextDrawer title={object?.title??(block?localizedBusinessObjectType(block.objectType.definition,locale).title:t('business.ledger.objectDetail'))} close={drawerClose}>{content}</ContextDrawer>
 }

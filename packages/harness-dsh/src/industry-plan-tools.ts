@@ -1,6 +1,6 @@
 import type {Context} from '@deepseek-ai/cordis'
 import {defineTool,type PreToolDecision} from '@deepseek-ai/dsh-tools'
-import {WorkError,taskInput} from '@teloa/contract'
+import {WorkError,taskInput,scheduleTimezones} from '@teloa/contract'
 import {authorizePlanManagement,planRequestIdentity,safePlanOperation,type PlanToolsPorts} from './plan-tools.ts'
 export const industryPlanToolNames=['teloa_industry_plans_directory','teloa_industry_plans_preview','teloa_industry_plans_create','teloa_industry_plans_source'] as const
 export type IndustryPlanToolsPorts=Pick<PlanToolsPorts,'owner'|'conversation'|'readTaskPolicy'>&{
@@ -8,7 +8,7 @@ export type IndustryPlanToolsPorts=Pick<PlanToolsPorts,'owner'|'conversation'|'r
  handler:(method:string,payload:unknown)=>Promise<unknown>
 }
 const item={loadId:{type:'string',required:true},itemInstanceId:{type:'string',required:true}} as const
-const parameters={...item,goal:{type:'string',required:true},delivery:{type:'string',required:true},notificationPolicy:{type:'string',enum:['always','attention','failure','silent'],required:true},roleId:{type:'string',required:true},expectedRoleVersion:{type:'integer',required:true},cadence:{type:'string',enum:['daily','weekly'],required:true},weekday:{type:'integer',enum:[1,2,3,4,5,6,7],required:true},time:{type:'string',required:true},timezone:{type:'string',enum:['Asia/Singapore','Asia/Shanghai','UTC'],required:true}} as const
+const parameters={...item,goal:{type:'string',required:true},delivery:{type:'string',required:true},notificationPolicy:{type:'string',enum:['always','attention','failure','silent'],required:true},roleId:{type:'string',required:true},expectedRoleVersion:{type:'integer',required:true},cadence:{type:'string',enum:['daily','weekly'],required:true},weekday:{type:'integer',enum:[1,2,3,4,5,6,7],required:true},time:{type:'string',required:true},timezone:{type:'string',enum:scheduleTimezones,required:true}} as const
 const names=new Set<string>(industryPlanToolNames)
 /** 行业入口复用普通计划管理身份与原生工具闸；创建始终暂停，启用仍走 plans/change。 */
 export function registerIndustryPlanTools(ctx:Context,ports:IndustryPlanToolsPorts){

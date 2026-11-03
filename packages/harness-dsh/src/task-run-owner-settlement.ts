@@ -2,8 +2,9 @@ import {createHash} from 'node:crypto'
 import {isDeepStrictEqual} from 'node:util'
 import type {Context} from '@deepseek-ai/cordis'
 import {SessionId} from '@deepseek-ai/dsh-session'
-import type {TaskRun,TaskRunOwnerSettlement,TaskRunRuntimeLink} from '@teloa/backend'
+import {taskRunEvidenceProofEnd,type TaskRun,type TaskRunOwnerSettlement,type TaskRunRuntimeLink} from '@teloa/backend'
 import type {TaskRunPorts} from './task-run-driver.ts'
+import {acceptedInboxErrorEvidence} from './task-run-inbox-error.ts'
 import {observeTaskRunTimeline} from './task-run-observation.ts'
 
 type Options={runtimeId:string;ports:TaskRunPorts;listLinks:()=>Promise<readonly TaskRunRuntimeLink[]>;nativeInput:{hasPendingJobCompletion:(sessionId:string)=>boolean;hasCancelledJobCompletion:(sessionId:string)=>boolean};now:()=>string}
@@ -17,10 +18,10 @@ export async function taskRunOwnerSettlement(ctx:Context,run:TaskRun,options:Opt
  try{
   const frame=async()=>{
    const full=await ports.events(run)
-   if(full.length<evidence.endSeq+1||full.some((event,index)=>event.seq!==index||!Number.isSafeInteger(event.time)||event.time<0))return null
-   const events=full.slice(0,evidence.endSeq+1)
+   if(full.length<taskRunEvidenceProofEnd(evidence)+1||full.some((event,index)=>event.seq!==index||!Number.isSafeInteger(event.time)||event.time<0))return null
+   const events=full.slice(0,taskRunEvidenceProofEnd(evidence)+1)
    const owned=new Set<number>(),continuations=await ports.continuations?.(run,events),goal=await ports.goalObservation?.(run,events)
-   const observed=observeTaskRunTimeline(events,run.nativeRequestId,continuations,event=>owned.add(event.seq),goal).observation
+   const observed=evidence.inputAnchor?acceptedInboxErrorEvidence(run,events):observeTaskRunTimeline(events,run.nativeRequestId,continuations,event=>owned.add(event.seq),goal).observation
    if(!isDeepStrictEqual(observed,evidence)||events[evidence.endSeq]?.type!=='turn/end')return null
    if(events.some(event=>event.seq>evidence.messageSeq&&event.type==='user/message'&&event.surfaceOp==='append'&&!owned.has(event.seq)))return null
    // 完成轮不能藏着尚无正式结果的工具调用；工具名称不参与资格判定。
@@ -58,6 +59,6 @@ export async function taskRunOwnerSettlement(ctx:Context,run:TaskRun,options:Opt
   }
   const before=await frame();if(!before)return null
   const after=await frame();if(!after||!isDeepStrictEqual(before,after))return null
-  return {schema:'teloa.task-run-owner-settlement/v1',runId:run.id,nativeId:after.nativeId,sessionId:run.sessionId,nativeRequestId:run.nativeRequestId,inputSha256:sha(run.inputText),evidence:{...evidence},prefixLength:evidence.endSeq+1,prefixSha256:sha(JSON.stringify(after.events)),observedAt:options.now()}
+  return {schema:'teloa.task-run-owner-settlement/v1',runId:run.id,nativeId:after.nativeId,sessionId:run.sessionId,nativeRequestId:run.nativeRequestId,inputSha256:sha(run.inputText),evidence:{...evidence},prefixLength:taskRunEvidenceProofEnd(evidence)+1,prefixSha256:sha(JSON.stringify(after.events)),observedAt:options.now()}
  }catch{return null}
 }

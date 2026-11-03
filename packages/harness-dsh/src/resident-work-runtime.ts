@@ -1,4 +1,6 @@
 import {createHash} from 'node:crypto'
+import {TaskRunSubmissionService,ArtifactAvailabilityService} from '@teloa/backend'
+import {hasPreparedMaintenance} from '@teloa/backend'
 import type {Context} from '@deepseek-ai/cordis'
 import {Session,SessionId,SessionLogOffset,type SessionEvent} from '@deepseek-ai/dsh-session'
 import {foldGoal} from '@deepseek-ai/dsh-goal'
@@ -30,6 +32,7 @@ import type {NativeCheckpointSnapshot,NativeInputRestore,NativeInputRestoreInput
 import {taskRunOwnerSettlement} from './task-run-owner-settlement.ts'
 import {taskRunRuntimeId} from './task-run-background.ts'
 import {plannedRestartResume} from './planned-restart-resume.ts'
+import {taskRunQuiescentSettlement} from './task-run-quiescence.ts'
 
 type Pool=TaskRunService['pool']
 type Permit=Awaited<ReturnType<WorkRecoveryService['begin']>>
@@ -90,6 +93,7 @@ export async function createResidentWorkRuntime(ctx:Context,options:ResidentWork
   }catch(error){await db.query('rollback').catch(()=>{});if(error instanceof WorkError)return false;throw error}
   finally{db.release()}
  }
+ const quiescentRunSettled=async(run:TaskRun)=>taskRunQuiescentSettlement(ctx,owner,run,{pool,readRun:async(db,actor,id)=>(await runs()).readVerifiedInTransaction(db,actor,id)},new AbortController().signal)
  const controls=new WorkControlService(pool,identity,{hostGeneration:()=>generation,ownerAuthority:authority,inspectRun:async(value,input)=>{
   assertOwner(value);if(!controlDriver)throw unavailable()
   let proof=await controlDriver.inspectRun(value,input).catch(()=>({settled:false,unknownOperationIds:[] as string[]}))
@@ -139,10 +143,12 @@ export async function createResidentWorkRuntime(ctx:Context,options:ResidentWork
  const invalidateOrdinaryRestore=(sessionId:string)=>{if(typeof sessionId!=='string'||!/^[-a-zA-Z0-9_]{1,128}$/.test(sessionId))throw unavailable();ordinaryProvenance.set(sessionId,(ordinaryProvenance.get(sessionId)??0)+1)}
  const authorizeOrdinaryRestore=options.ordinaryConversations?createOrdinaryNativeRestoreAuthorization(ctx,{owner,conversations:options.ordinaryConversations,pool,snapshot,isRoutingSession,provenanceGeneration:sessionId=>ordinaryProvenance.get(sessionId)??0,assertCurrent:()=>{if(closed)throw unavailable()}}):undefined
  const inboxFor=(value:NativeCheckpointSnapshot)=>ctx.sessionProjections.stateOf(Session.create(SessionId(value.header.id),value.events,value.header,SessionLogOffset(value.inheritedEventCount)),'inbox')
- const inspectCheckpoint=async(value:string,input:{runId:string;sessionId:string;nativeRequestId:string},db?:Parameters<TaskRunService['readVerifiedInTransaction']>[0]):Promise<WorkRecoveryCheckpoint>=>{
+ const inspectCheckpoint=async(value:string,input:{runId:string;sessionId:string;nativeRequestId:string},db?:Parameters<TaskRunService['readVerifiedInTransaction']>[0],verifiedRun?:TaskRun):Promise<WorkRecoveryCheckpoint>=>{
   assertOwner(value);const fixed=await snapshot(input.sessionId),inbox=inboxFor(fixed),unknown:string[]=[],client=db??await pool.connect()
   try{
-  const run=await(await runs()).readVerifiedInTransaction(client,owner,input.runId)
+  // 来源任务恢复已在任务锁下核验原终态，复用该快照而不反向等待执行行锁。
+  const run=verifiedRun??await(await runs()).readVerifiedInTransaction(client,owner,input.runId)
+  if(run.id!==input.runId||run.sessionId!==input.sessionId||run.nativeRequestId!==input.nativeRequestId)throw unavailable()
   const accepted=fixed.events.some(event=>event.seq>=fixed.inheritedEventCount&&((event.type==='user/message'&&event.data.source.kind==='user'&&Reflect.get(event.data.source,'rpcId')===input.nativeRequestId)||(event.type==='agent/inbox/spliced'&&event.data.inserted.some(message=>message.source.kind==='user'&&Reflect.get(message.source,'rpcId')===input.nativeRequestId))))
   if(!inbox)unknown.push('checkpoint:inbox-unavailable')
   const pending=!!inbox&&(inbox['next-turn'].length>0||inbox['next-step'].length>0)
@@ -154,7 +160,7 @@ export async function createResidentWorkRuntime(ctx:Context,options:ResidentWork
   return {reason:unknown.length||!accepted&&run.state!=='prepared'?'unknown':accepted?'accepted':'unaccepted',checkpointSha256:hash(fixed),hasPendingInput:pending,unknownOperationIds:unknown}
   }finally{if(!db)client.release()}
  }
- const recovery=new WorkRecoveryService(pool,identity,controls,{hostGeneration:()=>generation,ownerAuthority:authority,inspectCheckpoint,authorizeResume:async(db,value,{candidate})=>{assertOwner(value);const run=await(await runs()).readVerifiedInTransaction(db,value,candidate.runId);if(!run.lineage)throw unavailable();return budgets.admissionInTransaction(db,value,run.lineage.budgetAccountId)}})
+ const recovery=new WorkRecoveryService(pool,identity,controls,{resumeSourceTask:async(db,value,{task,control},approval)=>{assertOwner(value);return(await runs()).resumeSourceTaskInTransaction(db,value,task,control,approval,async run=>{const current=await inspectCheckpoint(value,{runId:run.id,sessionId:run.sessionId,nativeRequestId:run.nativeRequestId},db,run);if(current.reason!=='accepted'||current.hasPendingInput||current.unknownOperationIds.length)throw new WorkError('teloa/execution-pending','原会话仍有待办或未知受理，请先核对。')})},hostGeneration:()=>generation,ownerAuthority:authority,inspectCheckpoint,authorizeResume:async(db,value,{candidate})=>{assertOwner(value);const run=await(await runs()).readVerifiedInTransaction(db,value,candidate.runId);if(!run.lineage)throw unavailable();const budget=await budgets.admissionInTransaction(db,value,run.lineage.budgetAccountId);if(!await hasPreparedMaintenance(db,value,run.id))return budget;return combineWorkAccessLeases([budget,await(await runs()).preparedMaintenanceResumeAdmissionInTransaction(db,value,run.id)])}})
  let goal:ReturnType<typeof createTaskRunGoal>
  const goals=new TaskRunGoalService(pool,identity,{hostGeneration:()=>generation,inspectGoal:async sessionId=>{const agent=ctx.agents.get(SessionId(sessionId));if(!agent)return null;const g=ctx.goals.get(agent);return g?{goalId:g.id,revision:g.revision,phase:g.phase,activation:g.activation,roundsStarted:g.roundsStarted,maxGoalRounds:g.maxGoalRounds}:null},admitRound:async(db,value,{binding:fixed,round})=>{
   assertOwner(value);const row=(await db.query('select task_id from teloa_task_runs where owner_id=$1 and id=$2',[value,fixed.runId])).rows[0],source=row&&await lineage.readInTransaction(db,value,{taskId:row.task_id})
@@ -300,7 +306,7 @@ export async function createResidentWorkRuntime(ctx:Context,options:ResidentWork
  }
  const events=new WorkEventService(pool,identity,{material:async(db,value,resourceId)=>{assertOwner(value);const row=(await db.query('select spec from teloa_resources where owner_id=$1 and id=$2',[value,resourceId])).rows[0];if(!row||!Array.isArray(row.spec.scopeIds))throw unavailable();const scopes=row.spec.scopeIds as string[],current=(await resources.executionKnowledgeInTransaction(db,{ownerId:value,kind:'agent',scopeIds:scopes},scopes,[resourceId]))[0];if(!current)throw unavailable();return {sourceVersion:current.sourceVersion,contentSha256:createHash('sha256').update(current.text).digest('hex')}},...(options.approval?{approval:options.approval}:{}),...(options.business?{business:options.business}:{}),...(options.businessOrigin?{businessOrigin:options.businessOrigin}:{})},new MarketContentStore(pool,identity))
  const routingInputs=new Map<string,ResidentRoutingBudget>()
- const bindRouting=async(input:{sessionId:string;day:string;groupId:string;messageId:string;nativeRequestId:string}):Promise<()=>void>=>{
+ const bindRouting=async(input:{sessionId:string;day:string;groupId:string;messageId:string;nativeRequestId:string;artifactMessageIds?:readonly string[]}):Promise<()=>void>=>{
   if(closed||!/^\d{4}-\d{2}-\d{2}$/.test(input.day)||input.sessionId!==groupRoutingSessionId(owner,input.groupId,input.day)||routingInputs.has(input.sessionId))throw unavailable()
   const db=await pool.connect()
   try{
@@ -331,6 +337,8 @@ export async function createResidentWorkRuntime(ctx:Context,options:ResidentWork
     leases.push({assertCurrent:role.assertCurrent},control.lease,budget)
    }
    const base=combineWorkAccessLeases(leases),entry:ResidentRoutingBudget={budgetAccountId,controlGeneration,operationId:input.nativeRequestId,lease:{assertCurrent:()=>{if(closed||routingInputs.get(input.sessionId)!==entry)throw unavailable();base.assertCurrent()}}}
+   // 话题向模型裁剪掉 messageId 前先保存原来源；复用当前事务，不嵌套占用第二个池连接。
+   await new ArtifactAvailabilityService(pool,identity.now).bindInputInTransaction(db,owner,{sessionId:input.sessionId,references:[],groupMessageIds:[...new Set([input.messageId,...(input.artifactMessageIds??[])])]})
    base.assertCurrent();await db.query('commit');routingInputs.set(input.sessionId,entry)
    return ()=>{if(routingInputs.get(input.sessionId)===entry)routingInputs.delete(input.sessionId)}
   }catch(cause){await db.query('rollback');throw cause}finally{db.release()}
@@ -359,7 +367,7 @@ export async function createResidentWorkRuntime(ctx:Context,options:ResidentWork
    const lease=combineWorkAccessLeases([seal,role,await budgets.admissionInTransaction(db,owner,run.lineage.budgetAccountId),await workAccess.authorize({kind:'capability',capability:'automation',ownerId:owner,sessionId:null,objectId:control.id,operation:'resume'})])
    const now=await controls.retryControlInTransaction(db,owner,{controlId:control.id})
    if(now.version!==control.version||now.generation!==control.generation)throw unavailable()
-   if((await db.query("select id from teloa_task_runs where owner_id=$1 and task_id=$2 and id<>$3 and state not in ('ended','withdrawn','configuration_failed')",[owner,run.taskId,run.id])).rowCount)throw new WorkError('teloa/conflict','原任务已有在途或未知执行，不能恢复后重复派发。')
+   if((await db.query("select id from teloa_task_runs where owner_id=$1 and task_id=$2 and id<>$3 and state not in ('ended','withdrawn','configuration_failed','submission_unknown')",[owner,run.taskId,run.id])).rowCount)throw new WorkError('teloa/conflict','原任务已有在途或未知执行，不能恢复后重复派发。')
    signal.throwIfAborted();lease.assertCurrent()
    if(now.state==='paused')resumed=await controls.resumeInTransaction(db,owner,{controlId:now.id,expectedVersion:now.version},lease)
    signal.throwIfAborted();lease.assertCurrent();await db.query('commit')
@@ -380,7 +388,7 @@ export async function createResidentWorkRuntime(ctx:Context,options:ResidentWork
     }
     await value.ports.stop(run,signal)
    }}
-   controlDriver=new WorkControlDriver({controls,runs:{get:async(actor,input)=>{assertOwner(actor);return(await runs()).get(actor,input)}},lineage,driver:{stop:async(actor,input,signal)=>(await driver()).stop(actor,input,signal)},ports:pausePorts,runtimeLinks:value.runtimeLinks,terminalSettled:async(actor,run)=>{assertOwner(actor);return terminalRunSettled(run)}})
+   controlDriver=new WorkControlDriver({controls,runs:{get:async(actor,input)=>{assertOwner(actor);return(await runs()).get(actor,input)}},lineage,driver:{stop:async(actor,input,signal)=>(await driver()).stop(actor,input,signal)},ports:pausePorts,runtimeLinks:value.runtimeLinks,unpublishedCancellationSettled:async(actor,run)=>{assertOwner(actor);return new TaskRunSubmissionService(options.pool).unpublishedCancellationSettled(actor,run)},terminalSettled:async(actor,run)=>{assertOwner(actor);return terminalRunSettled(run)},quiescentSettled:async(actor,run)=>{assertOwner(actor);return quiescentRunSettled(run)}})
    for(const control of restarted)await controlDriver.apply(owner,control,new AbortController().signal)
   },
   async pump(delivery:GroupRoutingOutboxPorts,route:(owner:string,messageId:string,signal:AbortSignal)=>Promise<void>,signal:AbortSignal){await reconcileOwnerSettlements(signal);await reconcileRunBudgets(signal);await drainGroupRoutingWakes(owner,{outbox,route,report:options.report},signal);await drainGroupRoutingOutbox(owner,delivery,signal);

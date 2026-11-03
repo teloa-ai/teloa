@@ -10,6 +10,7 @@ export type NativeInputIdentity=Readonly<{messageId:string;nativeRequestId?:stri
 export type NativeInputGuard={
  withLease:<T>(session:Session,identity:NativeInputIdentity,lease:WorkAccessLease,action:()=>T|Promise<T>)=>Promise<T>
  withSyncLease:<T>(session:Session,identity:NativeInputIdentity,lease:WorkAccessLease,action:()=>T)=>T
+ withQuiescentSession:<T>(session:Session,assertIdle:()=>void,work:()=>Promise<T>)=>Promise<T>
  close:()=>void
 }
 export type NativeInputAcceptance=Readonly<{session:Session;event:Readonly<SessionEvent>;assertContinuationCurrent:()=>void}>
@@ -108,6 +109,7 @@ export function createNativeInputGuard(ctx:Context,options:NativeInputGuardOptio
  }catch{throw denied()}
  const scope=new AsyncLocalStorage<Ticket>(),pending=new WeakMap<Readonly<SessionEvent>,Ticket>()
  let closed=false
+ const quiescent=new WeakSet<Session>()
  const assertSession=(ticket:Ticket):void=>{
   if(closed||(Reflect.get(ctx,'sessions') as unknown as SessionStore).get(ticket.session.id)!==ticket.session)throw denied()
  }
@@ -138,6 +140,7 @@ export function createNativeInputGuard(ctx:Context,options:NativeInputGuardOptio
   }catch(error){finish(ticket);throw error}
  }
  const checkInput=(session:Session,event:Readonly<SessionEvent>):Ticket|undefined=>{
+  if(quiescent.has(session))throw denied()
   if(event.type!=='agent/inbox/spliced'||event.data.inserted.length===0)return
   try{
    const ticket=scope.getStore()
@@ -195,6 +198,11 @@ export function createNativeInputGuard(ctx:Context,options:NativeInputGuardOptio
  },{global:true,prepend:true})
  installed.add(ctx)
  return Object.freeze({
+  async withQuiescentSession<T>(session:Session,assertIdle:()=>void,work:()=>Promise<T>):Promise<T>{
+   if(!final||closed||quiescent.has(session)||(Reflect.get(ctx,'sessions') as SessionStore).get(session.id)!==session)throw denied()
+   assertIdle();quiescent.add(session)
+   try{assertIdle();return await work()}finally{quiescent.delete(session)}
+  },
   async withLease<T>(session:Session,identity:NativeInputIdentity,lease:WorkAccessLease,action:()=>T|Promise<T>):Promise<T>{
    const ticket=begin(session,identity,lease,action)
    try{return await scope.run(ticket,action)}finally{finish(ticket)}

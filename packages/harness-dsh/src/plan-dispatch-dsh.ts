@@ -1,3 +1,4 @@
+import {taskRunStates} from '@teloa/contract'
 import {WorkError,readWorkExecutor,type WorkExecutor} from '@teloa/contract'
 import type {TaskRun} from '@teloa/backend'
 import type {TaskRunDriver} from './task-run-driver.ts'
@@ -24,7 +25,7 @@ function jobInput(owner:string,value:PlanDshDispatchJob):PlanDshDispatchJob{
 }
 
 function runResult(value:TaskRun,job:PlanDshDispatchJob,runId?:string):TaskRun{
- if(!value||typeof value!=='object'||!uuid(value.id)||runId!==undefined&&value.id!==runId||value.taskId!==job.taskId||value.roleId!==job.roleId||value.taskVersion!==job.taskCreatedVersion||value.roleVersion!==job.roleVersion||job.executor&&JSON.stringify(value.executor)!==JSON.stringify(job.executor)||!job.executor&&value.executor?.kind==='owner'||!session(value.sessionId)||!uuid(value.nativeRequestId)||!['prepared','submitting','accepted','active','ended','withdrawn','configuration_failed'].includes(value.state))throw corrupt()
+ if(!value||typeof value!=='object'||!uuid(value.id)||runId!==undefined&&value.id!==runId||value.taskId!==job.taskId||value.roleId!==job.roleId||value.taskVersion!==job.taskCreatedVersion||value.roleVersion!==job.roleVersion||job.executor&&JSON.stringify(value.executor)!==JSON.stringify(job.executor)||!job.executor&&value.executor?.kind==='owner'||!session(value.sessionId)||!uuid(value.nativeRequestId)||!taskRunStates.includes(value.state))throw corrupt()
  return value
 }
 

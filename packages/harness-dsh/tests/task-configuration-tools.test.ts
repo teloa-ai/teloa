@@ -27,6 +27,42 @@ async function setup(options:Record<string,unknown>={}){
  return {ctx,agent,call,ports,writes,receipts,setTask:(value:WorkTask)=>task=value}
 }
 const read=(result:any)=>JSON.parse(result.content.filter((block:any)=>block.type==='text').map((block:any)=>block.text).join('\n'))
+
+test('任务定义 list 通过官方工具返回原会话完整目录，空目录不触发保存或执行',async t=>{
+ const second:WorkTask={...initial,id:groupId,title:'另一项已完成任务',goal:'保留原目录中的真实状态',version:3,state:'completed'}
+ let tasks:WorkTask[]=[initial,second],reads=0
+ const e=await setup({list:async()=>{reads++;return tasks}});t.after(()=>e.ctx.fiber.dispose())
+ const before=e.agent.session.snapshotEvents().length,result=await e.call('teloa_task_configuration_list')
+ assert.equal(result.isError,false,JSON.stringify(result))
+ assert.deepEqual(read(result),{tasks:[initial,second],sessionId:e.agent.id,executionStarted:false})
+ tasks=[]
+ const empty=await e.call('teloa_task_configuration_list')
+ assert.equal(empty.isError,false,JSON.stringify(empty));assert.deepEqual(read(empty),{tasks:[],sessionId:e.agent.id,executionStarted:false})
+ assert.equal(reads,2);assert.deepEqual(e.writes,[]);assert.equal(e.receipts.size,0)
+ assert.equal(e.agent.session.snapshotEvents().length,before,'目录读取不追加消息或启动任务')
+})
+
+test('任务定义 list 拒绝伪造参数、跨本人记录与无效状态；身份拒绝先于目录读取',async t=>{
+ let tasks:WorkTask[]=[initial],reads=0
+ const e=await setup({list:async()=>{reads++;return tasks}});t.after(()=>e.ctx.fiber.dispose())
+ for(const args of [{ownerId:'other'},{sessionId:'other-session'},{taskId:id},{scope:'SOC'}])assert.equal((await e.call('teloa_task_configuration_list',args)).isError,true)
+ assert.equal(reads,0,'未知参数不能触达任务目录')
+ for(const invalid of [{...initial,id:groupId,ownerId:'other',goal:'其他本人私有目标'},{...initial,id:groupId,version:0},{...initial,id:groupId,state:'unknown' as WorkTask['state']}]){
+  tasks=[initial,invalid]
+  const result=await e.call('teloa_task_configuration_list')
+  assert.equal(result.isError,true,JSON.stringify(result));assert.equal(JSON.stringify(result).includes('其他本人私有目标'),false)
+ }
+ const storage=await setup({list:async()=>{throw new WorkError('teloa/storage-unavailable','合成任务目录暂不可用')}});t.after(()=>storage.ctx.fiber.dispose())
+ const unavailable=await storage.call('teloa_task_configuration_list')
+ assert.equal(unavailable.isError,true);assert.match(JSON.stringify(unavailable),/合成任务目录暂不可用/)
+ for(const options of [{conversation:async(sessionId:string)=>({ownerId:'other',sessionId,status:'ready' as const})},{readTaskPolicy:async()=>({allowedTools:[]})},{isBuilder:async()=>true},{isPendingDaily:async()=>true}]){
+  let deniedReads=0
+  const denied=await setup({...options,list:async()=>{deniedReads++;return [initial]}});t.after(()=>denied.ctx.fiber.dispose())
+  assert.equal((await denied.call('teloa_task_configuration_list')).isError,true)
+  assert.equal(deniedReads,0);assert.deepEqual(denied.writes,[]);assert.equal(denied.receipts.size,0)
+ }
+ assert.deepEqual(e.writes,[]);assert.equal(e.receipts.size,0);assert.deepEqual(storage.writes,[])
+})
 test('普通目标默认保存通用任务草稿，同调用重放原ID且不交办员工或启动运行',async t=>{
  const e=await setup();t.after(()=>e.ctx.fiber.dispose());const args={title:'写报告',goal:'先整理交付标准'}
  const a=await e.call('teloa_task_configuration_create',args),b=await e.call('teloa_task_configuration_create',args)

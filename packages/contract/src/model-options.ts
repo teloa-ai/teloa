@@ -1,9 +1,37 @@
 import {WorkError} from './work-error.ts'
-import {readModelReference,type ModelReference} from './model-policy.ts'
+import {readModelReference,sameModelRoute,type ModelReference} from './model-policy.ts'
+import type {RoleRuntimeConfig} from './roles.ts'
 
 export const modelOptionEndpoints=['model-options/list'] as const
 export type ModelOption={id:string;name:string;reasoning?:{efforts:{id:string;name:string}[];defaultEffort?:string}}
 export type ModelOptionsDirectory={default:ModelReference|null;groups:{id:string;name:string;remote:boolean;credentialMissing?:true;models:ModelOption[]}[];failures:{id:string;name:string}[]}
+export type RoleModelField='model'|'fallbackModel'
+export function modelOption(directory:ModelOptionsDirectory|undefined,reference:ModelReference|undefined){
+ const group=directory?.groups.find(group=>group.id===reference?.provider)
+ const model=group?.models.find(model=>model.id===reference?.model)
+ return group&&model?{group,model}:undefined
+}
+export function roleModelIssue(field:RoleModelField,runtime:RoleRuntimeConfig|undefined,directory:ModelOptionsDirectory|undefined):'missing'|'credential'|'effort'|'remote'|'same'|undefined{
+ const reference=runtime?.[field]
+ if(!reference||!directory)return undefined
+ const found=modelOption(directory,reference)
+ if(!found)return 'missing'
+ if(found.group.credentialMissing)return 'credential'
+ if(reference.reasoningEffort&&!found.model.reasoning?.efforts.some(effort=>effort.id===reference.reasoningEffort))return 'effort'
+ if(field==='fallbackModel'){
+  if(!found.group.remote)return 'remote'
+  const primary=runtime?.model??directory.default
+  if(primary&&sameModelRoute(primary,reference))return 'same'
+ }
+ return undefined
+}
+/** 其他字段的编辑不擦除失效模型；明确改选的模型必须来自本次读取的原生目录。 */
+export function roleModelsCanSave(initial:RoleRuntimeConfig|undefined,runtime:RoleRuntimeConfig|undefined,directory:ModelOptionsDirectory|undefined):boolean{
+ const changed=(['model','fallbackModel'] as const).filter(field=>JSON.stringify(initial?.[field])!==JSON.stringify(runtime?.[field]))
+ if(!changed.length)return true
+ if(!runtime?.model&&!runtime?.fallbackModel)return true
+ return !!directory&&!roleModelIssue('model',runtime,directory)&&!roleModelIssue('fallbackModel',runtime,directory)
+}
 const invalid=()=>new WorkError('teloa/source-invalid','模型目录格式不正确。')
 const record=(value:unknown,keys:string[]):Record<string,unknown>=>{
  if(!value||typeof value!=='object'||Array.isArray(value)||Object.keys(value).some(key=>!keys.includes(key)))throw invalid()

@@ -97,6 +97,40 @@ const signal=()=>AbortSignal.timeout(5000)
 const answerOf=(respond:string[],reactions:{roleId:string;emoji:string}[]=[])=>JSON.stringify({schema:groupRoutingOutputV2Schema,intent:'reply',respond,reactions,assignments:[],workTarget:null})
 const route=(ctx:Context,id=messageId,abort=signal())=>askGroupRouting(ctx,owner,ask(id),abort,day)
 
+test('交接阶段协议随真实 prompt 发送：只有当前接手者时重新从阶段 1 开始，保留来源与跳数',async()=>{
+ const text='首稿已经完成。@物流 请基于本条实际首稿独立核对，并交付复核单。'
+ const current:GroupRoutingAsk={...ask(),trigger:{...ask().trigger,authorKind:'role',authorId:roleA,text,mentions:[]},topic:[...ask().topic,{authorKind:'role',authorId:roleA,authorName:'售后',text:'已完成首稿',createdAt:'2026-09-21T10:01:00.000Z'}],candidates:[candidate(roleB,'物流')],hops:1}
+ const answer={schema:groupRoutingOutputV2Schema,intent:'work',respond:[roleB],reactions:[],assignments:[{roleId:roleB,instructionRange:{start:0,end:text.length}}],workTarget:null}
+ const {ctx,calls}=harness({answer:JSON.stringify(answer)})
+ assert.deepEqual(await askGroupRouting(ctx,owner,current,signal(),day),{kind:'ok',output:answer})
+ assert.equal(calls.prompt.length,1)
+ const content=calls.prompt[0]!.content as {type:string;text:string}[]
+ const sent=JSON.parse(content[0]!.text) as {task:string;trigger:{text:string};topic:unknown[];hops:{current:number;limit:number}}
+ assert.match(sent.task,/Stage numbers are local to this one output/)
+ assert.match(sent.task,/start at 1.*must be contiguous/)
+ assert.match(sent.task,/new handoff message starts a new assignment sequence/)
+ assert.match(sent.task,/only one recipient.*omit stage.*use 1/)
+ assert.match(sent.task,/Do not.*prior messages.*hops\.current/)
+ assert.equal(sent.trigger.text,text)
+ assert.deepEqual(sent.topic,current.topic)
+ assert.deepEqual(sent.hops,{current:1,limit:5})
+})
+
+test('交接阶段协议不放宽解析器：同条分工 1→2 可用，孤立 2 和跳号 1→3 仍整条拒绝且不重问',async()=>{
+ const text='售后先交付首稿；物流取得实际首稿后独立复核。'
+ const current:GroupRoutingAsk={...ask(),trigger:{...ask().trigger,text}}
+ const output=(assignments:{roleId:string;instructionRange:{start:number;end:number};stage?:number}[])=>JSON.stringify({schema:groupRoutingOutputV2Schema,intent:'work',respond:assignments.map(item=>item.roleId),reactions:[],assignments,workTarget:null})
+ const range={start:0,end:text.length}
+ const valid=[{roleId:roleA,instructionRange:range},{roleId:roleB,instructionRange:range,stage:2}]
+ const success=harness({answer:output(valid)})
+ assert.deepEqual(await askGroupRouting(success.ctx,owner,current,signal(),day),{kind:'ok',output:JSON.parse(output(valid))})
+ for(const assignments of [[{roleId:roleB,instructionRange:range,stage:2}],[{roleId:roleA,instructionRange:range},{roleId:roleB,instructionRange:range,stage:3}]]){
+  const rejected=harness({answer:output(assignments)})
+  assert.deepEqual(await askGroupRouting(rejected.ctx,owner,current,signal(),day),{kind:'parse-failed'})
+  assert.equal(rejected.calls.prompt.length,1,'格式违规不能自动补阶段或重问模型')
+ }
+})
+
 test('输入 JSON 逐字带 schema、两句防护文案与封闭集合，岗位版本不进模型',()=>{
  const input=groupRoutingInput(ask())
  assert.equal(input.schema,groupRoutingInputSchema)
@@ -157,6 +191,19 @@ test('原消息引用的任务关联必须传到路由输入，续办优先选�
  assert.deepEqual(input.work,[{taskId,runId,title:'原T2调查',state:'waiting',quoted:true},{taskId:'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',runId:null,title:'其他工作',state:'ready'}])
  assert.match(groupRoutingInputTask,/quoted:true.*host-verified.*original Task/)
  assert.match(groupRoutingInputTask,/prefer intent:continue.*taskId\/runId/)
+})
+
+test('本人对已引用工作的持续约束属于续办，纯致谢或无工作目标不能被提升为执行',()=>{
+ const current=ask(),taskId='77777777-7777-4777-8777-777777777777',runId='88888888-8888-4888-8888-888888888888'
+ current.trigger.text='本任务持续仅分析，禁止代码/文件/检索/外发，不因交接而失效。'
+ current.work=[{taskId,runId,title:'原金额核对',state:'waiting',quoted:true}]
+ const input=groupRoutingInput(current)
+ assert.equal((input.trigger as {text:string}).text,current.trigger.text,'本人原文不被改写成新的算术/分工任务')
+ assert.deepEqual(input.work,[{taskId,runId,title:'原金额核对',state:'waiting',quoted:true}])
+ const instruction=input.task;assert.ok(typeof instruction==='string')
+ assert.match(instruction,/ongoing constraints.*intent:continue.*no new numbers or deliverable/)
+ assert.match(instruction,/Thanks, acknowledgments and FYI.*no change.*reply or none/)
+ assert.match(instruction,/Without a host-verified existing work target.*never invent.*new work/)
 })
 
 test('输入面按三把尺截断：触发正文保留完整 8000、岗位使命 2000、五组职责各前 10 条各 300',()=>{
@@ -462,4 +509,12 @@ test('路由默认输出示例不为普通回应夹带工作分派',()=>{
  const output=groupRoutingInput(ask()).output as {assignments:unknown[]}
  assert.deepEqual(output.assignments,[])
  assert.match(groupRoutingInputTask,/reply.*assignments.*\[\]/)
+})
+
+test('路由话题原消息身份在裁剪前送入宿主来源准入，模型投影仍不加字段',async()=>{
+ const f=harness({answer:answerOf([roleA])}),input=ask();input.topic=input.topic.map(row=>({...row,messageId:otherMessageId}))
+ assert.equal((await askGroupRouting(f.ctx,owner,input,signal(),day)).kind,'ok')
+ assert.deepEqual(f.calls.bind[0],{sessionId:sessionOf(),day,groupId,messageId,nativeRequestId:requestOf(),artifactMessageIds:[otherMessageId]})
+ const rendered=JSON.parse((f.calls.prompt[0]!.content as {text:string}[])[0]!.text)
+ assert.equal(rendered.topic[0].messageId,undefined);assert.equal(rendered.topic[0].text,input.topic[0]!.text)
 })

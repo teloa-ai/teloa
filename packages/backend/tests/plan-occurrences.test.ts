@@ -1,6 +1,6 @@
 import test,{after,before} from 'node:test'
 import assert from 'node:assert/strict'
-import {randomUUID} from 'node:crypto'
+import {randomUUID,createHash} from 'node:crypto'
 import {homedir} from 'node:os'
 import {join} from 'node:path'
 import {Pool,type QueryResult} from './postgres-test-lifecycle.ts'
@@ -11,12 +11,24 @@ import {initializeRoles,RoleService} from '../src/work/roles.ts'
 import {initializePlans,PlanService,type PlanNotificationPolicy} from '../src/work/plans.ts'
 import {initializePlanOccurrences,PlanOccurrenceService} from '../src/work/plan-occurrences.ts'
 import {initializeTaskRuns,TaskRunService} from '../src/work/task-runs.ts'
+import {TaskRunSubmissionService,initializeTaskRunSubmissions} from '../src/work/task-run-submission.ts'
+import {initializeResources} from '../src/capabilities/schema.ts'
+import {initializeArtifactSnapshots} from '../src/work/artifact-snapshots.ts'
+import {initializeArtifacts} from '../src/work/artifacts.ts'
+import {BusinessSpaceService,initializeBusinessSpaces} from '../src/work/business-spaces.ts'
+import {BusinessScopeService} from '../src/work/business-scopes.ts'
+import {initializeBusinessData} from '../src/work/business-data.ts'
+import {initializeBusinessTasks} from '../src/work/business-tasks.ts'
+import {initializeSecurityRequests} from '../src/security/request-journal.ts'
+import {initializeSecurityActions} from '../src/security/actions.ts'
+import {initializeSecurityApprovals} from '../src/security/approvals.ts'
 import {initializeRoleDailyLogs} from '../src/work/role-daily-logs.ts'
 import {initializeObjectConversations,ObjectConversationService} from '../src/work/object-conversations.ts'
-import {WorkError} from '@teloa/contract'
+import {WorkError,type ScheduleTrigger} from '@teloa/contract'
 import {testRoleResponsibility} from './role-test-fixture.ts'
 import {initializeCollaboration} from '../src/work/collaboration.ts'
 import {initializeGroupAgentGrants} from '../src/work/group-agent-grants.ts'
+import {AUTO_DREAM_DEFAULT_TRIGGER} from '../src/work/auto-dream-plans.ts'
 
 let container:StartedPostgreSqlContainer,pool:Pool
 const schedule={kind:'schedule' as const,cadence:'daily' as const,weekday:1,time:'09:00',timezone:'Asia/Singapore' as const}
@@ -27,7 +39,9 @@ before(async()=>{
  process.env.TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE='/var/run/docker.sock'
  container=await new PostgreSqlContainer('postgres@sha256:18cfe3ef5e6815560c98237d6216d1e5119702fb0f3894c8785dd58b8bbe5d73').start()
  pool=new Pool({connectionString:container.getConnectionUri()})
+ await initializeResources(pool);await initializeArtifactSnapshots(pool);
  await initializeMarketContents(pool);await initializeRoles(pool);await initializeCollaboration(pool);await initializeGroupAgentGrants(pool);await initializePlans(pool);await initializeTasks(pool);await initializePlanOccurrences(pool);await initializeObjectConversations(pool);await initializeTaskRuns(pool);await initializeRoleDailyLogs(pool)
+ await initializeArtifacts(pool);await initializeBusinessData(pool);await initializeBusinessTasks(pool);await initializeSecurityRequests(pool);await initializeSecurityActions(pool);await initializeSecurityApprovals(pool)
 },{timeout:180_000})
 after(async()=>{await pool?.end();await container?.stop()})
 
@@ -41,13 +55,13 @@ async function activePlan(owner:string,enabledAt='2026-09-11T00:00:00.000Z',opti
 }
 
 /** 系统小结计划只能由服务端自建；这里按落库后的固定形状直接插入，用于领取与立即运行的重复生成判定。 */
-async function systemDigestPlan(owner:string){
+async function systemDigestPlan(owner:string,scope='general',trigger:ScheduleTrigger=schedule){
  const roles=new RoleService(pool,{id:randomUUID,now:()=>'2026-09-11T00:00:00.000Z'})
- const role=await roles.create(owner,{requestId:randomUUID(),fields:{name:'每日小结岗',kind:'employee',scopes:['general'],duty:'写小结',dataScope:'本人资料',executionScope:'只读',skills:[],knowledge:[],responsibility:testRoleResponsibility,runtimeConfig:{agentPresetId:'schedule-reviewer'}}})
- const planId=randomUUID(),definition={title:'Auto Dream · 每日小结',goal:'写当天小结。',scope:'general',dataScope:'本人资料。',delivery:'一份日志。',roleId:role.id,trigger:schedule,notificationPolicy:'silent'}
+ const role=await roles.create(owner,{requestId:randomUUID(),fields:{name:'每日小结岗',kind:'employee',scopes:[scope],duty:'写小结',dataScope:'本人资料',executionScope:'只读',skills:[],knowledge:[],responsibility:testRoleResponsibility,runtimeConfig:{agentPresetId:'schedule-reviewer'}}})
+ const planId=randomUUID(),definition={title:'Auto Dream · 每日小结',goal:'写当天小结。',scope,dataScope:'本人资料。',delivery:'一份日志。',roleId:role.id,trigger,notificationPolicy:'silent'}
  const source={kind:'system-digest' as const,roleId:role.id}
  await pool.query(`insert into teloa_plans(id,owner_id,request_id,request_spec,definition,source,notification_policy,role_id,role_version,scope,version,config_version,state,archived_reason,archived_at,created_at,updated_at)
-  values($1,$2,$3,$4,$5,$6,'silent',$7,1,'general',1,1,'active',null,null,$8,$8)`,[planId,owner,randomUUID(),JSON.stringify({fields:{...definition,expectedRoleVersion:1},source}),JSON.stringify(definition),JSON.stringify(source),role.id,'2026-09-11T00:00:00.000Z'])
+  values($1,$2,$3,$4,$5,$6,'silent',$7,1,$9,1,1,'active',null,null,$8,$8)`,[planId,owner,randomUUID(),JSON.stringify({fields:{...definition,expectedRoleVersion:1},source}),JSON.stringify(definition),JSON.stringify(source),role.id,'2026-09-11T00:00:00.000Z',scope])
  return {role,planId}
 }
 
@@ -69,6 +83,60 @@ test('显式恢复固定未来日程，并发到期领取只有一个dispatch和
  assert.match(occurrence.taskRequestId,/^[a-f0-9-]{36}$/);assert.deepEqual(occurrence.taskRequest,{requestId:occurrence.taskRequestId,fields:{title:'每日资料核对',goal:'核对新增资料并形成结论。',scope:'general'},assignee:{roleId:role.id,expectedVersion:1}})
  assert.deepEqual(await new PlanOccurrenceService(pool,{id:randomUUID}).list(owner,{planId:plan.id}),[occurrence])
  assert.deepEqual(await service.claim(owner,{planId:plan.id,now:'2026-09-11T01:00:00.000Z'}),{occurrence:null,dispatch:false})
+})
+
+test('AD02：默认新加坡23:30到点、跨日、时钟前后移及完成后服务重建保持领取唯一',async()=>{
+ const trigger={...schedule,time:'23:30'};assert.deepEqual(trigger,AUTO_DREAM_DEFAULT_TRIGGER)
+ const owner=randomUUID(),{role,planId}=await systemDigestPlan(owner,'general',trigger),service=new PlanOccurrenceService(pool,{id:randomUUID})
+ const nextDay={nextAt:'2026-09-12T15:30:00.000Z',occurrenceId:'2026-09-12T23:30[Asia/Singapore]'}
+ await digestBusinessRun(owner,role.id,'2026-09-11T01:00:00.000Z')
+ assert.deepEqual(await service.recover(owner,{planId,now:'2026-09-11T15:29:00.000Z'}),{nextAt:'2026-09-11T15:30:00.000Z',occurrenceId:'2026-09-11T23:30[Asia/Singapore]'})
+ assert.deepEqual(await service.claim(owner,{planId,now:'2026-09-11T15:29:59.999Z'}),{occurrence:null,dispatch:false})
+ assert.deepEqual(await service.list(owner,{planId}),[],'23:29 不得提前领取')
+ const first=await service.claim(owner,{planId,now:'2026-09-11T15:30:00.000Z'})
+ assert.equal(first.dispatch,true);assert.ok(first.occurrence)
+ assert.equal(first.occurrence.occurrenceId,'2026-09-11T23:30[Asia/Singapore]')
+ assert.equal(first.occurrence.scheduledAt,'2026-09-11T15:30:00.000Z')
+ assert.deepEqual(await service.claim(owner,{planId,now:'2026-09-11T15:30:00.000Z'}),{occurrence:null,dispatch:false},'同一到点重读不再派发')
+ const firstTask=(await service.dispatchTask(owner,{claimId:first.occurrence.id,taskRequestId:first.occurrence.taskRequestId,now:'2026-09-11T15:30:01.000Z'})).task
+ // 这里只提供执行器已完成的调度前置状态，不把夹具当作真实模型或任务完成验收。
+ await pool.query("update teloa_tasks set state='completed' where owner_id=$1 and id=$2",[owner,firstTask.id])
+ const rebuilt=new PlanOccurrenceService(pool,{id:randomUUID}),beforeMidnight=await rebuilt.list(owner,{planId})
+ assert.deepEqual(beforeMidnight,[first.occurrence]);assert.equal((await rebuilt.overview(owner,{planId})).latest?.task?.state,'completed')
+ for(const now of ['2026-09-11T15:30:01.000Z','2026-09-11T15:59:59.999Z','2026-09-11T16:00:00.000Z']){
+  assert.deepEqual(await rebuilt.claim(owner,{planId,now}),{occurrence:null,dispatch:false})
+  const overview=await rebuilt.overview(owner,{planId});assert.equal(overview.nextAt,nextDay.nextAt)
+  assert.deepEqual(await rebuilt.list(owner,{planId}),beforeMidnight,'23:59→次日00:00和服务重建不增旧领取')
+ }
+ await digestBusinessRun(owner,role.id,'2026-09-12T01:00:00.000Z')
+ assert.equal((await rebuilt.claim(owner,{planId,now:'2026-09-12T15:29:59.999Z'})).dispatch,false)
+ const second=await rebuilt.claim(owner,{planId,now:'2026-09-12T15:30:00.000Z'});assert.equal(second.dispatch,true);assert.ok(second.occurrence)
+ assert.equal(second.occurrence.occurrenceId,nextDay.occurrenceId);assert.notEqual(second.occurrence.id,first.occurrence.id)
+ const secondTask=(await rebuilt.dispatchTask(owner,{claimId:second.occurrence.id,taskRequestId:second.occurrence.taskRequestId,now:'2026-09-12T15:30:01.000Z'})).task
+ await pool.query("update teloa_tasks set state='completed' where owner_id=$1 and id=$2",[owner,secondTask.id])
+ const completed=await rebuilt.list(owner,{planId}),afterBackward=new PlanOccurrenceService(pool,{id:randomUUID})
+ assert.equal((await afterBackward.claim(owner,{planId,now:'2026-09-11T15:29:00.000Z'})).dispatch,false,'now 后移不能重新领取已处理日期')
+ assert.deepEqual(await afterBackward.list(owner,{planId}),completed)
+ // 即使恢复在后移的 now 上重算游标，也必须命中原持久领取，不生成新身份或派发。
+ await afterBackward.recover(owner,{planId,now:'2026-09-11T15:29:00.000Z'})
+ for(const prior of [first.occurrence,second.occurrence]){
+  const replay=await afterBackward.claim(owner,{planId,now:prior.scheduledAt})
+  assert.equal(replay.dispatch,false);assert.deepEqual(replay.occurrence,prior)
+ }
+ assert.deepEqual(await afterBackward.list(owner,{planId}),completed)
+ // 系统小结前移跨过多个周期只核最新到期日，不补建中间历史周期。
+ await digestBusinessRun(owner,role.id,'2026-09-14T01:00:00.000Z')
+ const advanced=await afterBackward.claim(owner,{planId,now:'2026-09-14T15:45:00.000Z'});assert.equal(advanced.dispatch,true);assert.ok(advanced.occurrence)
+ assert.equal(advanced.occurrence.occurrenceId,'2026-09-14T23:30[Asia/Singapore]')
+ assert.deepEqual((await afterBackward.list(owner,{planId})).map(item=>item.occurrenceId).sort(),[first.occurrence.occurrenceId,second.occurrence.occurrenceId,advanced.occurrence.occurrenceId].sort(),'9月13日不能被补成额外领取')
+ const advancedTask=(await afterBackward.dispatchTask(owner,{claimId:advanced.occurrence.id,taskRequestId:advanced.occurrence.taskRequestId,now:'2026-09-14T15:45:01.000Z'})).task
+ await pool.query("update teloa_tasks set state='completed' where owner_id=$1 and id=$2",[owner,advancedTask.id])
+ const final=new PlanOccurrenceService(pool,{id:randomUUID}),claims=await final.list(owner,{planId})
+ assert.equal((await final.claim(owner,{planId,now:'2026-09-14T15:45:02.000Z'})).dispatch,false)
+ assert.equal((await final.overview(owner,{planId})).nextAt,'2026-09-15T15:30:00.000Z')
+ assert.deepEqual(await final.list(owner,{planId}),claims);assert.equal(claims.length,3)
+ assert.equal(Number((await pool.query('select count(*)::int n from teloa_plan_task_links where owner_id=$1',[owner])).rows[0].n),3,'三次有效日期只有三条任务关联，回拨和重建不能多建任务')
+ assert.deepEqual(await final.skips(owner,{planId}),[],'有当天真实夹具证据，不以空日或前次未完成跳过掩盖边界')
 })
 
 test('本人立即运行固定一次执行，不改日程游标、不会并发重入或用旧版本覆盖',async()=>{
@@ -424,6 +492,9 @@ test('执行上下文只读取任务的固定计划依据，暂停后仍可读�
   await assert.rejects(service.executionContext(client,owner,task.id),{code:'teloa/storage-corrupt'})
   await client.query('rollback')
  }finally{await client.query('rollback');client.release()}
+ const edited=await new TaskService(pool,{id:randomUUID,now:()=>'2026-09-11T02:00:00.000Z'}).edit(owner,{taskId:task.id,expectedVersion:task.version,fields:{goal:'本人编辑普通计划任务'}})
+ const current=await pool.connect()
+ try{await assert.rejects(service.executionContext(current,owner,edited.id),{code:'teloa/storage-corrupt'},'普通计划即使有本人编辑回执也不放宽冻结目标')}finally{current.release()}
 })
 
 test('计划执行上下文拒绝缺失关联和错配关联，不降级成普通任务',async()=>{
@@ -646,15 +717,28 @@ test('计划运行配置失败进入历史与状态筛选，恢复目录不再�
  assert.deepEqual(await fixture.service.pendingExecutions(owner,{limit:10}),{items:[]})
 })
 
+test('未知提交处置保留在计划目录，停止时间不会因JSON投影损坏且恢复目录不重发',async()=>{
+ const owner=randomUUID(),fixture=await executionFixture(owner),run=await fixture.prepare(),runtimeId=randomUUID()
+ await initializeTaskRunSubmissions(pool)
+ const submissions=new TaskRunSubmissionService(pool),claimed=(await fixture.runs.claim(owner,{runId:run.id})).run
+ await submissions.begin(owner,claimed,runtimeId)
+ await fixture.runs.requestStop(owner,{runId:run.id})
+ await submissions.disposeUnknown(owner,{requestId:randomUUID(),runId:run.id,acknowledgeUnknown:true},fixture.runs,{runId:run.id,sessionId:run.sessionId,nativeRequestId:run.nativeRequestId,inputSha256:createHash('sha256').update(run.inputText).digest('hex'),runtimeId,logCut:0,logSha256:'a'.repeat(64),assertCurrent(){}})
+ const history=await fixture.service.executionHistory(owner,{planId:fixture.occurrence.planId,limit:10,runState:'submission_unknown'})
+ assert.equal(history.errors,undefined);assert.equal(history.items[0]?.run?.state,'submission_unknown')
+ assert.equal(history.items[0]?.task?.state,'paused')
+ assert.deepEqual(await fixture.service.pendingExecutions(owner,{limit:10}),{items:[]})
+})
+
 test('恢复目录不把未知执行状态或错配执行身份漏成无执行',async()=>{
  const owner=randomUUID(),fixture=await executionFixture(owner),run=await fixture.prepare()
- await pool.query('alter table teloa_task_runs drop constraint teloa_task_runs_state_v3')
+ await pool.query('alter table teloa_task_runs drop constraint teloa_task_runs_state_v4')
  try{
   await pool.query("update teloa_task_runs set state='unrecognized' where id=$1",[run.id])
   assert.deepEqual((await fixture.service.pendingExecutions(owner,{limit:10})).errors,[{claimId:fixture.occurrence.id,planId:fixture.occurrence.planId,code:'teloa/storage-corrupt'}])
  }finally{
   await pool.query("update teloa_task_runs set state='prepared' where id=$1",[run.id])
-  await pool.query("alter table teloa_task_runs add constraint teloa_task_runs_state_v3 check(state in ('prepared','submitting','accepted','active','ended','withdrawn','configuration_failed'))")
+  await pool.query("alter table teloa_task_runs add constraint teloa_task_runs_state_v4 check(state in ('prepared','submitting','accepted','active','ended','withdrawn','configuration_failed','submission_unknown'))")
  }
  const other=await executionFixture(owner)
  await pool.query('update teloa_task_runs set task_id=$2 where id=$1',[run.id,other.task.id])
@@ -784,10 +868,13 @@ test('系统小结当日已生成时，到点领取明确跳过并推进游标�
  const owner=randomUUID(),{role,planId}=await systemDigestPlan(owner),service=new PlanOccurrenceService(pool,{id:randomUUID})
  assert.deepEqual(await service.recover(owner,{planId,now:'2026-09-11T00:30:00.000Z'}),{nextAt:'2026-09-11T01:00:00.000Z',occurrenceId:'2026-09-11T09:00[Asia/Singapore]'})
  await insertDigestLog(owner,role.id,'2026-09-11')
- assert.deepEqual(await service.claim(owner,{planId,now:'2026-09-11T01:00:00.000Z'}),{occurrence:null,dispatch:false,skip:{reason:'digest-exists'}})
+ const skipped=await service.claim(owner,{planId,now:'2026-09-11T01:00:00.000Z'})
+ assert.equal(skipped.occurrence,null);assert.equal(skipped.dispatch,false);assert.equal(skipped.skip?.reason,'digest-exists')
+ assert.equal((await service.skipHistory(owner,{planId,limit:10})).items[0]?.reason,'digest-exists')
  assert.equal(Number((await pool.query('select count(*)::int n from teloa_plan_occurrences where owner_id=$1',[owner])).rows[0].n),0,'跳过不留下领取记录')
  assert.equal(Number((await pool.query('select count(*)::int n from teloa_tasks where owner_id=$1',[owner])).rows[0].n),0,'跳过不创建任务')
- // 下一天没有当日小结，按正常日程领取。
+ // 下一天有实际工作、没有当日小结，按正常日程领取。
+ await digestBusinessRun(owner,role.id,'2026-09-12T00:40:00.000Z')
  const next=await service.claim(owner,{planId,now:'2026-09-12T01:00:00.000Z'})
  assert.equal(next.dispatch,true);assert.equal(next.occurrence?.scheduledAt,'2026-09-12T01:00:00.000Z')
 })
@@ -802,4 +889,129 @@ test('系统小结当日已生成时，立即运行在领取前返回中文冲�
   return true
  })
  assert.equal(Number((await pool.query('select count(*)::int n from teloa_plan_occurrences where owner_id=$1',[owner])).rows[0].n),0)
+})
+
+async function digestBusinessRun(owner:string,roleId:string,createdAt:string,scope='general'){
+ const task=await new TaskService(pool,{id:randomUUID,now:()=>createdAt}).create(owner,{requestId:randomUUID(),fields:{title:'实际业务工作',goal:'核对当日资料',scope},assignee:{roleId,expectedVersion:1}})
+ const id=randomUUID()
+ await pool.query(`insert into teloa_task_runs(id,owner_id,request_id,request_spec,task_id,role_id,task_version,role_version,link_version,session_id,native_request_id,state,input_text,created_at)
+  values($1,$2,$3,'{}'::jsonb,$4,$5,1,1,1,$6,$7,'accepted','{}',$8)`,[id,owner,randomUUID(),task.id,roleId,'session-'+id,randomUUID(),createdAt])
+ return task
+}
+
+test('系统小结空工作日持久正常跳过，重领不重复，次日有工作正常领取',async()=>{
+ const owner=randomUUID(),{role,planId}=await systemDigestPlan(owner),service=new PlanOccurrenceService(pool,{id:randomUUID})
+ await service.recover(owner,{planId,now:'2026-09-11T00:30:00.000Z'})
+ const result=await service.claim(owner,{planId,now:'2026-09-11T01:00:00.000Z'})
+ assert.equal(result.dispatch,false,'没有工作证据不得派发模型任务');assert.equal(result.occurrence,null)
+ assert.equal(result.skip?.reason,'no-work-evidence')
+ assert.equal((await service.overview(owner,{planId})).nextAt,'2026-09-12T01:00:00.000Z')
+ assert.equal((await service.overview(owner,{planId})).latestSkip?.reason,'no-work-evidence')
+ assert.equal((await service.skipHistory(owner,{planId,limit:10})).items.length,1)
+ await initializePlanOccurrences(pool)
+ assert.equal((await new PlanOccurrenceService(pool,{id:randomUUID}).overview(owner,{planId})).latestSkip?.reason,'no-work-evidence')
+ await assert.rejects(pool.query("update teloa_plan_schedule_skips set skipped_at=scheduled_at-interval '1 second' where plan_id=$1",[planId]),{code:'23514'})
+ assert.equal((await service.claim(owner,{planId,now:'2026-09-11T01:01:00.000Z'})).dispatch,false)
+ assert.equal(Number((await pool.query('select count(*)::int n from teloa_plan_occurrences where owner_id=$1',[owner])).rows[0].n),0)
+ assert.equal(Number((await pool.query('select count(*)::int n from teloa_tasks where owner_id=$1',[owner])).rows[0].n),0)
+ await digestBusinessRun(owner,role.id,'2026-09-12T00:40:00.000Z')
+ const next=await service.claim(owner,{planId,now:'2026-09-12T01:00:00.000Z'})
+ assert.equal(next.dispatch,true);assert.equal(next.occurrence?.scheduledAt,'2026-09-12T01:00:00.000Z')
+ assert.equal((await service.skipHistory(owner,{planId,limit:10})).items.length,1)
+})
+
+test('系统小结证据源不可读时保留到期游标，不冒充空日跳过',async()=>{
+ const owner=randomUUID(),{planId}=await systemDigestPlan(owner),service=new PlanOccurrenceService(pool,{id:randomUUID})
+ await service.recover(owner,{planId,now:'2026-09-11T00:30:00.000Z'})
+ await pool.query('alter table teloa_security_approvals rename to unavailable_daily_approvals')
+ try{
+  await assert.rejects(service.claim(owner,{planId,now:'2026-09-11T01:00:00.000Z'}),{code:'teloa/storage-corrupt'})
+  assert.equal((await service.overview(owner,{planId})).nextAt,'2026-09-11T01:00:00.000Z')
+  assert.equal((await service.skipHistory(owner,{planId,limit:10})).items.length,0)
+  assert.equal(Number((await pool.query('select count(*)::int n from teloa_plan_occurrences where owner_id=$1',[owner])).rows[0].n),0)
+ }finally{await pool.query('alter table unavailable_daily_approvals rename to teloa_security_approvals')}
+ assert.equal((await service.claim(owner,{planId,now:'2026-09-11T01:02:00.000Z'})).skip?.reason,'no-work-evidence')
+})
+
+test('系统小结空工作日立即运行在建领取前给出明确结果，不消耗模型工作',async()=>{
+ const owner=randomUUID(),{planId}=await systemDigestPlan(owner),service=new PlanOccurrenceService(pool,{id:randomUUID})
+ await assert.rejects(service.trigger(owner,{planId,requestId:randomUUID(),expectedVersion:1,expectedConfigVersion:1,now:'2026-09-11T00:31:00.000Z'}),{code:'teloa/no-work-evidence'})
+ assert.equal(Number((await pool.query('select count(*)::int n from teloa_plan_occurrences where owner_id=$1',[owner])).rows[0].n),0)
+})
+
+test('系统小结跨日读取失败恢复选最新到期日，不越过当天已有工作',async()=>{
+ const owner=randomUUID(),{role,planId}=await systemDigestPlan(owner),service=new PlanOccurrenceService(pool,{id:randomUUID})
+ await service.recover(owner,{planId,now:'2026-09-11T00:30:00.000Z'})
+ await pool.query('alter table teloa_security_approvals rename to unavailable_daily_approvals')
+ try{await assert.rejects(service.claim(owner,{planId,now:'2026-09-11T01:00:00.000Z'}),{code:'teloa/storage-corrupt'})}
+ finally{await pool.query('alter table unavailable_daily_approvals rename to teloa_security_approvals')}
+ await digestBusinessRun(owner,role.id,'2026-09-12T00:40:00.000Z')
+ const recovered=await service.claim(owner,{planId,now:'2026-09-12T01:05:00.000Z'})
+ assert.equal(recovered.dispatch,true,'不能因昨日空而跳过今日已有工作')
+ assert.equal(recovered.occurrence?.scheduledAt,'2026-09-12T01:00:00.000Z')
+ assert.equal((await service.overview(owner,{planId})).nextAt,'2026-09-13T01:00:00.000Z')
+})
+
+test('非通用业务权限目录损坏时有工作也不得持久空日跳过',async()=>{
+ await initializeBusinessSpaces(pool)
+ const owner=randomUUID(),identity={id:randomUUID,now:()=>'2026-09-11T00:00:00.000Z'},space=await new BusinessSpaceService(pool,identity).ensurePersonal(owner)
+ await BusinessScopeService.ensure(pool,owner,{scope:'daily-check',title:'每日验收',kind:'domain',spaceId:space.id})
+ const {role,planId}=await systemDigestPlan(owner,'daily-check'),service=new PlanOccurrenceService(pool,{id:randomUUID})
+ await digestBusinessRun(owner,role.id,'2026-09-11T00:40:00.000Z','daily-check')
+ await service.recover(owner,{planId,now:'2026-09-11T00:30:00.000Z'})
+ await pool.query('alter table teloa_business_scopes rename to unavailable_daily_scopes')
+ try{
+  await assert.rejects(service.claim(owner,{planId,now:'2026-09-11T01:00:00.000Z'}),{code:'teloa/storage-corrupt'})
+  assert.equal((await service.overview(owner,{planId})).nextAt,'2026-09-11T01:00:00.000Z')
+  assert.equal((await service.skipHistory(owner,{planId,limit:10})).items.length,0)
+  assert.equal(Number((await pool.query('select count(*)::int n from teloa_plan_occurrences where owner_id=$1',[owner])).rows[0].n),0)
+ }finally{await pool.query('alter table unavailable_daily_scopes rename to teloa_business_scopes')}
+ assert.equal((await service.claim(owner,{planId,now:'2026-09-11T01:01:00.000Z'})).dispatch,true)
+})
+
+test('AD02-DST：真实PG春跳02:30跳过缺失日，前移后次日正常领取',async t=>{
+ t.diagnostic('owned PostgreSQL container '+container.getId())
+ const owner=randomUUID(),{role,planId}=await systemDigestPlan(owner,'general',{...schedule,time:'02:30',timezone:'America/New_York'}),service=new PlanOccurrenceService(pool,{id:randomUUID})
+ await digestBusinessRun(owner,role.id,'2027-03-13T05:00:00.000Z')
+ assert.deepEqual(await service.recover(owner,{planId,now:'2027-03-13T07:29:00.000Z'}),{nextAt:'2027-03-13T07:30:00.000Z',occurrenceId:'2027-03-13T02:30[America/New_York]'})
+ const first=await service.claim(owner,{planId,now:'2027-03-13T07:30:00.000Z'});assert.equal(first.dispatch,true);assert.ok(first.occurrence)
+ const task=(await service.dispatchTask(owner,{claimId:first.occurrence.id,taskRequestId:first.occurrence.taskRequestId,now:'2027-03-13T07:30:01.000Z'})).task
+ // 调度完成前置夹具，不调用模型或宣称真实执行完成。
+ await pool.query("update teloa_tasks set state='completed' where owner_id=$1 and id=$2",[owner,task.id])
+ for(const now of ['2027-03-14T06:59:59.999Z','2027-03-14T07:00:00.000Z','2027-03-14T07:30:00.000Z']){
+  assert.equal((await service.claim(owner,{planId,now})).dispatch,false)
+  assert.equal((await service.overview(owner,{planId})).nextAt,'2027-03-15T06:30:00.000Z')
+ }
+ await digestBusinessRun(owner,role.id,'2027-03-15T04:30:00.000Z')
+ const rebuilt=new PlanOccurrenceService(pool,{id:randomUUID})
+ const next=await rebuilt.claim(owner,{planId,now:'2027-03-15T06:30:00.000Z'});assert.equal(next.dispatch,true);assert.ok(next.occurrence)
+ assert.equal(next.occurrence.occurrenceId,'2027-03-15T02:30[America/New_York]')
+ assert.deepEqual((await rebuilt.list(owner,{planId})).map(row=>row.occurrenceId).sort(),['2027-03-13T02:30[America/New_York]','2027-03-15T02:30[America/New_York]'])
+ assert.deepEqual(await rebuilt.skips(owner,{planId}),[])
+})
+test('AD02-DST：真实PG秋复01:30只领首次，跨日回拨与服务重建不重派',async t=>{
+ t.diagnostic('owned PostgreSQL container '+container.getId())
+ const owner=randomUUID(),{role,planId}=await systemDigestPlan(owner,'general',{...schedule,time:'01:30',timezone:'America/New_York'}),service=new PlanOccurrenceService(pool,{id:randomUUID})
+ await digestBusinessRun(owner,role.id,'2026-11-01T04:30:00.000Z')
+ assert.deepEqual(await service.recover(owner,{planId,now:'2026-11-01T05:29:00.000Z'}),{nextAt:'2026-11-01T05:30:00.000Z',occurrenceId:'2026-11-01T01:30[America/New_York]'})
+ assert.equal((await service.claim(owner,{planId,now:'2026-11-01T05:29:59.999Z'})).dispatch,false)
+ const first=await service.claim(owner,{planId,now:'2026-11-01T05:30:00.000Z'});assert.equal(first.dispatch,true);assert.ok(first.occurrence)
+ const task=(await service.dispatchTask(owner,{claimId:first.occurrence.id,taskRequestId:first.occurrence.taskRequestId,now:'2026-11-01T05:30:01.000Z'})).task
+ await pool.query("update teloa_tasks set state='completed' where owner_id=$1 and id=$2",[owner,task.id])
+ const rebuilt=new PlanOccurrenceService(pool,{id:randomUUID}),original=await rebuilt.list(owner,{planId})
+ for(const now of ['2026-11-01T06:29:59.999Z','2026-11-01T06:30:00.000Z','2026-11-02T04:59:59.999Z','2026-11-02T05:00:00.000Z']){
+  assert.equal((await rebuilt.claim(owner,{planId,now})).dispatch,false)
+  assert.deepEqual(await rebuilt.list(owner,{planId}),original)
+ }
+ assert.equal((await rebuilt.overview(owner,{planId})).nextAt,'2026-11-02T06:30:00.000Z')
+ await digestBusinessRun(owner,role.id,'2026-11-02T05:30:00.000Z')
+ const second=await rebuilt.claim(owner,{planId,now:'2026-11-02T06:30:00.000Z'});assert.equal(second.dispatch,true);assert.ok(second.occurrence)
+ const secondTask=(await rebuilt.dispatchTask(owner,{claimId:second.occurrence.id,taskRequestId:second.occurrence.taskRequestId,now:'2026-11-02T06:30:01.000Z'})).task
+ await pool.query("update teloa_tasks set state='completed' where owner_id=$1 and id=$2",[owner,secondTask.id])
+ await rebuilt.recover(owner,{planId,now:'2026-11-01T05:29:00.000Z'})
+ const replay=await new PlanOccurrenceService(pool,{id:randomUUID}).claim(owner,{planId,now:first.occurrence.scheduledAt})
+ assert.equal(replay.dispatch,false);assert.deepEqual(replay.occurrence,first.occurrence)
+ assert.equal((await rebuilt.claim(owner,{planId,now:'2026-11-01T06:30:00.000Z'})).dispatch,false)
+ assert.equal((await pool.query('select count(*)::int n from teloa_plan_task_links where owner_id=$1',[owner])).rows[0].n,2)
+ assert.equal((await rebuilt.list(owner,{planId})).length,2)
 })

@@ -38,6 +38,22 @@ test('精确已存回执优先，不读冷日志，不把保存等同本人认�
  assert.deepEqual(await reader.read('owner',run),{state:'saved'})
  assert.equal('deliveryCheck'in run,false)
 })
+test('AD09 员工日结按真实日志经验回执显示未交付，保留原生completed',async()=>{
+ const employee:TaskRun={...run,executor:{kind:'role',roleId:'10000000-0000-4000-8000-000000000001',roleVersion:1},roleId:'10000000-0000-4000-8000-000000000001',roleVersion:1}
+ const reader=createTaskRunDeliveryReader({receipt:async()=>assert.fail('员工日结不借用owner成果回执'),events:async()=>assert.fail('日志经验回执不需要再读模型正文'),digest:async(owner,current)=>{assert.equal(owner,'owner');assert.equal(current,employee);return {state:'unknown' as const}}})
+ assert.deepEqual(await reader.read('owner',employee),{state:'unknown'})
+ assert.equal(employee.evidence?.state==='ended'&&employee.evidence.reason,'completed')
+ const saved=createTaskRunDeliveryReader({receipt:async()=>assert.fail('不借用owner回执'),events:async()=>assert.fail('不读模型正文'),digest:async()=>({state:'saved' as const})})
+ assert.deepEqual(await saved.read('owner',employee),{state:'saved'})
+})
+test('AD09 日结交付读口不可用返回未知，程序错误不被伪装成已保存',async()=>{
+ const employee:TaskRun={...run,executor:{kind:'role',roleId:'10000000-0000-4000-8000-000000000001',roleVersion:1},roleId:'10000000-0000-4000-8000-000000000001',roleVersion:1}
+ const ports={receipt:async()=>false,events:async()=>native}
+ assert.deepEqual(await createTaskRunDeliveryReader({...ports,digest:async()=>{throw new WorkError('teloa/storage-unavailable','合成读取失败')}}).read('owner',employee),{state:'unknown'})
+ const bug=new TypeError('programming bug')
+ await assert.rejects(createTaskRunDeliveryReader({...ports,digest:async()=>{throw bug}}).read('owner',employee),error=>error===bug)
+ assert.equal(await createTaskRunDeliveryReader({...ports,digest:async()=>undefined}).read('owner',employee),undefined)
+})
 test('完整原生轮缺正式review才显示缺复核；读取缺失或证据边界不符为unknown',async()=>{
  const reader=createTaskRunDeliveryReader({receipt:async()=>false,events:async()=>native})
  assert.deepEqual(await reader.read('owner',run),{state:'review-required'})

@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import {readFile} from 'node:fs/promises'
-import {taskRunStopWaitSeconds} from '../src/client/task-run-presentation.ts'
+import {taskRunStopWaitSeconds,latestTaskRun} from '../src/client/task-run-presentation.ts'
 import {FORMAL_UI_P5_MESSAGE_ROWS} from '../src/client/i18n/locales/formal-ui-p5.ts'
 import type {RunView} from '../src/client/task-run-api.ts'
 
@@ -36,4 +36,11 @@ test('「停止中 · 已等待」按十语提供真实翻译，并保留秒数�
  assert.equal(row!.length,locales.length+1)
  for(const [index,locale] of locales.entries())assert.ok(row![index+1]?.includes('{seconds}'),`${locale} 缺少等待秒数`)
  assert.equal(row![1],'停止中 · 已等待 {seconds} 秒')
+})
+
+
+test('当前工作按创建时刻而非目录顺序选择，同刻稳定且不改历史数组',()=>{
+ const old={id:'old',createdAt:'2026-10-28T01:00:00Z'},fresh={id:'fresh',createdAt:'2026-10-28T02:00:00Z'},tie={...fresh,id:'z'}
+ for(const rows of [[old,fresh,tie],[tie,old,fresh],[fresh,tie,old]]){const before=[...rows];assert.equal(latestTaskRun(rows),tie);assert.deepEqual(rows,before)}
+ assert.equal(latestTaskRun([]),undefined)
 })

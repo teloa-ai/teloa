@@ -38,7 +38,11 @@ function spec(input:Record<string,unknown>):ResourceSpec {
   return {title:input.title.trim(),sourceId:input.sourceId,sourceVersion:input.sourceVersion,scopeIds:[...input.scopeIds].sort()}
 }
 export function authorizeResourceActor(actor:ResourceActor,ownerId=actor.ownerId,scopes:string[]=[],human=false):void {
-  if(!actor.ownerId||actor.ownerId!==ownerId||!['human','agent'].includes(actor.kind)||!resourceScopes(actor.scopeIds)||scopes.some(scope=>!actor.scopeIds.includes(scope))||(human&&actor.kind!=='human'))throw new WorkError('teloa/forbidden','当前主体或目标范围无权执行此资源操作。')
+  // 本人管理主体携带服务端登记目录的完整集合；单份资源和模型授权仍沿用 16 范围合同。
+  const validScopes=actor.kind==='human'
+    ?Array.isArray(actor.scopeIds)&&actor.scopeIds.length>0&&new Set(actor.scopeIds).size===actor.scopeIds.length&&actor.scopeIds.every(scope=>resourceScopes([scope]))
+    :resourceScopes(actor.scopeIds)
+  if(typeof actor.ownerId!=='string'||!actor.ownerId.trim()||actor.ownerId!==ownerId||!['human','agent'].includes(actor.kind)||!validScopes||scopes.some(scope=>!actor.scopeIds.includes(scope))||(human&&actor.kind!=='human'))throw new WorkError('teloa/forbidden','当前主体或目标范围无权执行此资源操作。')
 }
 function validateRoleKnowledge(actor:ResourceActor,targetScopes:string[],ids:readonly string[]):void {
   authorizeResourceActor(actor)
@@ -229,6 +233,18 @@ export class ResourceService {
       return resourceRow((await client.query(`update teloa_resources set status='withdrawn',revision=revision+1,updated_at=$2 where id=$1 returning *`,[id,this.identity.now()])).rows[0])
     })
   }
+  /** 副本服务沿原事务读取并锁定来源，不另开连接或跳过本人范围授权。 */
+  async getResourceInTransaction(client:PoolClient,actor:ResourceActor,id:string):Promise<WorkResource>{authorizeResourceActor(actor);return this.resource(client,actor,id)}
+  /** 本人明确保存知识副本后生成独立可引用资料；不改任何员工引用。 */
+  async createKnowledgeProjectionInTransaction(client:PoolClient,actor:ResourceActor,input:ResourceSpec):Promise<WorkResource>{
+    authorizeResourceActor(actor,actor.ownerId,input.scopeIds,true)
+    if(!isResourceSpec(input)||!knowledgeSourceId(input.sourceId))throw badInput()
+    const value=spec(input),knowledgeId=knowledgeSourceId(value.sourceId)
+    const saved=(await client.query('select i.title,i.scope_ids,i.workspace_id,i.status,v.content_hash from teloa_knowledge_items i join teloa_knowledge_versions v on v.owner_id=i.owner_id and v.knowledge_id=i.id and v.number=i.current_version where i.owner_id=$1 and i.id=$2 for share of i',[actor.ownerId,knowledgeId])).rows[0]
+    if(!saved||saved.workspace_id!=='default'||saved.status!=='active'||saved.title!==value.title||saved.content_hash!==value.sourceVersion||!same(saved.scope_ids,value.scopeIds))throw new WorkError('teloa/version-conflict','新知识与可引用副本身份不一致。')
+    const id=this.identity.id(),now=this.identity.now();if(!resourceId(id)||!Number.isFinite(Date.parse(now)))throw corrupt()
+    return resourceRow((await client.query("insert into teloa_resources(id,owner_id,revision,status,spec,created_at,updated_at) values($1,$2,1,'active',$3,$4,$4) returning *",[id,actor.ownerId,JSON.stringify(value),now])).rows[0])
+  }
   /** 知识版本与可引用投影共用外层事务；调用者必须先固定知识版本。 */
   async replaceKnowledgeProjectionInTransaction(client:PoolClient,actor:ResourceActor,input:{resourceId:string;expectedVersion:number;expectedSourceId:string;expectedSourceVersion:string;nextSourceVersion:string;title:string;scopeIds:string[]}):Promise<WorkResource>{
     authorizeResourceActor(actor,actor.ownerId,[],true)
@@ -352,6 +368,28 @@ export class ResourceService {
       }
       return ids.map(id=>resources.get(id)!)
   }
+  /** 固定岗位已指定资料的元数据，只读取完整属于本次范围的正文；不扩大actor范围。 */
+  async executionRoleKnowledgeForScopeInTransaction(client:PoolClient,actor:ResourceActor,targetScopes:string[],ids:readonly string[],signal?:AbortSignal):Promise<{references:WorkResource[];contents:ResourceContext['contents']}>{
+    validateRoleKnowledge(actor,targetScopes,ids)
+    signal?.throwIfAborted()
+    const eligible=new Map<string,WorkResource>()
+    for(const id of [...ids].sort()){
+      signal?.throwIfAborted()
+      const row=(await client.query('select * from teloa_resources where id=$1 for share',[id])).rows[0] as Record<string,unknown>|undefined
+      if(!row)throw new WorkError('teloa/invalid-input','员工资料范围包含不可用资料：引用的资料不存在或已被移除，请在员工资料中移除或替换后重试。',{reason:'role-knowledge-unavailable',resourceIds:[id]})
+      const resource=resourceRow(row)
+      authorizeResourceActor(actor,resource.ownerId)
+      if(!resource.scopeIds.every(scope=>targetScopes.includes(scope)))continue
+      authorizeResourceActor(actor,resource.ownerId,resource.scopeIds)
+      if(resource.status!=='active')throw new WorkError('teloa/resource-withdrawn','员工资料已撤回，请重新选择。')
+      eligible.set(id,resource)
+    }
+    const eligibleIds=ids.filter(id=>eligible.has(id)),references=eligibleIds.map(id=>eligible.get(id)!)
+    const contents=await this.executionKnowledgeInTransaction(client,actor,targetScopes,eligibleIds,signal)
+    if(contents.length!==references.length||references.some(reference=>!contents.some(content=>content.id===reference.id&&content.version===reference.version)))throw new WorkError('teloa/version-conflict','员工资料固定版本已变化，请重新准备。')
+    signal?.throwIfAborted()
+    return {references,contents}
+  }
   /** 岗位执行准备读取：只接受资源身份，不创建虚构消息或复用消息审计快照。 */
   async executionKnowledge(actor:ResourceActor,targetScopes:string[],ids:readonly string[],signal?:AbortSignal,fixedKnowledgeRead?:FixedRunKnowledgeRead):Promise<ResourceContext['contents']>{
     validateRoleKnowledge(actor,targetScopes,ids)
@@ -422,6 +460,18 @@ export class ResourceService {
     const text=await this.source(resource,actor,client)
     if(Buffer.byteLength(text,'utf8')>retrievalLimits.maxSourceBytes)throw new WorkError('teloa/invalid-input','单份资料正文超过 2 MiB，不能加入本地检索。')
     return {resource,text}
+  }
+  /**
+   * 检索候选只读核验：重查资料归属和固定版本，正文仍经单来源授权读取，不自动认可原件的新版本。
+   * 只有明确的版本失效返回 false；权限、存储与来源读取错误保持失败语义。
+   */
+  async isRetrievalSourceCurrentInTransaction(client:PoolClient,actor:ResourceActor,expected:Pick<RetrievalExcerptHit,'resourceId'|'resourceVersion'|'sourceVersion'>,fixedKnowledgeRead?:FixedRunKnowledgeRead):Promise<boolean>{
+    authorizeResourceActor(actor)
+    const input=excerptHit({...expected,chars:[0,1]})
+    const resource=await this.resource(client,actor,input.resourceId)
+    if(resource.status!=='active'||resource.version!==input.resourceVersion||resource.sourceVersion!==input.sourceVersion)return false
+    try{await this.source(resource,actor,client,fixedKnowledgeRead,resource.id);return true}
+    catch(error){if(error instanceof WorkError&&error.code==='teloa/version-conflict')return false;throw error}
   }
   /**
    * 本地检索命中回读：逐条核对本人、目标范围、启用状态、资料版本与正文版本，按规范化正文区间切片。

@@ -1,4 +1,5 @@
 import {ArrowLeft} from 'lucide-react'
+import {OwnedSkillConsent,initialOwnedSkillConsentDraft} from './OwnedSkillConsent.js'
 import {ToolbarIconButton} from './ToolbarIconButton.js'
 // 技能密钥页：密码框 write-only，不预填、提交后清空；只显示「已保存 / 未填写」，并如实显示每个密钥将发往何处。
 import {useEffect,useRef,useState,type FormEvent} from 'react'
@@ -27,8 +28,10 @@ export function SkillSecretsViewPresentation({embedded=false,title,state,busy,er
  }
  const body=()=>{
   if(!state)return error?null:<p className={css.loading}>{t('market.catalog.connector.loading')}</p>
+  // 不可写优先恢复既有凭据存储，不把不可读说成未授权或未安装。
+  if(!state.writable&&!state.vars.length)return <p className={css.reason} role="status">{t('market.skillSecrets.readOnly')} {t('market.skillSecrets.locked')}</p>
   // 当前生效的不是声明密钥的市场安装：不给可填写表单。
-  if(!state.vars.length)return <p className={css.reason} role="status">{t('market.skillSecrets.needsInstall')}</p>
+  if(!state.vars.length)return state.owner?null:<p className={css.reason} role="status">{t('market.skillSecrets.needsInstall')}</p>
   // 存储锁定或只读时宿主读不到记录：不显示「已保存 / 未填写」，只给到设置页处理的引导。
   const known=state.writable
   // 共享密钥组：保存与删除作用于整组，如实列出同组技能。
@@ -65,32 +68,41 @@ export function SkillSecretsViewPresentation({embedded=false,title,state,busy,er
   {error&&<p className={css.error} role="alert">{error}</p>}
  </div>
 }
-export function SkillSecretsView({skill,title,api,onBack,embedded=false}:{skill:string;title:string;api:SkillSecretsApi;onBack:()=>void;embedded?:boolean}){
+export function SkillSecretsView({skill,title,api,onBack,embedded=false,expectedInstallationId}:{skill:string;title:string;api:SkillSecretsApi;onBack:()=>void;embedded?:boolean;expectedInstallationId?:string}){
  const {t,locale}=useI18n()
  // 声明指纹不代表连接；同步隔离旧表单与迟答，不让密码草稿跨连接或技能沿用。
- const owner=useRef({api,skill,active:false})
- if(owner.current.api!==api||owner.current.skill!==skill)owner.current={api,skill,active:false}
+ const owner=useRef({api,skill,expectedInstallationId,active:false})
+ if(owner.current.api!==api||owner.current.skill!==skill||owner.current.expectedInstallationId!==expectedInstallationId)owner.current={api,skill,expectedInstallationId,active:false}
  const origin=owner.current,[readOrigin,setReadOrigin]=useState(origin)
  const current=()=>owner.current===origin&&origin.active
  const [state,setState]=useState<SkillSecretsState|null>(null),[busy,setBusy]=useState(false),[error,setError]=useState(''),[confirmingDelete,setConfirmingDelete]=useState(false)
+ const [consentDraft,setConsentDraft]=useState(()=>({origin,value:initialOwnedSkillConsentDraft()}))
+ const reopen=locale==='zh-CN'?'技能安装已变化，请关闭此页并从当前安装详情重新打开。':locale.startsWith('zh')?'技能安裝已變更，請關閉此頁並從目前安裝詳情重新開啟。':'The skill installation changed. Close this view and reopen the current installation details.'
+ // 所有回包使用同一个skill/点击安装闸；旧A抽屉绝不自动接纳B的授权控件。
+ const receive=(next:SkillSecretsState):boolean=>{
+  if(!current())return false
+  if(next.skill!==skill||expectedInstallationId&&next.owner?.installationId!==expectedInstallationId){setState(null);setError(reopen);return false}
+  setState(next);return true
+ }
  useEffect(()=>{
   let live=true;origin.active=true
-  setReadOrigin(origin);setState(null);setBusy(false);setError('');setConfirmingDelete(false)
-  api.describe(skill).then(next=>{if(live&&current())setState(next)},()=>{if(live&&current())setError(t('market.skillSecrets.failed'))})
+  setReadOrigin(origin);setState(null);setBusy(false);setError('');setConfirmingDelete(false);setConsentDraft({origin,value:initialOwnedSkillConsentDraft()})
+  api.describe(skill).then(next=>{if(live)receive(next)},()=>{if(live&&current())setError(t('market.skillSecrets.failed'))})
   return()=>{live=false;origin.active=false}
- },[api,skill])
- const act=async(task:()=>Promise<SkillSecretsState>)=>{
-  if(!current())return
+ },[api,skill,expectedInstallationId])
+ const act=async(task:()=>Promise<SkillSecretsState>):Promise<boolean>=>{
+  if(!current())return false
   setBusy(true);setError('')
-  try{const next=await task();if(current())setState(next)}catch(cause){
-   if(!current())return
+  try{return receive(await task())}catch(cause){
+   if(!current())return false
    if(cause&&typeof cause==='object'&&'code' in cause&&cause.code==='teloa/version-conflict'){
     // 移除旧表单（也丢弃输入）；只刷新公开声明，绝不拿旧值自动重试保存。
     setState(null)
-    try{const next=await api.describe(skill);if(current()){setState(next);setError(`${t('market.skillSecrets.reconfirmShort')}：${t('market.skillSecrets.reconfirm')}`)}}catch{if(current())setError(t('market.skillSecrets.failed'))}
+    try{const next=await api.describe(skill);if(receive(next))setError(`${t('market.skillSecrets.reconfirmShort')}：${t('market.skillSecrets.reconfirm')}`)}catch{if(current())setError(t('market.skillSecrets.failed'))}
    }else setError(cause instanceof Error&&cause.message?cause.message:t('market.skillSecrets.failed'))
+   return false
   }finally{if(current()){setBusy(false);setConfirmingDelete(false)}}
  }
  const visible=readOrigin===origin,viewState=visible?state:null
- return <SkillSecretsViewPresentation key={viewState?.binding??'unavailable'} embedded={embedded} title={title} state={viewState} busy={visible&&busy} error={visible?error:''} locale={locale} t={t as T} confirmingDelete={visible&&confirmingDelete} onBack={onBack} onSave={values=>{const binding=viewState?.binding;if(binding)void act(()=>api.save(skill,values,binding))}} onAskDelete={()=>{if(current())setConfirmingDelete(true)}} onCancelDelete={()=>{if(current())setConfirmingDelete(false)}} onDelete={()=>void act(()=>api.remove(skill))}/>
+ return <>{viewState?.owner&&<OwnedSkillConsent key={viewState.owner.installation+':'+String(viewState.owner.authorized)} skill={skill} state={viewState} api={api} locale={locale} busy={visible&&busy} act={act} draft={consentDraft.origin===origin?consentDraft.value:initialOwnedSkillConsentDraft()} onDraft={value=>{if(current())setConsentDraft({origin,value})}}/>}<SkillSecretsViewPresentation key={viewState?.binding??'unavailable'} embedded={embedded} title={title} state={viewState} busy={visible&&busy} error={visible?error:''} locale={locale} t={t as T} confirmingDelete={visible&&confirmingDelete} onBack={onBack} onSave={values=>{const binding=viewState?.binding;if(binding)void act(()=>api.save(skill,values,binding))}} onAskDelete={()=>{if(current())setConfirmingDelete(true)}} onCancelDelete={()=>{if(current())setConfirmingDelete(false)}} onDelete={()=>void act(()=>viewState?.owner&&viewState.binding&&api.removeOwned?api.removeOwned(skill,viewState.owner.installation,viewState.binding):api.remove(skill))}/></>
 }

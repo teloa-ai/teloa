@@ -37,7 +37,7 @@ test('未知字段、数组项、时区、星期及配置版本从 SDK 拒绝，
  const cases:Array<[unknown,string]>=[
   [{...ownerExample,ownerId:'foreign'},'plan.ownerId'],
   [{...ownerExample,work:{...ownerExample.work,triggers:{}}},'plan.work.triggers'],
-  [{...ownerExample,work:{...ownerExample.work,triggers:[{kind:'schedule',schedule:{...ownerExample.definition.trigger,timezone:'America/New_York'}}]}},'plan.work.triggers[0].schedule.timezone'],
+  [{...ownerExample,work:{...ownerExample.work,triggers:[{kind:'schedule',schedule:{...ownerExample.definition.trigger,timezone:'Etc/Not_A_Zone'}}]}},'plan.work.triggers[0].schedule.timezone'],
   [{...ownerExample,definition:{...ownerExample.definition,trigger:{...ownerExample.definition.trigger,weekday:0}}},'plan.definition.trigger.weekday'],
   [{...configurePlanDraftExample,expectedConfigVersion:'1'},'plan.expectedConfigVersion'],
   [{...configurePlanDraftExample,fields:{title:'摘要',goal:'按原方法整理',dataScope:'原范围',delivery:'完整摘要',scope:'other'}},'plan.fields.scope'],
@@ -96,4 +96,13 @@ test('计划四项资源明确null通过原生schema与reader；重试和无进�
  const plan=structuredClone(ownerExample);plan.work.budget={...plan.work.budget,maxTokens:null,maxGoalRounds:null,maxElapsedMs:null,maxConcurrent:null}
  assert.deepEqual(validateJsonSchemaValue(tool.parameters,{plan}),[]);assert.doesNotThrow(()=>planDraftBody(plan))
  for(const key of ['maxRetries','stagnationRounds']){const invalid={...plan,work:{...plan.work,budget:{...plan.work.budget,[key]:null}}};assert.notDeepEqual(validateJsonSchemaValue(tool.parameters,{plan:invalid}),[]);assert.throws(()=>readPageCreatePlanDraft(invalid))}
+})
+
+test('AD02-DST：本人草稿schema与reader均接受纽约且保持固定工作定义',()=>{
+ const plan=structuredClone(ownerExample)
+ plan.definition.trigger={...plan.definition.trigger,timezone:'America/New_York'}
+ plan.work.triggers=[{kind:'schedule',schedule:plan.definition.trigger}]
+ assert.deepEqual(validateJsonSchemaValue(tool.parameters,{plan}),[])
+ assert.deepEqual(planDraftArgumentErrors(plan),[])
+ assert.deepEqual(planDraftBody(plan),readPageCreatePlanDraft(plan))
 })

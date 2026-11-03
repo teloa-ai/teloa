@@ -79,3 +79,39 @@ test('128KiB Markdown 即使 JSON 转义膨胀仍可从日志恢复',async()=>{
  const recovered=createRoleMemoryApi(call,journal)
  assert.equal((await recovered.recover()).content.markdown,body);assert.equal(raw,null)
 })
+
+
+test('MEM-DEDUP-CORRECTIVE create只放行标题与UUID等价回执，其他身份正文范围状态仍拒绝',async()=>{
+ const reused={...memory,title:'ＡＬＰＨＡ　 顺序'},input={roleId:roleId.toUpperCase(),expectedRoleVersion:2,title:'alpha 顺序',markdown,source:{...memory.source,id:sourceId.toUpperCase()},visibility:memory.visibility};let raw:string|null=null
+ const api=createRoleMemoryApi(async()=>reused,{read:()=>raw,write:value=>{raw=value},clear:()=>{raw=null}},()=> 'a6057272-ed9d-44a3-abe4-2ab04e056105')
+ assert.deepEqual(await api.create(input),reused);assert.equal(raw,null);assert.equal(api.pending(),undefined)
+ for(const patch of [{roleId:sourceId},{roleVersion:3},{title:'另一主题'},{source:{...memory.source,id:roleId}},{source:{...memory.source,version:2}},{source:{kind:'task',id:sourceId,version:1}},{visibility:{kind:'role',scopeIds:['IT']}},{state:'confirmed',stateVersion:2,confirmedAt:at},{content:{...memory.content,markdown:'被替换的正文',bytes:new TextEncoder().encode('被替换的正文').byteLength}}]){
+  const bad=createRoleMemoryApi(async()=>({...reused,...patch}));await assert.rejects(bad.create(input),/响应/);assert.ok(bad.pending())
+ }
+})
+
+test('MEM-DEDUP-CORRECTIVE list/readVersion/edit/confirm/withdraw比较UUID身份且不重写请求',async()=>{
+ const alias={...memory,id:memory.id.toUpperCase(),roleId:roleId.toUpperCase(),source:{...memory.source,id:sourceId.toUpperCase()}},calls:Array<[string,unknown]>=[]
+ const confirmed={...memory,state:'confirmed' as const,stateVersion:2,confirmedAt:at},withdrawn={...confirmed,state:'withdrawn' as const,stateVersion:3,withdrawnAt:at},edited={...memory,title:'明确编辑',stateVersion:2,content:{...memory.content,version:2,editedBy:'self' as const}}
+ const call=async(endpoint:string,payload:unknown)=>{calls.push([endpoint,payload]);return endpoint==='role-memory/list'?[memory]:endpoint==='role-memory/confirm'?confirmed:endpoint==='role-memory/withdraw'?withdrawn:endpoint==='role-memory/edit'?edited:memory}
+ const api=createRoleMemoryApi(call)
+ assert.deepEqual(await api.list(alias.roleId),[memory]);assert.deepEqual(await api.readVersion(alias,1),memory)
+ assert.deepEqual(await api.confirm(alias.id,1),confirmed);assert.equal((calls.at(-1)![1] as {memoryId:string}).memoryId,alias.id)
+ assert.deepEqual(await api.withdraw(alias.id,2),withdrawn)
+ assert.deepEqual(await api.edit(alias,{title:edited.title,markdown}),edited);assert.equal((calls.at(-1)![1] as {roleId:string}).roleId,alias.roleId)
+ assert.equal((calls.at(-1)![1] as {memoryId:string}).memoryId,alias.id)
+})
+
+test('显式偏好参数在创建、编辑与恢复中保留；正文中的同名 JSON 示例不变',async()=>{
+ const preference={schema:'teloa.preference-candidate/v1' as const,kind:'preference' as const,scope:'general',basis:{kind:'owner-confirmation' as const}},doc=JSON.stringify({schema:'teloa.preference-candidate/v1',kind:'one-off',markdown:'普通用户文档'})
+ const saved={...memory,content:{...memory.content,markdown:doc,bytes:new TextEncoder().encode(doc).byteLength}},sent:any[]=[],api=createRoleMemoryApi(async(endpoint,payload)=>{sent.push([endpoint,payload]);return saved})
+ await api.create({roleId,expectedRoleVersion:2,title:memory.title,markdown:doc,source:memory.source,visibility:memory.visibility})
+ assert.equal(sent[0][1].markdown,doc);assert.equal(sent[0][1].preference,undefined)
+ let raw:string|null=null,offline=true
+ const journal={read:()=>raw,write:(value:string)=>{raw=value},clear:()=>{raw=null}},call=async(endpoint:string,payload:unknown)=>{sent.push([endpoint,payload]);if(offline)throw Error('断线');return saved}
+ await assert.rejects(createRoleMemoryApi(call,journal).create({roleId,expectedRoleVersion:2,title:memory.title,markdown:doc,source:memory.source,visibility:memory.visibility,preference}),/断线/)
+ offline=false;await createRoleMemoryApi(call,journal).recover()
+ assert.deepEqual(sent[1],sent[2]);assert.deepEqual(sent[2][1].preference,preference);assert.equal(sent[2][1].markdown,doc);assert.equal(raw,null)
+ const result={...saved,stateVersion:2,content:{...saved.content,version:2,editedBy:'self' as const}},edit=createRoleMemoryApi(async(_endpoint,payload)=>{sent.push(payload);return result})
+ await edit.edit(saved,{title:memory.title,markdown:doc,preference});assert.deepEqual(sent.at(-1).preference,preference)
+})

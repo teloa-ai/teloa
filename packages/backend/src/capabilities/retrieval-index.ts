@@ -1,10 +1,11 @@
 import type {FixedRunKnowledgeRead} from './fixed-run-knowledge-read.ts'
 import {endianness} from 'node:os'
 import type {Pool,PoolClient} from 'pg'
-import {WorkError,isRecord,isResourceSpec,readRetrievalSearchResult,resourceScopes,retrievalLimits,type ResourceSpec,type RetrievalCoverage,type RetrievalSearchResult} from '@teloa/contract'
+import {WorkError,isRecord,isResourceSpec,readRetrievalSearchResult,readRetrievalEnrollmentSources,resourceScopes,retrievalLimits,type RetrievalEnrollmentOutcome,type ResourceSpec,type RetrievalCoverage,type RetrievalSearchResult} from '@teloa/contract'
 import {authorizeResourceActor,type ResourceActor,type ResourceService} from './resources.ts'
 import {chunkRetrievalText,retrievalChunker,type RetrievalChunk} from './retrieval-chunker.ts'
 import {rankRetrievalVectors,type RankedIndex} from './retrieval-ranking.ts'
+import {coalesceRetrievalEvidence} from './retrieval-evidence.ts'
 
 /**
  * 端侧中文检索索引（规格 §6）。
@@ -17,11 +18,16 @@ import {rankRetrievalVectors,type RankedIndex} from './retrieval-ranking.ts'
 export type Embedder={profileHash:string;embed(kind:'query'|'passage',texts:string[],signal:AbortSignal):Promise<Float32Array[]>}
 export type RetrievalIndexState='ready'|'building'|'failed'|'stale'|'unavailable'
 /** `unavailable`：已加入但当前没有启用版本（只对本人列出，便于移出）。`stale`：当前版本在当前配置下尚无索引。 */
-export type RetrievalStatusItem={sourceId:string;resourceId:string|null;title:string|null;version:number|null;state:RetrievalIndexState;chunkCount:number|null}
+type RetrievalSourceState=NonNullable<RetrievalCoverage['pending'][number]['sourceState']>
+export type RetrievalStatusItem={sourceId:string;resourceId:string|null;title:string|null;version:number|null;state:RetrievalIndexState;chunkCount:number|null;sourceChanged?:true;sourceState?:RetrievalSourceState}
 /** `enrolled`/`chunks` 是本人全量计数，只回给本人主体。 */
 export type RetrievalStatus={items:RetrievalStatusItem[];enrolled?:number;chunks?:number}
 
-export const retrievalCoverageNote='仅检索已加入本地检索且当前会话有权读取的资料，不是全部资料。'
+export const retrievalCoverageNote='仅检索已加入本地检索且当前会话有权读取的资料，不是全部资料。候选范围按当前授权与索引绑定确定；返回命中另经原件安全读取和正文版本复核，未命中资料不代表已逐份回读。'
+const changedCoverageDetail='部分资料的固定版本绑定已失效，本次范围无法核验该绑定的当前正文；这不代表本人从未确认新版。请以实际已检索版本为依据，其他事实保留未知，必要时由本人核对资料版本与可用范围。不要重复确认已有版本，也不能通过确认把历史旧索引恢复为当前依据；本次查询不授权创建草案、提交版本或重建索引。'
+const historicalCoverageDetail='部分旧版本保留用于追溯，同一来源在本次范围内已有可读、已确认的当前资料版本。历史条目不是当前依据，不需要再次确认，也不能恢复为当前索引。'
+export const retrievalChangedCoverageNote=retrievalCoverageNote+changedCoverageDetail
+export const retrievalHistoricalCoverageNote=retrievalCoverageNote+historicalCoverageDetail
 export const retrievalVectorCacheBytes=128*1024*1024
 const batchSize=32
 const defaultLimit=5
@@ -92,7 +98,6 @@ export class RetrievalVectorCache{
 const bad=(message='本地检索请求格式不正确或包含未知字段。')=>new WorkError('teloa/invalid-input',message)
 const corrupt=()=>new WorkError('teloa/storage-corrupt','本地检索索引记录损坏，已停止读取。')
 const cancelled=()=>new WorkError('teloa/cancelled','本地检索操作已取消。')
-const stableId=(value:unknown):value is string=>typeof value==='string'&&/^[a-zA-Z0-9_-]{1,128}$/.test(value)
 const hex64=(value:unknown):value is string=>typeof value==='string'&&/^[a-f0-9]{64}$/.test(value)
 const littleEndian=endianness()==='LE'
 const checkAbort=(signal:AbortSignal)=>{if(signal.aborted)throw cancelled()}
@@ -100,9 +105,7 @@ const yieldTurn=()=>new Promise<void>(resolve=>setImmediate(resolve))
 
 function exact(input:unknown,keys:string[]):Record<string,unknown>{if(!isRecord(input)||Object.keys(input).some(key=>!keys.includes(key)))throw bad();return input}
 function sourceIds(input:unknown):string[]{
- const ids=exact(input,['sourceIds']).sourceIds
- if(!Array.isArray(ids)||ids.length<1||ids.length>retrievalLimits.maxEnrollments||!ids.every(stableId)||new Set(ids).size!==ids.length)throw bad()
- return ids
+ return readRetrievalEnrollmentSources(input)
 }
 function profile(embedder:Embedder):string{if(!isRecord(embedder)||!hex64(embedder.profileHash)||typeof embedder.embed!=='function')throw bad('本地检索模型配置摘要不正确。');return embedder.profileHash}
 const within=(scopes:string[],allowed:readonly string[])=>scopes.every(scope=>allowed.includes(scope))
@@ -122,7 +125,23 @@ function encode(vector:Float32Array):Buffer{
 }
 
 /** 候选行：本人已加入、当前启用的资料，连同当前绑定（配置摘要 + 分块器）下的索引。 */
-type Candidate={resourceId:string;version:number;spec:ResourceSpec;indexId:string|null;state:'building'|'ready'|'failed'|null;chunkCount:number|null}
+type Candidate={resourceId:string;version:number;spec:ResourceSpec;indexId:string|null;state:'building'|'ready'|'failed'|null;chunkCount:number|null;sourceChanged?:true;sourceState?:RetrievalSourceState;sourceCheck?:'current'|'unknown'}
+/** 只用本次已过范围/知识许可过滤且真正核验成功的候选作正证据，不按修订号或异常缺省猜新旧。 */
+function classifySourceChanges(rows:Candidate[]):Candidate[]{
+ const currentVersions=new Map<string,Set<string>>()
+ for(const row of rows)if(row.sourceCheck==='current'){
+  const versions=currentVersions.get(row.spec.sourceId)??new Set<string>()
+  versions.add(row.spec.sourceVersion);currentVersions.set(row.spec.sourceId,versions)
+ }
+ return rows.map((row):Candidate=>{
+  if(!row.sourceChanged)return row
+  const versions=currentVersions.get(row.spec.sourceId)
+  return {...row,sourceState:versions&&(versions.size>1||!versions.has(row.spec.sourceVersion))?'historical':'changed'}
+ })
+}
+function coverageNote(rows:Candidate[]):string{
+ return retrievalCoverageNote+(rows.some(row=>row.sourceChanged&&row.sourceState!=='historical')?changedCoverageDetail:'')+(rows.some(row=>row.sourceState==='historical')?historicalCoverageDetail:'')
+}
 function candidate(row:Record<string,unknown>):Candidate{
  if(typeof row.id!=='string'||!Number.isSafeInteger(row.revision)||!isResourceSpec(row.spec))throw corrupt()
  const spec=row.spec
@@ -154,16 +173,36 @@ export class RetrievalIndexService{
  private readonly identity:{id:()=>string;now:()=>string}
  private readonly cache=new RetrievalVectorCache()
  constructor(pool:Pool,resources:ResourceService,identity:{id:()=>string;now:()=>string}){this.pool=pool;this.resources=resources;this.identity=identity}
- private async tx<T>(operation:(client:PoolClient)=>Promise<T>):Promise<T>{
-  const client=await this.pool.connect().catch(()=>{throw new WorkError('teloa/storage-unavailable','本地检索数据库暂不可用。')})
-  try{await client.query('begin');const value=await operation(client);await client.query('commit');return value}
-  catch(error){await client.query('rollback').catch(()=>{});if(error instanceof WorkError)throw error;throw new WorkError('teloa/storage-unavailable','本地检索事务未完成，请检查数据库连接与结构。')}
+ private async tx<T>(operation:(client:PoolClient)=>Promise<T>,outcome?:(value:RetrievalEnrollmentOutcome)=>void):Promise<T>{
+  const client=await this.pool.connect().catch(()=>{outcome?.('not-committed');throw new WorkError('teloa/storage-unavailable','本地检索数据库暂不可用。')})
+  let commitStarted=false
+  try{await client.query('begin');const value=await operation(client);commitStarted=true;await client.query('commit');outcome?.('committed');return value}
+  catch(error){
+   const rolledBack=await client.query('rollback').then(()=>true,()=>false)
+   // COMMIT 已发出后，后续 ROLLBACK 成功也不能证明 COMMIT 没有生效。
+   outcome?.(!commitStarted&&rolledBack?'not-committed':'unknown')
+   if(error instanceof WorkError)throw error;throw new WorkError('teloa/storage-unavailable','本地检索事务未完成，请检查数据库连接与结构。')
+  }
   finally{client.release()}
  }
  private lockOwner(client:PoolClient,ownerId:string){return client.query('select pg_advisory_xact_lock(hashtextextended($1,0))',[JSON.stringify(['retrieval-index',ownerId])])}
  private async candidates(client:PoolClient,ownerId:string,profileHash:string|null,lock=false,knowledgeIds:readonly string[]|null=null):Promise<Candidate[]>{
   const employeeKnowledge=Boolean((await client.query("select to_regclass('teloa_employee_knowledge_versions') as relation")).rows[0]?.relation)
   return (await client.query(candidateSql(lock,employeeKnowledge),[ownerId,profileHash,retrievalChunker,knowledgeIds])).rows.map(candidate)
+ }
+ /** 调用方先过滤可信资料许可和范围；逐资料核验，不扫描来源目录或缓存正文。 */
+ private async currentSources(client:PoolClient,actor:ResourceActor,rows:Candidate[],fixedKnowledgeRead?:FixedRunKnowledgeRead):Promise<Candidate[]>{
+  const checked:Candidate[]=[]
+  for(const row of rows){
+   let current:boolean|undefined
+   try{current=await this.resources.isRetrievalSourceCurrentInTransaction(client,actor,{resourceId:row.resourceId,resourceVersion:row.version,sourceVersion:row.spec.sourceVersion},fixedKnowledgeRead)}
+   catch(error){
+    // 未就绪且来源暂不可读保留原状态；就绪来源、权限和存储错误不能伪装成可检索。
+    if(row.state==='ready'||!(error instanceof WorkError)||error.code!=='teloa/source-unavailable')throw error
+   }
+   checked.push(current===false?{...row,state:null,chunkCount:null,sourceChanged:true,sourceCheck:'unknown'}:{...row,sourceCheck:current===true?'current':'unknown'})
+  }
+  return classifySourceChanges(checked)
  }
  private async embed(embedder:Embedder,kind:'query'|'passage',texts:string[],signal:AbortSignal):Promise<Float32Array[]>{
   let vectors:unknown
@@ -173,19 +212,23 @@ export class RetrievalIndexService{
   return vectors as Float32Array[]
  }
 
- /** 逐份显式加入（规格 §6.2）：只接受本人主体，来源须有本人可见的启用资料，每人最多 500 份。 */
- async enroll(actor:ResourceActor,input:unknown):Promise<void>{
-  authorizeResourceActor(actor,actor.ownerId,[],true)
-  const ids=sourceIds(input)
-  await this.tx(async client=>{
-   await this.lockOwner(client,actor.ownerId)
-   const visible=new Set((await client.query(`select spec->>'sourceId' as source_id,spec->'scopeIds' as scope_ids from teloa_resources where owner_id=$1 and status='active' and spec->>'sourceId'=any($2::text[])`,[actor.ownerId,ids])).rows
-    .filter(row=>resourceScopes(row.scope_ids)&&within(row.scope_ids,actor.scopeIds)).map(row=>row.source_id as string))
-   if(ids.some(id=>!visible.has(id)))throw new WorkError('teloa/not-found','资料不存在或当前无权加入本地检索。')
-   const existing=(await client.query('select source_id from teloa_retrieval_enrollments where owner_id=$1',[actor.ownerId])).rows.map(row=>row.source_id as string)
-   if(new Set([...existing,...ids]).size>retrievalLimits.maxEnrollments)throw bad('每人最多加入 500 份资料到本地检索。')
-   await client.query('insert into teloa_retrieval_enrollments(owner_id,source_id,created_at) select $1::text,unnest($2::text[]),$3::timestamptz on conflict do nothing',[actor.ownerId,ids,this.identity.now()])
-  })
+ /** 逐份显式加入（规格 §6.2）：只接受本人主体，来源须有本人可见的启用资料，单批最多 500 份、每人累计最多 10,000 份；总分块预算独立核对。 */
+ async enroll(actor:ResourceActor,input:unknown,outcome?:(value:RetrievalEnrollmentOutcome)=>void):Promise<void>{
+  let transactionEntered=false
+  try{
+   authorizeResourceActor(actor,actor.ownerId,[],true)
+   const ids=sourceIds(input)
+   transactionEntered=true
+   await this.tx(async client=>{
+    await this.lockOwner(client,actor.ownerId)
+    const visible=new Set((await client.query(`select spec->>'sourceId' as source_id,spec->'scopeIds' as scope_ids from teloa_resources where owner_id=$1 and status='active' and spec->>'sourceId'=any($2::text[])`,[actor.ownerId,ids])).rows
+     .filter(row=>resourceScopes(row.scope_ids)&&within(row.scope_ids,actor.scopeIds)).map(row=>row.source_id as string))
+    if(ids.some(id=>!visible.has(id)))throw new WorkError('teloa/not-found','资料不存在或当前无权加入本地检索。')
+    const existing=(await client.query('select source_id from teloa_retrieval_enrollments where owner_id=$1',[actor.ownerId])).rows.map(row=>row.source_id as string)
+    if(new Set([...existing,...ids]).size>retrievalLimits.maxEnrollments)throw bad(`每人最多加入 ${retrievalLimits.maxEnrollments.toLocaleString('en-US')} 份资料到本地检索。`)
+    await client.query('insert into teloa_retrieval_enrollments(owner_id,source_id,created_at) select $1::text,unnest($2::text[]),$3::timestamptz on conflict do nothing',[actor.ownerId,ids,this.identity.now()])
+   },outcome)
+  }catch(error){if(!transactionEntered)outcome?.('not-committed');throw error}
  }
 
  /** 移出检索：同一事务内删除加入记录、索引与向量（外键级联）。 */
@@ -207,8 +250,8 @@ export class RetrievalIndexService{
   if(profileHash!==null&&!hex64(profileHash))throw bad('本地检索模型配置摘要不正确。')
   const permitted=permittedKnowledgeIds(knowledgeIds)
   return this.tx(async client=>{
-   const rows=(await this.candidates(client,actor.ownerId,profileHash,false,permitted)).filter(row=>within(row.spec.scopeIds,actor.scopeIds))
-   const items:RetrievalStatusItem[]=rows.map(row=>({sourceId:row.spec.sourceId,resourceId:row.resourceId,title:row.spec.title,version:row.version,state:row.state??'stale',chunkCount:row.chunkCount}))
+   const rows=await this.currentSources(client,actor,(await this.candidates(client,actor.ownerId,profileHash,false,permitted)).filter(row=>within(row.spec.scopeIds,actor.scopeIds)))
+   const items:RetrievalStatusItem[]=rows.map(row=>({sourceId:row.spec.sourceId,resourceId:row.resourceId,title:row.spec.title,version:row.version,state:row.state??'stale',chunkCount:row.chunkCount,...row.sourceChanged?{sourceChanged:true as const}:{},...row.sourceState?{sourceState:row.sourceState}:{}}))
    if(actor.kind!=='human'||permitted!==null)return {items}
    const enrolled=(await client.query('select source_id from teloa_retrieval_enrollments where owner_id=$1 order by source_id',[actor.ownerId])).rows.map(row=>row.source_id as string)
    const active=new Set((await client.query(`select distinct spec->>'sourceId' as source_id from teloa_resources where owner_id=$1 and status='active'`,[actor.ownerId])).rows.map(row=>row.source_id as string))
@@ -268,8 +311,8 @@ export class RetrievalIndexService{
     read={text:value.text,version:value.resource.version,sourceVersion:value.resource.sourceVersion}
    }catch(error){
     if(!(error instanceof WorkError)||['teloa/storage-unavailable','teloa/storage-corrupt'].includes(error.code))throw error
-    // 来源暂不可读（瞬时文件错误）只跳过，下次任务自动重试（审查 LOW-2）；超限与版本冲突记为 failed，须本人重建。
-    return {skip:!['teloa/invalid-input','teloa/version-conflict'].includes(error.code),error}
+    // 变版须先确认新资料，不能写成普通索引失败；来源暂不可读也只跳过，超限才记 failed。
+    return {skip:error.code!=='teloa/invalid-input',error}
    }
    if(read.version!==target.version||read.sourceVersion!==target.spec.sourceVersion)return {skip:true}
    const chunks=chunkRetrievalText(read.text)
@@ -324,10 +367,10 @@ export class RetrievalIndexService{
  }
 
  /** 物理清理失效绑定与旧配置未完成索引；合法的旧配置就绪索引保留，切回时可复用。 */
- private async purge(ownerId:string|null,profileHash:string|null):Promise<number>{
+ private async purge(ownerId:string,profileHash:string|null):Promise<number>{
   const rows=await this.tx(async client=>(await client.query(`
    delete from teloa_retrieval_indexes i
-   where ($1::text is null or i.owner_id=$1) and (i.chunker<>$2 or ($3::text is not null and i.profile_hash<>$3 and i.state<>'ready')
+   where i.owner_id=$1 and (i.chunker<>$2 or ($3::text is not null and i.profile_hash<>$3 and i.state<>'ready')
     or not exists(select 1 from teloa_resources r where r.id=i.resource_id and r.owner_id=i.owner_id and r.status='active' and r.revision=i.resource_version
      and r.spec->>'sourceId'=i.source_id and r.spec->>'sourceVersion'=i.source_version and r.spec->'scopeIds'=i.scope_ids))
    returning i.id`,[ownerId,retrievalChunker,profileHash])).rows)
@@ -335,13 +378,20 @@ export class RetrievalIndexService{
   return rows.length
  }
 
- /** 宿主启动时的对账：清理全部本人的失效绑定；给出当前配置摘要时一并清理其他配置的未完成索引。 */
- async reconcile(profileHash?:string):Promise<{removed:number}>{
+ /** 宿主启动时的本人对账：当前配置只用于清理该本人的旧配置未完成索引。 */
+ async reconcile(actor:ResourceActor,profileHash?:string):Promise<{removed:number}>{
+  authorizeResourceActor(actor,actor.ownerId,[],true)
   if(profileHash!==undefined&&!hex64(profileHash))throw bad('本地检索模型配置摘要不正确。')
-  return {removed:await this.purge(null,profileHash??null)}
+  return {removed:await this.purge(actor.ownerId,profileHash??null)}
  }
 
  private async vectors(client:PoolClient,indexes:{id:string;chunkCount:number}[]):Promise<Map<string,CachedIndex>>{
+  let total=0
+  for(const index of indexes){
+   if(!Number.isSafeInteger(index.chunkCount)||index.chunkCount<0)throw corrupt()
+   total+=index.chunkCount
+   if(total>retrievalLimits.maxChunks)throw corrupt()
+  }
   const loaded=new Map<string,CachedIndex>(),missing:typeof indexes=[]
   for(const index of indexes){const cached=this.cache.get(index.id);if(cached&&cached.chunks.length===index.chunkCount)loaded.set(index.id,cached);else missing.push(index)}
   if(!missing.length)return loaded
@@ -381,29 +431,83 @@ export class RetrievalIndexService{
   checkAbort(signal)
   const permitted=permittedKnowledgeIds(knowledgeIds)
   const visible=(rows:Candidate[])=>rows.filter(row=>within(row.spec.scopeIds,actor.scopeIds)&&within(row.spec.scopeIds,targetScopes))
+  // 仅压缩输出元数据，不改变实际候选、授权核验或排序。所有命中仍须在列出的searched中有精确版本。
+  const finish=(coverage:RetrievalCoverage,results:RetrievalSearchResult['results']):RetrievalSearchResult=>{
+   if(coverage.searched.length+coverage.pending.length<=retrievalLimits.maxCoverageItems)return readRetrievalSearchResult({coverage,results})
+   const hits=new Set(results.map(hit=>hit.resourceId))
+   const searched=[...coverage.searched.filter(item=>hits.has(item.resourceId)),...coverage.searched.filter(item=>!hits.has(item.resourceId))].slice(0,retrievalLimits.maxCoverageItems)
+   const pending=coverage.pending.slice(0,retrievalLimits.maxCoverageItems-searched.length)
+   return readRetrievalSearchResult({coverage:{searched,pending,note:coverage.note,searchedCount:coverage.searched.length,pendingCount:coverage.pending.length,truncated:true},results})
+  }
   const split=(rows:Candidate[])=>{
-   const coverage:RetrievalCoverage={searched:[],pending:[],note:retrievalCoverageNote},ready:Candidate[]=[]
+   const coverage:RetrievalCoverage={searched:[],pending:[],note:coverageNote(rows)},ready:Candidate[]=[]
    for(const row of rows){
     if(row.state==='ready'){ready.push(row);coverage.searched.push({resourceId:row.resourceId,title:row.spec.title,version:row.version})}
-    else coverage.pending.push({resourceId:row.resourceId,title:row.spec.title,reason:row.state??'stale'})
+    else coverage.pending.push({resourceId:row.resourceId,title:row.spec.title,reason:row.state??'stale',...row.sourceState?{sourceState:row.sourceState}:{}})
    }
    return {coverage,ready}
   }
   // 主体与范围核验之后、推理之前先看候选：范围内没有就绪索引就不推理（审查 LOW-3），覆盖说明照常给出。
-  const preview=split(visible(await this.tx(client=>this.candidates(client,actor.ownerId,embedder.profileHash,false,permitted))))
-  if(!preview.ready.length)return readRetrievalSearchResult({coverage:preview.coverage,results:[]})
+  // 推理前只看当前授权与索引绑定，不为一个查询读取全库原件。正文变版仅在命中回读时可知：
+  // 此时允许已执行的这一次查询嵌入，仍不把旧正文或未通过原件核验的摘录返回。
+  const preview=split(await this.tx(async client=>visible(await this.candidates(client,actor.ownerId,embedder.profileHash,false,permitted))))
+  if(!preview.ready.length)return finish(preview.coverage,[])
   const [queryVector]=await this.embed(embedder,'query',[query],signal)
   checkAbort(signal)
   return this.tx(async client=>{
    // 推理期间不持有事务；进事务后按锁定行重读候选，撤回或改版以这次读到的为准。
-   const {coverage,ready}=split(visible(await this.candidates(client,actor.ownerId,embedder.profileHash,true,permitted)))
+   let checked=visible(await this.candidates(client,actor.ownerId,embedder.profileHash,true,permitted))
+   const {coverage,ready}=split(checked)
    const loaded=await this.vectors(client,ready.map(row=>({id:row.indexId!,chunkCount:row.chunkCount!})))
-   const top=rankRetrievalVectors(queryVector!,ready.map(row=>({row,index:loaded.get(row.indexId!)!})),limit)
-   const excerpts=await this.resources.readExcerptsInTransaction(client,actor,targetScopes,top.map(hit=>({resourceId:hit.row.resourceId,resourceVersion:hit.row.version,sourceVersion:hit.row.spec.sourceVersion,chars:[hit.chunk.start,hit.chunk.end]})),fixedKnowledgeRead)
-   return readRetrievalSearchResult({coverage,results:excerpts.map(({excerpt},index)=>{
-    const hit=top[index]!
-    return {resourceId:hit.row.resourceId,resourceVersion:hit.row.version,title:hit.row.spec.title,sourceId:hit.row.spec.sourceId,sourceVersion:hit.row.spec.sourceVersion,lines:[hit.chunk.startLine,hit.chunk.endLine],chars:[hit.chunk.start,hit.chunk.end],heading:hit.chunk.heading,score:hit.score,excerpt}
-   })})
+   let remaining=ready,passes=0
+   while(remaining.length){
+    // 每轮失效至少移除一份既有候选；不随失败滚动扩展资源或重新嵌入查询。
+    if(++passes>ready.length)throw corrupt()
+    checkAbort(signal)
+    // 只读既有全局上限8个候选；原文重叠合并后再使用调用方的结果预算，不承诺全库去重召回。
+    const top=rankRetrievalVectors(queryVector!,remaining.map(row=>({row,index:loaded.get(row.indexId!)!})),retrievalLimits.maxResults)
+    const excerpts=new Map<typeof top[number],string>(),stale=new Set<string>()
+    // 按资料回读：一份变版不打断其他资料；每次失败排除整份资料后重新排名，最多排除候选数次。
+    for(const resourceId of [...new Set(top.map(hit=>hit.row.resourceId))]){
+     const hits=top.filter(hit=>hit.row.resourceId===resourceId)
+     try{
+      const values=await this.resources.readExcerptsInTransaction(client,actor,targetScopes,hits.map(hit=>({resourceId:hit.row.resourceId,resourceVersion:hit.row.version,sourceVersion:hit.row.spec.sourceVersion,chars:[hit.chunk.start,hit.chunk.end]})),fixedKnowledgeRead)
+      values.forEach(({excerpt},index)=>excerpts.set(hits[index]!,excerpt))
+     }catch(error){if(!(error instanceof WorkError)||error.code!=='teloa/version-conflict')throw error;stale.add(resourceId)}
+    }
+    // 摘录读取之后再次核对最终候选，不能沿用本轮较早的文件版本或权限见证。
+    for(const resourceId of [...new Set(top.map(hit=>hit.row.resourceId))]){
+     if(stale.has(resourceId))continue
+     const row=top.find(hit=>hit.row.resourceId===resourceId)!.row
+     if(!await this.resources.isRetrievalSourceCurrentInTransaction(client,actor,{resourceId,resourceVersion:row.version,sourceVersion:row.spec.sourceVersion},fixedKnowledgeRead))stale.add(resourceId)
+    }
+    // 只重读实际命中的最多8份索引/加入元数据；移出、撤回或配置绑定变化不能沿用本轮早先的向量。
+    const finalById=new Map(visible(await this.candidates(client,actor.ownerId,embedder.profileHash,true,[...new Set(top.map(hit=>hit.row.resourceId))])).map(row=>[row.resourceId,row]))
+    const removed=new Set<string>()
+    for(const hit of top){
+     const current=finalById.get(hit.row.resourceId)
+     if(!current){removed.add(hit.row.resourceId);stale.add(hit.row.resourceId)}
+     else if(current.state!=='ready'||current.indexId!==hit.row.indexId||current.version!==hit.row.version||current.spec.sourceVersion!==hit.row.spec.sourceVersion||current.spec.sourceId!==hit.row.spec.sourceId)stale.add(hit.row.resourceId)
+    }
+    checked=checked.filter(row=>!removed.has(row.resourceId))
+    checked=checked.map(row=>top.some(hit=>hit.row.resourceId===row.resourceId)&&!stale.has(row.resourceId)?{...row,sourceCheck:'current'}:row)
+    if(stale.size){
+     // 读时冲突撤销同来源的先前见证，不能沿用旧的“当前版本已确认”提示。
+     const changedSources=new Set(remaining.filter(row=>stale.has(row.resourceId)).map(row=>row.spec.sourceId))
+     checked=checked.map(row=>stale.has(row.resourceId)?{...row,state:null,chunkCount:null,sourceChanged:true,sourceCheck:'unknown'}:changedSources.has(row.spec.sourceId)?{...row,sourceCheck:'unknown'}:row)
+     // 只对已发现失效的同源版本寻找真实当前见证；不以范围外版本或整库文件扫描猜历史状态。
+     const witnesses=await this.currentSources(client,actor,checked.filter(row=>changedSources.has(row.spec.sourceId)&&!row.sourceChanged),fixedKnowledgeRead)
+     const byId=new Map(witnesses.map(row=>[row.resourceId,row]))
+     checked=classifySourceChanges(checked.map(row=>byId.get(row.resourceId)??row))
+     Object.assign(coverage,split(checked).coverage)
+     remaining=checked.filter(row=>row.state==='ready');continue
+    }
+    // 最多 8 条 × 单条 2 KiB，保持原全局 16 KiB 摘录上限。
+    // 合并不能掩盖某条原命中的错误版本、分值或限额；先按原合同逐条核验，再核最终投影。
+    const verified=finish(coverage,top.filter(hit=>excerpts.has(hit)).map(hit=>({resourceId:hit.row.resourceId,resourceVersion:hit.row.version,title:hit.row.spec.title,sourceId:hit.row.spec.sourceId,sourceVersion:hit.row.spec.sourceVersion,lines:[hit.chunk.startLine,hit.chunk.endLine],chars:[hit.chunk.start,hit.chunk.end],heading:hit.chunk.heading,score:hit.score,excerpt:excerpts.get(hit)!})))
+    return readRetrievalSearchResult({...verified,results:coalesceRetrievalEvidence(verified.results,limit)})
+   }
+   return finish(coverage,[])
   })
  }
 }

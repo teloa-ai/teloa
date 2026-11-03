@@ -45,6 +45,42 @@ async function setup(options:{instruction?:boolean;subagent?:boolean;ports?:Part
 }
 const value=(result:Awaited<ReturnType<Awaited<ReturnType<typeof setup>>['call']>>)=>JSON.parse(result.content.filter(item=>item.type==='text').map(item=>item.text).join('\n'))
 
+test('查询指令不能自行确认新版工作资料，原生确认缺席或未批准时无生效副作用',async t=>{
+ for(const outcome of [undefined,'rejected','cancelled','unavailable'] as const){
+  const f=await setup({instruction:false});t.after(()=>f.ctx.fiber.dispose())
+  f.agent.session.append('turn/start',{turn:0} as never)
+  f.agent.session.append('user/message',createUserMessage({source:{kind:'user'},content:[{type:'text',text:'原文刚发生变化，但尚未确认新资料版本。请重新检索，没有有效证据就说明未知。'}]}),{surfaceOp:'append'})
+  const saved=await f.save(),draft=await f.draft(saved);let approvals=0
+  if(outcome)f.ctx.provide('approval',{request:async()=>{approvals++;return outcome}})
+  const result=await f.call('apply',{draftId:draft.id,expectedVersion:1})
+  assert.equal(result.isError,true,JSON.stringify({outcome,result}))
+  assert.equal(approvals,outcome?1:0)
+  const after=await f.resources.list(f.actor);assert.equal(after.resources.length,0);assert.equal(after.drafts.find(row=>row.id===draft.id)?.status,'draft')
+ }
+})
+
+test('已生效资料的修订恢复撤回同样需要确认，目录读取不追加确认',async t=>{
+ const f=await setup();t.after(()=>f.ctx.fiber.dispose());const saved=await f.save(),draft=await f.draft(saved),resource=await f.resources.apply(f.actor,{draftId:draft.id,expectedVersion:1})
+ const base={knowledgeId:saved.item.id,expectedKnowledgeVersion:1,resourceId:resource.id,expectedResourceVersion:1};const before=await f.resources.list(f.actor)
+ for(const [name,args] of [['revise',{...base,markdown:'# 不应保存'}],['restore',{...base,restoreVersion:1}],['withdraw',{resourceId:resource.id,expectedVersion:1}]] as const){
+  assert.equal((await f.call(name,args)).isError,true,name);assert.deepEqual(await f.resources.list(f.actor),before);assert.equal((await f.knowledge.listVersions(f.actor,{knowledgeId:saved.item.id})).length,1)
+ }
+ assert.equal((await f.call('directory')).isError,false)
+ assert.equal((await f.call('read_version',{knowledgeId:saved.item.id,version:1})).isError,false)
+})
+
+test('资料确认保留原生拒绝、never模式、Auto审核和等待期间指令身份',async t=>{
+ for(const mode of ['deny','never','auto','changed'] as const){
+  const f=await setup();t.after(()=>f.ctx.fiber.dispose());const saved=await f.save(),draft=await f.draft(saved);let approvals=0
+  f.ctx.provide('approval',{config:{policy:mode==='never'||mode==='auto'?'never':'ask'},overrideOf:()=>undefined,request:async()=>{approvals++;if(mode==='changed')f.turn();return mode==='auto'?'rejected':'allowed-once'}})
+  if(mode==='deny')f.ctx.on('tools/pre-execute',async()=>({kind:'deny',reason:'已有权限拒绝'}))
+  if(mode==='auto')f.ctx.provide('permissionPresets',{current:()=> 'auto'})
+  const result=await f.call('apply',{draftId:draft.id,expectedVersion:1})
+  assert.equal(result.isError,true,JSON.stringify({mode,result}));assert.equal(approvals,mode==='auto'||mode==='changed'?1:0)
+  assert.equal((await f.resources.list(f.actor)).resources.length,0)
+ }
+})
+
 test('真实目录创建重命名移动同对象，版本拒绝与同call幂等',async t=>{
  const f=await setup();t.after(()=>f.ctx.fiber.dispose())
  const initial=value(await f.call('directory')),input={parentId:initial.tree.space.rootNodeId,title:'规范',expectedDirectoryRevision:initial.tree.space.directoryRevision}
@@ -161,6 +197,7 @@ test('普通业务会话仅有SOC也能管理本人容器和SOC知识，不能�
 
 test('真实提交撤回和知识双版本修订恢复复用原事务与幂等',async t=>{
  const f=await setup();t.after(()=>f.ctx.fiber.dispose());const saved=await f.save(),draft=await f.draft(saved)
+ f.ctx.provide('approval',{request:async()=> 'allowed-once'})
  const apply={draftId:draft.id,expectedVersion:1},applied=await f.call('apply',apply);assert.equal(applied.isError,false,JSON.stringify(applied));assert.deepEqual(value(await f.call('apply',apply)),value(applied))
  const resource=value(applied).resource,input={knowledgeId:saved.item.id,expectedKnowledgeVersion:1,resourceId:resource.id,expectedResourceVersion:1,markdown:'# 第二版\n'}
  assert.equal((await f.call('revise',{...input,expectedResourceVersion:2})).isError,true)
@@ -195,6 +232,7 @@ test('owner伪造、无指令、任务、子agent、native拒绝和审批换轮�
 
 test('原有资料草案工具迁入同一指令守卫，真实create幂等与update版本冲突',async t=>{
  const f=await setup();t.after(()=>f.ctx.fiber.dispose());const saved=await f.save(),input={title:saved.item.title,sourceId:markdownKnowledgeReferenceId(saved.item.id),sourceVersion:saved.version.contentHash,scopeIds:['general']}
+ let changeTurnOnApproval=false;f.ctx.provide('approval',{request:async()=>{if(changeTurnOnApproval)f.turn();return 'allowed-once'}})
  const first=await f.call('teloa_resources_create',input,'draft-1');assert.equal(first.isError,false,JSON.stringify(first));assert.deepEqual(value(await f.call('teloa_resources_create',input,'draft-1')),value(first))
  const receipt=value(first);assert.equal(receipt.kind,'work-resource-draft');assert.equal(receipt.id,receipt.draft.id)
  assert.notEqual(value(await f.call('teloa_resources_create',input,'draft-2')).id,receipt.id)
@@ -204,7 +242,7 @@ test('原有资料草案工具迁入同一指令守卫，真实create幂等与up
  assert.equal((await f.call('teloa_resources_update',edit)).isError,true)
  assert.equal((await f.call('apply',{draftId:receipt.id,expectedVersion:1})).isError,true)
  assert.equal(value(await f.call('apply',{draftId:receipt.id,expectedVersion:2})).resource.title,edit.title)
- const pending=await f.call('teloa_resources_create',input,'draft-pending');f.ctx.on('tools/pre-execute',async()=>({kind:'ask',reason:'等待审批'}));f.ctx.provide('approval',{request:async()=>{f.turn();return 'allowed-once'}})
+ const pending=await f.call('teloa_resources_create',input,'draft-pending');f.ctx.on('tools/pre-execute',async()=>({kind:'ask',reason:'等待审批'}));changeTurnOnApproval=true
  assert.equal((await f.call('teloa_resources_update',{...edit,draftId:value(pending).id})).isError,true)
  assert.equal((await f.resources.list(f.actor)).drafts.find(row=>row.id===value(pending).id)?.version,1)
 })

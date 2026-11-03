@@ -46,6 +46,12 @@ const preview=(patch:Record<string,unknown>={}):Record<string,unknown>=>({
  computedAt:stamp,...patch,
 })
 
+test('员工预览名称投影经过正式读取器，按正文引用位置核对且拒绝额外信息',()=>{
+ const value=preview({draft:draft({body:JSON.stringify({...roleBody,knowledge:['resource-id'],skills:['skill-name']})}),roleReferences:{knowledge:['订单核对规范'],skills:[null]}})
+ assert.deepEqual(readPageCreateDraftPreview(value).roleReferences,{knowledge:['订单核对规范'],skills:[null]})
+ for(const roleReferences of [{knowledge:[],skills:[null]},{knowledge:['订单核对规范'],skills:[null],ownerId:'other'},{knowledge:[{id:'resource-id',title:'名称'}],skills:[null]},{knowledge:[''],skills:[null]}])assert.throws(()=>readPageCreateDraftPreview({...value,roleReferences}),{code:'teloa/invalid-host-response'})
+})
+
 function recorder(reply:(method:string,payload:unknown)=>unknown){
  const calls:Array<{method:string;payload:unknown}>=[]
  const api=createPageCreateApi(async(method,payload)=>{calls.push({method,payload});return reply(method,payload)})

@@ -31,33 +31,17 @@ export function readSuggestionEnabled(storage:{getItem:(key:string)=>string|null
   return raw!=='false'
  }catch{return true}
 }
+const preferenceListeners=new Set<()=>void>()
+/** 同标签页由写入口通知，其他标签页通过浏览器 storage 事件同步。 */
+export function subscribeSuggestionEnabled(listener:()=>void):()=>void{
+ preferenceListeners.add(listener)
+ const onStorage=(event:StorageEvent)=>{if(event.key===composerSuggestionPreferenceKey||event.key===null)listener()}
+ globalThis.addEventListener?.('storage',onStorage)
+ return()=>{preferenceListeners.delete(listener);globalThis.removeEventListener?.('storage',onStorage)}
+}
 export function writeSuggestionEnabled(storage:{setItem:(key:string,value:string)=>void}|undefined,enabled:boolean):void{
  try{storage?.setItem(composerSuggestionPreferenceKey,enabled?'true':'false')}catch{/* 受限环境只影响本机偏好，不影响功能本身。 */}
-}
-
-/**
- * 从助手最后一条回答里取出一个**可核对**的下一步候选：
- * 只认助手自己提出的问句或明确的"继续做某事"，其余一律 null。
- * 这是没有模型可用时的兜底来源，不代替模型推断。
- */
-export function deriveSuggestionFromAnswer(answer:string):string|null{
- const text=(answer??'').trim()
- if(!text)return null
- const tail=text.slice(-400)
- // 1) 助手以问句收尾：把那个问句的用户式回答当作候选。
- const question=tail.match(/([^。！？!?\n]{4,60}[？?])\s*$/)?.[1]?.trim()
- if(question){
-  if(/要不要|是否需要|是否要|需不需要|可以吗|行吗|好吗/u.test(question))return '要，请继续。'
-  if(/从哪里|在哪|哪个|哪份|哪一条/u.test(question))return null
-  return null
- }
- // 2) 助手明确说"提供 X 我就……"：把提供动作当候选。
- if(/请把[^。！？\n]{2,40}(贴|发|放)|把[^。！？\n]{2,40}(贴|发|放)过来/u.test(tail))return '我把材料发给你。'
- // 3) 助手明确指出缺少某份材料：候选就是"我把材料给你"。
- if(/(仍|还)(缺|剩|需要)[^。！？\n]{0,20}(清单|原件|材料|文件|表格)|缺少[^。！？\n]{0,12}(清单|原件|材料|文件)/u.test(tail))return '我把材料发给你。'
- // 4) 助手说还可以继续做某件明确的事。
- if(/需要我[^。！？\n]{2,40}[吗？?]/u.test(tail))return '需要，请继续。'
- return null
+ for(const listener of [...preferenceListeners])listener()
 }
 
 /** 候选合格性：单句、不超长、不含换行；不合格一律不显示。 */

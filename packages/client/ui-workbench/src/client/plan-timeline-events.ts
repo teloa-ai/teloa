@@ -1,7 +1,7 @@
 import {createElement,Fragment,type ReactNode} from 'react'
 import type {WorkTask} from '@teloa/contract'
 import type {SavedPlan} from './plan-api.js'
-import type {PlanScheduleSkip} from './plan-schedule-summary.js'
+import {planSkipReasonKeys,type PlanScheduleSkip} from './plan-schedule-summary.ts'
 import type {PlanExecutionHistoryItem} from './plan-execution-history.js'
 import type {TeloaTranslate} from './i18n/index.js'
 import {sortTimeline,type TimelineEvent} from './object-timeline.ts'
@@ -36,7 +36,7 @@ export function planTimelineEvents(input:PlanTimelineInput):TimelineEvent[]{
  skips.forEach((skip,index)=>{
   events.push({
    id:'skip:'+skip.skippedAt+':'+skip.occurrenceId,kind:'skip',at:skip.skippedAt,
-   title:t('plan.timeline.skip',{reason:t(skip.reason==='previous-pending'?'plan.schedule.skipPending':'plan.schedule.skipRunning')}),
+   title:t('plan.timeline.skip',{reason:t(planSkipReasonKeys[skip.reason])}),
    meta:stamp(skip.scheduledAt),
    foldKey:'skip:'+skip.reason,
    ...(index===0?{detail:faces.skips,anchor:'skip'}:{}),

@@ -33,7 +33,8 @@ export function createSessionBrowserStopReader(read:()=>Promise<unknown>,subscri
    do{
     job.again=false
     let status:SessionBrowserStopSnapshot['status']
-    try{status=readSessionBrowserStopState(await read())}catch{status='failed'}
+    // 失败保留可重试提示；丢弃本轮已合并的旧活动，避免取消读取后立即再发请求。
+    try{status=readSessionBrowserStopState(await read())}catch{status='failed';job.again=false}
     if(!attached||current!==generation)return
     if(!canRead()){waitForBinding();return}
     update({status,checking:job.again})

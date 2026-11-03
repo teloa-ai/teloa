@@ -1,5 +1,6 @@
 import type {SessionEventSource} from '@deepseek-ai/dsh-api-session-controller/client'
 import {BusinessRecordFlow} from './business-record-flow.ts'
+import {createBusinessRecordDrafts} from './business-record-drafts.ts'
 import type {BusinessRecordApi} from './business-record-api.ts'
 import {WorkError,type BusinessConversationBinding} from '@teloa/contract'
 import {BusinessDailyFlow,type BusinessDailyOpenOptions} from './business-daily-flow.ts'
@@ -15,7 +16,7 @@ export function watchBusinessBuilderRevisions(source:SessionEventSource,changed:
   const window=source.getSnapshot(),before=cursor;cursor=Math.max(cursor,high())
   if(window.change.kind!=='append')return
   const calls=new Set(window.entries.flatMap(({event})=>event.type==='tool/call'&&['teloa_business_builder_revise','teloa_business_builder_upgrade','teloa_business_builder_plan_revise'].includes(event.data.name)?[event.data.callId]:[]))
-  if(window.change.entries.some(({event})=>event.seq>before&&event.type==='tool/result'&&event.surfaceOp==='append'&&calls.has(event.data.message.toolCallId)&&!event.data.message.isError))changed()
+  if(window.change.entries.some(({event})=>event.seq>before&&(event.type==='turn/end'||event.type==='tool/result'&&event.surfaceOp==='append'&&calls.has(event.data.message.toolCallId)&&!event.data.message.isError)))changed()
  })
 }
 type NativeFacts=BusinessBuilderSwitchSnapshot&{connected:boolean;generationReady:boolean;selectionReady:boolean}
@@ -33,7 +34,7 @@ export type BusinessNavigationToken=Readonly<{id:symbol}>
 type Navigation={epoch:number;session:string|undefined;input:BusinessBuilderSwitchSnapshot['input'];location:string|undefined;nativeLocation:string|undefined;openedSession?:string;approved:boolean;current?:()=>boolean;signal?:AbortSignal}
 type DailyPending=Pick<BusinessConversationBinding,'requestId'|'scope'|'title'>
 type State={nativeReady:boolean;sessionKind:'builder'|'daily'|null;daily:BusinessDailyFlow|null;dailyPending:DailyPending|null;api:BusinessBuilderApi|null;status:'loading'|'ready'|'failed';flow:BusinessBuilderFlow|null;namespace:string|null;checkedSessionId:string|null|undefined;error:unknown|null}
-type Ports={api:BusinessBuilderApi;work:Pick<BindingClient,'create'|'openSession'|'openSessionResult'>;storage:Pick<Storage,'getItem'|'setItem'|'removeItem'>;identity:()=>Promise<string>;switching:BusinessBuilderSwitchPort;subscribeNative:(listener:()=>void)=>()=>void;contextCall:(endpoint:string,payload:unknown)=>Promise<unknown>;block:(sessionId:string,reason:string|undefined)=>void;watch:(sessionId:string,changed:()=>void)=>()=>void;id:()=>string}
+type Ports={api:BusinessBuilderApi;work:Pick<BindingClient,'create'|'openSession'|'openSessionResult'>;storage:Pick<Storage,'getItem'|'setItem'|'removeItem'>&Partial<Pick<Storage,'length'|'key'>>;identity:()=>Promise<string>;switching:BusinessBuilderSwitchPort;subscribeNative:(listener:()=>void)=>()=>void;contextCall:(endpoint:string,payload:unknown)=>Promise<unknown>;block:(sessionId:string,reason:string|undefined)=>void;watch:(sessionId:string,changed:()=>void)=>()=>void;id:()=>string}
 const checking='checking',pending='builder-pending'
 const changed=()=>new WorkError('teloa/conflict','当前会话内容或业务目标已变化。',{reason:'changed'})
 /** 薄装配生命周期：只持有连接和展示归属，创建/采用/草案真源全部委派既有 Flow。 */
@@ -162,7 +163,7 @@ export class BusinessBuilderController{
   return new BusinessRecordFlow(api,this.ports.id,(scope,type)=>{
    const key=namespace+'/records/'+encodeURIComponent(JSON.stringify([scope,type]))
    return {read:()=>this.ports.storage.getItem(key),write:value=>{this.ports.storage.setItem(key,value);if(this.ports.storage.getItem(key)!==value)throw Error('记录恢复意图未可靠保存。')},clear:()=>{this.ports.storage.removeItem(key);if(this.ports.storage.getItem(key)!==null)throw Error('记录恢复意图无法清除。')}}
-  })
+  },createBusinessRecordDrafts({namespace,storage:this.ports.storage}))
  }
  private flow(){if(!this.state.flow||this.state.status!=='ready')throw Error('本人工作空间尚未核对。');return this.state.flow}
  async followSession(sessionId:string|undefined){

@@ -1,3 +1,4 @@
+import {taskRunStates,type TaskRunState} from '@teloa/contract'
 import {isRecord,workTaskStates,type WorkTask} from '@teloa/contract'
 
 export type PlanExecutionHistoryCursor={claimedAt:string;claimId:string}
@@ -11,11 +12,11 @@ export type PlanExecutionHistoryItem={
  scheduledAt:string
  claimedAt:string
  task:null|{id:string;state:WorkTask['state']}
- run:null|{id:string;state:'prepared'|'submitting'|'accepted'|'active'|'ended'|'withdrawn'|'configuration_failed';sessionId:string;createdAt:string}
+ run:null|{id:string;state:TaskRunState;sessionId:string;createdAt:string}
 }
 export type PlanExecutionHistoryPage={items:PlanExecutionHistoryItem[];errors?:Array<{claimId:string;code:'teloa/storage-corrupt'}>;cursor?:PlanExecutionHistoryCursor}
 export type PlanExecutionHistoryReadOptions={limit:number;cursor?:PlanExecutionHistoryCursor}
-type PlanExecutionDirectoryReadOptions=PlanExecutionHistoryReadOptions&{runState?:'prepared'|'submitting'|'accepted'|'active'|'ended'|'withdrawn'|'configuration_failed'|'not-started'}
+type PlanExecutionDirectoryReadOptions=PlanExecutionHistoryReadOptions&{runState?:TaskRunState|'not-started'}
 
 const uuid=(value:unknown):value is string=>typeof value==='string'&&/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)
 const positive=(value:unknown):value is number=>Number.isSafeInteger(value)&&Number(value)>0
@@ -39,7 +40,7 @@ function readItem(value:unknown,expectedPlanId?:string):PlanExecutionHistoryItem
  if(row.run!==null){
   if(!task)throw Error()
   const candidate=exact(row.run,['id','state','sessionId','createdAt'])
-  if(!uuid(candidate.id)||typeof candidate.state!=='string'||!['prepared','submitting','accepted','active','ended','withdrawn','configuration_failed'].includes(candidate.state)||!identity(candidate.sessionId)||!timestamp(candidate.createdAt))throw Error()
+  if(!uuid(candidate.id)||typeof candidate.state!=='string'||!taskRunStates.includes(candidate.state)||!identity(candidate.sessionId)||!timestamp(candidate.createdAt))throw Error()
   run={id:candidate.id,state:candidate.state as NonNullable<PlanExecutionHistoryItem['run']>['state'],sessionId:candidate.sessionId,createdAt:candidate.createdAt}
  }
  return {claimId:row.claimId,planId:row.planId,occurrenceId:row.occurrenceId,planVersion:row.planVersion,configVersion:row.configVersion,...(row.notificationPolicy===undefined?{}:{notificationPolicy:row.notificationPolicy}),scheduledAt:row.scheduledAt,claimedAt:row.claimedAt,task,run}

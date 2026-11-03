@@ -41,7 +41,7 @@ test('新版资料库桌面：访问视图、搜索、收藏、阅读、文件�
  const mine=page.getByRole('button',{name:'全部资料',exact:true})
  await mine.waitFor().catch(async (error:unknown)=>{console.error((await page.locator('body').innerText()).slice(0,3000));throw error})
  const directory=page.locator('[data-teloa-pane=directory]')
- const content=page.locator('main[data-teloa-pane=detail]')
+ const content=page.locator('[data-teloa-pane=detail]')
  assert.equal(await directory.getByRole('button',{name:'最近访问',exact:true}).count(),0,'左侧只展示空间目录')
  assert.equal(await page.getByRole('button',{name:'最近访问',exact:true}).getAttribute('aria-current'),'page','首次进入显示最近访问')
  assert.equal(await page.getByRole('table').count(),0,'默认选中和加载不产生访问记录')

@@ -1,4 +1,6 @@
 import type {Context} from '@deepseek-ai/cordis'
+import {createSnapshotStore} from '@deepseek-ai/dsh-client-store'
+import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 import {createElement,type ComponentType} from 'react'
 import type {HostObservable,InjectFace,OwnerOf,SessionIdOf,StoredEntry,Translate} from '@deepseek-ai/dsh-client-ui-slots'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
@@ -108,28 +110,36 @@ export function installStandardPresetPresentation(ctx:Context,locale:Locale):voi
    if(!next)return
    const face=nativeSectionFace(next),original=face.hooks.agentPresetSection
    let disposed=false,pending:Promise<void>|undefined,lastRows:PresetSection['rows']|undefined
+   let migrating=false,migrationError:string|null=null
+   const section=createSnapshotStore(original.getSnapshot())
+   const publish=()=>{const state=original.getSnapshot();section.set({...state,saving:state.saving||migrating,error:state.error??migrationError})}
    const migrate=():Promise<void>=>{
     const state=original.getSnapshot(),legacy=state.rows.find(row=>row.id==='standard'&&row.isDefault&&isOwnedStandardMode(row))
     if(disposed||state.status!=='ready'||state.saving||state.error||!legacy||!state.rows.some(row=>row.id==='teloa-standard'&&row.broken===undefined))return Promise.resolve()
     if(pending)return pending
     if(lastRows===state.rows)return Promise.resolve()
     lastRows=state.rows
-    // 使用官方默认写入口；它只同步当前空白会话，不改写已有内容的会话。
+    // 自动迁移只写新会话默认。Settings 的 makeDefault 还会同步当前空白会话，
+    // 而已固定配置、尚未开始的员工 Run 也是空白会话，不能借展示加载改写它。
     pending=Promise.resolve().then(async()=>{
      const current=original.getSnapshot()
-     if(!disposed&&!current.saving&&!current.error&&current.rows===state.rows)await face.makeDefault('teloa-standard')
-    }).finally(()=>{pending=undefined})
+     if(disposed||current.saving||current.error||current.rows!==state.rows)return
+     migrating=true;migrationError=null;publish()
+     const result=await ctx.remote.settings.update('agent-preset-registry',{selectedDefault:'teloa-standard'},undefined)
+     await face.load()
+     if(!result.ok)throw Error(result.error.message)
+    }).catch(error=>{migrationError=error instanceof Error?error.message:String(error)}).finally(()=>{pending=undefined;migrating=false;if(!disposed)publish()})
     return pending
    }
    loadStandardDefault=async()=>{await face.load();await migrate()}
    // 上游关闭开发者工具时会自动退到 standard；跟随真实目录回执迁移新任务默认。
-   // 官方控制器将失败保留在原 error 状态；这里不重复发起或另造恢复记录。
-   const stop=original.subscribe(()=>{void migrate().catch(()=>{})})
+   // 迁移失败仍呈现在原生设置错误位置；不重复发起或另造恢复记录。
+   const stop=original.subscribe(()=>{if(original.getSnapshot().saving)migrationError=null;publish();void migrate().catch(()=>{})})
    releaseSource=()=>{disposed=true;stop();loadStandardDefault=async()=>{}}
    void migrate().catch(()=>{})
    const Native=next.component as ComponentType<NativeSectionProps>,View=(props:NativeSectionProps)=>createElement(Native,props)
    remove=ctx.slots.register({name:'settings.section',id:'agent-presets',...(next.options.order!==undefined?{order:next.options.order}:{}),priority:-100,label:()=>locale.bind('settings.agentPreset')('nav'),inject:()=>{
-    let projected=projections.get(original);if(!projected){projected=projectedObservable(original,locale,projectStandardPresetSection);projections.set(original,projected)}
+    let projected=projections.get(original);if(!projected){projected=projectedObservable(section,locale,projectStandardPresetSection);projections.set(original,projected)}
     return {...face,load:loadStandardDefault,t:locale.bind('settings.agentPreset'),hooks:{...face.hooks,agentPresetSection:projected}}
    }},View)
   }

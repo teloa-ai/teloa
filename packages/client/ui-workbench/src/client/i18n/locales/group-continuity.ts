@@ -2,6 +2,17 @@
 // 4 列：[key, zh-CN, zh-Hant, en]；其余语言按核心词表统一回退英文，待成熟版本按用户指令补译。
 // 状态文案只描述可信依据对应的结果与下一步，不含内部 ID、异常串或调度术语。
 export const GROUP_CONTINUITY_MESSAGE_ROWS = [
+ ['group.sources.open','查看引用的群消息','查看引用的群組訊息','View cited group messages'],
+ ['group.sources.title','引用的群消息','引用的群組訊息','Cited group messages'],
+ ['group.sources.readOnly','仅查看本次回复中可核实的原消息，不改变任务或授权。','僅查看本次回覆中可核實的原訊息，不更改任務或授權。','Read verified original messages cited in this reply without changing the task or permissions.'],
+ ['group.sources.preview','消息来源','訊息來源','Message source'],
+ ['group.sources.read','阅读原文','閱讀原文','Read original'],
+ ['group.sources.locate','在群中定位','在群組中定位','Locate in group'],
+ ['group.sources.back','返回来源列表','返回來源列表','Back to sources'],
+ ['group.sources.return','返回原回复','返回原回覆','Return to reply'],
+ ['group.sources.empty','这条回复没有可核实的群消息引用。','這則回覆沒有可核實的群組訊息引用。','This reply has no verifiable group-message citations.'],
+ ['group.sources.unavailable','部分来源暂不可用，未用其他消息替代。','部分來源暫不可用，未以其他訊息代替。','Some sources are unavailable; no other messages have been substituted.'],
+ ['group.sources.locationFailed','未能打开原消息，请重试。','未能開啟原訊息，請重試。','Could not open the original message. Try again.'],
  ['group.task.adjust','调整归属','調整歸屬','Adjust assignment'],
  ['group.task.chooseAssignee','选择员工','選擇員工','Choose an employee'],
  ['group.task.ownerRequired','此业务需要一位负责员工。','此業務需要一位負責員工。','This business task needs an employee owner.'],

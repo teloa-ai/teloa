@@ -5,6 +5,7 @@
  * market-content/import 的原文件可达 20 MiB，不重复冻结到此目录；客户端只保存固定请求身份并通过 market-content/receipt 恢复。
  */
 export const pendingRequestEndpoints=[
+ 'groups/delivery/recover',
  'security-actions/propose','security-actions/submit','security-actions/decide','security-actions/withdraw-submission','security-actions/withdraw-approval','security-actions/acknowledge-failure','security-actions/execute','security-actions/observe',
  'task-runs/prepare','tasks/materials/add','business-tasks/create','tasks/create','tasks/transition','roles/create',
  'plans/create','plans/change','plans/trigger','handoffs/change','object-conversations/change',

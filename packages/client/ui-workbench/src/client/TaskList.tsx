@@ -9,7 +9,7 @@ import css from './TaskPage.module.css'
 import {useCollectionWindow} from './collection-window.js'
 import {CollectionFooter} from './CollectionFooter.js'
 
-export type TaskListRow={task:PreviewTask;attention:TaskRowAttention;ownerName:string;scopeLabel:string;unverified:boolean}
+export type TaskListRow={task:PreviewTask;attention:TaskRowAttention;ownerName:string;scopeLabel:string;unverified:boolean;openAttention?:()=>void}
 
 export function TaskList({rows,filter,selected,select,stateLabel,attentionLabel,stamp}:{rows:readonly TaskListRow[];filter:'all'|'formal';selected:string|null;select:(id:string|null)=>void;stateLabel:(state:PreviewTask['state'])=>string;attentionLabel:(kind:AttentionKind)=>string;stamp:(at:string)=>string}):JSX.Element{
   const {t}=useI18n()
@@ -34,12 +34,12 @@ export function TaskList({rows,filter,selected,select,stateLabel,attentionLabel,
   }
   const renderRow=(item:TaskListRow)=>{
     const {task,attention}=item,pinned=pinRank(attention,task.state)<4
-    const attentionText=attention.kinds.map(attentionLabel).join(' · ')||(item.task.storage==='persistent'&&item.unverified?t('task.attention.unverified'):'')
+    const attentionText=[...attention.kinds.map(attentionLabel),...(item.task.storage==='persistent'&&item.unverified?[t('task.attention.unverified')]:[])].join(' · ')
     return <tr key={task.id} className={clsx(css.listRow,pinned&&css.listPinned)} data-active={task.id===selected?true:undefined} data-teloa-entry={task.id}>
       <td><button type="button" className={css.tableLink} title={task.title} data-teloa-task-open aria-current={task.id===selected?'page':undefined} onClick={()=>select(task.id)}>{task.title}</button><small title={item.scopeLabel+' · '+taskObjectLabel(task,t)+' · '+item.ownerName}>{item.scopeLabel} · {selected?<span className={css.rowOwner} title={item.ownerName}>{item.ownerName}</span>:taskObjectLabel(task,t)}</small></td>
       {!selected&&<td title={item.ownerName} data-label={t('task.table.owner')}>{item.ownerName}</td>}
-      <td data-label={t('task.table.state')}><StatusLabel label={stateLabel(task.state)} mark={taskStatusMark(task.state)} tone={attention.kinds.length?'warn':task.state==='completed'?'good':task.state==='cancelled'?'muted':'info'}/>{selected&&attentionText&&<small>{attentionText}</small>}</td>
-      {!selected&&<><td data-label={t('task.table.attention')}>{attentionText||'—'}</td><td data-label={t('task.table.updated')}>{stamp(task.updatedAt)}</td></>}
+      <td data-label={t('task.table.state')}><StatusLabel label={stateLabel(task.state)} mark={taskStatusMark(task.state)} tone={attention.kinds.length?'warn':task.state==='completed'?'good':task.state==='cancelled'?'muted':'info'}/>{selected&&attentionText&&<small>{item.openAttention?<button type="button" className={css.tableLink} onClick={item.openAttention}>{attentionText}</button>:attentionText}</small>}</td>
+      {!selected&&<><td data-label={t('task.table.attention')}>{item.openAttention?<button type="button" className={css.tableLink} onClick={item.openAttention}>{attentionText}</button>:attentionText||'—'}</td><td data-label={t('task.table.updated')}>{stamp(task.updatedAt)}</td></>}
     </tr>
   }
   return <><div ref={list} className={css.tableWrap} onKeyDown={navigateRows}>

@@ -1,3 +1,4 @@
+import {isScheduledOccurrenceId as occurrence} from '@teloa/contract'
 import {isRecord} from '@teloa/contract'
 import type {PlanScheduleSkip} from './plan-schedule-summary.ts'
 
@@ -9,7 +10,6 @@ export type PlanSkipHistoryReadOptions={limit:number;cursor?:PlanSkipHistoryCurs
 const uuid=(value:unknown):value is string=>typeof value==='string'&&/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)
 const positive=(value:unknown):value is number=>Number.isSafeInteger(value)&&Number(value)>0&&Number(value)<=2147483647
 const timestamp=(value:unknown):value is string=>{if(typeof value!=='string')return false;const parsed=new Date(value);return Number.isFinite(parsed.getTime())&&parsed.toISOString()===value}
-const occurrence=(value:unknown):value is string=>typeof value==='string'&&value.length<=100&&/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}\[(?:Asia\/Singapore|Asia\/Shanghai|UTC)\]$/.test(value)
 const exact=(value:unknown,keys:readonly string[]):Record<string,unknown>=>{if(!isRecord(value)||Object.keys(value).some(key=>!keys.includes(key)))throw Error();return value}
 const identity=(value:PlanSkipHistoryCursor)=>`${value.configVersion}\0${value.occurrenceId}`
 const before=(candidate:PlanSkipHistoryCursor,previous:PlanSkipHistoryCursor)=>candidate.skippedAt<previous.skippedAt||candidate.skippedAt===previous.skippedAt&&(candidate.configVersion<previous.configVersion||candidate.configVersion===previous.configVersion&&candidate.occurrenceId<previous.occurrenceId)
@@ -21,9 +21,10 @@ function readCursor(value:unknown):PlanSkipHistoryCursor{
 }
 function readItem(value:unknown,planId:string):PlanScheduleSkip{
  const row=exact(value,['planId','planVersion','configVersion','occurrenceId','scheduledAt','skippedAt','reason','blockingClaimId','taskId'])
- if(row.planId!==planId||!positive(row.planVersion)||!positive(row.configVersion)||!occurrence(row.occurrenceId)||!timestamp(row.scheduledAt)||!timestamp(row.skippedAt)||row.skippedAt<row.scheduledAt||!uuid(row.blockingClaimId)||typeof row.reason!=='string'||!['previous-pending','previous-task-unfinished'].includes(row.reason))throw Error()
- if(row.reason==='previous-pending'?row.taskId!==null:!uuid(row.taskId))throw Error()
- return {planId:row.planId,planVersion:row.planVersion,configVersion:row.configVersion,occurrenceId:row.occurrenceId,scheduledAt:row.scheduledAt,skippedAt:row.skippedAt,reason:row.reason as PlanScheduleSkip['reason'],blockingClaimId:row.blockingClaimId,taskId:row.taskId as string|null}
+ if(row.planId!==planId||!positive(row.planVersion)||!positive(row.configVersion)||!occurrence(row.occurrenceId)||!timestamp(row.scheduledAt)||!timestamp(row.skippedAt)||row.skippedAt<row.scheduledAt||typeof row.reason!=='string'||!['previous-pending','previous-task-unfinished','no-work-evidence','digest-exists'].includes(row.reason))throw Error()
+ if(row.reason==='no-work-evidence'||row.reason==='digest-exists'){if(row.blockingClaimId!==null||row.taskId!==null)throw Error()}
+ else if(!uuid(row.blockingClaimId)||(row.reason==='previous-pending'?row.taskId!==null:!uuid(row.taskId)))throw Error()
+ return {planId:row.planId,planVersion:row.planVersion,configVersion:row.configVersion,occurrenceId:row.occurrenceId,scheduledAt:row.scheduledAt,skippedAt:row.skippedAt,reason:row.reason as PlanScheduleSkip['reason'],blockingClaimId:row.blockingClaimId as string|null,taskId:row.taskId as string|null}
 }
 
 export function readPlanSkipHistoryPage(value:unknown,planId:string,options?:PlanSkipHistoryReadOptions):PlanSkipHistoryPage{

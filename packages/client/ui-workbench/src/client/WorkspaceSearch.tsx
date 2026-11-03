@@ -14,8 +14,8 @@ const kinds=['all','conversation','group','task','plan','role','business','knowl
 const resultTile=(row:WorkspaceSearchResult,Icon:typeof Bot,role?:Pick<WorkspaceSearchSource['roles'][number],'kind'|'avatarKey'>)=>row.kind==='role'&&role&&role.kind!=='twin'?<span className={css.avatarTile}><EmployeeAvatar avatarKey={role.avatarKey} size="sm"/></span>:<span className={css.tile}><Icon size={16} aria-hidden="true"/></span>
 const resultIcons={conversation:MessageCircle,group:Users,task:CheckSquare,plan:Clock,role:Bot,business:Folder,knowledge:FileText,capability:Sparkles,market:Store}
 
-/** searching：资料正文或技能仍在读取时为真，进度行显示转圈与已显示条数；其余状态文案照常逐条说明。 */
-export function WorkspaceSearch({visible,source,conversationStatus,knowledgeStatus,capabilityStatus,searching=false,close,open,searchMessages}:{visible:boolean;source:WorkspaceSearchSource;conversationStatus:string;knowledgeStatus:string;capabilityStatus:string;searching?:boolean;close:()=>void;open:(row:WorkspaceSearchResult)=>Promise<void>;searchMessages:(query:string)=>void}){
+/** 来源读取状态与真实空结果分开；输入和分类不因重新读取而重置。 */
+export function WorkspaceSearch({visible,source,conversationStatus,knowledgeStatus,capabilityStatus,taskState='ready',retryTasks,searching=false,close,open,searchMessages}:{visible:boolean;source:WorkspaceSearchSource;conversationStatus:string;knowledgeStatus:string;capabilityStatus:string;taskState?:'loading'|'failed'|'ready';retryTasks?:()=>void;searching?:boolean;close:()=>void;open:(row:WorkspaceSearchResult)=>Promise<void>;searchMessages:(query:string)=>void}){
  const {locale,t}=useI18n()
  const [query,setQuery]=useState(''),[error,setError]=useState(''),[busy,setBusy]=useState(false)
  const [selectedKind,setSelectedKind]=useState<WorkspaceSearchKindFilter>('all'),[selectedKey,setSelectedKey]=useState<string>()
@@ -40,7 +40,10 @@ export function WorkspaceSearch({visible,source,conversationStatus,knowledgeStat
  const allResults=searchWorkspace(source,query)
  const visibleResults=filterWorkspaceSearchResults(allResults,selectedKind)
  const kindCount=(kind:WorkspaceSearchKindFilter)=>filterWorkspaceSearchResults(allResults,kind).length
- const statuses=[conversationStatus,knowledgeStatus,capabilityStatus].filter(Boolean)
+ const taskScope=selectedKind==='all'||selectedKind==='task',taskPending=taskScope&&taskState!=='ready'
+ const taskStatus=taskPending?t(taskState==='loading'?'task.directory.loading':'task.directory.loadFailed'):''
+ const sourcesLoading=searching||taskScope&&taskState==='loading'
+ const statuses=[taskStatus,conversationStatus,knowledgeStatus,capabilityStatus].filter(Boolean)
  const messageSearch=trimmedQuery!==''&&(selectedKind==='all'||selectedKind==='conversation')
  const keys=[...visibleResults.map(row=>row.key),...(messageSearch?['messages']:[])]
  const activeKey=selectedKey&&keys.includes(selectedKey)?selectedKey:keys[0]
@@ -76,10 +79,10 @@ export function WorkspaceSearch({visible,source,conversationStatus,knowledgeStat
   }}>{kind==='all'?t('common.all'):kind==='resource'?t('capabilityCenter.myResources'):kind==='group'||kind==='conversation'?dialogueCopy(locale,kind==='group'?'group':'session'):t(workspaceSearchKinds[kind])}{kindCount(kind)>0&&<span className={css.count} aria-hidden="true">{kindCount(kind)}</span>}</button>)}
  </div>
  <div className={css.body}>
-  {statuses.length>0&&<div className={css.progress}>{searching&&<Loader2 className={css.spin} size={13} aria-hidden="true"/>}<div>{statuses.map(status=><p key={status} role="status" className={css.note}>{status}{searching&&status===statuses[statuses.length-1]&&<> {t('workspaceSearch.shown',{count:visibleResults.length})}</>}</p>)}</div></div>}
+  {statuses.length>0&&<div className={css.progress}>{sourcesLoading&&<Loader2 className={css.spin} size={13} aria-hidden="true"/>}<div>{statuses.map(status=><p key={status} role="status" className={css.note}>{status}{status===taskStatus&&taskState==='failed'&&retryTasks&&<> <button type="button" disabled={busy} onClick={retryTasks}>{t('common.retry')}</button></>}{sourcesLoading&&status===statuses[statuses.length-1]&&<> {t('workspaceSearch.shown',{count:visibleResults.length})}</>}</p>)}</div></div>}
   {error&&<p role="alert" className={css.error}>{error}</p>}
-  <div className={css.results} id={resultList} role="listbox" aria-label={t('workspaceSearch.title')} aria-busy={busy} onKeyDown={navigate}>
-   {visibleResults.length===0&&<div className={css.empty}><h3>{t('workspaceSearch.emptyTitle')}</h3><p>{t('workspaceSearch.emptyDescription')}</p></div>}
+  <div className={css.results} id={resultList} role="listbox" aria-label={t('workspaceSearch.title')} aria-busy={busy||sourcesLoading} onKeyDown={navigate}>
+   {visibleResults.length===0&&!taskPending&&<div className={css.empty}><h3>{t('workspaceSearch.emptyTitle')}</h3><p>{t('workspaceSearch.emptyDescription')}</p></div>}
    {visibleResults.map(row=>{const Icon=resultIcons[row.kind];return <button type="button" role="option" id={optionId(row.key)} key={row.key} ref={node=>{if(node)options.current.set(row.key,node);else options.current.delete(row.key)}} aria-selected={activeKey===row.key} tabIndex={-1} disabled={busy} onMouseMove={()=>setSelectedKey(row.key)} onClick={()=>void choose(row)}>{resultTile(row,Icon,row.kind==='role'?source.roles.find(role=>role.id===row.id):undefined)}<div><strong>{row.title}</strong><span className={css.meta}>{t(workspaceSearchKinds[row.kind])}{row.description&&<> · {row.description}</>} · {t(row.detailKey)}</span></div><ArrowUpRight size={14} aria-hidden="true"/></button>})}
    {messageSearch&&<button type="button" role="option" id={optionId('messages')} ref={node=>{if(node)options.current.set('messages',node);else options.current.delete('messages')}} aria-selected={activeKey==='messages'} tabIndex={-1} disabled={busy} onMouseMove={()=>setSelectedKey('messages')} onClick={chooseMessages}><span className={css.tile}><Search size={16} aria-hidden="true"/></span><div><strong>{t('workspaceSearch.searchMessagesTitle',{query:trimmedQuery})}</strong><span className={css.meta}>{t('workspaceSearch.detail.messages')}</span></div><ArrowUpRight size={14} aria-hidden="true"/></button>}
   </div>

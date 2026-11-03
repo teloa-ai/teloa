@@ -1,3 +1,4 @@
+import {isScheduledOccurrenceId as occurrence} from '@teloa/contract'
 import {WorkError,isRecord} from '@teloa/contract'
 import type {PlanSkipHistoryCursor,PlanSkipHistoryPage} from '@teloa/backend'
 
@@ -5,7 +6,6 @@ export type PlanSkipHistoryInput={planId:string;limit:number;cursor?:PlanSkipHis
 const uuid=(value:unknown):value is string=>typeof value==='string'&&/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)
 const positive=(value:unknown):value is number=>Number.isSafeInteger(value)&&Number(value)>0
 const timestamp=(value:unknown):value is string=>typeof value==='string'&&Number.isFinite(Date.parse(value))&&new Date(value).toISOString()===value
-const occurrence=(value:unknown):value is string=>typeof value==='string'&&value.length<=100&&/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}\[(?:Asia\/Singapore|Asia\/Shanghai|UTC)\]$/.test(value)
 const invalid=()=>new WorkError('teloa/invalid-input','跳过历史查询的计划或分页格式不正确。')
 const corrupt=()=>new WorkError('teloa/invalid-host-response','跳过历史返回了无效身份、原因或分页依据。')
 const exact=(value:unknown,keys:readonly string[],fail:()=>Error):Record<string,unknown>=>{if(!isRecord(value)||Object.keys(value).some(key=>!keys.includes(key)))throw fail();return value}
@@ -32,8 +32,9 @@ export function planSkipHistoryResponse(value:unknown,input:PlanSkipHistoryInput
  for(const value of page.items){
   const row=exact(value,['planId','planVersion','configVersion','occurrenceId','scheduledAt','skippedAt','reason','blockingClaimId','taskId'],corrupt)
   const position=cursor({skippedAt:row.skippedAt,configVersion:row.configVersion,occurrenceId:row.occurrenceId},corrupt),key=identity(position)
-  if(row.planId!==input.planId||!positive(row.planVersion)||!timestamp(row.scheduledAt)||position.skippedAt<row.scheduledAt||!uuid(row.blockingClaimId)||positions.has(key)||previous&&compare(position,previous)>=0)throw corrupt()
-  if(row.reason==='previous-pending'?row.taskId!==null:row.reason==='previous-task-unfinished'?!uuid(row.taskId):true)throw corrupt()
+  if(row.planId!==input.planId||!positive(row.planVersion)||!timestamp(row.scheduledAt)||position.skippedAt<row.scheduledAt||positions.has(key)||previous&&compare(position,previous)>=0)throw corrupt()
+  if(row.reason==='no-work-evidence'||row.reason==='digest-exists'){if(row.blockingClaimId!==null||row.taskId!==null)throw corrupt()}
+  else if(!uuid(row.blockingClaimId)||(row.reason==='previous-pending'?row.taskId!==null:row.reason==='previous-task-unfinished'?!uuid(row.taskId):true))throw corrupt()
   positions.set(key,position);previous=position
  }
  for(const value of errors){

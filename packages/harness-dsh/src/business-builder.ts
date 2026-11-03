@@ -1,6 +1,7 @@
 import {
  WorkError,readBusinessConversationRecentDaily,readBusinessConversationRecentDailyResponse,readBusinessConversationReserve,readBusinessConversationBind,readBusinessConversationRequest,readBusinessConversationSession,readBusinessConversationList,readBusinessConversationBinding,readBusinessConversationDirectory,
  readBusinessBuilderRequest,readBusinessConfigurationDraftResponseVersioned as readBusinessConfigurationDraftResponse,readBusinessConfigurationCurrentResponseVersioned as readBusinessConfigurationCurrentResponse,readBusinessConfigurationApplyResult,readBusinessConfigurationPreviewResponse,readBusinessConfigurationPageProjectionVersioned as readBusinessConfigurationPageProjection,
+ readBusinessBuilderGenerationState,
  readBusinessRecordCreate,readBusinessRecordEdit,readBusinessRecordArchive,readBusinessRecordList,readBusinessRecordGet,readBusinessRecordReceipt,readBusinessRecordSnapshot,readBusinessRecordPage,
 } from '@teloa/contract'
 import type {BusinessConversationBindingService,BusinessConfigurationDraftService,BusinessConfigurationService,BusinessConfigurationPreviewService,BusinessConfigurationPageService,BusinessRecordService} from '@teloa/backend'
@@ -8,7 +9,7 @@ import {businessSetupPlanEndpoints,createBusinessSetupPlanHandler} from './busin
 import type {BusinessSetupPlanService} from '@teloa/backend'
 export const businessBuilderEndpoints=[
  ...businessSetupPlanEndpoints,
- 'business-conversations/reserve','business-conversations/abandon-unconfigured','business-conversations/bind','business-conversations/by-request','business-conversations/by-session','business-conversations/list','business-conversations/recent-daily',
+ 'business-conversations/reserve','business-conversations/abandon-unconfigured','business-configuration/generation-mode','business-conversations/bind','business-conversations/by-request','business-conversations/by-session','business-conversations/list','business-conversations/recent-daily',
  'business-configuration/draft','business-configuration/discard','business-configuration/preview','business-configuration/apply','business-configuration/receipt','business-configuration/current','business-configuration/page',
  'business-records/create','business-records/edit','business-records/archive','business-records/list','business-records/get','business-records/receipt',
 ] as const
@@ -40,7 +41,7 @@ function businessConfigurationPageTitles(value:{manifest:{pages:readonly ({id:st
  return titles
 }
 
-export function createBusinessBuilderHandler(owner:string,scopeIds:()=>Promise<readonly string[]>,get:()=>Promise<BusinessBuilderServices>){
+export function createBusinessBuilderHandler(owner:string,scopeIds:()=>Promise<readonly string[]>,get:()=>Promise<BusinessBuilderServices>,generationMode?:(payload:unknown,signal?:AbortSignal)=>Promise<unknown>){
  return async(endpoint:string,payload:unknown,signal?:AbortSignal):Promise<unknown>=>{
   if((businessSetupPlanEndpoints as readonly string[]).includes(endpoint))return createBusinessSetupPlanHandler(owner,scopeIds,async()=>{const services=await get();if(!services.setup)throw new WorkError('teloa/dependency-unavailable','业务方案服务尚未连接，原草案已保留。');return {bindings:services.bindings,setup:services.setup}})(endpoint,payload)
   if(!(businessBuilderEndpoints as readonly string[]).includes(endpoint))throw new WorkError('teloa/not-found','未提供此业务搭建接口。')
@@ -119,6 +120,12 @@ export function createBusinessBuilderHandler(owner:string,scopeIds:()=>Promise<r
    const draft=readBusinessConfigurationDraftResponse(await services.drafts.get(actor,input))
    if(draft.ownerId!==owner||draft.id!==input.draftId)throw invalid()
    return draft
+  }
+  if(endpoint==='business-configuration/generation-mode'){
+   if(!generationMode)throw new WorkError('teloa/dependency-unavailable','草案预览生成尚未连接，请保留原草案。')
+   const result=readBusinessBuilderGenerationState(await generationMode(request,signal))
+   if(result.sessionId!==request.sessionId||result.draftId!==request.draftId)throw invalid()
+   return result
   }
   if(endpoint==='business-configuration/preview'){
    const preview=readBusinessConfigurationPreviewResponse(await services.preview.preview(actor,input))

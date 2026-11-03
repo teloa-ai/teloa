@@ -48,3 +48,5 @@
 @media(prefers-reduced-motion:reduce){.configuration summary>svg{transition:none}}
 
 .workContext{font-size:var(--teloa-font-caption);color:var(--teloa-muted);overflow-wrap:anywhere}.form .workDescription{min-height:190px;line-height:1.65;max-height:50vh}.proposedTopic{font-size:var(--teloa-font-caption);color:var(--teloa-muted)}.dialogBody{min-width:0}.form .hint{font-size:var(--teloa-font-caption);margin:0}
+
+.conversationMemory{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.conversationMemory label{display:flex;align-items:center;gap:8px}.conversationMemory select{font:inherit;color:var(--teloa-text);background:var(--teloa-surface);border:1px solid var(--teloa-border);border-radius:7px;padding:6px 10px}.conversationMemory select:disabled{opacity:.5}

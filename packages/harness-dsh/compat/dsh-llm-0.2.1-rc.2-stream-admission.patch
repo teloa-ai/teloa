@@ -1,21 +1,21 @@
 --- a/lib/index.js
 +++ b/lib/index.js
-@@ -1757,6 +1757,41 @@
+@@ -1757,6 +1757,43 @@
  * The abstract `llm` service: an adapter registry plus a streaming model-call
  * API, interceptable via the `llm/stream` waterfall.
  */
 +// Deployment-owned synchronous gate at the final adapter boundary. Free has no gate by default.
 +function createStreamAdmission() {
-+ let required = false, policy, projection, dispatched;
++ let required = false, policy, projection, dispatched, started;
 + return Object.freeze({
 +  require() { required = true; },
 +  install(candidate) {
 +   if (policy !== void 0 || typeof candidate !== "function") throw new Error("LLM stream admission is already installed or invalid");
 +   policy = candidate;
 +  },
-+  installProjection(candidate, onDispatched) {
-+   if (projection !== void 0 || typeof candidate !== "function" || onDispatched !== void 0 && typeof onDispatched !== "function") throw new Error("LLM stream projection is already installed or invalid");
-+   projection = candidate; dispatched = onDispatched;
++  installProjection(candidate, onDispatched, onStarted) {
++   if (projection !== void 0 || typeof candidate !== "function" || onDispatched !== void 0 && typeof onDispatched !== "function" || onStarted !== void 0 && typeof onStarted !== "function") throw new Error("LLM stream projection is already installed or invalid");
++   projection = candidate; dispatched = onDispatched; started = onStarted;
 +  },
 +  project(original, resolved) {
 +   if (projection === void 0) return resolved;
@@ -26,6 +26,8 @@
 +   return projected;
 +  },
 +  dispatched(original, projected, admitted) { if (dispatched !== void 0) return Reflect.apply(dispatched, void 0, [original, projected, admitted]); },
++  hasStarted() { return started !== void 0; },
++  started(original, projected, admitted) { if (started !== void 0) return Reflect.apply(started, void 0, [original, projected, admitted]); },
 +  assert(options) {
 +   if (policy === void 0) {
 +    if (required) throw new LlmError("LLM stream admission provider is unavailable", "STREAM_ADMISSION_UNAVAILABLE");
@@ -42,19 +44,29 @@
  let LlmRuntime = (() => {
  	let _classSuper = TypertRemoteService;
  	let _instanceExtraInitializers = [];
-@@ -1814,7 +1849,11 @@
+@@ -1814,7 +1851,11 @@
  		discoveries = /* @__PURE__ */ new Map();
  		constructor(ctx) {
  			super(ctx, "llm");
+-		}
 +			Object.defineProperty(this, "streamAdmission", { value: createStreamAdmission(), writable: false, configurable: false });
- 		}
++		}
 +		requireStreamAdmission() { this.streamAdmission.require(); }
 +		installStreamAdmission(policy) { this.streamAdmission.install(policy); }
-+		installStreamProjection(policy, dispatched) { this.streamAdmission.installProjection(policy, dispatched); }
++		installStreamProjection(policy, dispatched, started) { this.streamAdmission.installProjection(policy, dispatched, started); }
  		/** Notify topology observers without letting one broken listener veto the commit. */
  		emitAdaptersUpdated() {
  			for (const listener of this.ctx.events.dispatch("emit", ["llm/adapters-updated"])) try {
-@@ -2332,21 +2371,29 @@
+@@ -2307,7 +2348,7 @@
+ 		* downstream consumer failures remain thrown plugin or consumer errors.
+ 		*/
+ 		async *adapterStream(options, prepared) {
+-			let iterator;
++			let iterator, notifyStarted, receiptAbort;
+ 			try {
+ 				const registration = prepared?.registration ?? this.registration(options.provider);
+ 				const adapter = registration.adapter;
+@@ -2332,31 +2373,63 @@
  					...options,
  					...resolvedConfig
  				};
@@ -82,28 +94,54 @@
 +					if (Object.isFrozen(admittedOptions)) deepFreeze(projectedOptions);
  				}
 -				iterator = dispatch(this.forAdapter(projectedOptions, adapter))[Symbol.asyncIterator]();
-+				const dispatchOptions = this.forAdapter(projectedOptions, adapter);
++				const adapterOptions = this.forAdapter(projectedOptions, adapter);
++				receiptAbort = this.streamAdmission.hasStarted() ? new AbortController() : void 0;
++				const dispatchOptions = receiptAbort === void 0 ? adapterOptions : Object.freeze({ ...adapterOptions, signal: options.signal === void 0 ? receiptAbort.signal : AbortSignal.any([options.signal, receiptAbort.signal]) });
 +				this.streamAdmission.assert(options);
-+				iterator = dispatch(dispatchOptions)[Symbol.asyncIterator]();
 +				const notification = this.streamAdmission.dispatched(options, dispatchOptions, admittedOptions);
 +				if (notification !== void 0) await notification;
 +				this.streamAdmission.assert(options);
++				iterator = dispatch(dispatchOptions)[Symbol.asyncIterator]();
++				if (receiptAbort !== void 0) notifyStarted = () => this.streamAdmission.started(options, dispatchOptions, admittedOptions);
  			} catch (error) {
  				yield adapterFailureChunk(error, options.signal);
  				return;
-@@ -2356,7 +2403,8 @@
+ 			}
+ 			let completed = false;
++			const cancelStarted = (error) => {
++				receiptAbort?.abort(error); completed = true;
++				try { const close = iterator.return?.bind(iterator); if (close) Promise.resolve(close()).catch(() => {}); } catch {}
++			};
+ 			try {
  				while (true) {
- 					let item;
+-					let item;
++					let item, pending;
++					try { this.streamAdmission.assert(options); }
++					catch (error) { yield adapterFailureChunk(error, options.signal); return; }
++					try { pending = Promise.resolve(iterator.next()); }
++					catch (error) { pending = Promise.reject(error); }
++					// Observe rejection before an asynchronous host receipt; an attempted first next is never replayed.
++					pending.catch(() => {});
++					if (notifyStarted !== void 0) {
++						const notify = notifyStarted; notifyStarted = void 0;
++						try { const receipt = notify(); if (receipt !== void 0) await receipt; }
++						catch (error) {
++							// Host receipt failure is not a provider failure; cancellation does not await an uncooperative adapter.
++							cancelStarted(error);
++							throw error;
++						}
++					}
++					try { this.streamAdmission.assert(options); }
++					catch (error) { cancelStarted(error); yield adapterFailureChunk(error, options.signal); return; }
  					try {
 -						const next = await iterator.next();
-+						this.streamAdmission.assert(options);
-+					const next = await iterator.next();
++						const next = await pending;
  						item = next.done ? { done: true } : {
  							done: false,
  							value: next.value
 --- a/lib/types/index.d.ts
 +++ b/lib/types/index.d.ts
-@@ -242,11 +242,22 @@
+@@ -242,11 +242,25 @@
   * The abstract `llm` service: an adapter registry plus a streaming model-call
   * API, interceptable via the `llm/stream` waterfall.
   */
@@ -111,7 +149,10 @@
 +export type LlmStreamAdmission = (options: Readonly<GenerateOptions>) => void;
 +/** Trusted immutable provider envelope; original loop identity remains unchanged. */
 +export type LlmStreamProjection = (original: Readonly<GenerateOptions>, resolved: Readonly<GenerateOptions>) => Readonly<GenerateOptions>;
++/** Pre-dispatch asynchronous validation; not proof that an adapter has started. */
 +export type LlmStreamDispatched = (original: Readonly<GenerateOptions>, projected: Readonly<GenerateOptions>, admitted: Readonly<GenerateOptions>) => void | Promise<void>;
++/** Runs once after first iterator.next is attempted, including zero-delta failure. A rejection cancels this call and remains a host error. */
++export type LlmStreamStarted = LlmStreamDispatched;
  export declare class LlmRuntime extends TypertRemoteService {
      private adapters;
      private directory;
@@ -122,7 +163,7 @@
 +    /** Install exactly one immutable same-process gate. Not a Remote API. */
 +    installStreamAdmission(policy: LlmStreamAdmission): void;
 +    /** Install one provider envelope projection without changing the captured adapter registration. */
-+    installStreamProjection(policy: LlmStreamProjection, dispatched?: LlmStreamDispatched): void;
++    installStreamProjection(policy: LlmStreamProjection, dispatched?: LlmStreamDispatched, started?: LlmStreamStarted): void;
      /** Notify topology observers without letting one broken listener veto the commit. */
      private emitAdaptersUpdated;
      /** Contained-listener diagnostic shared by the sync and async failure paths. */

@@ -1,7 +1,7 @@
 import {createHash} from 'node:crypto'
 import {readFile} from 'node:fs/promises'
 import {dirname,join} from 'node:path'
-import type {WorkControl,RecoveryInspection} from '@teloa/contract'
+import {plannedRestartResumeRequestId,type WorkControl,type RecoveryInspection} from '@teloa/contract'
 import type {WorkControlService,WorkResumeInput} from '@teloa/backend'
 
 type Ports={
@@ -16,7 +16,7 @@ type Ports={
 const retryable=new Set(['teloa/unavailable','teloa/version-conflict']),attempts=3
 /** 撤防后迟迟不收口的控制，超时即保持暂停，避免升级数小时后突然恢复。 */
 export const plannedRestartWaitMs=10*60_000
-const requestId=(restartId:string,controlId:string)=>{const s=createHash('sha256').update(JSON.stringify(['teloa/planned-restart-resume',restartId,controlId])).digest('hex');return s.slice(0,8)+'-'+s.slice(8,12)+'-5'+s.slice(13,16)+'-a'+s.slice(17,20)+'-'+s.slice(20,32)}
+const requestId=(restartId:string,controlId:string)=>plannedRestartResumeRequestId(restartId,controlId,text=>createHash('sha256').update(text).digest('hex'))
 const uuid=/^[a-f0-9]{8}-[a-f0-9]{4}-[1-8][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i
 
 let receiptTaken=false

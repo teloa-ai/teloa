@@ -48,12 +48,12 @@ export async function collectEnvironment(options:EnvironmentOptions,overrides:Pa
  const probes:Probes={nodeVersion:process.versions.node,platform:process.platform,run:command,sandbox:probeSandbox,...overrides}
  const [major,minor]=probes.nodeVersion.split('.').map(Number)
  const nodeOk=major===24||major===22&&minor!>=19
- const checks:DiagnosticCheck[]=[{name:'Node',ok:nodeOk,message:probes.nodeVersion,...(!nodeOk?{remedy:'使用 Node 24，或 Node 22.19 及以上的 22.x。'}:{})}]
+ const checks:DiagnosticCheck[]=[{name:'Node',ok:nodeOk,message:probes.nodeVersion,...(!nodeOk?{remedy:'使用本版已验证的 Node 24.22.1 或更新的 24.x，或 Node 22.23.4 或更新的 22.x。'}:{})}]
  try{const result=await probes.run('npm',['--version'],{timeout:5000});checks.push(npmCheck(result.code===0?result.stdout:''))}catch{checks.push(npmCheck(''))}
  const remedy=probes.platform==='linux'
   ?'检查 bubblewrap 是否能创建用户命名空间，或使用支持 Landlock 的 Linux 内核；容器和模拟环境可能不具备条件。不要关闭沙箱来绕过检查。'
   :'检查系统沙箱及发行依赖；macOS 需要可运行的 sandbox-exec。不要关闭沙箱来绕过检查。'
- if(!['linux','darwin'].includes(probes.platform))checks.push({name:'终端沙箱',ok:false,message:'此平台尚未验收。',remedy:'当前验收目标为 macOS ARM64 和 Linux x64 glibc；请查阅平台支持说明。'})
+ if(!['linux','darwin'].includes(probes.platform))checks.push({name:'终端沙箱',ok:false,message:'此平台尚未验收。',remedy:'本版应用已验证 macOS ARM64 原生运行与 Linux ARM64 容器运行；请查阅平台支持说明。'})
  else try{
   const sandbox=await probes.sandbox(options),ok=sandbox.enforcement==='full'
   checks.push({name:'终端沙箱',ok,message:sandbox.backend+(ok?'：受限命令可执行。':'：仅部分强制执行，不能确认完整隔离。'),...(!ok?{remedy}:{})})

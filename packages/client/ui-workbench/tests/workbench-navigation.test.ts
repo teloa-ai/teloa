@@ -11,6 +11,77 @@ import {captureWorkbenchNavigationState} from '../src/client/workbench-navigatio
 
 const frameUrl=new URL('../src/client/WorkbenchFrame.tsx',import.meta.url)
 
+function frameExpression(expression:string,scope:Record<string,unknown>){
+ const script=ts.transpileModule(`const extracted=${expression}`,{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.CommonJS}}).outputText
+ return new Function(...Object.keys(scope),script+';return extracted')(...Object.values(scope))
+}
+async function frameTaskSearchNodes(){
+ const file=ts.createSourceFile('WorkbenchFrame.tsx',await readFile(frameUrl,'utf8'),ts.ScriptTarget.Latest,true,ts.ScriptKind.TSX)
+ let effect:ts.ArrowFunction|undefined,dependencies:ts.ArrayLiteralExpression|undefined,loader:ts.Expression|undefined,tasks:ts.Expression|undefined,status:ts.Expression|undefined,retry:ts.Expression|undefined
+ const visit=(node:ts.Node)=>{
+  if(ts.isCallExpression(node)&&node.expression.getText(file)==='useEffect'){
+   const callback=node.arguments[0],deps=node.arguments[1]
+   if(callback&&ts.isArrowFunction(callback)&&callback.getText(file).includes('workspaceSearchOpen')&&callback.getText(file).includes('loadTasks(')){
+    effect=callback;if(deps&&ts.isArrayLiteralExpression(deps))dependencies=deps
+   }
+  }
+  if(ts.isVariableDeclaration(node)&&node.name.getText(file)==='loadTasks')loader=node.initializer
+  if(ts.isVariableDeclaration(node)&&node.name.getText(file)==='workspaceSearchSource'&&node.initializer&&ts.isObjectLiteralExpression(node.initializer)){
+   const entry=node.initializer.properties.find(row=>ts.isPropertyAssignment(row)&&row.name.getText(file)==='tasks')
+   if(entry&&ts.isPropertyAssignment(entry))tasks=entry.initializer
+  }
+  if(ts.isJsxSelfClosingElement(node)&&node.tagName.getText(file)==='WorkspaceSearch')for(const attr of node.attributes.properties){
+   if(!ts.isJsxAttribute(attr)||!attr.initializer||!ts.isJsxExpression(attr.initializer))continue
+   if(attr.name.getText(file)==='taskState')status=attr.initializer.expression
+   if(attr.name.getText(file)==='retryTasks')retry=attr.initializer.expression
+  }
+  ts.forEachChild(node,visit)
+ }
+ visit(file);return {file,effect,dependencies,loader,tasks,status,retry}
+}
+
+test('全局搜索冷打开从任意入口读取同一任务台账，关闭不额外读取',async()=>{
+ const {file,effect,dependencies,status,retry}=await frameTaskSearchNodes()
+ assert.ok(effect&&dependencies&&status&&retry,'打开全局搜索必须接上现有任务 loader 与来源状态，不依赖先访问目录')
+ const deps=dependencies.elements.map(row=>row.getText(file))
+ for(const dependency of ['workspaceSearchOpen','taskApi','attentionIdentity'])assert.ok(deps.includes(dependency))
+ for(const view of ['messages','settings','resources','market','projects','home','team','tasks','spaces','attention']){
+  let calls=0
+  const scope={workspaceSearchOpen:true,state:{view,messageMode:'native'},conversationLedger:false,loadTasks:()=>{calls++}}
+  frameExpression(effect.getText(file),scope)();assert.equal(calls,1,view+' 冷搜索应读取真实任务')
+  frameExpression(effect.getText(file),{...scope,workspaceSearchOpen:false})();assert.equal(calls,1,view+' 关闭搜索不另发读取')
+ }
+ for(const [taskLoading,taskLoadError,taskAttentionKnown,expected] of [[false,undefined,false,'loading'],[true,'old error',false,'loading'],[false,'read failed',false,'failed'],[false,undefined,true,'ready']] as const){
+  assert.equal(frameExpression(status.getText(file),{taskLoading,taskLoadError,taskAttentionKnown}),expected)
+ }
+ let retried=0;frameExpression(retry.getText(file),{loadTasks:()=>{retried++}})();assert.equal(retried,1,'重试仍只读同一 loader，不关闭搜索或清查询')
+})
+
+test('全局搜索未核实当前身份的任务来源时不暴露旧缓存或本地示例',async()=>{
+ const {file,tasks}=await frameTaskSearchNodes();assert.ok(tasks)
+ const cached={tasks:[{id:'old-task',storage:'persistent'},{id:'preview-task'}]}
+ assert.deepEqual(frameExpression(tasks.getText(file),{tasks:cached,taskAttentionKnown:false}),[])
+ assert.deepEqual(frameExpression(tasks.getText(file),{tasks:cached,taskAttentionKnown:true}),[cached.tasks[0]])
+})
+
+test('全局搜索沿用任务 loader 的 API 身份与 generation 闸，旧响应不覆盖新目录',async()=>{
+ const {file,loader}=await frameTaskSearchNodes();assert.ok(loader)
+ const deferred=()=>{let resolve!:(value:unknown)=>void;const promise=new Promise(r=>{resolve=r});return {promise,resolve}}
+ const a=deferred(),bOld=deferred(),bLatest=deferred(),apiA={attention:()=>a.promise},queue=[bOld.promise,bLatest.promise],apiB={attention:()=>queue.shift()!}
+ const state:{tasks:{tasks:any[]};attention:any[];loading:boolean;known:boolean;error:unknown;source:unknown}={tasks:{tasks:[]},attention:[],loading:false,known:false,error:undefined,source:undefined}
+ const scope:Record<string,any>={taskApi:apiA,attentionIdentity:'A',taskLoadGeneration:{current:0},taskLoadApi:{current:apiA},taskLoadIdentity:{current:'A'},tasksRef:{current:state.tasks},taskAttentionRef:{current:state.attention},
+  setTaskLoading:(value:boolean)=>{state.loading=value},setTasks:(change:(value:typeof state.tasks)=>typeof state.tasks)=>{state.tasks=change(state.tasks);scope.tasksRef.current=state.tasks},
+  setTaskAttention:(value:any[])=>{state.attention=value;scope.taskAttentionRef.current=value},setTaskLoadError:(value:unknown)=>{state.error=value},setTaskAttentionSource:(value:unknown)=>{state.source=value},setTaskAttentionKnown:(value:boolean)=>{state.known=value},
+  projectTask:(row:any)=>({...row,storage:'persistent'}),localizeWorkError:()=> 'read failed',locale:'en'}
+ const old=frameExpression(loader.getText(file),scope)()
+ scope.taskLoadApi.current=apiB;scope.taskLoadIdentity.current='B';scope.taskLoadGeneration.current++
+ const currentLoader=frameExpression(loader.getText(file),{...scope,taskApi:apiB,attentionIdentity:'B'}),outdated=currentLoader(),latest=currentLoader()
+ a.resolve({items:[{task:{id:'foreign-old',version:1}}]});assert.equal(await old,false);assert.equal(state.loading,true)
+ bLatest.resolve({items:[{task:{id:'current-task',version:2}}]});assert.equal(await latest,true)
+ bOld.resolve({items:[{task:{id:'same-api-stale',version:1}}]});assert.equal(await outdated,false)
+ assert.deepEqual(state.tasks.tasks.map(row=>row.id),['current-task']);assert.equal(state.loading,false);assert.equal(state.known,true);assert.deepEqual(state.source,{api:apiB,identity:'B'})
+})
+
 // 客户端产物使用 .js 导入；源码直跑测试只为新增纯状态模块解析 .ts。
 const sourceHooks=registerHooks({resolve(specifier,context,next){
   if(specifier==='./workbench-detail-target.js')return next('./workbench-detail-target.ts',context)

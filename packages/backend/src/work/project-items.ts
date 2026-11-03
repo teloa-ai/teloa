@@ -14,7 +14,7 @@ const sources:Record<ProjectLinkKind,{select:string;from:string;where:string;id:
  role:{select:"id,definition->>'name' as title,state,version",from:'teloa_roles',where:"owner_id=$1 and ($2='general' or definition->'scopes' ? $2) and state <> 'retired'",id:'id',title:"definition->>'name'"},
  plan:{select:"id,definition->>'title' as title,state,version",from:'teloa_plans',where:"owner_id=$1 and scope=$2 and state <> 'archived' and source->>'kind' <> 'system-digest'",id:'id',title:"definition->>'title'"},
  resource:{select:"id,spec->>'title' as title,status as state,revision as version",from:'teloa_resources',where:"owner_id=$1 and spec->'scopeIds' ? $2 and status='active'",id:'id',title:"spec->>'title'"},
- artifact:{select:"a.id,v.content->>'title' as title,'saved' as state,a.current_version as version",from:'teloa_artifacts a join teloa_artifact_versions v on v.owner_id=a.owner_id and v.artifact_id=a.id and v.number=a.current_version',where:"a.owner_id=$1 and v.source->>'scope'=$2",id:'a.id',title:"v.content->>'title'"},
+ artifact:{select:"a.id,v.content->>'title' as title,'saved' as state,a.current_version as version",from:'teloa_artifacts a join teloa_artifact_versions v on v.owner_id=a.owner_id and v.artifact_id=a.id and v.number=a.current_version',where:"a.owner_id=$1 and v.source->>'scope'=$2 and not exists(select 1 from teloa_artifact_withdrawals w where w.owner_id=a.owner_id and w.artifact_id=a.id)",id:'a.id',title:"v.content->>'title'"},
 }
 function item(kind:ProjectLinkKind,row:Record<string,unknown>):ProjectItem{
  try{return readProjectItem({kind,id:row.id,title:row.title,state:row.state,version:row.version,available:true,origin:'direct',attention:null})}

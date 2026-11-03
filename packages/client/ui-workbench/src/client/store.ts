@@ -16,13 +16,15 @@ export type MarketCategoryRequest=MarketCategory|'home'|'apps'|'intents'|'resour
 
 type RolePreviewTarget={id:string;request:number}
 
-function showWorkbenchView(state:{view:WorkbenchView;panelInfo:{activePanelId:MainPanelId|null};rolePreview:RolePreviewTarget|null},view:WorkbenchView):void{
+function noteObjectNavigation(state:{objectNavigationRevision:number}):void{state.objectNavigationRevision++}
+function showWorkbenchView(state:{view:WorkbenchView;panelInfo:{activePanelId:MainPanelId|null};rolePreview:RolePreviewTarget|null;objectNavigationRevision:number},view:WorkbenchView):void{
+  noteObjectNavigation(state)
   state.view=view
   state.panelInfo.activePanelId=null
   state.rolePreview=null
 }
 
-type MarketRequestState={view:WorkbenchView;panelInfo:{activePanelId:MainPanelId|null};rolePreview:RolePreviewTarget|null;marketMode:'catalog'|'installations'|'industry-resources';marketItemId:string|null;marketIntentId:string|null;industryResourceTarget:unknown;marketCategoryRequest:{category:MarketCategoryRequest;serial:number};navigationDirectories:Partial<Record<WorkbenchDirectoryId,WorkbenchDirectoryNavigation>>;navOpen:boolean}
+type MarketRequestState={objectNavigationRevision:number;view:WorkbenchView;panelInfo:{activePanelId:MainPanelId|null};rolePreview:RolePreviewTarget|null;marketMode:'catalog'|'installations'|'industry-resources';marketItemId:string|null;marketIntentId:string|null;industryResourceTarget:unknown;marketCategoryRequest:{category:MarketCategoryRequest;serial:number};navigationDirectories:Partial<Record<WorkbenchDirectoryId,WorkbenchDirectoryNavigation>>;navOpen:boolean}
 /** 市场页常驻挂载、`kind` 只在首次挂载读目录；已挂载时要落到某个类目，靠这条按 serial 递增的受控请求。 */
 function requestMarketCategory(state:MarketRequestState,category:MarketCategoryRequest):void{
   showWorkbenchView(state,'market');state.marketMode='catalog';state.marketItemId=null;state.marketIntentId=null;state.industryResourceTarget=null
@@ -42,19 +44,36 @@ export function shouldFollowCurrentSession(previous:string|undefined,current:str
 
 export function createWorkbenchStore(colorScheme: 'light'|'dark' = 'light',restored?:WorkbenchNavigationState) {
   return defineStore({
-    init: () => ({ rolePreview:null as RolePreviewTarget|null,rolePreviewRequest:0, detail:restored?.detail??{open:false,target:null} as WorkbenchDetailState, detailSeeds:{} as WorkbenchDetailSeeds, rightbar:{shown:false}, view:restored?.view??'home' as WorkbenchView,settingsReturnView:(restored?.view==='settings'?'home':restored?.view??'home') as Exclude<WorkbenchView,'settings'>,searchFocusRequest:0,searchFocusQuery:undefined as string|undefined,marketCategoryRequest:{category:'home',serial:0} as {category:MarketCategoryRequest;serial:number},continuousTarget:(restored&&restoredContinuousTarget(restored))??{kind:'plans'} as ContinuousTarget,templatePlanSeed:null as TemplatePlanSeed|null,messageMode:restored?.messageMode??'native' as 'directory'|'native'|'groups', navOpen:false, directoryOpen:true, panelInfo:{activePanelId:null as MainPanelId|null},colorScheme, capabilitiesSession:null as string|null,resourceDraftId:null as string|null,resourceTarget:restored?.selected.resourceId?{id:restored.selected.resourceId,request:1}:null as {id:string;request:number}|null,resourceTargetRequest:restored?.selected.resourceId?1:0,taskId:restored?.selected.taskId??null as string|null,roleId:restored?.selected.roleId??null as string|null,groupTarget:(restored?.selected.groupId?{groupId:restored.selected.groupId,rootId:restored.selected.groupRootId??''}:null) as {groupId:string;rootId:string;messageId?:string}|null,businessOpenRequest:0,businessTarget:(restored&&restoredBusinessTarget(restored))??{scope:'general',section:'overview'} as BusinessTarget,capabilityBindingId:restored?.selected.capabilityBindingId??null as string|null,capabilityVersion:null as number|null,marketMode:(restored?.marketMode==='industry-resources'?'catalog':restored?.marketMode??'catalog') as 'catalog'|'installations'|'industry-resources',installationId:restored?.selected.installationId??null as string|null,industryResourceTarget:null as {loadId?:string;itemInstanceId?:string;scope?:string}|null,marketItemId:restored?.selected.marketItemId??null as string|null,marketIntentId:restored?.selected.marketIntentId??null as string|null,templateSeed:null as TemplateSeed|null,navigationDirectories:restored?.directories??{} as Partial<Record<WorkbenchDirectoryId,WorkbenchDirectoryNavigation>> }),
+    init: () => ({ objectNavigationRevision:0,rolePreview:null as RolePreviewTarget|null,rolePreviewRequest:0, detail:restored?.detail??{open:false,target:null} as WorkbenchDetailState, detailSeeds:{} as WorkbenchDetailSeeds, rightbar:{shown:false}, view:restored?.view??'home' as WorkbenchView,settingsReturnView:(restored?.view==='settings'?'home':restored?.view??'home') as Exclude<WorkbenchView,'settings'>,searchFocusRequest:0,searchFocusQuery:undefined as string|undefined,marketCategoryRequest:{category:'home',serial:0} as {category:MarketCategoryRequest;serial:number},continuousTarget:(restored&&restoredContinuousTarget(restored))??{kind:'plans'} as ContinuousTarget,templatePlanSeed:null as TemplatePlanSeed|null,messageMode:restored?.messageMode??'native' as 'directory'|'native'|'groups', navOpen:false, directoryOpen:true, panelInfo:{activePanelId:null as MainPanelId|null},colorScheme, capabilitiesSession:null as string|null,resourceDraftId:null as string|null,resourceTarget:restored?.selected.resourceId?{id:restored.selected.resourceId,request:1}:null as {id:string;request:number}|null,resourceTargetRequest:restored?.selected.resourceId?1:0,taskId:restored?.selected.taskId??null as string|null,roleId:restored?.selected.roleId??null as string|null,groupTarget:(restored?.selected.groupId?{groupId:restored.selected.groupId,rootId:restored.selected.groupRootId??''}:null) as {groupId:string;rootId:string;messageId?:string}|null,businessOpenRequest:0,businessTarget:(restored&&restoredBusinessTarget(restored))??{scope:'general',section:'overview'} as BusinessTarget,capabilityBindingId:restored?.selected.capabilityBindingId??null as string|null,capabilityVersion:null as number|null,marketMode:(restored?.marketMode==='industry-resources'?'catalog':restored?.marketMode??'catalog') as 'catalog'|'installations'|'industry-resources',installationId:restored?.selected.installationId??null as string|null,industryResourceTarget:null as {loadId?:string;itemInstanceId?:string;scope?:string}|null,marketItemId:restored?.selected.marketItemId??null as string|null,marketIntentId:restored?.selected.marketIntentId??null as string|null,templateSeed:null as TemplateSeed|null,navigationDirectories:restored?.directories??{} as Partial<Record<WorkbenchDirectoryId,WorkbenchDirectoryNavigation>> }),
     actions: {
-      openDetail(state,target:WorkbenchDetailTarget){state.detail=openDetail(state.detail,target)},
-      closeDetail(state){state.detail=closeDetail(state.detail)},
+      restoreObjectNavigation(state,saved:WorkbenchNavigationState,business?:BusinessTarget,previewRoleId?:string){
+        state.view=saved.view;state.messageMode=saved.messageMode;state.marketMode=saved.marketMode
+        state.taskId=saved.selected.taskId??null;state.roleId=saved.selected.roleId??null
+        state.resourceDraftId=null;state.resourceTargetRequest++;state.resourceTarget=saved.selected.resourceId?{id:saved.selected.resourceId,request:state.resourceTargetRequest}:null
+        state.navigationDirectories=saved.directories;state.detail=saved.detail;state.panelInfo.activePanelId=null;state.navOpen=false
+        state.capabilityBindingId=saved.selected.capabilityBindingId??null;state.capabilityVersion=null
+        state.marketItemId=saved.selected.marketItemId??null;state.marketIntentId=saved.selected.marketIntentId??null;state.installationId=saved.selected.installationId??null
+        state.groupTarget=saved.selected.groupId?{groupId:saved.selected.groupId,rootId:saved.selected.groupRootId??''}:null
+        state.continuousTarget=restoredContinuousTarget(saved)??{kind:'plans'}
+        state.businessTarget=restoredBusinessTarget(saved)??{scope:'general',section:'overview'}
+
+        state.rolePreview=previewRoleId?{id:previewRoleId,request:++state.rolePreviewRequest}:null
+        if(business){state.businessTarget=business;state.businessOpenRequest++;state.navigationDirectories={...state.navigationDirectories,spaces:{...directorySelection(state.navigationDirectories.spaces,business.id),businessHome:false}}}
+      },
+      refreshObjectNavigation(state){noteObjectNavigation(state)},
+      reconcileRolePreview(state){state.rolePreview=null},
+      followConversation(state){state.view='messages';state.messageMode='native';state.panelInfo.activePanelId=null;state.rolePreview=null;state.navOpen=false},
+      openDetail(state,target:WorkbenchDetailTarget){noteObjectNavigation(state);state.detail=openDetail(state.detail,target)},
+      closeDetail(state){noteObjectNavigation(state);state.detail=closeDetail(state.detail)},
       // 切会话：把上一会话开着的详情记成它自己的种子，再把新会话的种子摆回来。
       // 真源是右栏页签（按会话各留各的），往返后页内详情必须跟着回来。
       retainDetailForSession(state,sessionId:string|undefined){
         const next=retainDetailForSession(state.detail,state.detailSeeds,sessionId)
         state.detail=next.detail;state.detailSeeds=next.seeds
       },
-      openArtifacts(state,source:ArtifactSourceRef,artifact?:ArtifactRef,sessionId?:string){state.detail=openDetail(state.detail,artifactDetailTarget(source,artifact,sessionId))},
-      openConversationObject(state,sessionId:string,object:{kind:'task'|'role';id:string;version?:number}){state.detail=openDetail(state.detail,{kind:'conversation-object',sessionId,objectKind:object.kind,id:object.id,...(object.version!==undefined?{version:object.version}:{})})},
-      openConversationBusiness(state,sessionId:string,target:BusinessTarget){state.detail=openDetail(state.detail,{kind:'conversation-object',sessionId,objectKind:'business',target});state.directoryOpen=false},
+      openArtifacts(state,source:ArtifactSourceRef,artifact?:ArtifactRef,sessionId?:string){noteObjectNavigation(state);state.detail=openDetail(state.detail,artifactDetailTarget(source,artifact,sessionId))},
+      openConversationObject(state,sessionId:string,object:{kind:'task'|'role';id:string;version?:number}){noteObjectNavigation(state);state.detail=openDetail(state.detail,{kind:'conversation-object',sessionId,objectKind:object.kind,id:object.id,...(object.version!==undefined?{version:object.version}:{})})},
+      openConversationBusiness(state,sessionId:string,target:BusinessTarget){noteObjectNavigation(state);state.detail=openDetail(state.detail,{kind:'conversation-object',sessionId,objectKind:'business',target});state.directoryOpen=false},
       navigate(state, view: WorkbenchView) { showWorkbenchView(state,view);state.navOpen=false;if(view==='messages')state.messageMode='native';if(view==='spaces')state.navigationDirectories={...state.navigationDirectories,spaces:{...state.navigationDirectories.spaces,businessHome:true}} },
       openConversationDirectory(state){showWorkbenchView(state,'messages');state.messageMode='directory';state.directoryOpen=true;state.navOpen=false},
       openMessages(state,mode:'native'|'groups'){showWorkbenchView(state,'messages');state.messageMode=mode;state.navOpen=false},
@@ -66,12 +85,12 @@ export function createWorkbenchStore(colorScheme: 'light'|'dark' = 'light',resto
       openPlans(state,target:ContinuousTarget={kind:'plans'}){showWorkbenchView(state,'plans');state.continuousTarget=target;state.navigationDirectories={...state.navigationDirectories,plans:directorySelection(state.navigationDirectories.plans,target.id)};state.navOpen=false},
       openAttention(state){showWorkbenchView(state,'attention');state.taskId=null;state.navigationDirectories={...state.navigationDirectories,tasks:directorySelection(state.navigationDirectories.tasks,null)};state.navOpen=false},
       openTask(state,id:string){showWorkbenchView(state,'tasks');state.taskId=id;state.navigationDirectories={...state.navigationDirectories,tasks:{...state.navigationDirectories.tasks,selectedId:id}};state.navOpen=false},
-      selectTask(state,id:string|null){state.taskId=id;state.navigationDirectories={...state.navigationDirectories,tasks:directorySelection(state.navigationDirectories.tasks,id)}},
+      selectTask(state,id:string|null){if(state.taskId!==id)noteObjectNavigation(state);state.taskId=id;state.navigationDirectories={...state.navigationDirectories,tasks:directorySelection(state.navigationDirectories.tasks,id)}},
       openRole(state,id:string){showWorkbenchView(state,'team');state.roleId=id;state.navigationDirectories={...state.navigationDirectories,team:{...state.navigationDirectories.team,selectedId:id}};state.navOpen=false},
       // 查看负责人等关联员工只叠加详情，保留来源页及其会话详情；明确前往员工目录仍用 openRole。
-      previewRole(state,id:string){state.rolePreviewRequest++;state.rolePreview={id,request:state.rolePreviewRequest};state.navOpen=false},
-      closeRolePreview(state,request:number){if(state.rolePreview?.request===request)state.rolePreview=null},
-      selectRole(state,id:string|null){state.roleId=id;state.navigationDirectories={...state.navigationDirectories,team:directorySelection(state.navigationDirectories.team,id)}},
+      previewRole(state,id:string){noteObjectNavigation(state);state.rolePreviewRequest++;state.rolePreview={id,request:state.rolePreviewRequest};state.navOpen=false},
+      closeRolePreview(state,request:number){if(state.rolePreview?.request===request){noteObjectNavigation(state);state.rolePreview=null}},
+      selectRole(state,id:string|null){if(state.roleId!==id)noteObjectNavigation(state);state.roleId=id;state.navigationDirectories={...state.navigationDirectories,team:directorySelection(state.navigationDirectories.team,id)}},
       /** 能力绑定入口（关注项等）：按原目录记住绑定选择，只在应用页的上下文抽屉访问。 */
       openBinding(state,id:string|null,version?:number){requestMarketCategory(state,'resources');state.capabilityBindingId=id;state.capabilityVersion=id?(version??null):null;state.navigationDirectories={...state.navigationDirectories,capabilities:directorySelection(state.navigationDirectories.capabilities,id)}},
       /** 原「我的能力」目录入口：统一到应用页的上下文抽屉；分组与选中项仍由 `capabilities` 目录记忆承载。 */
@@ -117,6 +136,7 @@ export function createWorkbenchStore(colorScheme: 'light'|'dark' = 'light',resto
       setColorScheme(state, value: 'light'|'dark') {state.colorScheme=value},
       rememberDirectory(state,id:WorkbenchDirectoryId,patch:WorkbenchDirectoryPatch){
         const current=state.navigationDirectories[id]
+        if(state.view===id&&patch.selectedId!==undefined&&patch.selectedId!==current?.selectedId)noteObjectNavigation(state)
         const next:WorkbenchDirectoryNavigation={...current}
         for(const key of ['category','query','selectedId','scrollTop','businessHome','businessPage'] as const)if((!['businessHome','businessPage'].includes(key)||id==='spaces')&&Object.hasOwn(patch,key)){const value=patch[key];if(value===undefined)delete next[key];else Object.assign(next,{[key]:value})}
         // 页面会在挂载时把目录筛选同步回来；相同内容不能再次发布 store 快照，

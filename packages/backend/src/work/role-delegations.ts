@@ -1,5 +1,8 @@
+import {readUnpublishedCancellationSettled} from './task-run-submission.ts'
+import {taskRunTerminalStates} from '@teloa/contract'
 import {readActiveGroupWorkResource} from './group-work-resources.ts'
 import type {Pool,PoolClient} from 'pg'
+import {assertArtifactAvailable} from './artifact-availability.ts'
 import {createHash} from 'node:crypto'
 import {isDeepStrictEqual} from 'node:util'
 import {WorkError,roleKnowledgeMaxReferences,taskInput,roleSupportsScope,groupDefinition,isResourceSpec,readTaskRunFlow,groupRunResultManifest,type DigitalRole,type RoleWorkDelegation,type TwinExecutionConsent} from '@teloa/contract'
@@ -101,7 +104,7 @@ export async function roleWorkOutstanding(db:PoolClient,owner:string,roleId:stri
  const share=scope?'':' for share'
  const runs=(await db.query(scope?'select id,state,evidence from teloa_task_runs where owner_id=$1 and task_id=$2':'select id,state,evidence from teloa_task_runs where owner_id=$1 and role_id=$2 for share',[owner,scope?scope.taskId:roleId])).rows
  for(const run of runs){
-  if(!['ended','withdrawn','configuration_failed'].includes(run.state))return true
+  if(!taskRunTerminalStates.includes(run.state))return true
   if(run.state==='ended'){try{if(runEvidence(run.evidence).state!=='ended')return true}catch{return true}}
  }
  const ids=runs.map(run=>run.id);if(!ids.length)return false
@@ -130,6 +133,15 @@ export async function roleWorkOutstanding(db:PoolClient,owner:string,roleId:stri
    }
    else if(payload.record==='owner'){
     if(keys.length!==3||!['record','runtimeId','requestId'].every(key=>keys.includes(key))||link.native_id!==`owner:${payload.runtimeId}:${link.session_id}`)return true
+    // 正常未发布取消保留owner历史；消费原取消审计与全部票据，不伪造原生ended或删除登记。
+    if(runs.some(run=>run.id===link.run_id&&run.state==='withdrawn')){
+     const raw=(await db.query('select * from teloa_task_runs where owner_id=$1 and id=$2',[owner,link.run_id])).rows[0]
+     try{
+      const run=readStoredTaskRun(raw)
+      if(run.sessionId!==link.session_id||run.nativeRequestId!==payload.requestId||!await readUnpublishedCancellationSettled(db,owner,run))return true
+      continue
+     }catch{return true}
+    }
     if(!links.some(candidate=>candidate.run_id===link.run_id&&candidate.kind==='job'&&candidate.payload?.record==='job'&&candidate.payload.runtimeId===payload.runtimeId&&candidate.payload.requestId===payload.requestId&&['completed','killed','failed'].includes(candidate.payload.status))){
      // owner 是发送前的宿主登记，并非实际 job。新宿主回执证明真实资源收口；
      // 旧零工具、零技能例外仍严格保留，群工作另外核对唯一可信交付。历史登记不删除。
@@ -201,7 +213,7 @@ export async function readRoleWorkGroupGrant(db:PoolClient,owner:string,role:Dig
    where v.owner_id=$1 and v.group_id=$2 and v.resource_id=$3 and v.version=$4 and r.withdrawn_at is null for share of v,r`,[owner,groupId,reference.id,reference.version])).rowCount)
   else if(reference.kind==='work-resource'){await readActiveGroupWorkResource(db,owner,groupId,reference);present=true}
   else if(reference.kind==='attachment')present=Boolean(await readActiveAttachment(db,owner,reference.id))
-  else present=roleWorkUuid(reference.id)&&Boolean((await db.query('select 1 from teloa_artifact_versions where owner_id=$1 and artifact_id=$2 and number=$3 for share',[owner,reference.id,reference.version])).rowCount)
+  else{present=roleWorkUuid(reference.id)&&Boolean((await db.query('select 1 from teloa_artifact_versions where owner_id=$1 and artifact_id=$2 and number=$3 for share',[owner,reference.id,reference.version])).rowCount);if(present)await assertArtifactAvailable(db,owner,reference.id,reference.version)}
   if(!present)throw new WorkError('teloa/forbidden','群执行授权的原件已撤回或不再可见。')
  }
  return grant

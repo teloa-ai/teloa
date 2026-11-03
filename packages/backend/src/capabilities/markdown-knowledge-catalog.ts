@@ -9,6 +9,7 @@ export const markdownKnowledgeReferenceId=(knowledgeId:string)=>`knowledge_${kno
 
 type KnowledgePort={
  list(actor:ResourceActor,input:unknown):Promise<KnowledgeItem[]>
+ get(actor:ResourceActor,input:unknown):Promise<KnowledgeItem>
  listVersions(actor:ResourceActor,input:unknown):Promise<KnowledgeVersionSummary[]>
  readVersion(actor:ResourceActor,input:unknown):Promise<KnowledgeVersion>
  readHashInTransaction?(client:PoolClient,actor:ResourceActor,knowledgeId:string,contentHash:string,fixed?:{capability?:FixedRunKnowledgeRead;resourceId?:string}):Promise<{item:KnowledgeItem;version:KnowledgeVersion}>
@@ -52,8 +53,8 @@ export class MarkdownKnowledgeCatalog implements ResourceSourceCatalog{
    this.allowed(item,context)
    return {schema:'teloa.reference/v1' as const,id,title:item.title,source:`knowledge:${item.id}@${fixed.version}`,version:fixed.contentHash,bytes:fixed.bytes,text:fixed.markdown}
   }
-  const items=await this.knowledge.list(actor,{}),item=items.find(row=>row.id.toLowerCase()===match[1]!.toLowerCase())
-  if(!item)throw forbidden();this.allowed(item,context!)
+  const knowledgeId=match[1]!.toLowerCase(),item=await this.knowledge.get(actor,{knowledgeId})
+  if(item.id.toLowerCase()!==knowledgeId)throw forbidden();this.allowed(item,context!)
   const versions=await this.knowledge.listVersions(actor,{knowledgeId:item.id}),summary=versions.find(row=>row.contentHash===version)
   if(!summary)throw new WorkError('teloa/version-conflict','工作资料正文版本已变化或不存在。')
   const fixed=await this.knowledge.readVersion(actor,{knowledgeId:item.id,version:summary.version})

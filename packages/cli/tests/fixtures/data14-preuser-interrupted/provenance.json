@@ -1,0 +1,22 @@
+{
+  "schema": "teloa.frozen-data-version-reader-fixture/v1",
+  "dataVersion": 14,
+  "license": "Apache-2.0",
+  "source": "Exact public Community packaged data14 CLI reader. No private configuration or runtime data.",
+  "sourceCommit": "a4b8f1f65825c504bb2751962740d6e8892ae139",
+  "releaseManifestSHA256": "77039af12b870611edc074191679eafca08ade5f7770261265aaebcd837785ee",
+  "files": [
+    {
+      "path": "data-version.js.txt",
+      "bytes": 902,
+      "sha256": "aeb529b12d09d871fec1437db513e47d869d425f6e333fa9e8eba679627c8ddf",
+      "signedReleasePath": "packages/cli/lib/data-version.js"
+    },
+    {
+      "path": "data-version.json",
+      "bytes": 2384,
+      "sha256": "fdc9022758eb0dd21516a6f164b6d01ae99ff508b3294f279cff63ec73822359",
+      "signedReleasePath": "packages/cli/lib/data-version.json"
+    }
+  ]
+}

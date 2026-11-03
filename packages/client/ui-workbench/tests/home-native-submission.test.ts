@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import {HomeSubmissionJournal,isDeterministicPromptRejection} from '../src/client/home-native-submission.ts'
+import {HomeSubmissionJournal,isDeterministicPromptRejection} from '../lib/types/client/home-native-submission.js'
 const memory=()=>{const rows=new Map<string,string>();return {getItem:(key:string)=>rows.get(key)??null,setItem:(key:string,value:string)=>{rows.set(key,value)},removeItem:(key:string)=>{rows.delete(key)}}}
 test('未知发送和刷新都禁止盲目重发，只有同requestId持久回执才解除',()=>{
  const storage=memory(),journal=new HomeSubmissionJournal(storage,'s')
@@ -43,4 +43,23 @@ test('贴密钥拒收（gateway/bad-request）是准入前的确定性拒收：�
  assert.equal(new HomeSubmissionJournal(storage,'s').getSnapshot(),false)
  journal.observe(['r2'],[],false);journal.observe([],['r2'],false)
  assert.equal(journal.getSnapshot(),false)
+})
+
+test('上下文变更明确拒收解除本次发送，刷新后可重述任务，未知原因继续核对',()=>{
+ for(const reason of ['employee-context-goal-required','detached-project-goal-required','unknown-reason']){
+  const storage=memory(),journal=new HomeSubmissionJournal(storage,'s'),known=reason!=='unknown-reason'
+  journal.observe(['rejected-request'],[],false)
+  const rejected=isDeterministicPromptRejection('teloa/invalid-input',{reason})
+  assert.equal(rejected,known)
+  journal.observe([],[],!rejected,rejected)
+  assert.equal(journal.getSnapshot(),!known)
+  assert.equal(new HomeSubmissionJournal(storage,'s').getSnapshot(),!known)
+  if(known){
+   assert.equal(storage.getItem('teloa.home-submission/s'),null)
+   journal.observe(['restated-request'],[],false);journal.observe([],['restated-request'],false)
+   assert.equal(journal.getSnapshot(),false)
+  }
+ }
+ assert.equal(isDeterministicPromptRejection('gateway/internal',{reason:'employee-context-goal-required'}),false)
+ assert.equal(isDeterministicPromptRejection('teloa/invalid-input'),false)
 })

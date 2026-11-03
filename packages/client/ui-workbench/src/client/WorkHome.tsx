@@ -5,6 +5,7 @@ import type {Conversation} from '@teloa/contract'
 import type {BindingClient} from './binding-client.js'
 import type {ConversationManagement} from './conversation-management.js'
 import {presentConversations,type PresentedConversation} from './work-presentation.js'
+import {useTaskRunConversationTitles,type TaskRunChatPresentationDirectory} from './task-run-chat-presentation.js'
 import css from './WorkHome.module.css'
 import {attentionStatusText,planStatusText,type AttentionStatus,type PlanStatus} from './work-home-status.js'
 import {taskStates,type PreviewTask} from './task-preview.js'
@@ -26,7 +27,7 @@ const workStatusKeys:Record<PresentedConversation['status'],'workDirectory.statu
 export type HomeCreationKind='task'|'group'|'role'
 type Props={assistantName?:string;current:string|undefined;visible:boolean;work:BindingClient;management:ConversationManagement;useSessions:UseSessions;workTasks:readonly PreviewTask[];colleagues:readonly Pick<PreviewRole,'id'|'name'|'scopes'>[];conversationLinks:readonly ObjectConversationLink[];open:()=>void;openTask:(id:string)=>void;openTasks:()=>void;plans:()=>void;attention:()=>void;attentionStatus:AttentionStatus;planStatus:PlanStatus}
 
-export function WorkHome({assistantName='Teloa',current,visible,work,management,useSessions,workTasks,colleagues,conversationLinks,open,openTask,openTasks,plans,attention,attentionStatus,planStatus}:Props) {
+export function WorkHome({assistantName='Teloa',current,visible,work,management,useSessions,taskRunChat,workTasks,colleagues,conversationLinks,open,openTask,openTasks,plans,attention,attentionStatus,planStatus}:Props&{taskRunChat?:TaskRunChatPresentationDirectory|undefined}) {
   const {locale,t,dateTime}=useI18n()
   const directory=useSyncExternalStore(work.subscribe,work.getDirectorySnapshot)
   const native=useSessions(value=>value.byId)
@@ -36,7 +37,9 @@ export function WorkHome({assistantName='Teloa',current,visible,work,management,
   const colleagueWork=homeColleagueWork(workTasks)
   const [conversationError,setConversationError]=useState<string>(),[opening,setOpening]=useState<string>()
   const attentionHeading=attentionStatusText(attentionStatus,t)
-  const rows=managed.baseline?presentConversations(directory.rows,Object.values(native),'','all').filter(row=>row.status!=='blank'&&!managed.archived.includes(row.conversation.sessionId)).map(row=>row.conversation.purpose==='assistant'&&row.title===assistantConversationTitle?{...row,title:assistantName}:row):[]
+  const titleRows=visible&&managed.baseline?presentConversations(directory.rows,Object.values(native),'','all').filter(row=>row.status!=='blank'&&!managed.archived.includes(row.conversation.sessionId)).slice(0,5):[]
+  const taskTitles=useTaskRunConversationTitles(titleRows.map(row=>row.conversation),taskRunChat)
+  const rows=managed.baseline?presentConversations(directory.rows,Object.values(native),'','all',undefined,taskTitles).filter(row=>row.status!=='blank'&&!managed.archived.includes(row.conversation.sessionId)).map(row=>row.conversation.purpose==='assistant'&&row.title===assistantConversationTitle?{...row,title:assistantName}:row):[]
   // 「继续工作」与原型同构：未结束的任务和会话同列按更新时间倒序，右上角明确标注任务数量并进入任务目录，避免混合列表被误读为全部条目数。
   const savedTasks=visibleTaskDirectory(workTasks,'saved')
   const recent=[

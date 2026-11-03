@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import {mkdtemp,mkdir,writeFile,symlink,readFile,rm} from 'node:fs/promises'
+import {mkdtemp,mkdir,writeFile,symlink,readFile,rm,readdir,chmod,lstat} from 'node:fs/promises'
 import {tmpdir} from 'node:os'
-import {join} from 'node:path'
+import {join,basename} from 'node:path'
 import {createHash,randomUUID} from 'node:crypto'
 const api=await import('../src/maintenance.ts').catch(error=>{if(error.code==='ERR_MODULE_NOT_FOUND')return {};throw error}) as any
 const hash=(value:string)=>createHash('sha256').update(value).digest('hex')
@@ -58,6 +58,57 @@ test('只省略 DSH 三处生成依赖链接，外部链接仍拒绝',async()=>{
  await symlink('/tmp',join(source,'external'))
  await assert.rejects(api.copyBackupData(source,join(root,'bad'),release,true),/外链/)
 })
+async function historicalNativeFixture(t:{after:(cleanup:()=>Promise<void>)=>unknown}){
+ const root=await mkdtemp(join(tmpdir(),'teloa-historical-native-'));t.after(()=>rm(root,{recursive:true,force:true}))
+ const home=join(root,'home'),source=join(home,'instances/default/dsh'),old=join(home,'releases/0.2.84'),current=join(home,'releases/0.2.100'),profile=join(source,'profiles/teloa')
+ const names=['native-browser','native-computer'],dependencies:Record<string,string>={}
+ for(const release of [old,current]){
+  const version=basename(release),files:Array<{path:string;sha256:string}>=[]
+  for(const name of names){
+   const directory=join(release,'packages',name);await mkdir(directory,{recursive:true})
+   for(const [nameInPackage,body] of Object.entries({'package.json':JSON.stringify({name:'@teloa/'+name,version,dependencies:{'@fixture/stock':'1.0.0'}}),'cordis.patch.yml':'[]\n','README.md':'official synthetic native bundle\n'})){
+    await writeFile(join(directory,nameInPackage),body);files.push({path:'packages/'+name+'/'+nameInPackage,sha256:hash(body)})
+   }
+  }
+  await writeFile(join(release,'release-manifest.json'),JSON.stringify({schema:'teloa.release/v1',version,dataVersion:9,compatibleDataVersions:[9],files}))
+ }
+ await mkdir(join(profile,'node_modules/@teloa'),{recursive:true})
+ for(const name of names){dependencies['@teloa/'+name]='link:'+join(current,'packages',name);await symlink(join(old,'packages',name),join(profile,'node_modules/@teloa',name))}
+ await writeFile(join(profile,'package.json'),JSON.stringify({dependencies,dsh:{profile:{bundles:['base']}},custom:{preserve:true}}))
+ await writeFile(join(source,'history.json'),'synthetic original history')
+ return {root,home,source,old,current,profile,dependencies}
+}
+test('正常备份和恢复省略同home已验旧官方原生链接，实体扩展与本人数据保留并可正常重建',async t=>{
+ const f=await historicalNativeFixture(t),extension=join(f.profile,'node_modules/@fixture/owned')
+ assert.equal(await api.isVerifiedHistoricalNativeDependency(f.source,join(f.profile,'node_modules/@teloa/native-browser'),f.current),true)
+ await mkdir(extension,{recursive:true});await writeFile(join(extension,'package.json'),'owned extension bytes')
+ const backup=join(f.root,'backup'),restored=join(f.root,'restored')
+ await api.copyBackupData(f.source,backup,f.current,true)
+ await api.copyBackupData(backup,restored,f.current)
+ assert.equal(await readFile(join(restored,'history.json'),'utf8'),'synthetic original history')
+ assert.equal(await readFile(join(restored,'profiles/teloa/node_modules/@fixture/owned/package.json'),'utf8'),'owned extension bytes')
+ assert.deepEqual(await readdir(join(restored,'profiles/teloa/node_modules/@teloa')),[])
+ const runtime=await import('../../../scripts/runtime/profile.mjs') as any
+ const manifest=JSON.parse(await readFile(join(restored,'profiles/teloa/package.json'),'utf8'))
+ await runtime.repairBundledModuleLinks(join(restored,'profiles/teloa'),runtime.managedOptionalNativeModuleSpecs(manifest,f.dependencies))
+ assert.deepEqual(await runtime.bundledModuleConflicts(join(restored,'profiles/teloa'),f.dependencies),[])
+ assert.deepEqual(manifest.dsh.profile.bundles,['base'])
+})
+test('历史原生生成链接仅接受同home、精确声明、完整manifest与无额外内容的官方包',async t=>{
+ for(const variant of ['other-home','undeclared','tampered-body','extra-file','extra-directory','wrong-release-version','unknown-package']){
+  const f=await historicalNativeFixture(t),link=join(f.profile,'node_modules/@teloa/native-browser')
+  if(variant==='other-home'){
+   const other=join(f.root,'other-home/releases/0.2.84/packages/native-browser');await mkdir(other,{recursive:true});await rm(link);await symlink(other,link)
+  }else if(variant==='undeclared')await writeFile(join(f.profile,'package.json'),JSON.stringify({dependencies:{'@teloa/native-browser':'link:'+join(f.old,'packages/native-browser')}}))
+  else if(variant==='tampered-body')await writeFile(join(f.old,'packages/native-browser/README.md'),'tampered')
+  else if(variant==='extra-file')await writeFile(join(f.old,'packages/native-browser/unlisted.txt'),'must never be discarded')
+  else if(variant==='extra-directory')await mkdir(join(f.old,'packages/native-browser/unlisted-directory'))
+  else if(variant==='wrong-release-version'){
+   const file=join(f.old,'release-manifest.json'),manifest=JSON.parse(await readFile(file,'utf8'));manifest.version='0.2.83';await writeFile(file,JSON.stringify(manifest))
+  }else{await rm(link);await symlink(join(f.old,'packages/native-browser'),join(f.profile,'node_modules/@teloa/user-extension'))}
+  await assert.rejects(api.copyBackupData(f.source,join(f.root,'rejected'),f.current,true),variant)
+ }
+})
 test('缺失的生成依赖仅在调用方明确批准后省略，其他数据保留',async t=>{
  const root=await mkdtemp(join(tmpdir(),'teloa-missing-generated-'));t.after(()=>rm(root,{recursive:true,force:true}))
  const source=join(root,'dsh'),release=join(root,'removed-release'),path=join(source,'profiles','teloa','node_modules','generated'),target=join(release,'package')
@@ -70,18 +121,43 @@ test('缺失的生成依赖仅在调用方明确批准后省略，其他数据�
  assert.deepEqual(calls,[{source,path,target}])
  assert.equal(await readFile(join(root,'approved','session.jsonl'),'utf8'),'original history')
 })
-test('缺失链接批准不能绕过现存外链、本地扩展或普通数据链接',async t=>{
+test('缺失链接批准不能绕过现存外链或普通数据链接',async t=>{
  const root=await mkdtemp(join(tmpdir(),'teloa-missing-generated-boundary-'));t.after(()=>rm(root,{recursive:true,force:true}))
- for(const variant of ['live-external','ordinary-link','local-file']){
+ for(const variant of ['live-external','ordinary-link']){
   const source=join(root,variant),release=join(root,'absent-release'),generated=join(source,'profiles','teloa','node_modules')
   await mkdir(generated,{recursive:true})
   if(variant==='live-external')await symlink(root,join(generated,'custom'))
   else if(variant==='ordinary-link')await symlink(join(root,'missing'),join(source,'custom'))
-  else await writeFile(join(generated,'custom'),'user data')
   let calls=0
   await assert.rejects(api.copyBackupData(source,source+'-out',release,true,{allowMissingGeneratedLink:()=>{calls++;return true}}))
   assert.equal(calls,0,variant)
  }
+})
+test('备份及恢复保留已安装本地扩展、锁和本人执行位，只省略固定发行生成链接',async t=>{
+ const root=await mkdtemp(join(tmpdir(),'teloa-local-extension-backup-'));t.after(()=>rm(root,{recursive:true,force:true}))
+ const source=join(root,'dsh'),release=join(root,'release'),backup=join(root,'backup'),restored=join(root,'restored')
+ await mkdir(release);await writeFile(join(release,'package.json'),'{}')
+ const variants=['profiles/node_modules','profiles/teloa/node_modules','profiles/teloa/.dsh-module-fallback/node_modules']
+ const files=new Map<string,string>()
+ for(const base of variants){
+  const module=join(base,'@fixture','installed')
+  await mkdir(join(source,module,'bin'),{recursive:true});await symlink(release,join(source,base,'generated'))
+  for(const [name,body] of [['package.json','{"name":"@fixture/installed","version":"1.0.0"}'],['bin/run.js','#!/usr/bin/env node\nconsole.log("synthetic")\n']] as const){
+   const path=join(module,name);files.set(path,body);await writeFile(join(source,path),body,{mode:name.startsWith('bin/')?0o755:0o644})
+  }
+  await chmod(join(source,module,'bin/run.js'),0o755)
+  const lock=join(base,'.pnpm','lock.yaml');await mkdir(join(source,base,'.pnpm'));await writeFile(join(source,lock),'lockfileVersion: 9.0\n');files.set(lock,'lockfileVersion: 9.0\n')
+ }
+ await api.copyBackupData(source,backup,release,true)
+ await api.copyBackupData(backup,restored,release)
+ for(const [path,body] of files){
+  assert.equal(await readFile(join(backup,path),'utf8'),body);assert.equal(await readFile(join(restored,path),'utf8'),body)
+  assert.equal((await lstat(join(restored,path))).mode&0o777,path.endsWith('/run.js')?0o700:0o600)
+ }
+ for(const base of variants)assert.deepEqual((await readdir(join(backup,base))).sort(),['.pnpm','@fixture'])
+ // 扩展内的越界外链仍拒绝，不能因其位于生成目录或已保留普通文件而放行。
+ await symlink(root,join(source,variants[1]!,'@fixture','installed','outside'))
+ await assert.rejects(api.copyBackupData(source,join(root,'unsafe'),release,true),/外链/)
 })
 test('缺失链接批准后被替换时停止备份',async t=>{
  const root=await mkdtemp(join(tmpdir(),'teloa-missing-generated-race-'));t.after(()=>rm(root,{recursive:true,force:true}))

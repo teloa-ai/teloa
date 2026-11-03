@@ -29,7 +29,7 @@
 .resultBlock p{margin:8px 0;font-size:var(--teloa-font-control);white-space:pre-wrap;overflow-wrap:anywhere}
 .resultList{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px}
 .resultList li{min-width:0;display:flex;align-items:center;justify-content:space-between;gap:12px}
-.resultList .link{flex:1}
+.resultList .link{flex:1;justify-content:flex-start}
 .resultList .link>span{overflow-wrap:anywhere}
 .resultList small{flex:none;color:var(--teloa-muted);font-size:var(--teloa-font-caption)}
 .evidence{margin-top:14px;border-top:1px solid var(--teloa-border);padding-top:12px}
@@ -47,9 +47,12 @@
 .disclosure :focus-visible,.facts :focus-visible,.resultBlock :focus-visible{outline:2px solid var(--teloa-focus);outline-offset:2px}
 @container (max-width:480px){.facts{grid-template-columns:minmax(0,1fr);gap:4px}.fact,.wideFact{grid-template-columns:minmax(0,1fr);gap:0;padding:6px 0}.resultBlock{padding:12px}}
 
-/* N46：DOM 与窄视图阅读顺序一致；宽面板只将属性区放到右列，所有表单始终挂载。 */
+/* 一个阅读主栏；宽视图不再另铺属性侧栏，折叠不卸载工作与表单。 */
 .layout{container-type:inline-size;container-name:task-detail-body;min-width:0}
-.columns{display:flex;flex-direction:column;min-width:0}
+.columns{display:flex;flex-direction:column;min-width:0;width:100%;max-width:820px;margin-inline:auto}
+.factsSummary{display:flex;flex-wrap:wrap;gap:2px 20px;padding:0;margin:0 0 18px;border:0}
+.factsSummary>.fact,.factsSummary>.wideFact{display:flex;align-items:center;gap:8px;min-height:28px;padding:0;font-size:var(--teloa-font-control)}
+.factsSummary dt{padding:0}.factsSummary dd{min-height:28px}
 .slotProgress:empty,.quietStatus:empty{display:none}
 .fact,.wideFact{min-height:30px}
 .fact dd,.wideFact dd{min-height:26px}
@@ -62,13 +65,6 @@
 .detailTextToggle{display:inline-flex;align-items:center;margin-top:4px;padding:2px 0;min-height:28px;border:0;background:transparent;color:var(--teloa-muted);font-size:var(--teloa-font-caption);cursor:pointer}
 .detailTextToggle:hover{color:var(--teloa-text)}
 .detailTextToggle:focus-visible{outline:2px solid var(--teloa-focus);outline-offset:2px}
-@container task-detail-body (min-width:860px){
- .columns{display:grid;grid-template-columns:minmax(0,1fr) minmax(240px,288px);grid-template-areas:"goal facts" "status facts" "progress side" "result side" "activity side";grid-template-rows:auto auto auto auto minmax(0,1fr);column-gap:32px;align-items:start}
- .slotGoal{grid-area:goal}.slotStatus{grid-area:status}.slotProgress{grid-area:progress}.slotResult{grid-area:result}.slotActivity{grid-area:activity}
- .slotFacts{grid-area:facts;grid-template-columns:minmax(0,1fr);gap:0;margin:0 0 8px;padding-top:0;padding-bottom:8px}
- .slotSide{grid-area:side}
- .slotFacts,.slotSide{padding-left:20px;border-left:1px solid var(--teloa-border);min-width:0}
-}
 
 /* 当前交接与审批就地可达；编号、时间等低频属性不再包住操作表单。 */
 .actionGroup{min-width:0;padding:10px 0;border-top:1px solid var(--teloa-border)}

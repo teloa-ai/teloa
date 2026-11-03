@@ -1,3 +1,4 @@
+import {taskReferenceReadTool} from '@teloa/backend'
 import {WorkError,taskInput,taskToolArgumentsAllowed,readTaskToolArgumentRules,isWorkspaceFileRule,workspaceFileToolNames,type TaskToolArgumentRule,type ResourceContext} from '@teloa/contract'
 import type {RoleToolGrantService} from '@teloa/backend'
 import {isNativeToolName,nativeGrantToolNames} from './native-tool-access.ts'
@@ -9,7 +10,7 @@ import {isPublicReferenceSourceId} from '@teloa/backend'
 export const roleToolGrantEndpoints=['role-tools/get','role-tools/change','role-tools/candidates']
 /** 公共参考资料 MCP 的 server 名；资源工具的 server 参数只认这一个值。 */
 export const referenceServerName='teloa_reference'
-export const referenceReadTool='mcp__teloa_reference__read_reference'
+export const referenceReadTool=taskReferenceReadTool
 /** 0.1.6 的 dsh-mcp-resources 默认把三个共享资源工具对模型开放；Teloa 一律先拒，再按岗位放开。 */
 export const mcpResourceTools=['list_mcp_resources','list_mcp_resource_templates','read_mcp_resource'] as const
 /** 只有列举类资源工具能固定成精确参数；read_mcp_resource 必带 uri，平台在授权时无从枚举，故不进候选。 */

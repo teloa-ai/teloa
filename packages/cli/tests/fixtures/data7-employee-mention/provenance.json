@@ -1,0 +1,10 @@
+{
+  "version": "0.2.86",
+  "sourceCommit": "f7f5e8c66173c98349ddbb4cdc5b963908e5a4c9",
+  "dataVersion": 7,
+  "sharedActualGuardFixture": "../data6-owner-task-analysis/data-version.js.txt",
+  "guardSha256": "aeb529b12d09d871fec1437db513e47d869d425f6e333fa9e8eba679627c8ddf",
+  "metadataSha256": "1f4cd453572ca5dfd000157be5f88901541abe0a568aacebec6818f50adfdde2",
+  "releaseManifestSha256": "4eeab160ceb116a0277da0f993949bcecdb54543625c162d2ccdb7ba5605bc3c",
+  "note": "Actual signed CLI data7 guard is byte-identical to the existing frozen guard fixture; metadata is frozen from that same data7 program."
+}

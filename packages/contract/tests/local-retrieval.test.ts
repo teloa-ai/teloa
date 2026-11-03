@@ -6,7 +6,7 @@ const rejects=(fn:()=>unknown,message?:RegExp)=>assert.throws(fn,(error:any)=>er
 
 test('端点与上限是编译期常量',()=>{
  assert.deepEqual(retrievalEndpoints,['retrieval/status','retrieval/search','retrieval/enroll','retrieval/remove','retrieval/reindex','retrieval/cancel','retrieval-model/status','retrieval-model/prepare','retrieval-model/cancel','retrieval-model/select'])
- assert.deepEqual(retrievalLimits,{maxEnrollments:500,maxSourceBytes:2*1024*1024,maxChunks:50000,maxQueryChars:500,maxResults:8,maxExcerptBytes:2048,maxTotalExcerptBytes:16384,dimensions:1024,vectorBytes:4096})
+ assert.deepEqual(retrievalLimits,{maxEnrollmentBatch:500,maxEnrollments:10000,maxCoverageItems:500,maxSourceBytes:2*1024*1024,maxChunks:50000,maxQueryChars:500,maxResults:8,maxExcerptBytes:2048,maxTotalExcerptBytes:16384,dimensions:1024,vectorBytes:4096})
  assert.equal(retrievalLimits.vectorBytes,retrievalLimits.dimensions*4)
 })
 
@@ -75,6 +75,15 @@ test('检索结果守卫：严格键集、区间、分值、摘录上限与覆�
  ])rejects(()=>readRetrievalSearchResult(bad),/检索结果/)
 })
 
+test('历史来源分类只修饰stale，旧回执缺省兼容且不接受未经核验的当前声明',()=>{
+ for(const sourceState of ['historical','changed']){
+  const value={...result(),coverage:{...result().coverage,pending:[{resourceId:rid(3),title:'旧版本',reason:'stale',sourceState}]}}
+  assert.deepEqual(readRetrievalSearchResult(value),value)
+ }
+ assert.deepEqual(readRetrievalSearchResult(result()),result())
+ for(const item of [{resourceId:rid(3),title:'旧版本',reason:'stale',sourceState:'current'},{resourceId:rid(3),title:'旧版本',reason:'building',sourceState:'historical'},{resourceId:rid(3),title:'旧版本',reason:'failed',sourceState:'changed'}])rejects(()=>readRetrievalSearchResult({...result(),coverage:{...result().coverage,pending:[item]}}))
+})
+
 test('摘录上限按 UTF-8 字节计，8 条满额恰好等于 16 KiB 总上限',()=>{
  const okExcerpt='中'.repeat(682)
  assert.equal(new TextEncoder().encode(okExcerpt).byteLength,2046)
@@ -115,4 +124,28 @@ test('prepare 载荷可选下载来源 source：缺省即官方且载荷原样�
  const officialOnly=captureRetrievalPreparation({...provider,preparationDetails:details})
  assert.throws(()=>readRetrievalPrepareInput({expected:officialOnly,source:'hf-mirror'}),{code:'teloa/invalid-input'})
  assert.deepEqual(readRetrievalPrepareInput({expected:officialOnly,source:'official'}),{expected:officialOnly,source:'official'})
+})
+
+// IDX14：契约用例，不是规模/真实模型性能证据。
+test('IDX14 单批500与累计10000独立，旧覆盖兼容且截断不能伪装全量',async()=>{
+ const {readRetrievalEnrollmentSources}=await import('../src/local-retrieval.ts')
+ assert.equal(retrievalLimits.maxEnrollments,10000)
+ assert.equal(retrievalLimits.maxEnrollmentBatch,500)
+ assert.equal(retrievalLimits.maxCoverageItems,500)
+ assert.equal(readRetrievalEnrollmentSources({sourceIds:Array.from({length:500},(_,i)=>'s_'+i)}).length,500)
+ rejects(()=>readRetrievalEnrollmentSources({sourceIds:Array.from({length:501},(_,i)=>'s_'+i)}))
+ const old=result();assert.deepEqual(readRetrievalSearchResult(old),old)
+ const bounded={...result(),coverage:{...result().coverage,searchedCount:1000,pendingCount:10,truncated:true}}
+ assert.deepEqual(readRetrievalSearchResult(bounded),bounded)
+ for(const coverage of [
+  {...bounded.coverage,truncated:false},
+  {...bounded.coverage,searchedCount:1},
+  {...bounded.coverage,pendingCount:0},
+  {...bounded.coverage,searchedCount:undefined},
+  {...bounded.coverage,pendingCount:1.5},
+  {...old.coverage,truncated:true},
+  {...old.coverage,searchedCount:2,pendingCount:1,truncated:true},
+ ])rejects(()=>readRetrievalSearchResult({...result(),coverage}))
+ const oversized={...bounded.coverage,searched:Array.from({length:501},(_,i)=>({resourceId:'00000000-0000-4000-8000-'+String(i).padStart(12,'0'),title:'资料',version:1}))}
+ rejects(()=>readRetrievalSearchResult({coverage:oversized,results:[]}))
 })

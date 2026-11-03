@@ -24,7 +24,8 @@ const denied=()=>new WorkError('teloa/forbidden','当前暂不能提交新输入
 export function createNativeWorkInput(ctx:Context,access:WorkAccess=workAccess,checkpoint?:NativeInputCheckpoint,progress?:NativeProgressCheckpoint,restore?:NativeInputRestore,requireResident=false){
  if(typeof requireResident!=='boolean')throw denied()
  if(checkpoint!==undefined&&typeof checkpoint!=='function'||progress!==undefined&&typeof progress!=='function'||restore!==undefined&&typeof restore!=='function')throw denied()
- const guard=createNativeInputGuard(ctx,{final:true,onAccepted:receipt=>causality.accept(receipt)})
+ let ordinaryPublication=false
+ const guard=createNativeInputGuard(ctx,{final:true,onAccepted:receipt=>causality.accept(receipt,ordinaryPublication)})
  const prepare=(agent:Agent,message:UserMessage,submit:()=>void,signal?:AbortSignal)=>{
   let snapshot:UserMessage
   try{
@@ -38,7 +39,7 @@ export function createNativeWorkInput(ctx:Context,access:WorkAccess=workAccess,c
   assertTarget()
   return {session,identity,rpcId,assertTarget:()=>{causality.assertReady();assertTarget()}}
  }
- const publish=(prepared:ReturnType<typeof prepare>,lease:WorkAccessLease,submit:()=>void)=>{
+ const publish=(prepared:ReturnType<typeof prepare>,lease:WorkAccessLease,submit:()=>void,ordinary=false)=>{
   const assertLease=lease.assertCurrent,assertContinuation=lease.assertContinuationCurrent??assertLease
   if(typeof assertLease!=='function'||typeof assertContinuation!=='function')throw denied()
   const invoke=(assertion:()=>void)=>{
@@ -48,8 +49,11 @@ export function createNativeWorkInput(ctx:Context,access:WorkAccess=workAccess,c
   const fixed=Object.freeze({assertCurrent:()=>invoke(assertLease),assertContinuationCurrent:()=>invoke(assertContinuation),...(lease.releaseUnaccepted?{releaseUnaccepted:()=>lease.releaseUnaccepted!()}: {})})
   guard.withSyncLease(prepared.session,prepared.identity,fixed,()=>{
    prepared.assertTarget()
-   const returned:unknown=submit()
-   if(returned!==undefined){void Promise.resolve(returned).catch(()=>{});throw denied()}
+   const previous=ordinaryPublication;ordinaryPublication=ordinary
+   try{
+    const returned:unknown=submit()
+    if(returned!==undefined){void Promise.resolve(returned).catch(()=>{});throw denied()}
+   }finally{ordinaryPublication=previous}
   })
  }
  const resident=()=>ctx.get('teloaResidentInputAdmission' as never) as ResidentInputAdmission|undefined
@@ -83,10 +87,17 @@ export function createNativeWorkInput(ctx:Context,access:WorkAccess=workAccess,c
   const roleLease=await residentLease(agent.id,producer)
   const projectLease=await projectRuntimeInputHooks(ctx)?.acquire(agent,message,signal)
   const lease=await access.authorize(request)
-  publish(prepared,combineWorkAccessLeases([capabilities,lease,...extra?[extra]:[],...roleLease?[roleLease]:[],...projectLease?[projectLease]:[]]),submit)
+  publish(prepared,combineWorkAccessLeases([capabilities,lease,...extra?[extra]:[],...roleLease?[roleLease]:[],...projectLease?[projectLease]:[]]),submit,(producer==='prompt'||producer==='queue')&&roleLease===null)
  }
  return Object.freeze({
   withNewInput,
+  /** 仅原空闲会话的短事务收口；最终append闸冻结所有事件，维护期间不消耗/丢弃晚到输入。 */
+  withQuiescentSession<T>(agent:Agent,work:(signal:AbortSignal)=>Promise<T>):Promise<T>{
+   const session=agent.session
+   const assertIdle=()=>{if(ctx.agents.get(agent.id)!==agent||agent.session!==session||agent.status!=='idle'||agent.inbox.nextTurn.length||agent.inbox.nextStep.length||causality.hasPendingJobCompletion(agent.id)||causality.hasCancelledJobCompletion(agent.id))throw denied()}
+   assertIdle()
+   return agent.runMaintenance(signal=>guard.withQuiescentSession(session,()=>{signal.throwIfAborted();assertIdle()},()=>work(signal)))
+  },
   /** 在真实启动工具仍活动时捕获；结果回流不依赖工具结束后的 ALS。 */
   captureSubagentCompletion(parent:Agent,sender:Agent=parent){
    const session=parent.session,continuation=causality.captureToolCompletion(sender)

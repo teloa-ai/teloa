@@ -51,7 +51,17 @@ export function registerBusinessChangeSetTools(ctx:Context,ports:BusinessChangeS
  for(const definition of definitions)ctx.tools.register(defineTool({...definition,output:{schema:{type:'string'} as const,render:(_a:unknown,value:string)=>[{type:'text' as const,text:value}]},execute:async(args,exec)=>{
   const prepared=fixed.get(exec),current=await authorize(exec),instruction=instructionOf(exec,current)
   if(!prepared||current.fingerprint!==prepared.current.fingerprint||JSON.stringify(instruction)!==JSON.stringify(prepared.instruction)||JSON.stringify(input(definition.name,args,current,instruction))!==JSON.stringify(prepared.input))throw new WorkError('teloa/forbidden','本人指令或业务授权在审批期间已变化。')
-  if(definition.name===names[0])return JSON.stringify(await ports.changes.prepare(current.actor,prepared.input,{...instruction,fingerprint:current.fingerprint}))
+  if(definition.name===names[0]){
+   try{return JSON.stringify(await ports.changes.prepare(current.actor,prepared.input,{...instruction,fingerprint:current.fingerprint}))}
+   catch(error){
+    // 仅原生准备工具补充模型可读的有界声明指引；普通 API 保持简短的人话错误。
+    if(error instanceof WorkError&&error.code==='teloa/invalid-input'&&error.details?.reason==='unknown-record-field'&&error.details.fieldGuidance){
+     const guidance=JSON.stringify(error.details.fieldGuidance)
+     if(Buffer.byteLength(guidance)<=16384)throw new WorkError(error.code,error.message+' 可写字段定义：'+guidance+'。number/boolean 新输入使用真实数值/布尔值；不要猜测未列出的字段。',error.details)
+    }
+    throw error
+   }
+  }
   const value=prepared.input as {changeSetId:string},draft=await ports.changes.get(current.actor,value)
   if(draft.scope!==current.scope||draft.sessionId!==exec.agent!.session.id)throw new WorkError('teloa/forbidden','请在原业务工作会话中处理此草稿。')
   if(definition.name===names[2])return JSON.stringify(draft)

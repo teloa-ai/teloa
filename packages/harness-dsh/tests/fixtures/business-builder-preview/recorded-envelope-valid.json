@@ -1,0 +1,16 @@
+{
+  "candidate": {
+    "format": "teloa.business-configuration/v1",
+    "scope": "business_a3d58d8a335e4f9e8d28759e40d025a2",
+    "title": "新业务",
+    "sources": [
+      {
+        "sourceId": "records-5d2d42c7ea9c435d88b1c83ac9184d69",
+        "kind": "local-records"
+      }
+    ],
+    "pages": [],
+    "definitions": []
+  },
+  "raw": "\"{\\\"homePageId\\\":\\\"synthetic-inventory-records\\\",\\\"upsertDefinitions\\\":[{\\\"kind\\\":\\\"object-type\\\",\\\"definition\\\":{\\\"format\\\":\\\"teloa.business-object-type/v1\\\",\\\"id\\\":\\\"synthetic-inventory\\\",\\\"version\\\":\\\"1.0.0\\\",\\\"domain\\\":\\\"business_a3d58d8a335e4f9e8d28759e40d025a2\\\",\\\"title\\\":\\\"合成库存\\\",\\\"unit\\\":\\\"条\\\",\\\"lead\\\":\\\"记录合成库存的 SKU、数量和仓库。\\\",\\\"sourceId\\\":\\\"records-5d2d42c7ea9c435d88b1c83ac9184d69\\\",\\\"fields\\\":[{\\\"name\\\":\\\"sku\\\",\\\"label\\\":\\\"SKU\\\",\\\"type\\\":\\\"text\\\",\\\"required\\\":true,\\\"from\\\":\\\"SKU\\\"},{\\\"name\\\":\\\"quantity\\\",\\\"label\\\":\\\"数量\\\",\\\"type\\\":\\\"number\\\",\\\"required\\\":true,\\\"from\\\":\\\"数量\\\",\\\"integer\\\":true,\\\"minimum\\\":0},{\\\"name\\\":\\\"warehouse\\\",\\\"label\\\":\\\"仓库\\\",\\\"type\\\":\\\"text\\\",\\\"required\\\":true,\\\"from\\\":\\\"仓库\\\"}]}}],\\\"upsertPages\\\":[{\\\"id\\\":\\\"synthetic-inventory-records\\\",\\\"title\\\":\\\"合成库存\\\",\\\"kind\\\":\\\"records\\\",\\\"objectType\\\":\\\"synthetic-inventory\\\",\\\"fields\\\":[\\\"sku\\\",\\\"quantity\\\",\\\"warehouse\\\"],\\\"allowCreate\\\":true,\\\"allowEdit\\\":true,\\\"allowArchive\\\":true}],\\\"pageOrder\\\":[\\\"synthetic-inventory-records\\\"]}\""
+}

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import {deriveSuggestionFromAnswer,normalizeSuggestion,readSuggestionEnabled,shouldShowSuggestion,writeSuggestionEnabled} from '../src/client/composer-suggestion.ts'
+import {normalizeSuggestion,readSuggestionEnabled,shouldShowSuggestion,writeSuggestionEnabled} from '../src/client/composer-suggestion.ts'
 
 test('只有空且未聚焦、开关开着、本条未丢弃时才显示',()=>{
  const base={enabled:true,draft:'',focused:false,dismissedForAnswer:false,text:'继续，请把清单发我。'}
@@ -37,15 +37,4 @@ test('候选按 Codex 口径：整段可接受、换行压成单段、超长截�
  // 超长按上限截断
  assert.ok(normalizeSuggestion('x'.repeat(400))!.length<=200)
  assert.equal(normalizeSuggestion(undefined),null)
-})
-test('兜底来源只认助手明确提出的下一步，不猜业务内容',()=>{
- // 助手以"要不要…吗？"收尾 → 给一个可拒绝的肯定候选
- assert.equal(deriveSuggestionFromAnswer('清单已核对完。要不要我接着按前缀分组再出一版？'),'要，请继续。')
- // 助手要求提供材料 → 给"我把材料发给你"
- assert.equal(deriveSuggestionFromAnswer('请把清单原件发过来，我按六步跑完。'),'我把材料发给你。')
- // 助手问的是来源位置：不猜，返回 null（避免替用户编造事实）
- assert.equal(deriveSuggestionFromAnswer('这批清单从哪里取？'),null)
- // 普通陈述句收尾：不显示
- assert.equal(deriveSuggestionFromAnswer('本批核验已完成，结论可追溯。'),null)
- assert.equal(deriveSuggestionFromAnswer(''),null)
 })

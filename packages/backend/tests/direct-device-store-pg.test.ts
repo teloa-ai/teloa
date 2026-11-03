@@ -4,6 +4,7 @@ import {randomUUID,createHash} from 'node:crypto'
 import {Pool} from './postgres-test-lifecycle.ts'
 import {PostgreSqlContainer,type StartedPostgreSqlContainer} from '@testcontainers/postgresql'
 import {createDirectDeviceStore} from '../src/devices/direct-store.ts'
+import {createDevicePairing,type DevicePairingJob} from '../../harness-dsh/src/device-pairing.ts'
 let pool:Pool,container:StartedPostgreSqlContainer
 before(async()=>{container=await new PostgreSqlContainer('postgres:17-alpine').start();pool=new Pool({connectionString:container.getConnectionUri()})},{timeout:120000})
 after(async()=>{await pool?.end();await container?.stop()})
@@ -58,4 +59,31 @@ test('配对完成写入失败必须回滚凭据，取消后不能留下可连�
  await store.completePairing(secondPaired,{...input,id:second.id})
  assert.equal((await store.authorize(credentialDigest))?.allowApprovals,true)
  assert.equal((await store.readPairing(second.id) as {state:string}).state,'paired')
+})
+
+test('配对完成等待真实行锁时取消，事务不能登记凭据或覆盖取消状态',{timeout:15000},async()=>{
+ const {store,binding}=await fixture()
+ const pairing=createDevicePairing({secret:Buffer.alloc(32,11),host:'127.0.0.1',port:32101,serverName:'fixture.test',ca:'synthetic-certificate',
+  target:async()=>({assistantSessionId:binding.assistantSessionId,contextVersion:1}),
+  save:job=>store.savePairing(job),load:async id=>await store.readPairing(id) as DevicePairingJob|undefined,
+  finish:(job,input,assertCurrent)=>store.completePairing(job,input,assertCurrent),
+ })
+ const job=await pairing.begin({allowApprovals:true}),provision=await pairing.provision(job.id,{nonce:randomUUID(),confirmed:true})
+ const credentialDigest=hash(JSON.parse(provision.configuration).credential),blocker=await pool.connect()
+ try{
+  await blocker.query('begin');await blocker.query('select id from teloa_device_pairing_jobs where id=$1 for update',[job.id])
+  const pending=pairing.complete(job.id,provision.digest),outcome=pending.then(value=>({value,error:undefined}),error=>({value:undefined,error}))
+  let waiting=false
+  for(let i=0;i<100&&!waiting;i++){
+   waiting=Number((await pool.query("select count(*) as n from pg_stat_activity where pid<>pg_backend_pid() and wait_event_type='Lock' and query like 'select record from teloa_device_pairing_jobs%for update'")).rows[0].n)>0
+   if(!waiting)await new Promise(resolve=>setTimeout(resolve,10))
+  }
+  assert.equal(waiting,true,'必须实际进入 store 的 PostgreSQL 行锁等待')
+  const cancelled=pairing.cancel(job.id),cancelOutcome=cancelled.then(value=>({value,error:undefined}),error=>({value:undefined,error}))
+  await blocker.query('commit')
+  const result=await outcome,cancel=await cancelOutcome
+  assert.equal(result.error?.code,'teloa/forbidden');assert.equal(cancel.error,undefined);assert.equal(cancel.value?.state,'cancelled')
+  assert.equal(await store.authorize(credentialDigest),null)
+  assert.equal((await store.readPairing(job.id) as DevicePairingJob).state,'cancelled')
+ }finally{await blocker.query('rollback');blocker.release()}
 })

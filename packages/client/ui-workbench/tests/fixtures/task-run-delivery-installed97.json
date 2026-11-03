@@ -1,0 +1,58 @@
+[
+  {
+    "id": "08a97bd2-d285-4891-8f2e-f185f0ed584d",
+    "taskId": "b268538d-b490-4133-ab39-0489ec02a957",
+    "roleId": "5dd5f65c-d862-4112-b9b0-bf866a6608f5",
+    "taskVersion": 1,
+    "roleVersion": 1,
+    "linkVersion": 1,
+    "sessionId": "2875a0d9-b68e-4495-b128-ca60c8d78dc0",
+    "nativeRequestId": "9bc9c610-9b78-4fcb-8ab2-016b732ed531",
+    "state": "ended",
+    "evidence": {
+      "state": "ended",
+      "turn": 1,
+      "messageSeq": 5,
+      "endSeq": 20,
+      "reason": "completed"
+    },
+    "stopRequestedAt": null,
+    "allowedTools": [],
+    "skills": [],
+    "knowledge": [],
+    "memory": [],
+    "inputText": "{\"task\":{\"id\":\"b268538d-b490-4133-ab39-0489ec02a957\",\"version\":1,\"title\":\"AD09-97-partial-delivery日结\",\"goal\":\"核对今天的合成工作证据\",\"scope\":\"general\"},\"role\":{\"id\":\"5dd5f65c-d862-4112-b9b0-bf866a6608f5\",\"version\":1,\"name\":\"AD09合成岗位\",\"duty\":\"核对合成故障恢复\",\"dataScope\":\"本lane合成资料\",\"executionScope\":\"仅输出小结\"},\"skills\":[]}",
+    "createdAt": "2026-10-30T09:00:00.000Z",
+    "deliveryCheck": {
+      "state": "unknown"
+    }
+  },
+  {
+    "id": "85a54e54-c740-4330-b7f4-8f70445ad7d2",
+    "taskId": "7e649b62-45c9-4f1a-9dc6-fc5ea9680516",
+    "roleId": "718587db-c6ca-4309-affa-568bb7e3a040",
+    "taskVersion": 1,
+    "roleVersion": 1,
+    "linkVersion": 1,
+    "sessionId": "c31c0095-f11f-4874-8da7-d7de8c6b1a73",
+    "nativeRequestId": "31e82a30-42f7-4e7b-947e-8f65f3ef1cc3",
+    "state": "ended",
+    "evidence": {
+      "state": "ended",
+      "turn": 1,
+      "messageSeq": 5,
+      "endSeq": 25,
+      "reason": "completed"
+    },
+    "stopRequestedAt": null,
+    "allowedTools": [],
+    "skills": [],
+    "knowledge": [],
+    "memory": [],
+    "inputText": "{\"task\":{\"id\":\"7e649b62-45c9-4f1a-9dc6-fc5ea9680516\",\"version\":1,\"title\":\"AD09-97-same-run-new-call-recovery日结\",\"goal\":\"核对今天的合成工作证据\",\"scope\":\"general\"},\"role\":{\"id\":\"718587db-c6ca-4309-affa-568bb7e3a040\",\"version\":1,\"name\":\"AD09合成岗位\",\"duty\":\"核对合成故障恢复\",\"dataScope\":\"本lane合成资料\",\"executionScope\":\"仅输出小结\"},\"skills\":[]}",
+    "createdAt": "2026-10-30T09:00:00.000Z",
+    "deliveryCheck": {
+      "state": "saved"
+    }
+  }
+]

@@ -1,10 +1,11 @@
 import {test,before,after} from 'node:test'
 import assert from 'node:assert/strict'
-import {mkdtemp,writeFile,rm} from 'node:fs/promises'
+import {mkdtemp,writeFile,rm,readFile} from 'node:fs/promises'
 import {fileURLToPath} from 'node:url'
 import {join} from 'node:path'
 import {build} from 'vite'
 import {aboutContactBuildProfile} from '../about-contact-profile.ts'
+import workbenchBuild from '../tsdown.config.ts'
 // @ts-expect-error 既有独立无界面浏览器夹具。
 import {launchOptions,loadPlaywright} from './fixtures/load-playwright.mjs'
 
@@ -19,7 +20,7 @@ window.versionFixture={configure,mount:async(locale,product)=>{await configure(p
 
 before(async()=>{
  temp=await mkdtemp(join(root,'.runtime-community-presentation-'));await writeFile(join(temp,'fixture.tsx'),entry)
- const result=await build({configFile:false,root,logLevel:'error',resolve:{alias:aboutContactBuildProfile('community').alias},define:{'process.env.NODE_ENV':'"development"',__TELOA_VERSION__:'"0.2.0-alpha.7"'},build:{write:false,minify:false,rollupOptions:{treeshake:{moduleSideEffects:false}},lib:{entry:join(temp,'fixture.tsx'),name:'CommunityPresentationFixture',formats:['iife']}}})
+ const result=await build({configFile:false,root,logLevel:'error',resolve:{alias:aboutContactBuildProfile('community').alias},define:{'process.env.NODE_ENV':'"development"',__TELOA_VERSION__:workbenchBuild[1]!.define!.__TELOA_VERSION__!},build:{write:false,minify:false,rollupOptions:{treeshake:{moduleSideEffects:false}},lib:{entry:join(temp,'fixture.tsx'),name:'CommunityPresentationFixture',formats:['iife']}}})
  const bundle=Array.isArray(result)?result[0]:result;assert.ok(bundle&&'output'in bundle);script=bundle.output.find(item=>item.type==='chunk')!.code
  browser=await loadPlaywright().chromium.launch(launchOptions())
 })
@@ -32,6 +33,8 @@ test('关于页按三个版本的适用对象与使用方式比较，共用能�
  await page.route(url,(route:any)=>route.fulfill({contentType:'text/html',body:'<div id="root"></div>'}))
  await page.goto(url);await page.addScriptTag({content:script})
  await page.evaluate(()=>(window as any).versionFixture.mount('zh-CN','Free'))
+ const release=JSON.parse(await readFile(new URL('../../../cli/package.json',import.meta.url),'utf8'))
+ assert.equal(await page.locator('#about [class*="release"] > span').first().textContent(),'v'+release.version,'实际客户端构建定义必须显示本次 CLI 发行版本')
  const table=page.getByRole('table',{name:'版本定位',exact:true})
  assert.deepEqual(await table.getByRole('columnheader').allTextContents(),['版本','适用对象','使用方式'])
  assert.equal(await table.locator('tbody tr').count(),3)

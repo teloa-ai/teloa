@@ -22,27 +22,27 @@ test('知识空间展开后可直接打开真实知识页，不要求先创建�
   page.setDefaultTimeout(8000);page.on('pageerror',(cause:Error)=>errors.push(cause.message))
   await page.route('**/*',(route:any)=>{const url=new URL(route.request().url());return url.origin==='http://127.0.0.1:3199'&&url.pathname==='/library-test'?route.fulfill({contentType:'text/html',body:html}):route.abort()})
   await page.goto('http://127.0.0.1:3199/library-test?'+query)
-  const directory=page.locator('[data-teloa-pane="directory"]'),content=page.locator('main[data-teloa-pane="detail"]')
-  await directory.locator('summary[data-teloa-entry="root"]').waitFor()
+  const directory=page.locator('[data-teloa-pane="directory"]'),content=page.locator('[data-teloa-pane="detail"]')
+  await directory.getByRole('button',{name:'收起文件树: 个人空间',exact:true}).waitFor().catch(async (error:unknown)=>{await context.close();throw error})
   return {context,page,directory,content,errors}
  }
  await t.test('仅根节点直属文档时展开可见，点页读取正文并记录访问',async()=>{
   const {context,page,directory,content,errors}=await setup('root-page');try{
-   const root=directory.locator('summary[data-teloa-entry="root"]'),document=directory.getByRole('button',{name:'产品定位',exact:true})
+   const root=directory.getByRole('button',{name:/^(收起|展开)文件树: 个人空间$/}),document=directory.getByRole('button',{name:'产品定位',exact:true})
    await document.waitFor({state:'visible'});await root.click();assert.equal(await document.isVisible(),false);await root.click();await document.waitFor({state:'visible'})
    await document.click();await content.getByText('帮助用户更简单地完成工作。',{exact:true}).waitFor()
    assert.equal(await document.getAttribute('aria-current'),'page');await page.screenshot({path:join(report,'knowledge-space-root-page.png')})
-   await content.getByRole('button',{name:'返回列表',exact:true}).click();await content.getByRole('table').waitFor();assert.equal(await content.getByRole('row').count(),2)
+   await page.getByRole('button',{name:'返回列表',exact:true}).click();await content.getByRole('table').waitFor();assert.equal(await content.getByRole('row').count(),2)
    await page.getByRole('button',{name:'最近访问',exact:true}).click();assert.equal(await content.getByRole('row').count(),2);assert.deepEqual(errors,[])
    evidence.push({case:'root-projected',readVersions:await page.evaluate(()=>(window as any).__libraryReads),errors})
   }finally{await context.close()}
  })
  await t.test('嵌套文件夹保留目录层级，展开页可打开且未保存修改仍受保护',async()=>{
   const {context,page,directory,content,errors}=await setup('');try{
-   const folder=directory.locator('summary[data-teloa-entry="folder"]'),document=directory.getByRole('button',{name:'产品定位',exact:true})
+   const folder=directory.getByRole('button',{name:/^(收起|展开)文件树: 产品资料$/}),document=directory.getByRole('button',{name:'产品定位',exact:true})
    await folder.click();assert.equal(await document.isVisible(),false);await folder.click();await document.click();await content.getByText('帮助用户更简单地完成工作。',{exact:true}).waitFor()
-   await content.getByRole('tab',{name:'编辑',exact:true}).click();await content.getByRole('textbox',{name:'Markdown 正文',exact:true}).fill('# 保留未保存草稿')
-   await directory.getByRole('button',{name:'设计规范',exact:true}).click();await page.getByText('资料有未保存的修改。离开会丢弃这些修改。',{exact:true}).waitFor();await page.getByRole('button',{name:'继续编辑',exact:true}).click()
+   await content.getByRole('button',{name:'修改',exact:true}).click();await content.getByRole('tab',{name:'编辑',exact:true}).click();await content.getByRole('textbox',{name:'Markdown 正文',exact:true}).fill('# 保留未保存草稿')
+   await directory.getByRole('button',{name:'设计规范',exact:true}).click();await content.getByRole('heading',{name:'设计规范',exact:true}).waitFor();await directory.getByRole('button',{name:'产品定位',exact:true}).click();await content.getByRole('button',{name:'修改',exact:true}).click()
    assert.equal(await content.getByRole('textbox',{name:'Markdown 正文',exact:true}).inputValue(),'# 保留未保存草稿');assert.deepEqual(errors,[])
    evidence.push({case:'nested-dirty-guard',errors})
   }finally{await context.close()}

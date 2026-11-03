@@ -166,6 +166,16 @@ test('外部语言同时覆盖 DSH 设置页的一级导航与通用配置行', 
   dispose()
 })
 
+test('繁体快捷键编辑器和跨插件命令目录使用同一语言，保留动态命令与冲突参数',()=>{
+ for(const region of ['zh-Hant','zh-HK','zh-TW']){
+  const dsh=new TestLocale(),{dispose}=installTeloaI18n(dsh,{browserLocales:[region]});dsh.setLocale(region)
+  const t=dsh.bind('shortcuts');assert.equal(t('title'),'快速鍵');assert.equal(t('edit-label',{command:'新增會話'}),'修改「新增會話」快速鍵');assert.equal(t('conflict',{commands:'搜尋會話'}),'已由「搜尋會話」使用')
+  for(const key of ['record-help','macos-web-help','windows-web-help','reset-description','read','invalid','future','write-failed','close','application','approval','empty'])assert.notEqual(t(key),key)
+  assert.equal(dsh.bind('workspace')('session.new'),'新增會話');assert.equal(dsh.bind('conversation')('shortcut.mention'),'開啟引用選單');assert.equal(dsh.bind('sidebarRight')('command.refresh'),'重新整理目前頁面');assert.equal(dsh.bind('approval')('allowOnce'),'允許一次');assert.equal(dsh.bind('open-in-app')('open.tooltip'),'在本機開啟')
+  dispose();assert.equal(dsh.localeIds().includes(region),false)
+ }
+})
+
 test('归档会话分区的外部语言覆盖全部词条，且不出现裸工作区术语', () => {
   const dsh = new TestLocale()
   const {dispose} = installTeloaI18n(dsh, {browserLocales: ['zh-HK']})

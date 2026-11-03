@@ -13,7 +13,7 @@ export type GroupRoutingOutboxPorts={
  report:(code:string,item:GroupDispatchItem)=>void
  configurationFailed?:(owner:string,item:GroupDispatchItem,signal:AbortSignal)=>Promise<void>
 }
-const delivered=(state:string|null)=>state!==null&&['accepted','active','ended','withdrawn','configuration_failed'].includes(state)
+const delivered=(state:string|null)=>state!==null&&['accepted','active','ended','withdrawn','configuration_failed','submission_unknown'].includes(state)
 const blocked=(error:unknown)=>error instanceof WorkError&&['teloa/forbidden','teloa/invalid-input','teloa/storage-corrupt','teloa/conflict','teloa/version-conflict'].includes(error.code)
 
 /** 每位接收者分别恢复。未知提交只核对原 Run；prepared 才证明未取得原生发送权。 */

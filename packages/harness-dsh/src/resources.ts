@@ -16,10 +16,19 @@ import {createHostShutdown} from './host-shutdown.ts'
 import {resolveTeloaRuntime} from './runtime-paths.ts'
 import {securityEnv} from './launch-env.ts'
 import {readSessionEvents} from './session-events.ts'
+import type {ConversationBusinessScopeLease} from './business-scope-context.ts'
+export type ResourceConversationScopeReader=(sessionId:string,signal:AbortSignal)=>Promise<ConversationBusinessScopeLease|undefined>
+/** 只接受宿主真实会话的单业务lease；未选择业务或受管历史仍沿原绑定范围。 */
+export async function resourceConversationScope(owner:string,binding:{scopeIds:readonly string[]},sessionId:string,signal:AbortSignal,readScope?:ResourceConversationScopeReader){
+ const lease=await readScope?.(sessionId,signal)
+ if(lease&&(lease.context&&lease.context.sessionId!==sessionId||lease.actor.ownerId!==owner||lease.actor.scopeIds.length!==1||lease.actor.scopeIds[0]!== (lease.scope??'general')))throw new WorkError('teloa/forbidden','资料读取的业务归属不可核验。')
+ await lease?.assertCurrent();signal.throwIfAborted()
+ return {actor:{ownerId:owner,kind:'agent' as const,scopeIds:lease?[...lease.actor.scopeIds]:[...binding.scopeIds]},assertCurrent:async()=>{await lease?.assertCurrent();signal.throwIfAborted()}}
+}
 
-export const resourceEndpoints=['resources/register-local-material','resources/read-content','resources/sources','resources/list','resources/candidates','resources/create','resources/update','resources/prepare-adoption','resources/apply','resources/withdraw','resources/recovery','resources/history','resources/usage','knowledge/tree','knowledge/create-folder','knowledge/rename-node','knowledge/move-node','knowledge/list-versions','knowledge/read-version','knowledge/revise-resource','knowledge/restore-resource','knowledge/revise-standalone','knowledge/restore-standalone']
+export const resourceEndpoints=['resources/register-local-material','resources/read-content','resources/sources','resources/list','resources/candidates','resources/create','resources/update','resources/prepare-adoption','knowledge/copy-preview','knowledge/copy','knowledge/copy-origin','knowledge/local-copy-preview','knowledge/local-copy','knowledge/local-copy-origin','resources/apply','resources/withdraw','resources/recovery','resources/history','resources/usage','knowledge/tree','knowledge/create-folder','knowledge/rename-node','knowledge/move-node','knowledge/list-versions','knowledge/read-version','knowledge/revise-resource','knowledge/restore-resource','knowledge/revise-standalone','knowledge/restore-standalone']
 const empty=(value:unknown)=>{if(!isRecord(value)||Object.keys(value).length)throw new WorkError('teloa/invalid-input','此查询不接受其他参数。')}
-export function registerResources(ctx:Context,projectRoot:string,owner:string,conversations:ConversationService,readHistory:(sessionId:string)=>Promise<Session>,localMaterialPorts?:AuthorizedLocalMaterialPorts){
+export function registerResources(ctx:Context,projectRoot:string,owner:string,conversations:ConversationService,readHistory:(sessionId:string)=>Promise<Session>,localMaterialPorts?:AuthorizedLocalMaterialPorts,readScope?:ResourceConversationScopeReader){
   // 运行目录与部署形态只认启动时继承的进程环境（launch-env.ts）：决定数据库口令文件位置与数据库主机白名单。
   const trusted=securityEnv(ctx),runtimeRoot=resolveTeloaRuntime(projectRoot,trusted)
   let loading:ReturnType<typeof openResourceDatabase>|undefined,disposed=false,localMaterials:AuthorizedLocalMaterialCatalog|undefined
@@ -38,10 +47,12 @@ export function registerResources(ctx:Context,projectRoot:string,owner:string,co
   }
   const candidates=async(sessionId:string)=>{
     const binding=await conversations.bySession(owner,sessionId)
-    const {service}=await get(),actor=await human(),directory=await service.list(actor)
-    const rows=directory.resources.filter(resource=>resource.status==='active'&&resource.scopeIds.every(scope=>binding.scopeIds.includes(scope as 'general')))
+    const selection=await resourceConversationScope(owner,binding,sessionId,AbortSignal.timeout(10000),readScope)
+    const {service}=await get(),actor=selection.actor,directory=await service.list(actor)
+    const rows=directory.resources.filter(resource=>resource.status==='active'&&resource.scopeIds.every(scope=>actor.scopeIds.includes(scope)))
     // 超过整段进提示词上限的资料只能加入本地检索；发出去也会被拒，所以不列为消息引用候选。
     const sizes=await service.fullTextBytes(actor,rows)
+    await selection.assertCurrent()
     return rows.filter(resource=>(sizes.get(resource.id)??0)<=promptFullTextMaxBytes)
   }
   const handle=async(endpoint:string,payload:unknown)=>{
@@ -53,7 +64,7 @@ export function registerResources(ctx:Context,projectRoot:string,owner:string,co
       if(session.id!==sessionId)throw new WorkError('teloa/invalid-host-response','原生历史与目标会话不一致。')
       return endpoint==='resources/history'?resourceHistoryPage(owner,sessionId,readSessionEvents(session),payload.beforeSeq as number|undefined,session.inheritedEventCount):recoveryPage(sessionId,readSessionEvents(session),payload.beforeSeq as number|undefined,session.inheritedEventCount)
     }
-    const {service,knowledge,knowledgeTree,knowledgeResources}=await get(),humanActor=await human()
+    const {service,knowledge,knowledgeTree,knowledgeResources,knowledgeCopies,localKnowledgeCopies}=await get(),humanActor=await human()
     switch(endpoint){
       case 'resources/usage':{
         if(!isRecord(payload)||Object.keys(payload).some(key=>!['resourceId','version','cursor'].includes(key))||!resourceId(payload.resourceId)||!resourceVersion(payload.version))throw new WorkError('teloa/invalid-input','资料引用查询参数不正确。')
@@ -73,6 +84,12 @@ export function registerResources(ctx:Context,projectRoot:string,owner:string,co
       case 'resources/prepare-adoption':return service.prepareAdoption(humanActor,payload)
       case 'resources/apply':return service.apply(humanActor,payload)
       case 'resources/withdraw':return service.withdraw(humanActor,payload)
+      case 'knowledge/copy-preview':return knowledgeCopies.preview(humanActor,payload)
+      case 'knowledge/copy':return knowledgeCopies.create(humanActor,payload)
+      case 'knowledge/copy-origin':return knowledgeCopies.origin(humanActor,payload)
+      case 'knowledge/local-copy-preview':return localKnowledgeCopies.preview(humanActor,payload)
+      case 'knowledge/local-copy':return localKnowledgeCopies.create(humanActor,payload)
+      case 'knowledge/local-copy-origin':return localKnowledgeCopies.origin(humanActor,payload)
       case 'knowledge/tree':return knowledgeTree.list(humanActor,payload)
       case 'knowledge/create-folder':return knowledgeTree.createFolder(humanActor,payload)
       case 'knowledge/rename-node':return knowledgeTree.renameNode(humanActor,payload)
@@ -96,9 +113,10 @@ export function registerResources(ctx:Context,projectRoot:string,owner:string,co
       execute:async(args,exec)=>{
         if(!exec.agent)throw new WorkError('teloa/not-bound','资料操作需要已绑定的工作会话。')
         const binding=await conversations.bySession(owner,exec.agent.session.id)
-        const principal:ResourceActor={ownerId:owner,kind:'agent',scopeIds:binding.scopeIds},{service}=await get()
+        const selection=await resourceConversationScope(owner,binding,exec.agent.session.id,exec.signal,readScope),principal=selection.actor,{service}=await get()
         empty(args)
         const value=operation==='sources'?await service.sourceDirectory(principal):await service.list(principal)
+        await selection.assertCurrent()
         return JSON.stringify(value)
       },
     }))
@@ -110,7 +128,10 @@ export function registerResources(ctx:Context,projectRoot:string,owner:string,co
       const messages=await appendResourceContext(decision.messages,async input=>{
         const binding=await conversations.bySession(owner,agent.session.id)
         const {service}=await get()
-        return service.resolve({ownerId:owner,kind:'agent',scopeIds:binding.scopeIds},{sessionId:agent.session.id,scopeIds:binding.scopeIds},input,signal)
+        const selection=await resourceConversationScope(owner,binding,agent.session.id,signal,readScope)
+        const value=await service.resolve(selection.actor,{sessionId:agent.session.id,scopeIds:selection.actor.scopeIds},input,signal)
+        await selection.assertCurrent()
+        return value
       },signal)
       return {...decision,messages}
     }catch(error){
@@ -119,5 +140,10 @@ export function registerResources(ctx:Context,projectRoot:string,owner:string,co
       throw new LlmError(error instanceof WorkError?error.message:'工作资料读取失败，请检查来源后重试。','teloa/resources/'+code,{cause:error})
     }
   })
-  return {handle,candidates,database:get,human,beforeDatabaseClose:shutdown.beforeClose}
+  const fileBoundaries=async()=>{
+    await get()
+    if(!localMaterials)throw new WorkError('teloa/unavailable','本机资料读取边界尚未接入。')
+    return localMaterials.fileBoundaries(await human())
+  }
+  return {handle,candidates,database:get,human,fileBoundaries,beforeDatabaseClose:shutdown.beforeClose}
 }

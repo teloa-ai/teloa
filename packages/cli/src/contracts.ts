@@ -4,4 +4,5 @@ export type InstallState={schema:'teloa.install/v1';id:string;version:string;lay
 export type ProcessIdentity={pid:number;startedAt:string;nonce:string;installId:string}
 export type Status={app:'stopped'|'starting'|'ready'|'failed'|'unknown';database:'ready'|'unavailable'|'unknown';version:string;port:number;activeWork:number}
 export type ReleaseManifest={schema:'teloa.release/v1';version:string;dshVersion:string;dataVersion:number;compatibleDataVersions:number[];files:Array<{path:string;sha256:string}>}
-export type BackupManifest={schema:'teloa.backup/v1';id:string;createdAt:string;installId:string;version:string;dataVersion:number;files:Array<{path:string;sha256:string}>;externalWorkspaceIncluded:false}
+export type BackupManifest={schema:'teloa.backup/v1';id:string;createdAt:string;installId:string;version:string;dataVersion:number;files:Array<{path:string;sha256:string;symlink?:string}>;externalWorkspaceIncluded:false}
+export type SubmissionMaintenanceBackup=Omit<BackupManifest,'schema'>&{schema:'teloa.maintenance-backup/v1';home:string;bindingSha256:string}

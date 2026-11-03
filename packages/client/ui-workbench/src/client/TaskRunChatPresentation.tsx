@@ -1,7 +1,7 @@
 import {createContext,createElement,useContext,useEffect,useState,useSyncExternalStore,type ComponentType} from 'react'
 import type {PropsRuntime,StoredEntry} from '@deepseek-ai/dsh-client-ui-slots'
 import type {TaskRunChatPresentation} from './task-run-api.js'
-import {projectTaskRunChatNode,TaskRunChatPresentationDirectory} from './task-run-chat-presentation.js'
+import {projectTaskRunChatNode,taskRunSessionTitle,TaskRunChatPresentationDirectory} from './task-run-chat-presentation.js'
 import css from './TaskRunChatPresentation.module.css'
 import {useI18n} from './i18n/provider.js'
 import {assistantConversationTitle} from './assistant-conversation.js'
@@ -16,8 +16,9 @@ export const AssistantConversationTitleContext=createContext<{sessionId:string;n
 
 /** 标题只改变原面包屑内的文字；导航、原生 actions、视图与右栏仍由官方承载。 */
 export function TaskRunConversationTitle({lineageSessionId,displayTitle,directory}:PropsRuntime<'conversation.session.header.title'>&{directory:TaskRunChatPresentationDirectory}){
- const assistant=useContext(AssistantConversationTitleContext),presentation=usePresentation(directory.forSession(lineageSessionId))
- return <>{presentation?.title??(assistant?.sessionId===lineageSessionId&&displayTitle===assistantConversationTitle?assistant.name:displayTitle)}</>
+ const assistant=useContext(AssistantConversationTitleContext),source=directory.forSession(lineageSessionId),presentation=usePresentation(source)
+ const title=assistant?.sessionId===lineageSessionId&&displayTitle===assistantConversationTitle?assistant.name:displayTitle
+ return <>{source.getSnapshot().status==='ready'&&!presentation?title:taskRunSessionTitle(title,lineageSessionId,presentation)}</>
 }
 
 export type NativeUserRenderer={component:ComponentType<UserProps>;live:()=>boolean}

@@ -8,6 +8,8 @@ export const workErrorCodes = [
   'teloa/storage-corrupt',
   'teloa/source-unavailable',
   'teloa/invalid-host-response',
+  // 正常空工作日无需生成小结，与证据源不可读区分。
+  'teloa/no-work-evidence',
   // 正式码之后追加：交付需本人复核
   'teloa/delivery-review-required',
   // 受管员工本轮重复本地权限拒绝，无成功业务进展时停止继续派发模型。

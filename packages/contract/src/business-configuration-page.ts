@@ -167,8 +167,17 @@ export function readBusinessConfigurationPreviewResponse(value:unknown):Business
  return r as BusinessConfigurationPreviewResponse
 }
 export type BusinessConfigurationPageRequest={scope:string;pageId:string;timeRange?:BusinessTimeRange}|{sessionId:string;draftId:string;expectedRevision:number;pageId:string;timeRange?:BusinessTimeRange}
+export type BusinessBuilderGenerationMode='preview'|'assisted'
+export type BusinessBuilderGenerationState={sessionId:string;draftId:string;revision:number;mode:BusinessBuilderGenerationMode}
+export function readBusinessBuilderGenerationState(value:unknown):BusinessBuilderGenerationState{
+ const r=taskInput(value,['sessionId','draftId','revision','mode'])
+ readBusinessConversationSession({sessionId:r.sessionId})
+ if(!uuid(r.draftId)||!positive(r.revision)||(r.mode!=='preview'&&r.mode!=='assisted'))throw invalid()
+ return r as BusinessBuilderGenerationState
+}
 export function readBusinessBuilderRequest(endpoint:string,input:unknown):Record<string,unknown>{
  const keys:Record<string,string[]>={
+  'business-configuration/generation-mode':isRecord(input)&&input.action==='set'?['sessionId','draftId','action','requestId','expectedRevision','mode']:['sessionId','draftId','action'],
   'business-configuration/draft':['sessionId','draftId'],
   'business-configuration/discard':isRecord(input)&&Object.hasOwn(input,'requestId')?['requestId','draftId','expectedRevision']:['sessionId','draftId','expectedRevision'],
   'business-configuration/preview':['sessionId','draftId','expectedRevision'],
@@ -190,6 +199,8 @@ export function readBusinessBuilderRequest(endpoint:string,input:unknown):Record
   else if(key==='scope'){if(!scope(v))throw invalid()}
   else if(key==='pageId'){if(!id(v))throw invalid()}
   else if(key==='previewReceipt'){if(!hash(v))throw invalid()}
+  else if(key==='action'){if(v!=='read'&&v!=='set')throw invalid()}
+  else if(key==='mode'){if(v!=='preview'&&v!=='assisted')throw invalid()}
  }
  return r
 }

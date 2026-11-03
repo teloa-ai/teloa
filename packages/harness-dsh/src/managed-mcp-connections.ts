@@ -825,8 +825,9 @@ export function createManagedMcpConnectionHandler(
    const conn=(await loadState(runtimeRoot)).connections.find(item=>item.id===input.id)
    if(!conn)throw invalid('受管 MCP 连接不存在。')
    if(!conn._customDefinition)return {schema:'teloa.mcp-result/v1',connection:toRecord(conn)}
-   const definition=readCustomMcpDefinition(conn._customDefinition)
-   return {schema:'teloa.mcp-preview/v1',connection:toRecord(conn),definition,definitionHash:customMcpDefinitionHash(definition),authorizationConfigured:conn._customAuthorization?.definitionHash===customMcpDefinitionHash(definition),readiness:conn.status,next:'修改须携带当前 definitionHash；连接与断开是独立动作。'}
+   const definition=readCustomMcpDefinition(conn._customDefinition),definitionHash=customMcpDefinitionHash(definition),authorizationConfigured=conn._customAuthorization?.definitionHash===definitionHash
+   // 已授权范围与当前发现工具分开；断开不撤销授权，也不广告工具仍在线。
+   return {schema:'teloa.mcp-preview/v1',connection:toRecord(conn),definition,definitionHash,authorizationConfigured,...(authorizationConfigured?{authorizedReadOnlyTools:[...conn._customAuthorization!.readOnlyTools]}:{}),readiness:conn.status,next:'修改须携带当前 definitionHash；连接与断开是独立动作。'}
   }
 
   if(endpoint==='mcp-connections/update-custom'){
@@ -961,12 +962,15 @@ export function createManagedMcpConnectionHandler(
     const submitted=taskInput(proposed,keys),credentials:Record<string,string>={}
     for(const key of keys){const value=submitted[key];if(value===undefined&&definition.auth?.requirement==='any')continue;if(typeof value!=='string'||!value.trim()||value!==value.trim()||value.length>8192||/[\x00-\x1f\x7f]/.test(value))throw invalid('请通过安全认证控件按声明填写有效认证值。');credentials[key]=value}
     if(definition.auth?.requirement==='any'&&!Object.keys(credentials).length)throw invalid('请通过安全认证控件填写至少一项有效认证值。')
+    const kind=definition.auth?'headers':keys.length?'bearer':'none',authorization=current._customAuthorization,readOnlyTools=input.readOnlyTools as string[]
+    // 空控件续用同一授权：在原连接锁内核对后保留身份、凭据槽及仍可用的连接。
+    if(reuse&&authorization?.kind===kind&&authorization.readOnlyTools.length===readOnlyTools.length&&readOnlyTools.every(name=>authorization.readOnlyTools.includes(name)))return toRecord(current)
     await slots.assertWritable(current.serverName)
     await releaseClient(current.serverName)
     await slots.replace(current.serverName,credentials)
     return updateState(runtimeRoot,state=>{
      const row=state.connections.find(item=>item.id===input.id)!
-     row._customAuthorization={kind:definition.auth?'headers':keys.length?'bearer':'none',readOnlyTools:[...input.readOnlyTools as string[]],definitionHash:input.expectedDefinitionHash as string,generation:randomUUID()}
+     row._customAuthorization={kind,readOnlyTools:[...readOnlyTools],definitionHash:input.expectedDefinitionHash as string,generation:randomUUID()}
      row._credentialsStored=true;row.status='saved';row.updatedAt=new Date().toISOString();delete row.tools;delete row.errorMessage;delete row.errorCode
      return toRecord(row)
     })

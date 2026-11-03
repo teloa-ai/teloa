@@ -1,3 +1,4 @@
+import {planSkipReasonKeys} from './plan-schedule-summary.js'
 import {ToolbarIconButton} from './ToolbarIconButton.js'
 import {RefreshCw,ArrowUpRight} from 'lucide-react'
 import {useEffect,useRef,useState} from 'react'
@@ -12,7 +13,6 @@ import light from './light-actions.module.css'
 
 type Props={planId:string;planVersion:number;api:Pick<PlanApi,'skips'>;openTask:(taskId:string)=>void;face?:'timeline';onPage?:(page:PlanSkipHistoryPage)=>void}
 type ViewState={key:string;page?:PlanSkipHistoryPage;loading:boolean;more:boolean;error:string;errorPhase?:'first'|'more'}
-const reasons={'previous-pending':'plan.schedule.skipPending','previous-task-unfinished':'plan.schedule.skipRunning'} as const
 
 export function PlanSkipHistory({planId,planVersion,api,openTask,face,onPage}:Props){
  const {locale,t,dateTime}=useI18n(),stamp=(value:string)=>dateTime(value,{year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'})
@@ -40,9 +40,9 @@ export function PlanSkipHistory({planId,planVersion,api,openTask,face,onPage}:Pr
   {loading&&!page&&<p role="status">{t('planSkip.loading')}</p>}
   {!!page?.errors?.length&&<p className={css.corrupt} role="status">{t('planSkip.corrupt',{count:page.errors.length})}</p>}
   <div className={css.list}>{page?.items.map(item=><article className={css.item} key={`${item.skippedAt}:${item.configVersion}:${item.occurrenceId}`}>
-   <div className={css.heading}><strong>{t(reasons[item.reason])}</strong><span>{t('plan.execution.config',{version:item.configVersion})}</span></div>
+   <div className={css.heading}><strong>{t(planSkipReasonKeys[item.reason])}</strong><span>{t('plan.execution.config',{version:item.configVersion})}</span></div>
    <small>{t('planSkip.scheduled')} <time dateTime={item.scheduledAt}>{stamp(item.scheduledAt)}</time> · {t('planSkip.recorded')} <time dateTime={item.skippedAt}>{stamp(item.skippedAt)}</time></small>
-   <small>{t('planSkip.ids',{occurrence:item.occurrenceId,claim:item.blockingClaimId})}</small>
+   {item.blockingClaimId&&<small>{t('planSkip.ids',{occurrence:item.occurrenceId,claim:item.blockingClaimId})}</small>}
    {item.taskId&&<button type="button" className={light.link} onClick={()=>openTask(item.taskId!)}>{t('plan.schedule.openBlockingTask')}<ArrowUpRight size={13} aria-hidden/></button>}
   </article>)}</div>
   {page&&!page.items.length&&!page.errors?.length&&!loading&&!current?.error&&<p>{t('planSkip.empty')}</p>}

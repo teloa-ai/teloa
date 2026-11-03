@@ -4,6 +4,7 @@ import {WorkError} from '@teloa/contract'
 import {taskRunTeamMessageKey} from './task-run-team-records.ts'
 import type {GoalObservationContext} from '@teloa/contract'
 import {nativeInputIdentity} from './native-input-access.ts'
+export {isTaskRunReconcileEndReason} from '@teloa/contract'
 
 /** 原生 source 只是路由提示；必须有同 Run 的持久受理票据和精确 Inbox 提交事实。 */
 function ownsGoalMessage(events:readonly SessionEvent[],event:Extract<SessionEvent,{type:'user/message'}>,context?:GoalObservationContext):boolean{

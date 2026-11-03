@@ -1,3 +1,4 @@
+import {openArtifactReaderDrawer,closeArtifactReaderDrawer} from './fixtures/artifact-reader-navigation.ts'
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import {mkdtemp,readFile,writeFile,rm} from 'node:fs/promises'
@@ -29,7 +30,7 @@ test('空成果与旧整理导航均保持预览，迟到的原成果可读且�
  const page=await browser.newPage({viewport:{width:1440,height:960}});t.after(()=>page.close());page.setDefaultTimeout(3000)
  const errors:string[]=[];page.on('pageerror',(error:Error)=>errors.push(error.message));await page.route('**/*',(route:any)=>route.abort())
  await page.setContent('<!doctype html><html lang="zh-CN"><body><div id="root"></div></body></html>');await page.addStyleTag({content:bundle.output.flatMap(item=>item.type==='asset'&&item.fileName.endsWith('.css')?[String(item.source)]:[]).join('\n')});await page.addScriptTag({content:bundle.output.find(item=>item.type==='chunk')!.code})
- const panel=page.getByRole('dialog')
+ const panel=page.locator('dialog').first()
  await panel.waitFor();assert.equal(await panel.getByRole('textbox').count(),0);assert.equal(await panel.getByRole('button',{name:'整理成果',exact:true}).count(),0)
  await panel.getByRole('button',{name:'放大',exact:true}).click();await page.keyboard.press('Escape');assert.equal(await panel.count(),1)
  await panel.getByRole('button',{name:'关闭产物面板',exact:true}).click()
@@ -66,24 +67,24 @@ test('统一成果预览保留原版本、段落反馈和来源，放大收起�
  await page.setContent('<!doctype html><html lang="zh-CN"><body><div id="root"></div></body></html>');await page.addStyleTag({content:styles});await page.addScriptTag({content:script})
  await page.getByRole('button',{name:'成果名称',exact:true}).click()
  await page.getByText('正文版本 1',{exact:true}).waitFor()
- assert.ok(await page.getByRole('dialog').evaluate((element:HTMLElement)=>element.getBoundingClientRect().width)<=380)
- await page.getByRole('button',{name:'版本与反馈',exact:true}).click()
+ assert.ok(await page.locator('dialog').first().evaluate((element:HTMLElement)=>element.getBoundingClientRect().width)<=380)
+ await openArtifactReaderDrawer(page,'advanced')
  const draft=page.getByRole('textbox').filter({visible:true}).last();await draft.fill('待提交的段落反馈')
- await page.getByRole('button',{name:'放大',exact:true}).click()
- assert.ok(await page.getByRole('dialog').evaluate((element:HTMLElement)=>element.getBoundingClientRect().width)>700)
- assert.equal(await draft.inputValue(),'待提交的段落反馈')
- await page.keyboard.press('Escape')
- assert.equal(await draft.inputValue(),'待提交的段落反馈')
- assert.ok(await page.getByRole('dialog').evaluate((element:HTMLElement)=>element.getBoundingClientRect().width)<=380)
- await page.getByRole('button',{name:'关闭产物面板',exact:true}).click()
- assert.equal(await page.getByRole('dialog').count(),0)
+ await closeArtifactReaderDrawer(page);await page.getByRole('button',{name:'放大',exact:true}).click()
+ assert.ok(await page.locator('dialog').first().evaluate((element:HTMLElement)=>element.getBoundingClientRect().width)>700)
+ await openArtifactReaderDrawer(page,'advanced');assert.equal(await draft.inputValue(),'待提交的段落反馈')
+ await closeArtifactReaderDrawer(page);await page.keyboard.press('Escape')
+ await openArtifactReaderDrawer(page,'advanced');assert.equal(await draft.inputValue(),'待提交的段落反馈')
+ assert.ok(await page.locator('dialog').first().evaluate((element:HTMLElement)=>element.getBoundingClientRect().width)<=380)
+ await closeArtifactReaderDrawer(page);await page.getByRole('button',{name:'关闭产物面板',exact:true}).click()
+ assert.equal(await page.locator('dialog').first().count(),0)
  assert.equal(await page.getByRole('textbox',{name:'会话草稿'}).inputValue(),'继续原任务')
  const groupButton='预览群引用的原成果'
  assert.equal(await page.getByRole('button',{name:groupButton,exact:true}).count(),1,'群成果采用同一成果名称入口')
  for(const entry of ['任务成果',groupButton,'业务成果']){
   await page.getByRole('button',{name:entry,exact:true}).click();await page.getByText('正文版本 1',{exact:true}).waitFor()
-  await page.getByRole('button',{name:'版本与反馈',exact:true}).click();assert.equal(await draft.inputValue(),'待提交的段落反馈')
-  await page.getByRole('button',{name:'关闭产物面板',exact:true}).click()
+  await openArtifactReaderDrawer(page,'advanced');assert.equal(await draft.inputValue(),'待提交的段落反馈')
+  await closeArtifactReaderDrawer(page);await page.getByRole('button',{name:'关闭产物面板',exact:true}).click()
  }
  assert.deepEqual(await page.evaluate(()=>window.artifactFixture.calls),[],'导航不保存、不复制成果或反馈')
  assert.deepEqual(await page.evaluate(()=>window.artifactFixture.navigationCalls),Array.from({length:4},()=>[[{kind:'session',id:'main'},{id:'original-artifact',version:1},'main'],'teloa.overview']).flat(),'真实 Frame 路由与群成果卡始终携带原成果和引用版本')
@@ -106,12 +107,12 @@ test('缺失成果 Escape 同步关闭状态，同一成果可重新打开并接
  for(const inline of [false,true]){
   if(inline){await page.evaluate(()=>window.missingFixture.clear());await page.getByRole('button',{name:'使用概况预览'}).click()}
   await page.getByRole('button',{name:'打开同一成果'}).click();await page.getByRole('alert').waitFor()
-  await page.getByRole('dialog').locator('button').focus();await page.keyboard.press('Escape')
+  await page.locator('dialog').first().locator('button').focus();await page.keyboard.press('Escape')
   await page.getByRole('heading',{name:'工作概况'}).waitFor()
-  assert.equal(await page.getByRole('dialog').count(),0)
+  assert.equal(await page.locator('dialog').first().count(),0)
   await page.getByRole('button',{name:'打开同一成果'}).click();await page.getByRole('alert').waitFor()
   await page.evaluate(()=>window.missingFixture.resolve());await page.getByText('迟到的正文',{exact:true}).waitFor()
-  await page.getByRole('button',{name:'关闭产物面板',exact:true}).click()
+  await closeArtifactReaderDrawer(page);await page.getByRole('button',{name:'关闭产物面板',exact:true}).click()
  }
  assert.equal(await page.getByRole('textbox',{name:'会话草稿'}).inputValue(),'继续原任务');assert.deepEqual(errors,[])
 })
@@ -129,7 +130,7 @@ test('成果正文按原Markdown预览，段落操作只在版本页且不改原
  const page=await browser.newPage({viewport:{width:1440,height:960}});t.after(()=>page.close());page.setDefaultTimeout(3000)
  const errors:string[]=[],network:string[]=[];page.on('pageerror',(error:Error)=>errors.push(error.message));page.on('request',(request:any)=>network.push(request.url()));await page.route('**/*',(route:any)=>route.abort())
  await page.setContent('<!doctype html><html lang="zh-CN"><body><div id="root"></div></body></html>');await page.addStyleTag({content:bundle.output.flatMap(item=>item.type==='asset'&&item.fileName.endsWith('.css')?[String(item.source)]:[]).join('\n')});await page.addScriptTag({content:bundle.output.find(item=>item.type==='chunk')!.code})
- const panel=page.getByRole('dialog'),content=panel.getByRole('article',{name:'产物内容',exact:true}),preview=content.getByRole('region',{name:'成果预览',exact:true})
+ const panel=page.locator('dialog').first(),content=panel.getByRole('article',{name:'产物内容',exact:true}),preview=content.getByRole('region',{name:'成果预览',exact:true})
  await preview.waitFor();assert.equal(await preview.getByRole('table').count(),1,'未保存原文也应显示真实Markdown表格')
  assert.equal(await preview.getByRole('heading',{name:'本人材料核对',exact:true}).count(),1);assert.equal(await preview.getByRole('cell',{name:'待确认',exact:true}).count(),1)
  assert.equal(await preview.locator('img').count(),0);assert.equal(decodeURIComponent((await panel.getByRole('link',{name:'下载',exact:true}).getAttribute('href'))!.split(',').slice(1).join(',')),text)
@@ -144,8 +145,8 @@ test('成果正文按原Markdown预览，段落操作只在版本页且不改原
   assert.equal(await table.locator('tbody tr:first-child td').evaluateAll((cells:HTMLElement[])=>cells.slice(0,3).every(cell=>{const range=document.createRange();range.selectNodeContents(cell);return range.getClientRects().length===1})),true,'短编号、对象与状态保持一行，不被长说明挤成竖排')
   assert.equal(await table.evaluate((el:HTMLElement)=>el.parentElement!.scrollWidth>el.parentElement!.clientWidth),true,'四列表格在自身可聚焦区域内横向滚动')
  }
- await panel.getByRole('button',{name:'版本与反馈',exact:true}).click();assert.equal(await content.getByRole('button',{name:/^段落 \d+.*$/}).count(),7,'原section身份仍由版本页明确选择')
- await content.getByRole('button',{name:/^段落 2.*$/}).click();await content.getByRole('textbox').waitFor();assert.equal(await content.getByRole('heading',{name:/段落 2 · v1/}).count(),1)
- await page.setViewportSize({width:1440,height:960});await page.getByRole('button',{name:'读取自定义分段',exact:true}).click();await preview.getByRole('heading',{name:'本人命名的交付说明',exact:true}).waitFor();assert.equal(await preview.locator('strong').textContent(),'保留自定义分段正文','非自动命名分段仍保原标题及独立正文')
+ await openArtifactReaderDrawer(page,'advanced');assert.equal(await page.getByRole('dialog',{name:'版本与反馈',exact:true}).getByRole('button',{name:/^段落 \d+.*$/}).count(),7,'原section身份仍由版本页明确选择')
+ await page.getByRole('dialog',{name:'版本与反馈',exact:true}).getByRole('button',{name:/^段落 2.*$/}).click();await page.getByRole('dialog',{name:'版本与反馈',exact:true}).getByRole('textbox').waitFor();assert.equal(await page.getByRole('dialog',{name:'版本与反馈',exact:true}).getByRole('heading',{name:/段落 2 · v1/}).count(),1)
+ await closeArtifactReaderDrawer(page);await page.setViewportSize({width:1440,height:960});await page.getByRole('button',{name:'读取自定义分段',exact:true}).click();await preview.getByRole('heading',{name:'本人命名的交付说明',exact:true}).waitFor();assert.equal(await preview.locator('strong').textContent(),'保留自定义分段正文','非自动命名分段仍保原标题及独立正文')
  assert.equal(await page.evaluate(()=>(window as any).markdownArtifact.current()),await page.evaluate(()=>(window as any).markdownArtifact.before));assert.deepEqual(await page.evaluate(()=>(window as any).markdownArtifact.calls),[]);assert.deepEqual(network,[],'纯预览不加载远程图片或其它资源');assert.deepEqual(errors,[])
 })

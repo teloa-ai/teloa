@@ -1,0 +1,3 @@
+/* top layer 逃离 Home 的滚动裁切，DOM 仍留在原控制器；仅此原生触发菜单使用。 */
+.menu{position:fixed!important;inset:auto!important;margin:0!important;border:0;background:transparent;color:inherit;left:var(--native-menu-left)!important;top:var(--native-menu-top)!important;width:var(--native-menu-width)!important;max-width:var(--native-menu-width)!important;max-height:var(--native-menu-height)!important;min-width:0!important;min-height:0!important}
+.menu::backdrop{display:none}

@@ -19,7 +19,7 @@ export async function pageCreateAtomicSkillContent(value:unknown):Promise<Atomic
  return readAtomicSkill(body.files.map(file=>{
   const bytes=decodeBase64(file.base64)
   return {path:file.path,size:bytes.byteLength,read:async()=>bytes}
- }),{id:body.id,title:body.title,version:body.version,categories:body.categories})
+ }),{id:body.id,title:body.title,version:body.version,categories:body.categories,...(body.modelDependencies?{modelDependencies:body.modelDependencies}:{})})
 }
 
 /** 给页内新建回包读取器使用：只接受与确认步骤相同的正文形状。 */

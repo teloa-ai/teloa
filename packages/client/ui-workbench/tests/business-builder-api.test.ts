@@ -91,3 +91,16 @@ test('放弃固定草案修订，核对返回身份与退役状态，拒绝伪�
  assert.equal(calls.length,1)
  for(const change of [{id:requestId},{status:'draft'},{revision:2}])await assert.rejects(module.createBusinessBuilderApi(async()=>({...discarded,...change})).discard(target),{code:'teloa/invalid-host-response'})
 })
+
+test('预览方式API严格绑定同session/draft，额外owner在网络前拒绝，未知回包不默认为旧工具模式',async()=>{
+ const target={sessionId:'builder-preview',draftId},state={...target,revision:2,mode:'preview'},calls:unknown[]=[]
+ const api=module.createBusinessBuilderApi(async(e,r)=>{calls.push([e,r]);return state})
+ assert.deepEqual(await api.generationMode(target),state);assert.deepEqual(await api.setGenerationMode({...target,expectedRevision:2,requestId,mode:'preview'}),state)
+ await assert.rejects(api.setGenerationMode({...target,expectedRevision:2,requestId,mode:'preview',owner:'foreign'} as never),{code:'teloa/invalid-input'});assert.equal(calls.length,2)
+ for(const result of [undefined,{...state,sessionId:'other'},{...state,draftId:requestId},{...state,mode:'auto'},{...state,owner:'foreign'}])await assert.rejects(module.createBusinessBuilderApi(async()=>result).generationMode(target))
+})
+
+test('请求preview不能接受同目标却assisted的回包而开放native工具路径',async()=>{
+ const target={sessionId:'builder-preview',draftId,expectedRevision:2,requestId,mode:'preview' as const}
+ for(const result of [{sessionId:target.sessionId,draftId,revision:2,mode:'assisted'},{sessionId:target.sessionId,draftId,revision:1,mode:'preview'}])await assert.rejects(module.createBusinessBuilderApi(async()=>result).setGenerationMode(target),{code:'teloa/invalid-host-response'})
+})

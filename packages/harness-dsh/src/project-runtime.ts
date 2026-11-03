@@ -1,10 +1,12 @@
 import {WorkError,projectInput,projectRuntimeUuid,projectRuntimeSession,projectRuntimeVersion} from '@teloa/contract'
 import {ProjectPersonalMemoryService,type ProjectRuntimeService,type ProjectMemoryExtractionService} from '@teloa/backend'
-export const projectRuntimeEndpoints=['project-runtime/settings','project-runtime/configure','project-runtime/bind','project-runtime/binding','project-runtime/members','project-runtime/conversations','project-runtime/uses','project-runtime/history','project-runtime/candidates','project-runtime/resolve','project-runtime/failures','project-runtime/retry','project-runtime/personal','project-runtime/save-personal','project-runtime/publish-personal','project-runtime/withdraw-personal'] as const
-export function createProjectRuntimeHandler(owner:string,get:()=>Promise<{runtime:ProjectRuntimeService;memory:ProjectMemoryExtractionService}>):(endpoint:string,payload:unknown,signal?:AbortSignal)=>Promise<unknown>{
+import {readProjectContextCitation,type ProjectCitationLog} from './project-context-citations.ts'
+export const projectRuntimeEndpoints=['project-runtime/source','project-runtime/settings','project-runtime/configure','project-runtime/bind','project-runtime/binding','project-runtime/members','project-runtime/conversations','project-runtime/uses','project-runtime/history','project-runtime/candidates','project-runtime/resolve','project-runtime/failures','project-runtime/retry','project-runtime/personal','project-runtime/save-personal','project-runtime/publish-personal','project-runtime/withdraw-personal'] as const
+export function createProjectRuntimeHandler(owner:string,get:()=>Promise<{runtime:ProjectRuntimeService;memory:ProjectMemoryExtractionService}>,readLog?:ProjectCitationLog):(endpoint:string,payload:unknown,signal?:AbortSignal)=>Promise<unknown>{
  return async(endpoint:string,payload:unknown,signal?:AbortSignal)=>{
   if(!(projectRuntimeEndpoints as readonly string[]).includes(endpoint))throw new WorkError('teloa/not-found','未提供此项目运行接口。')
   signal?.throwIfAborted();const {runtime,memory}=await get();signal?.throwIfAborted()
+  if(endpoint==='project-runtime/source'){if(!readLog)throw new WorkError('teloa/source-unavailable','原会话来源尚不可读取。');return readProjectContextCitation(owner,runtime,readLog,payload,signal)}
   const personal=new ProjectPersonalMemoryService(runtime.pool,runtime.identity)
   if(endpoint==='project-runtime/personal'){projectInput(payload,[]);return personal.get(owner)}
   if(endpoint==='project-runtime/save-personal')return personal.save(owner,payload,signal)

@@ -1,5 +1,5 @@
 import type {Pool,PoolClient} from 'pg'
-import {WorkError,projectDefinition,groupWorkLinksChangeInput,groupWorkLinksGetInput,groupWorkLinksCandidatesInput,groupWorkLinkKey,readGroupWorkLink,readGroupWorkLinkItem,readGroupWorkLinks,type GroupWorkLink,type GroupWorkLinkItem,type GroupWorkLinks} from '@teloa/contract'
+import {WorkError,businessFieldValueText,projectDefinition,groupWorkLinksChangeInput,groupWorkLinksGetInput,groupWorkLinksCandidatesInput,groupWorkLinkKey,readGroupWorkLink,readGroupWorkLinkItem,readGroupWorkLinks,type GroupWorkLink,type GroupWorkLinkItem,type GroupWorkLinks} from '@teloa/contract'
 import {BusinessScopeService} from './business-scopes.ts'
 import {businessObjectSnapshotHash,readBusinessObjectSnapshot} from './business-data.ts'
 import {workAccess} from './work-access.ts'
@@ -54,7 +54,7 @@ export class GroupWorkLinkService{
    if(snapshot.id!==link.id||snapshot.type!==link.type||snapshot.version!==row.object_version||businessObjectSnapshotHash(snapshot)!==row.snapshot_hash)throw corrupt()
    if(snapshot.deletedAt)return unavailable(link)
    const state=snapshot.fields.find(field=>['status','state','状态','狀態'].includes(field.label))?.value??'available'
-   return readGroupWorkLinkItem({...link,available:true,title:displayLabel(snapshot.title,240),state:displayLabel(state,120),objectVersion:snapshot.version})
+   return readGroupWorkLinkItem({...link,available:true,title:displayLabel(snapshot.title,240),state:displayLabel(businessFieldValueText(state),120),objectVersion:snapshot.version})
   }
   const table=link.kind==='task'?'teloa_tasks':'teloa_projects',state=link.kind==='task'?'state':"definition->>'state'"
   const row=(await db.query(`select version,definition->>'title' title,${state} state from ${table} where owner_id=$1 and id=$2 and definition->>'scope'=$3`,[owner,link.id,link.scope])).rows[0]

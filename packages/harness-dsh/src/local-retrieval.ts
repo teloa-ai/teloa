@@ -1,12 +1,15 @@
 import type {Context} from '@deepseek-ai/cordis'
 import {defineTool,type PreToolDecision,type ToolExecution} from '@deepseek-ai/dsh-tools'
-import {WorkError,isRecord,readEmbeddingPreparationState,readRetrievalSearchResult,retrievalEndpoints,retrievalLimits,taskInput,embeddingProviderIds,embeddingProviderForCatalog,type EmbeddingProviderId,type EmbeddingDownloadSource,type EmbeddingPreparationState,type EmbeddingVariant} from '@teloa/contract'
-import type {Embedder,ResourceActor,RetrievalIndexService,FixedRunKnowledgeRead} from '@teloa/backend'
+import {WorkError,isRecord,isBusinessScopeKey,readEmbeddingPreparationState,readRetrievalSearchResult,retrievalEndpoints,retrievalLimits,taskInput,embeddingProviderIds,embeddingProviderForCatalog,type EmbeddingProviderId,type EmbeddingDownloadSource,type EmbeddingPreparationState,type EmbeddingVariant} from '@teloa/contract'
+import {authorizeResourceActor,type Embedder,type ResourceActor,type RetrievalIndexService,type FixedRunKnowledgeRead} from '@teloa/backend'
 import {searchRunKnowledge,type RunKnowledge} from '@teloa/backend'
 import type {TaskToolPolicyReader} from './task-tool-guard.ts'
 import {captureRetrievalPreparation,sameRetrievalPreparation,readRetrievalPrepareInput,readRetrievalPreparationDetails,type RetrievalPreparationDetails} from '@teloa/contract'
 import {retrievalCitationPath,type DigitalRole} from '@teloa/contract'
 import {roleRetrievalAuthorization} from './role-retrieval-authorization.ts'
+import {authorizeBusinessConversation,type BusinessConversationAuthorizationPorts} from './business-conversation-authorization.ts'
+import {authorizeOrdinaryConversationMutation} from './conversation-mutation.ts'
+import {retrievalEnrollmentResponse} from './retrieval-enrollment-response.ts'
 
 /** 公开检索工具名（规格 §7.1）；岗位授权候选与 `task-tool-guard` 的清单都按这个名字。 */
 export const knowledgeSearchToolName='teloa_knowledge_search'
@@ -23,6 +26,8 @@ export type EmbeddingServiceLike={
 }
 export type EmbeddingProviderView={id:string;location:'host-local';catalogId:string;catalogVersion:string;profileHash:string;variant:EmbeddingVariant;totalMemoryBytes:number;memoryRisk:boolean;preparation:EmbeddingPreparationState;preparationDetails?:RetrievalPreparationDetails}
 export type RetrievalModelStatus={enabled:boolean;provider:EmbeddingProviderView|null;selectedProviderId:EmbeddingProviderId;building:boolean;guidance:string|null}
+type RetrievalAuthorization={actor:ResourceActor;targetScopes:string[];knowledgeIds?:readonly string[]|null;fixedKnowledgeRead?:FixedRunKnowledgeRead;assertCurrent?:()=>Promise<void>}
+export type OrdinaryRetrievalFallback=Pick<RetrievalAuthorization,'actor'|'targetScopes'|'assertCurrent'>
 
 export type LocalRetrievalPorts={
  owner:string
@@ -32,6 +37,8 @@ export type LocalRetrievalPorts={
  requestedRoleId:(sessionId:string)=>Promise<string|null>
  role:(roleId:string)=>Promise<DigitalRole|null>
  resolveKnowledge?:(role:DigitalRole)=>Promise<readonly string[]>
+ /** 解析本人普通会话的合法业务上下文；无上下文沿用传入范围并继续复核，核验失败必须抛错。 */
+ ordinaryAuthorization?:(exec:Pick<ToolExecution,'agent'|'signal'>,fallback:OrdinaryRetrievalFallback)=>Promise<RetrievalAuthorization>
  /** 受管任务的主体、目标范围与可信资料许可；普通会话不调，空许可不得回落全部资料。 */
  taskAuthorization:(sessionId:string,signal:AbortSignal)=>Promise<{actor:ResourceActor;targetScopes:string[];knowledgeIds?:readonly string[]|null;fixedKnowledgeRead?:FixedRunKnowledgeRead}>
  /** 新运行的固定资料；null 表示普通会话或旧运行，空数组绝不能回落到全部索引。每次读取均重新核验当前授权。 */
@@ -61,6 +68,35 @@ const forbidden=(message:string)=>new WorkError('teloa/forbidden',message)
 const bad=(message:string)=>new WorkError('teloa/invalid-input',message)
 const hex64=(value:unknown):value is string=>typeof value==='string'&&/^[a-f0-9]{64}$/.test(value)
 const reviewedProvider=(value:unknown):value is EmbeddingProviderId=>(embeddingProviderIds as readonly unknown[]).includes(value)
+
+/** 与业务读写复用本人、会话和当前业务授权；不把 Conversation 的 general 元数据改成业务权限。 */
+export async function authorizeOrdinaryRetrievalContext(ports:BusinessConversationAuthorizationPorts,exec:Pick<ToolExecution,'agent'|'signal'>,fallback:OrdinaryRetrievalFallback):Promise<RetrievalAuthorization>{
+ const read=async()=>{
+  await fallback.assertCurrent?.()
+  if(!exec.agent)throw forbidden('本地检索需要已绑定的工作会话。')
+  const {sessionId}=await authorizeOrdinaryConversationMutation({...ports,agent:exec.agent,signal:exec.signal},'资料检索')
+  const [context,binding,role,task]=await Promise.all([ports.context(sessionId),ports.binding(sessionId),ports.isRoleConversation(sessionId),ports.isTaskConversation(sessionId)])
+  exec.signal.throwIfAborted()
+  if(role||task)throw forbidden('员工或任务会话不能使用本人普通检索权限。')
+  if(binding&&(binding.kind!=='daily'||binding.sessionId!==sessionId||binding.draftId!==undefined))throw forbidden('搭建或尚未绑定的会话不能使用本人普通检索权限。')
+  if(context===null){
+   if(binding)throw forbidden('日常业务会话缺少可核验的工作上下文。')
+   authorizeResourceActor(fallback.actor,ports.owner)
+   if(fallback.actor.kind!=='agent'||fallback.targetScopes.some(scope=>!fallback.actor.scopeIds.includes(scope)))throw forbidden('原会话检索范围不可核验。')
+   return {...fallback,fingerprint:JSON.stringify([ports.owner,sessionId,null,binding??null,fallback.actor,fallback.targetScopes])}
+  }
+  if(context.sessionId!==sessionId||!isBusinessScopeKey(context.scopeId)||!Number.isSafeInteger(context.version)||context.version<1)throw forbidden('当前工作上下文不可核验，请重新打开原业务会话。')
+  if(binding&&binding.scope!==context.scopeId)throw forbidden('会话绑定与工作业务范围不一致。')
+  if(context.scopeId==='general')return {actor:{ownerId:ports.owner,kind:'agent' as const,scopeIds:['general']},targetScopes:['general'],fingerprint:JSON.stringify([ports.owner,sessionId,context.scopeId,context.roleId,context.version,binding??null])}
+  const business=await authorizeBusinessConversation(ports,exec,'资料检索')
+  return {actor:{...business.actor,kind:'agent' as const},targetScopes:[business.scope],fingerprint:business.fingerprint}
+ }
+ const current=await read()
+ return {actor:current.actor,targetScopes:current.targetScopes,assertCurrent:async()=>{
+  const latest=await read()
+  if(latest.fingerprint!==current.fingerprint)throw new WorkError('teloa/version-conflict','工作业务或访问权限已变化，请按当前范围重新检索。')
+ }}
+}
 
 /** 快照只读：形状不符即视为不可用，不猜测阶段。 */
 export function readEmbeddingProvider(snapshot:unknown,providerId:string):EmbeddingProviderView|undefined{
@@ -198,9 +234,9 @@ export function registerLocalRetrieval(ctx:Context,ports:LocalRetrievalPorts){
   pauseWrites=pauseWrites.then(()=>ports.autoPause?.write(value)).catch(()=>ports.log('warn','本地检索停止整理记录写入失败。'))
   return pauseWrites
  }
- const autoBuild=(items:readonly {resourceId:string|null;version:number|null;state:string}[])=>{
+ const autoBuild=(items:readonly {resourceId:string|null;version:number|null;state:string;sourceChanged?:true}[])=>{
   if(autoPaused||disposed||cancelling||running||changing||!selectionKnown||selectionError)return
-  const key=items.filter(item=>item.state==='stale'&&item.resourceId!==null).map(item=>item.resourceId+':'+item.version).sort().join('|')
+  const key=items.filter(item=>item.state==='stale'&&!item.sourceChanged&&item.resourceId!==null).map(item=>item.resourceId+':'+item.version).sort().join('|')
   const profileKey=profileHash()+':'+key
   if(!key||profileKey===lastAutoKey||!embedderIfReady())return
   lastAutoKey=profileKey
@@ -235,8 +271,12 @@ export function registerLocalRetrieval(ctx:Context,ports:LocalRetrievalPorts){
  const actualReconciles=new Set<Promise<{removed:number}>>()
  const waitReconciles=async()=>{while(actualReconciles.size)await Promise.allSettled([...actualReconciles])}
  const reconcileIndexes=async(retrieval:Awaited<ReturnType<LocalRetrievalPorts['retrieval']>>,hash:string|null,generation:number,active:()=>boolean=()=>true)=>{
-  if(!active()||disposed||changing||selectionGeneration!==generation||profileHash()!==hash)return {removed:0}
-  const cleanup=retrieval.reconcile(hash??undefined)
+  const current=()=>active()&&!disposed&&!changing&&selectionGeneration===generation&&profileHash()===hash
+  if(!current())return {removed:0}
+  const actor=await ports.humanActor()
+  if(!current())return {removed:0}
+  authorizeResourceActor(actor,ports.owner,[],true)
+  const cleanup=retrieval.reconcile(actor,hash??undefined)
   actualReconciles.add(cleanup)
   try{return await cleanup}finally{actualReconciles.delete(cleanup)}
  }
@@ -260,7 +300,7 @@ export function registerLocalRetrieval(ctx:Context,ports:LocalRetrievalPorts){
  })
 
  // —— 工具：主体判定与参数核对在前置守卫与正文各做一次（确认期间身份可能变化）。 ——
- const subject=async(exec:Pick<ToolExecution,'agent'|'signal'>):ReturnType<LocalRetrievalPorts['taskAuthorization']>=>{
+ const subject=async(exec:Pick<ToolExecution,'agent'|'signal'>):Promise<RetrievalAuthorization>=>{
   if(!exec.agent)throw new WorkError('teloa/not-bound','本地检索需要已绑定的工作会话。')
   const session=exec.agent.session,sessionId=session.id
   if(session.header.origin==='subagent')throw forbidden('子 Agent 会话不能使用本地检索。')
@@ -273,8 +313,14 @@ export function registerLocalRetrieval(ctx:Context,ports:LocalRetrievalPorts){
   if(policy===null){
    const role=await roleRetrievalAuthorization(sessionId,{owner:ports.owner,requestedRoleId:ports.requestedRoleId,role:ports.role,...(ports.resolveKnowledge?{resolveKnowledge:ports.resolveKnowledge}:{})})
    if(role)return role
-   // 非员工普通会话（含 IM 私聊）保持原会话绑定范围，不另扩大。
-   return {actor:{ownerId:ports.owner,kind:'agent',scopeIds:[...binding.scopeIds]},targetScopes:[...binding.scopeIds]}
+   const bindingFingerprint=(value:typeof binding)=>JSON.stringify([value.ownerId,value.sessionId,value.status,value.scopeIds])
+   const expectedBinding=bindingFingerprint(binding)
+   const fallback:OrdinaryRetrievalFallback={actor:{ownerId:ports.owner,kind:'agent',scopeIds:[...binding.scopeIds]},targetScopes:[...binding.scopeIds],assertCurrent:async()=>{
+    exec.signal.throwIfAborted()
+    if(bindingFingerprint(await ports.conversation(sessionId))!==expectedBinding)throw new WorkError('teloa/version-conflict','原会话的检索归属已变化，请重新核对后检索。')
+   }}
+   // 没有上下文也保留指纹，不能在异步检索中借新增业务上下文交回旧 general 资料。
+   return ports.ordinaryAuthorization?ports.ordinaryAuthorization(exec,fallback):fallback
   }
   if(policy.stopRequested===true)throw forbidden('本次执行已请求停止。')
   if(!policy.allowedTools.includes(knowledgeSearchToolName))throw forbidden('当前任务未授权本地检索，请核对员工执行范围。')
@@ -282,11 +328,11 @@ export function registerLocalRetrieval(ctx:Context,ports:LocalRetrievalPorts){
  }
  ctx.tools.register(defineTool({
   name:knowledgeSearchToolName,
-  description:'Search authorized work materials when needed to answer. In a task with an on-demand catalog, search only its fixed bound versions, using keyword matching when semantic search is unavailable. Other sessions search enrolled materials. Results contain bounded excerpts, source positions (lines, character ranges, heading paths) and coverage. Cite [material title](citationPath), copying the matched citationPath exactly; never use sourceId, resourceId or local paths as links. coverage.searched lists materials actually searched; coverage.pending lists enrolled materials not yet searchable. Disclose pending coverage and do not treat unsearched material as verified. Accepts only query (1–500 characters) and limit (1–8, default 5); no material, scope or path selection.',
+  description:'Read-only search of authorized work materials. In an on-demand task, search only its fixed bound versions; use lexical matching if semantic search is unavailable. Other sessions search enrolled materials. Only confirmed material versions are indexed automatically; a changed original awaiting owner confirmation is unavailable as current evidence. Results contain bounded excerpts, source positions (lines, character ranges, heading paths) and coverage. Cite [material title](citationPath), copying the matched citationPath exactly; never use sourceId, resourceId or local paths as links. coverage.searched lists materials actually searched; coverage.pending lists enrolled materials not yet searchable. When coverage.truncated is true, these lists are bounded samples, not the full material set: coverage.searchedCount and coverage.pendingCount report the actual authorized totals. Omitted titles do not mean their materials were unsearched. Matched materials always appear in coverage.searched. Without these optional fields the lists are complete. sourceState=historical means an authorized current source version is already readable and confirmed; keep the old entry for reference, do not request reconfirmation or restore its old index. sourceState=changed means the fixed binding cannot be verified within the current allowed materials, not that the owner has never confirmed a newer version globally. Ask for version or access review only where actually needed. Do not treat unsearched material as verified. When coverage.searchedCount (or coverage.searched.length for older results) is zero, changing query wording cannot resolve that coverage gap: report pending coverage and unknown facts, then finish the answer. A retrieval request does not authorize discovering write tools, creating or editing drafts, confirming versions, rebuilding indexes or reading originals through another route. The owner can review and confirm the changed material in the Materials page. With searchable materials, use a targeted alternative only when relevant evidence is still missing. Accepts only query (1–500 characters) and limit (1–8, default 5); no material, scope or path selection.',
   parameters:{query:{type:'string',required:true},limit:{type:'integer'}},
   output:{schema:{type:'string'},render:(_args,value)=>[{type:'text',text:value}]},
   execute:async(args,exec)=>{
-   const input=searchInput(args),{actor,targetScopes,knowledgeIds,fixedKnowledgeRead}=await subject(exec)
+   const input=searchInput(args),{actor,targetScopes,knowledgeIds,fixedKnowledgeRead,assertCurrent}=await subject(exec)
    const fixed=await ports.fixedTaskKnowledge?.(exec.agent!.session.id,exec.signal)??null
    if(fixed!==null){
     // 未准备模型时使用固定正文词法检索，不安装模型、不扩大索引范围、不回退到本人全部资料。
@@ -299,6 +345,7 @@ export function registerLocalRetrieval(ctx:Context,ports:LocalRetrievalPorts){
     // 推理后再次核验停止、撤权和固定版本；失败不交付已计算的片段。
     const current=await ports.fixedTaskKnowledge!(exec.agent!.session.id,exec.signal)
     if(current===null||JSON.stringify(current)!==JSON.stringify(fixed))throw forbidden('本次运行的资料范围已变化。')
+    await assertCurrent?.()
     exec.signal.throwIfAborted()
     const result=searchRunKnowledge(current,input,semantic)
     return JSON.stringify({...result,results:result.results.map(hit=>({...hit,citationPath:retrievalCitationPath(exec.agent!.session.id,hit)}))})
@@ -316,7 +363,9 @@ export function registerLocalRetrieval(ctx:Context,ports:LocalRetrievalPorts){
     await waitBuild(exec.signal)
    }
    if(generation!==selectionGeneration)throw new WorkError('teloa/conflict','本地检索模型已变化，请重试。')
+   await assertCurrent?.()
    const result=await retrieval.search(actor,targetScopes,input,embedder,exec.signal,knowledgeIds,fixedKnowledgeRead)
+   await assertCurrent?.()
    if(generation!==selectionGeneration)throw new WorkError('teloa/conflict','本地检索模型已变化，请重试。')
    exec.signal.throwIfAborted()
    const verified=readRetrievalSearchResult(result)
@@ -392,6 +441,20 @@ export function registerLocalRetrieval(ctx:Context,ports:LocalRetrievalPorts){
  }
  const handle=async(endpoint:string,payload:unknown,signal:AbortSignal):Promise<unknown>=>{
   if(!(retrievalEndpoints as readonly string[]).includes(endpoint))throw new WorkError('teloa/not-found','未提供此本地检索接口。')
+  if(endpoint==='retrieval/enroll')return retrievalEnrollmentResponse(payload,{
+   prepare:async()=>{
+    assertActive(signal);await waitForSelection();assertActive(signal)
+    const {retrieval,actor}=await mutationContext(signal)
+    // 紧贴写入再检查；之后只由事务边界报告结果，短 RPC 取消不承诺回滚。
+    assertActive(signal)
+    return outcome=>{
+     try{assertActive(signal)}catch(error){outcome('not-committed');throw error}
+     return retrieval.enroll(actor,payload,outcome)
+    }
+   },
+   afterCommit:()=>startBuild({retryFailed:false}),
+   status,
+  })
   assertActive(signal)
   if(endpoint==='retrieval-model/select')await loadedSelection();else await waitForSelection()
   assertActive(signal)
@@ -430,16 +493,6 @@ export function registerLocalRetrieval(ctx:Context,ports:LocalRetrievalPorts){
     })
    }
    case 'retrieval/cancel':taskInput(payload,[]);await Promise.all([setAutoPaused(true),cancelBuild()]);return status()
-   case 'retrieval/enroll':{
-    const {retrieval,actor}=await mutationContext(signal)
-    // await helper 返回本身也会让出；紧贴实际写入再核一次。
-    assertActive(signal)
-    await retrieval.enroll(actor,payload)
-    // 提交已开始后不承诺取消回滚；已受理后台任务不绑定短 RPC 的 signal。
-    // 模型不可用时只登记加入，不建索引；状态显示 stale，模型准备就绪后自动整理一次。
-    startBuild({retryFailed:false})
-    return status()
-   }
    case 'retrieval/remove':{
     const {retrieval,actor}=await mutationContext(signal)
     assertActive(signal)

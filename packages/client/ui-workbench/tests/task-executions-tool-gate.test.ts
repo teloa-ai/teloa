@@ -27,9 +27,9 @@ test('无工具运行横幅保留打开员工入口，并提示保存工具后�
 test('员工详情的员工权限面板挂载真实工具授权组件，工作台已接线',async()=>{
  const teamPage=await source('TeamPage.tsx')
  assert.match(teamPage,/openProfilePanel\('permissions'\)/,'员工详情要有员工权限入口')
- assert.match(teamPage,/profilePanel==='permissions'[\s\S]{0,200}capabilities\(role\.id\)/,'员工权限面板渲染能力/工具授权节点')
+ assert.match(teamPage,/profilePanel==='permissions'[\s\S]*?<EmployeePermissions[^>]*tools=\{refresh=>permissionTools\?\.\(role\.id,refresh\)\?\?capabilities\(role\.id\)/,'员工权限面板渲染能力/工具授权节点')
  assert.match(teamPage,/capabilities: \(id: string\) => ReactNode/,'员工详情由工作台注入能力入口')
- assert.match(teamPage,/<EmployeeGrantedTools role=\{role\} api=\{roleTools\}/,'已授予工具展示使用真实 API')
+ assert.match(teamPage,/<EmployeePermissions role=\{role\} toolApi=\{roleTools\}/,'已授予工具展示使用真实 API');assert.match(await source('EmployeePermissions.tsx'),/toolApi\.get\(role\.id\)/,'权限摘要从同员工真实授权读口取得')
  const frame=await source('WorkbenchFrame.tsx')
  assert.match(frame,/roleTools=\{roleToolGrantApi\}/,'TeamPage 必须收到工具授权 API')
  assert.match(frame,/<RoleToolGrants role=\{role\} api=\{roleToolGrantApi\}/,'能力入口必须渲染真实工具授权组件')

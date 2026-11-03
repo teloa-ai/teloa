@@ -1,7 +1,7 @@
 /* 类型化金额读数保留文本精度；图形与其可访问对照表共同显示。 */
 .body{display:flex;flex-direction:column;gap:10px;min-width:0}
 .metric{display:flex;flex-direction:column;gap:6px;min-width:0}
-.metric strong{font-size:var(--teloa-font-metric,28px);font-weight:var(--teloa-weight-regular,400);font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
+.metric strong{display:block;min-width:0;max-width:100%;font-size:var(--teloa-font-metric,28px);font-weight:var(--teloa-weight-regular,400);font-variant-numeric:tabular-nums;white-space:nowrap;overflow-wrap:normal;overflow-x:auto;scrollbar-width:thin}
 .metric span{color:var(--teloa-muted);font-size:var(--teloa-font-caption)}
 .tableWrap{min-width:0;max-width:100%;overflow-x:auto;border:1px solid var(--teloa-border);border-radius:8px}
 .table{width:100%;border-collapse:collapse;text-align:left;font-size:var(--teloa-font-caption);font-variant-numeric:tabular-nums}

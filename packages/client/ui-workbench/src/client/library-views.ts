@@ -2,7 +2,7 @@ import type {KnowledgeTree,ResourceDirectory,ResourceDraft,SourceReference,WorkR
 import {isLocalMaterialSourceId} from './local-material-registration.ts'
 export type LibraryView='mine'|'recent'|'star'|'local'|'retrieval'|'space'
 export type LibraryPreferences={recent:{id:string;at:number}[];favorites:string[]}
-export type LibraryRow=((ResourceDraft|WorkResource)&{kind:'draft'|'resource';location:string;knowledgeVersion?:number|undefined;visitedAt?:number|undefined})|{kind:'knowledge';id:string;title:string;sourceId:string;sourceVersion:string;version:number;knowledgeVersion:number;status:'saved';location:string;scopeIds?:readonly string[];visitedAt?:number|undefined}
+export type LibraryRow=((ResourceDraft|WorkResource)&{kind:'draft'|'resource';location:string;sourceUnavailable?:boolean;sourceVersionChanged?:boolean;knowledgeVersion?:number|undefined;visitedAt?:number|undefined})|{kind:'knowledge';id:string;title:string;sourceId:string;sourceVersion:string;version:number;knowledgeVersion:number;status:'saved';location:string;scopeIds?:readonly string[];visitedAt?:number|undefined}
 const empty=():LibraryPreferences=>({recent:[],favorites:[]})
 const validId=(value:unknown):value is string=>typeof value==='string'&&value.length>0&&value.length<=200
 export function libraryPreferenceKey(ownerId:string,spaceId:string){return 'teloa.library/v1/'+encodeURIComponent(ownerId)+'/'+encodeURIComponent(spaceId)}
@@ -23,7 +23,7 @@ export function libraryRows(directory:ResourceDirectory,sources:SourceReference[
   const node=options.tree?.nodes.find(node=>node.type==='page'&&node.knowledgeId===knowledgeId)
   const path=node?.path.slice(0,-1).map(id=>options.tree?.nodes.find(node=>node.id===id)?.title).filter(Boolean).join(' / ')
   const location=path||(source?.knowledge?'':source?.source??'')
-  return {location,knowledgeVersion:source?.version===row.sourceVersion?source.knowledge?.knowledgeVersion:undefined,visitedAt:recent.get(row.id)}
+  return {location,...(isLocalMaterialSourceId(row.sourceId)&&!source?{sourceUnavailable:true}:{}),...(isLocalMaterialSourceId(row.sourceId)&&source&&source.version!==row.sourceVersion?{sourceVersionChanged:true}:{}),knowledgeVersion:source?.version===row.sourceVersion?source.knowledge?.knowledgeVersion:undefined,visitedAt:recent.get(row.id)}
  }
  const rows:LibraryRow[]=[...directory.drafts.filter(row=>row.status==='draft').map(row=>({...row,kind:'draft' as const,...facts(row)})),...directory.resources.map(row=>({...row,kind:'resource' as const,...facts(row)}))]
  for(const source of sources){

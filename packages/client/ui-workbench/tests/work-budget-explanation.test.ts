@@ -4,9 +4,10 @@ import {existsSync} from 'node:fs'
 import {registerHooks} from 'node:module'
 import {workBudgetExhaustedCode,readWorkBudgetExhaustedCode} from '@teloa/contract'
 import {mount} from './market-component-harness.ts'
+import {draftContinuityCopy} from '../src/client/draft-continuity-copy.ts'
 import {createWorkBudgetApi} from '../src/client/work-budget-api.ts'
 registerHooks({resolve(specifier,context,next){
- if(specifier.startsWith('.')&&specifier.endsWith('.js')&&context.parentURL?.includes('/ui-workbench/src/client/i18n/')){
+ if(specifier.startsWith('.')&&specifier.endsWith('.js')&&context.parentURL?.includes('/ui-workbench/src/client/')){
   const source=new URL(specifier.slice(0,-3)+'.ts',context.parentURL);if(existsSync(source))return next(source.href,context)
  }
  return next(specifier,context)
@@ -31,8 +32,8 @@ test('会话本轮失败的稳定 code 与请求错误 details 得到同一句�
  }
 })
 
-test('耗时超额按 24 小时窗口说明自动释放与真实入口，不再称为累计耗时',()=>{
- const expected={'zh-CN':['最近 24 小时','自动释放','“工作额度”'],'zh-Hant':['最近 24 小時','自動釋放','「工作額度」'],en:['last 24 hours','released automatically','“Work limits”']} as const
+test('耗时超额按 24 小时窗口说明等待与自动释放，不指向日常已移除的入口',()=>{
+ const expected={'zh-CN':['最近 24 小时','自动释放','等待释放后再继续'],'zh-Hant':['最近 24 小時','自動釋放','等待釋放後再繼續'],en:['last 24 hours','released automatically','wait for capacity']} as const
  for(const locale of locales){
   const text=localizeWorkError(locale,{code:'teloa/budget-exhausted/elapsed/owner'})
   for(const part of expected[locale])assert.ok(text.includes(part),locale+'：'+part)
@@ -43,7 +44,7 @@ test('耗时超额按 24 小时窗口说明自动释放与真实入口，不再�
 
 const nativeEntry=(component:unknown)=>({options:{key:'turn-error',priority:0},component})
 const renderer=(entries:unknown[])=>({subscribe:()=>()=>{},getSnapshot:()=>entries,isLive:(entry:unknown)=>entries.includes(entry)})
-const turnView=()=>mount('BudgetTurnErrorView.tsx',{'@teloa/contract':contract,'./i18n/errors.js':errors,'@deepseek-ai/dsh-client-ui-primitives':{StateDot:function StateDot(){return null}}})
+const turnView=()=>mount('BudgetTurnErrorView.tsx',{'@teloa/contract':contract,'./i18n/errors.js':errors,'./draft-continuity-copy.js':{draftContinuityCopy},'@deepseek-ai/dsh-client-ui-primitives':{StateDot:function StateDot(){return null}}})
 
 test('本轮额度失败行显示原因与下一步，不显示服务端原文或内部 code；其他本轮失败交回原生 renderer',()=>{
  const view=turnView(),Native=function NativeTurnError(){return null},entries=[nativeEntry(Native)]
@@ -53,7 +54,11 @@ test('本轮额度失败行显示原因与下一步，不显示服务端原文�
  assert.doesNotMatch(text,/本次请求超出|teloa\/budget-exhausted/)
  const props={node:{data:{seq:9,message:'Network failed',code:'TRANSPORT'}},t:()=>''},other=view.render('BudgetTurnErrorView',{renderer:renderer(entries),...props})
  assert.equal(other.type,Native,'非额度失败沿用原生展示');assert.deepEqual(other.props,props,'不把 renderer 注入原生组件')
- assert.equal(view.render('BudgetTurnErrorView',{renderer:renderer([]),...props}),null,'原生 renderer 已卸载时不伪造失败行')
+ const fallback=view.render('BudgetTurnErrorView',{renderer:renderer([]),...props})
+ assert.equal(fallback.props.role,'status','原生 renderer 已卸载时保留真实 turn-error 的可理解说明')
+ assert.ok(textOf(fallback).includes(draftContinuityCopy('en','answerIncomplete')))
+ assert.ok(textOf(fallback).includes(localizeWorkError('en',{code:'TRANSPORT'})))
+ assert.doesNotMatch(textOf(fallback),/Network failed/,'fallback 不回显原始异常')
 })
 
 const policy={maxGoalRounds:32,maxTokens:2_000_000,maxElapsedMs:21_600_000,maxConcurrent:8,maxRetries:3,stagnationRounds:3,money:null}

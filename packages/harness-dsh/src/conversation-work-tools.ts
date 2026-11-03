@@ -3,7 +3,7 @@ import type {Agent} from '@deepseek-ai/dsh-agent'
 import {isDeepStrictEqual} from 'node:util'
 import {createUserMessage,type ContextFormed} from '@deepseek-ai/dsh-llm'
 import {defineTool,type ToolExecution} from '@deepseek-ai/dsh-tools'
-import {WorkError,readWorkTokenLimit,readWorkBudgetPolicy,businessObjectReference,parseBusinessRecordReferences,encodeBusinessRecordReference,taskInput,taskDefinition,roleSupportsScope,readBusinessResponsibility,type BusinessResponsibility,type BusinessObjectReference,type DigitalRole,type BusinessReassignmentReceipt,type WorkBudgetPolicy} from '@teloa/contract'
+import {WorkError,readWorkTokenLimit,readWorkBudgetPolicy,businessObjectReference,parseBusinessRecordReferences,encodeBusinessRecordReference,encodeEmployeeMention,taskInput,taskDefinition,roleSupportsScope,readBusinessResponsibility,type BusinessResponsibility,type BusinessObjectReference,type DigitalRole,type BusinessReassignmentReceipt,type WorkBudgetPolicy} from '@teloa/contract'
 import {defaultWorkBudgetPolicy,conversationWorkInstructionLimit,assertConversationWorkInstruction,type ConversationWorkContext,type ConversationWorkReserveInput} from '@teloa/backend'
 import {authorizeOrdinaryConversationMutation} from './conversation-mutation.ts'
 import type {TaskToolPolicyReader} from './task-tool-guard.ts'
@@ -11,6 +11,10 @@ import {sourceInstruction} from './conversation-work-instruction.ts'
 import {readSessionEvents} from './session-events.ts'
 import {registerConversationResultPresentation} from './conversation-result-presentation.ts'
 import {conversationWorkToolNames} from './conversation-work-tool-names.ts'
+import {authorizeConversationBusinessScope,type BusinessScopeContextRead} from './business-scope-context.ts'
+import type {BusinessConversationAuthorizationPorts} from './business-conversation-authorization.ts'
+import {businessScopeTime} from './business-scope-time.ts'
+import {readBusinessDataPage} from './business-data.ts'
 
 export const conversationWorkSource='plugin:teloa.work' as const
 const coordinationSummary='当前工作的业务与接手约定'
@@ -19,7 +23,7 @@ const employeeProposalGuide='For an employee work proposal, including a request 
 const recordBindingGuide='A host-verified business recordRef belongs in dispatch.reference with its exact scope, type, id, version and snapshotHash. A business record is not a WorkResource: do not bind it through teloa_task_materials_add or convert it into a material. A fixed local recordRef can come from teloa_business_records_read or the current owner message; no separate HTTP query is required. The host independently verifies owner, business scope, object version and snapshot hash before dispatch.'
 const businessDataSourceGuide='teloa_business_data_query reads only configured security-alert HTTP source snapshots in this host; it does not query local-records. Its source argument filters returned snapshot.source, not a connection ID or local sourceId. Read adopted local business records with teloa_business_records_read, or use a fixed recordRef provided in the current owner message subject to independent host verification. Do not repeat data_query against unsupported scopes or try local sourceIds as connections.'
 const grantEvidenceGuide='Candidate/catalog tools, connected MCP tools and read-only classifications are not the employee\'s current grants. Read teloa_role_tools_get for current saved grants and respect its state and exact rules before claiming any tool is authorized. Never expand an explicitly limited tool list from the candidate catalog; if grants cannot be verified, say so instead of listing candidates as authorized.'
-const coordinationGuide=coordinationHeading+` Answer ordinary questions directly, in the current response language. Only an explicit owner delegation or request to approve delegation calls teloa_work_directory, then teloa_work_dispatch for the native approval card. Directory reads neither dispatch work nor schedule a later card. Do not substitute chat questions or claimed actions for actual calls and receipts. No Task/Run exists before approval; rejection executes nothing.
+const coordinationGuide=coordinationHeading+` Answer ordinary questions directly, in the current response language. Only an explicit owner delegation or request to approve delegation calls teloa_work_directory, then teloa_work_dispatch for the native approval card. Directory reads neither dispatch work nor schedule a later card. A trusted current employee-mention runtime snapshot already fixes the employee ID/version and business: use it directly for dispatch without a directory read; it overrides this conversation’s assignee preference for this one handoff only, never persistent business responsibility. Do not substitute chat questions or claimed actions for actual calls and receipts. No Task/Run exists before approval; rejection executes nothing.
 ${employeeProposalGuide}
 ${recordBindingGuide}
 ${grantEvidenceGuide}
@@ -56,12 +60,17 @@ export type ConversationWorkToolsPorts={
  business?:(scope:string)=>Promise<{title:string;responsibility:BusinessResponsibility}|null>
  reference?:(reference:BusinessObjectReference)=>Promise<void|{title:string}>
  dispatch:(input:ConversationWorkReserveInput,signal:AbortSignal,revalidate?:()=>Promise<void>)=>Promise<unknown>
+ employeeDispatch?:(sessionId:string,actualSourceText:string,input:Record<string,unknown>,signal:AbortSignal)=>Promise<{roleId:string;expectedRoleVersion:number;scope:string}|null>
+ employeeExistingTarget?:(sessionId:string,requestId:string,operation:'continue'|'stop',signal:AbortSignal)=>Promise<void>
  revisionGoal?:(source:{sessionId:string;sourceText?:string})=>Promise<string|undefined>
  status:(sessionId:string,requestId?:string)=>Promise<unknown>
  stop:(sessionId:string,requestId:string,signal:AbortSignal)=>Promise<unknown>
  resume?:(sessionId:string,requestId:string,signal:AbortSignal)=>Promise<unknown>
  facts:(input:unknown)=>Promise<unknown>
- data:(input:unknown,signal:AbortSignal)=>Promise<unknown>
+ businessAuthorization?:BusinessConversationAuthorizationPorts
+ businessContext?:(exec:Pick<ToolExecution,'agent'|'signal'>,context:ConversationWorkContext|null)=>Promise<BusinessScopeContextRead|undefined>
+ timezone?:()=>string
+ data:(input:unknown,signal:AbortSignal,actor?:{ownerId:string;scopeIds:string[]})=>Promise<unknown>
  now:()=>string
 }
 export {conversationWorkToolNames}
@@ -81,9 +90,9 @@ const definitions=[
  {name:'teloa_work_stop',description:'Stop this conversation’s specified request: persist stop intent to block undispatched members, then request actual Runs to stop. waiting means stopping has not settled.',parameters:requestParameter},
  {name:'teloa_work_resume',description:'Only on explicit owner retry, use the original requestId from status to continue the same Task, even across user turns. The host checks whether an ended failed Run permits a new Run; ended alone does not forbid retry, and a new Run is not a new Task. Never replace the Task, assignee or business, restart a stopped request or resend an unknown result; use the current host receipt. A [teloa-revision: marker is a new linked artifact revision, not a requestId or retry: use teloa_work_dispatch with executor:general, scope:general and native approval.',parameters:requestParameter},
  {name:'teloa_work_facts',description:'Read real visible Task/Run/artifact statistics without waking staff or reading private memories/daily logs. Convert from/to to UTC with exactly 3 millisecond digits and Z; timezone retains the owner’s IANA zone. Omitted scope uses the selected business; only no selection means all. Explicit cross-business requests may use allBusinesses:true. general is general work only. partial is not complete; failure is not zero work.',parameters:{scope:{type:'string'},allBusinesses:{type:'boolean'},from:{type:'string',required:true,description:'Inclusive UTC ISO start, e.g. 2026-10-16T16:00:00.000Z. Exactly 3 millisecond digits and Z; +08:00 is invalid.'},to:{type:'string',required:true,description:'Exclusive UTC ISO end, e.g. 2026-10-17T16:00:00.000Z. Exactly 3 millisecond digits and Z; +08:00 is invalid.'},timezone:{type:'string',required:true,description:'Owner’s IANA statistics zone, e.g. Asia/Singapore; from/to must still use UTC.'}}},
- {name:'teloa_business_data_query',description:businessDataSourceGuide+' Results retain provenance, time, fixed object references and pagination. Task counts cannot stand in for alert counts. Missing sources fail; never supply sample data. Page items are not the source total; exhaust nextCursor before claiming complete coverage.',parameters:{...scopeParameter,text:{type:'string'},source:{type:'string',description:'Filter the returned snapshot.source field; not a connection ID, local-records sourceId, or source switch.'},quality:{type:'string',enum:['complete','missing']},observedAfter:{type:'string'},limit:{type:'integer',required:true},cursor:{type:'string'}}},
+ {name:'teloa_business_data_query',description:businessDataSourceGuide+' Query configured real business sources with provenance, time, fixed object references and pagination. Task counts cannot stand in for alert counts. Missing sources fail; never supply sample data. Page items are not the source total; exhaust nextCursor before claiming complete coverage.',parameters:{scope:{type:'string',description:'Omit to use the selected business. An explicit different business is denied.'},period:{type:'string',enum:['this-month'],description:'Use the host verified local calendar month, not a guessed UTC month. Cannot combine with observedAfter.'},text:{type:'string'},source:{type:'string'},quality:{type:'string',enum:['complete','missing']},observedAfter:{type:'string'},limit:{type:'integer',required:true},cursor:{type:'string'}}},
 ] as const
-const exactKeys:Record<typeof conversationWorkToolNames[number],readonly string[]>={teloa_work_directory:[],teloa_work_dispatch:['scope','title','goal','executor','roleId','expectedRoleVersion','reference','workTokenLimit','workBudgetPolicy'],teloa_work_collect_reports:['scope','title','goal','allBusinesses'],teloa_work_status:['requestId'],teloa_work_stop:['requestId'],teloa_work_resume:['requestId'],teloa_work_facts:['scope','allBusinesses','from','to','timezone'],teloa_business_data_query:['scope','text','source','quality','observedAfter','limit','cursor']}
+const exactKeys:Record<typeof conversationWorkToolNames[number],readonly string[]>={teloa_work_directory:[],teloa_work_dispatch:['scope','title','goal','executor','roleId','expectedRoleVersion','reference','workTokenLimit','workBudgetPolicy'],teloa_work_collect_reports:['scope','title','goal','allBusinesses'],teloa_work_status:['requestId'],teloa_work_stop:['requestId'],teloa_work_resume:['requestId'],teloa_work_facts:['scope','allBusinesses','from','to','timezone'],teloa_business_data_query:['scope','period','text','source','quality','observedAfter','limit','cursor']}
 export type ConversationWorkAuthorizationPorts=Pick<ConversationWorkToolsPorts,'owner'|'conversation'|'readTaskPolicy'|'isRoleConversation'|'isBuilder'|'isPendingDaily'|'isTaskConversation'>
 export async function authorizeConversationWorkMutation(ports:ConversationWorkAuthorizationPorts,exec:Pick<ToolExecution,'agent'|'signal'>){
  const authorization=await authorizeOrdinaryConversationMutation({...ports,...(exec.agent?{agent:exec.agent}:{}),signal:exec.signal},'主会话工作交办')
@@ -128,6 +137,11 @@ async function currentArtifactRevision(ports:ConversationWorkToolsPorts,exec:Pic
 }
 async function prepareDispatch(ports:ConversationWorkToolsPorts,exec:ToolExecution,input:Record<string,unknown>){
  const auth=await authorizeConversationWorkMutation(ports,exec),identity=sourceInstruction(ports.owner,exec),kind=exec.name==='teloa_work_dispatch'?'task':'report'
+ const mentioned=await ports.employeeDispatch?.(auth.sessionId,identity.sourceText??'',input,exec.signal)
+ if(mentioned){
+  if(kind!=='task')throw new WorkError('teloa/invalid-input','本轮只指定一位员工；汇报名单不能用@隐式扩大。')
+  input={...input,...mentioned}
+ }
  const fields=taskDefinition({title:input.title,goal:input.goal,scope:input.scope})
  let workTokenLimit=input.workTokenLimit===undefined?undefined:readWorkTokenLimit(input.workTokenLimit),workBudgetPolicy=input.workBudgetPolicy===undefined?undefined:readWorkBudgetPolicy(input.workBudgetPolicy)
  if(workBudgetPolicy!==undefined&&(kind!=='task'||workTokenLimit!==undefined||workBudgetPolicy.money!==null))throw new WorkError('teloa/invalid-input','单次交办完整额度不能与 token 上限同时填写，且不设置金额保证。')
@@ -156,7 +170,7 @@ async function prepareDispatch(ports:ConversationWorkToolsPorts,exec:ToolExecuti
  const [context,scopes,roles,selectedBusiness]=await Promise.all([ports.context(auth.sessionId),ports.scopes(),ports.roles(),business(ports,fields.scope)])
  if(input.allBusinesses!==undefined&&input.allBusinesses!==true)throw new WorkError('teloa/invalid-input','全部业务只能显式选择 true。')
  if(!scopes.includes(fields.scope)||input.allBusinesses===true&&fields.scope!=='general')throw new WorkError('teloa/forbidden','当前无权交办此业务。')
- if(context&&((context.scopeId!==fields.scope&&!input.allBusinesses)||context.roleId!==null&&(kind==='report'||context.roleId!==input.roleId)))throw new WorkError('teloa/conflict','交办与当前会话业务或指定接手人不一致。')
+ if(context&&((context.scopeId!==fields.scope&&!input.allBusinesses&&!(mentioned&&context.scopeId==='general'))||context.roleId!==null&&!mentioned&&(kind==='report'||context.roleId!==input.roleId)))throw new WorkError('teloa/conflict','交办与当前会话业务或指定接手人不一致。')
  if(roles.some(role=>role.ownerId!==ports.owner))throw new WorkError('teloa/invalid-host-response','员工目录混入其他本人记录。')
  const general=kind==='task'&&input.executor==='general'
  if(input.executor!==undefined&&!general||general&&(fields.scope!=='general'||input.roleId!==undefined||input.expectedRoleVersion!==undefined||reference!==undefined||context?.roleId!=null))throw new WorkError('teloa/invalid-input','通用独立工作只能使用本人的 general 会话，不能混入员工或业务对象身份。')
@@ -187,7 +201,9 @@ function workApprovalDescription({summary:s,referenceTitle,scopeTitles,pageBudge
  const elapsed=(value:number|null)=>value===null?'不限':value%60000===0?resource(value/60000)+' 分钟':resource(value/1000)+' 秒'
  const objectLabel=s.reference?`${referenceTitle??s.reference.type+' · '+s.reference.id}（v${s.reference.version}）`:undefined
  const readable=(value:string)=>{
-  return s.reference?value.split(encodeBusinessRecordReference(s.reference)).join(objectLabel!):value
+  let text=s.reference?value.split(encodeBusinessRecordReference(s.reference)).join(objectLabel!):value
+  for(const role of s.executors)text=text.split(encodeEmployeeMention({roleId:role.id,roleVersion:role.version})).join('@'+role.name)
+  return text
  }
  const state={draft:'尚未在岗',active:'在岗',paused:'暂停',retired:'已退役'}
  const crossBusiness=!!s.expectedReportTargets&&s.scope==='general'&&s.expectedReportTargets.some(target=>target.scope!=='general')
@@ -213,6 +229,7 @@ function workApprovalDescription({summary:s,referenceTitle,scopeTitles,pageBudge
 }
 export function registerConversationWorkTools(ctx:Context,ports:ConversationWorkToolsPorts){
  const removePresentation=registerConversationResultPresentation(ctx,ports)
+ const scopeReads=new WeakMap<Agent,()=>Promise<void>>()
  const prepared=new WeakMap<ToolExecution,Awaited<ReturnType<typeof prepareDispatch>>>()
  for(const definition of definitions)ctx.tools.register(defineTool({...definition,output:{schema:{type:'string'} as const,render:(_args:unknown,value:string)=>[{type:'text' as const,text:value}]},execute:async(args,exec)=>{
   const auth=await authorizeConversationWorkMutation(ports,exec),input=taskInput(args,exactKeys[definition.name])
@@ -241,7 +258,10 @@ export function registerConversationWorkTools(ctx:Context,ports:ConversationWork
     // 把本次已完成的批准事实放在即时回包，避免旧历史的待批准文案压过工具说明。
     if(value&&typeof value==='object'&&!Array.isArray(value))value={...value,approvalState:'approved',receiptNotice:'This delegation approval completed through the native card. '+executionReceiptGuide}
    }else if(definition.name==='teloa_work_status')value=await ports.status(auth.sessionId,input.requestId as string|undefined)
-   else if(definition.name==='teloa_work_stop')value=await ports.stop(auth.sessionId,input.requestId as string,exec.signal)
+   else if(definition.name==='teloa_work_stop'){
+    await ports.employeeExistingTarget?.(auth.sessionId,input.requestId as string,'stop',exec.signal)
+    value=await ports.stop(auth.sessionId,input.requestId as string,exec.signal)
+   }
    else if(definition.name==='teloa_work_resume'){
     const identity=sourceInstruction(ports.owner,exec)
     if(identity.sourceText?.includes('[teloa-revision:')){
@@ -251,6 +271,7 @@ export function registerConversationWorkTools(ctx:Context,ports:ConversationWork
      throw new WorkError('teloa/conflict','成果续改是新的关联修订，不是重试原交办；teloa-revision 标记不是工作 requestId。请调用 teloa_work_dispatch 并传 executor:general、scope:general，经原生确认卡批准后再启动。')
     }
     if(!ports.resume)throw new WorkError('teloa/unavailable','原交办恢复尚未就绪。')
+    await ports.employeeExistingTarget?.(auth.sessionId,input.requestId as string,'continue',exec.signal)
     value=await ports.resume(auth.sessionId,input.requestId as string,exec.signal)
    }
    else if(definition.name==='teloa_work_facts'){
@@ -258,7 +279,19 @@ export function registerConversationWorkTools(ctx:Context,ports:ConversationWork
     const {allBusinesses,...query}=input,context=await ports.context(auth.sessionId)
     value=await ports.facts({...query,...(allBusinesses!==true&&query.scope===undefined&&context?{scope:context.scopeId}:{})})
    }
-   else value=await ports.data(input,exec.signal)
+   else {
+    // 选中业务是可信授权来源，模型参数仅能在该范围内进一步筛选。
+    if(!ports.businessAuthorization)throw new WorkError('teloa/forbidden','当前业务读取授权尚未接入。')
+    const lease=await authorizeConversationBusinessScope(ports.businessAuthorization,exec,input.scope)
+    if(!lease.scope)throw new WorkError('teloa/invalid-input','请先选择业务，再查询该业务的真实数据。')
+    if(input.period!==undefined&&input.period!=='this-month'||input.period!==undefined&&input.observedAfter!==undefined)throw new WorkError('teloa/invalid-input','时间范围不明确，请使用本月或明确起点其中一种。')
+    const clock=input.period==='this-month'?businessScopeTime(ports.now(),ports.timezone?.()):undefined
+    const {period:_,...query}=input
+    await lease.assertCurrent()
+    const page=readBusinessDataPage(await ports.data({...query,scope:lease.scope,...(clock?{observedAfter:clock.thisMonth.from}:{})},exec.signal,lease.actor),lease.scope)
+    await lease.assertCurrent()
+    value=clock?{...page,items:page.items.filter(item=>item.observedAt>=clock.thisMonth.from&&item.observedAt<clock.thisMonth.to),timeWindow:{...clock.thisMonth,timeZone:clock.timeZone,timeZoneSource:clock.timeZoneSource,observedAt:clock.observedAt},coverage:'Filtered page only; follow nextCursor before claiming a total.'}:page
+   }
    exec.signal.throwIfAborted();return JSON.stringify(value)
   }catch(error){if(error instanceof WorkError||exec.signal.aborted)throw error;throw new WorkError('teloa/host-unavailable','工作服务暂不可用，请核对本会话原交办，不要重复发送。')}
  }}))
@@ -279,17 +312,25 @@ export function registerConversationWorkTools(ctx:Context,ports:ConversationWork
   let binding:Awaited<ReturnType<typeof ports.conversation>>
   try{binding=await ports.conversation(agent.session.id)}catch(error){if(error instanceof WorkError&&(error.code==='teloa/not-bound'||error.code==='teloa/not-found'||error.code==='teloa/forbidden'))return decision;throw error}
   if(binding.status!=='ready'||binding.ownerId!==ports.owner||agent.session.header.origin==='subagent')return decision
+  scopeReads.delete(agent)
   retireCoordinationNotices(agent)
   if(await ports.readTaskPolicy(agent.session.id,signal)!==null||await ports.isRoleConversation(agent.session.id)||await ports.isTaskConversation?.(agent.session.id)||await ports.isBuilder?.(agent.session.id))return decision
   if(await ports.isPendingDaily?.(agent.session.id))throw new WorkError('teloa/binding-pending','日常业务会话尚未完成归属，请先恢复原预约。')
   const context=await ports.freeze(agent.session.id),responsibility=context?await business(ports,context.scopeId):null
+  const businessContext=await ports.businessContext?.({agent,signal},context)
+  if(businessContext)scopeReads.set(agent,businessContext.assertCurrent)
   let artifactRevision:Awaited<ReturnType<typeof currentArtifactRevision>>
   try{artifactRevision=await currentArtifactRevision(ports,{agent,signal},messages)}catch(error){
    // 修订完成后仍允许协调器读取状态和汇报；无效标记不投影旧反馈，交办时继续严格拒绝。
    if(!(error instanceof WorkError&&(error.code==='teloa/forbidden'||error.code==='teloa/version-conflict'||error.code==='teloa/invalid-input')))throw error
   }
-  const notice=createUserMessage({source:{kind:conversationWorkSource,form:'notice',summary:coordinationSummary},content:[{type:'text',text:coordinationGuide+JSON.stringify({context:context??{scopeId:null,roleId:null},business:responsibility,...(artifactRevision?{artifactRevision}:{})})}]})
+  const notice=createUserMessage({source:{kind:conversationWorkSource,form:'notice',summary:coordinationSummary},content:[{type:'text',text:coordinationGuide+JSON.stringify({context:context??{scopeId:null,roleId:null},business:responsibility,...(businessContext?{businessContext:businessContext.value}:{}),...(artifactRevision?{artifactRevision}:{})})}]})
   return {...decision,messages:[...decision.messages,notice]}
  })
- return ()=>{removeGuard();removeContext();removePresentation()}
+ const removeStream=ctx.on('llm/stream',async function*(request,next){
+  const agent=request.sessionId?ctx.agents.get(request.sessionId):undefined
+  if(agent)await scopeReads.get(agent)?.()
+  request.signal?.throwIfAborted();yield* next()
+ },{global:true})
+ return ()=>{removeGuard();removeContext();removePresentation();removeStream()}
 }

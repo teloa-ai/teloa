@@ -8,7 +8,7 @@ import {SessionStore,SessionId} from '@deepseek-ai/dsh-session'
 import {AgentRegistry} from '@deepseek-ai/dsh-agent'
 import {AgentLoop} from '@deepseek-ai/dsh-agent-loop'
 import {SessionProjectionRegistry} from '@deepseek-ai/dsh-session-projection'
-import {methodReuseBasisHash,readPageCreatePlanDraft,type SavedArtifactVersion} from '@teloa/contract'
+import {WorkError,methodReuseBasisHash,readPageCreatePlanDraft,type SavedArtifactVersion} from '@teloa/contract'
 import {registerMethodReuseTools,type MethodReuseToolsPorts} from '../src/method-reuse-tools.ts'
 import {methodPlanDraftExample,configurePlanDraftExample} from '../src/plan-draft-guide.ts'
 
@@ -17,13 +17,13 @@ const artifact:SavedArtifactVersion={artifactId,ownerId:owner,number:1,source:{k
 const source={artifactId,version:1,basisHash:await methodReuseBasisHash(artifact)}
 assert.ok('definition'in methodPlanDraftExample)
 const planBody={...methodPlanDraftExample,source}
-async function setup(overrides:Partial<MethodReuseToolsPorts>={}){
+async function setup(overrides:Partial<MethodReuseToolsPorts>&{bindSourceInput?:(sessionId:string,value:typeof source)=>Promise<void>}={}){
  const ctx=new Context();await ctx.plugin(LlmRuntime);await ctx.plugin(SystemPrompt);await ctx.plugin(ToolRuntime);await ctx.plugin(SessionStore);await ctx.plugin(SessionProjectionRegistry);await ctx.plugin(AgentRegistry);await ctx.plugin(AgentLoop,{agents:[]})
  const {agent}=await ctx.agents.create({sessionId:SessionId('method-tools-session'),agentOptions:{provider:'test',model:'test'}})
  agent.session.append('turn/start',{turn:1})
  agent.session.append('user/message',createUserMessage({source:{kind:'user',rpcId},content:[{type:'text',text:'请将这份成果保存为计划，先不启用。'}]}),{surfaceOp:'append'})
  const calls:unknown[]=[]
- const ports:MethodReuseToolsPorts={owner,conversation:async sessionId=>({ownerId:owner,sessionId,status:'ready'}),readTaskPolicy:async()=>null,skillCreator:null,source:async()=>({source,artifact}),prepare:async(input,signal,check)=>{signal.throwIfAborted();await check();calls.push(input);return {id:'30000000-0000-4000-8000-000000000001',ownerId:owner,requestId:input.requestId,entity:input.target,body:JSON.stringify(input.body),bodyHash:'b'.repeat(64),title:'客户摘要',status:'draft',createdAt:artifact.createdAt,updatedAt:artifact.createdAt}},...overrides}
+ const ports:MethodReuseToolsPorts={owner,bindSourceInput:async()=>{},conversation:async sessionId=>({ownerId:owner,sessionId,status:'ready'}),readTaskPolicy:async()=>null,skillCreator:null,source:async()=>({source,artifact}),prepare:async(input,signal,check)=>{signal.throwIfAborted();await check();calls.push(input);return {id:'30000000-0000-4000-8000-000000000001',ownerId:owner,requestId:input.requestId,entity:input.target,body:JSON.stringify(input.body),bodyHash:'b'.repeat(64),title:'客户摘要',status:'draft',createdAt:artifact.createdAt,updatedAt:artifact.createdAt}},...overrides}
  registerMethodReuseTools(ctx,ports)
  const call=(name:string,args:Record<string,unknown>,callId='once')=>ctx.tools.execute({agent,name,arguments:args,callId:ToolCallId(callId),signal:AbortSignal.timeout(5000)})
  return {ctx,agent,calls,call}
@@ -166,4 +166,12 @@ test('方法计划使用原严格 reader 拒绝本人群授权和不一致日程
  const invalidBudget=structuredClone(planBody);invalidBudget.work.budget.maxRetries=-1
  for(const plan of [mismatched,invalidBudget,{...planBody,definition:{...planBody.definition,groupId:'30000000-0000-4000-8000-000000000001'}}])assert.equal((await e.call('teloa_method_reuse',{target:'plan',source,plan})).isError,true)
  assert.deepEqual(e.calls,[])
+})
+
+test('方法读取在真实session登记固定来源后才把正文交给模型，登记拒绝不泄露原正文',async t=>{
+ const bound:unknown[]=[],f=await setup({bindSourceInput:async(sessionId,value)=>{bound.push({sessionId,source:value})}});t.after(()=>f.ctx.fiber.dispose())
+ assert.equal((await f.call('teloa_method_source',{artifactId,version:1})).isError,false)
+ assert.deepEqual(bound,[{sessionId:f.agent.id,source}])
+ const denied=await setup({bindSourceInput:async()=>{throw new WorkError('teloa/source-unavailable','已撤回')}});t.after(()=>denied.ctx.fiber.dispose())
+ const result=await denied.call('teloa_method_source',{artifactId,version:1});assert.equal(result.isError,true);assert.doesNotMatch(JSON.stringify(result),/只根据提供的资料/)
 })

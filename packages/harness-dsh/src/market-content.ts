@@ -1,4 +1,4 @@
-import {WorkError,isRecord} from '@teloa/contract'
+import {WorkError,isRecord,industryResourceModelDependencies} from '@teloa/contract'
 
 export const marketContentEndpoints=['market-content/import','market-content/import-github','market-content/import-github-skill','market-content/get','market-content/receipt','market-content/list'] as const
 export type MarketContentOperations={
@@ -40,8 +40,9 @@ function decodeFiles(value:unknown):{path:string;bytes:Uint8Array}[]{
 }
 function validateAtomic(row:Record<string,unknown>):void{
  upload(row.source)
- const metadata=object(row.metadata,['id','title','version','categories','localized'])
+ const metadata=object(row.metadata,['id','title','version','categories','localized','modelDependencies'])
  if(!string(metadata.id,120)||!string(metadata.title,120)||!string(metadata.version,80)||!Array.isArray(metadata.categories)||metadata.categories.some(value=>!string(value,80)))throw invalid()
+ industryResourceModelDependencies('skill',metadata.modelDependencies)
 }
 function trust(value:unknown):void{if(value===undefined)return;const row=object(value,['publisher','repository','license','signature','compatibility','plugins','externalCapabilities','permissions','review']);if(!string(row.publisher,200)||!row.publisher.trim()||row.repository!==null&&!isRecord(row.repository)||!isRecord(row.license)||!isRecord(row.signature)||!isRecord(row.compatibility)||!Array.isArray(row.plugins)||!Array.isArray(row.externalCapabilities)||!Array.isArray(row.permissions)||!isRecord(row.review))throw invalid()}
 function validateIndustry(row:Record<string,unknown>):void{

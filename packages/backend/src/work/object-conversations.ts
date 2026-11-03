@@ -7,7 +7,8 @@ import {authorizeRoleTaskAssignment} from './role-task-authorization.ts'
 import {RoleWorkEligibilityService} from './role-work-eligibility.ts'
 import {readRoleWorkAuthorization} from './run-role-snapshot.ts'
 type Kind='task'|'role'
-export type ObjectConversation={kind:Kind;objectId:string;objectVersion:number;conversationId:string;sessionId:string;version:number;active:boolean;updatedAt:string;scopeId:string|null;sourceOnly?:true}
+export type ObjectConversation={kind:Kind;objectId:string;objectVersion:number;conversationId:string;sessionId:string;version:number;active:boolean;updatedAt:string;scopeId:string|null;sourceOnly?:true;readOnly?:true;displayTitle?:string}
+type RunDirectory=(owner:string,filter:{roleId?:string;sessionId?:string},signal?:AbortSignal)=>Promise<readonly {link:ObjectConversation}[]>
 type Inspect=(owner:string,sessionId:string)=>Promise<{id:string;sessionId:string;ownerId:string;status:string;purpose?:Conversation['purpose']}>
 const uuid=(v:unknown):v is string=>typeof v==='string'&&/^[a-f0-9]{8}-[a-f0-9]{4}-[1-5][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i.test(v)
 const session=(v:unknown):v is string=>typeof v==='string'&&/^[a-zA-Z0-9_-]{1,128}$/.test(v)
@@ -44,8 +45,8 @@ async function object(db:Pool|PoolClient,owner:string,kind:unknown,id:unknown,lo
  return {version:value.version,canLink:value.state==='active'||value.state==='paused',scopes:value.scopes,generalOwner:false}
 }
 export class ObjectConversationService{
- readonly pool:Pool;readonly inspect:Inspect;readonly now:()=>string
- constructor(pool:Pool,inspect:Inspect,now:()=>string){this.pool=pool;this.inspect=inspect;this.now=now}
+ readonly pool:Pool;readonly inspect:Inspect;readonly now:()=>string;readonly runDirectory:RunDirectory|undefined
+ constructor(pool:Pool,inspect:Inspect,now:()=>string,runDirectory?:RunDirectory){this.pool=pool;this.inspect=inspect;this.now=now;this.runDirectory=runDirectory}
  async taskContext(owner:string,input:unknown){
   const row=taskInput(input,['taskId','sessionId','expectedTaskVersion']);target(owner,{kind:'task',objectId:row.taskId})
   if(!session(row.sessionId)||!positive(row.expectedTaskVersion))throw new WorkError('teloa/invalid-input','任务会话或版本不合法。')
@@ -74,15 +75,23 @@ export class ObjectConversationService{
    admission?.assertCurrent();await db.query('commit');admission?.assertCurrent();return {task,role,link}
   }catch(e){await db.query('rollback');throw e}finally{db.release()}
  }
- async list(owner:string,input:unknown):Promise<ObjectConversation[]>{
+ async list(owner:string,input:unknown,signal?:AbortSignal):Promise<ObjectConversation[]>{
+  signal?.throwIfAborted()
   const row=taskInput(input,['kind','objectId']);target(owner,row);await object(this.pool,owner,row.kind,row.objectId)
-  const rows=await this.pool.query('select * from teloa_object_conversations where owner_id=$1 and kind=$2 and object_id=$3 order by updated_at,session_id',[owner,row.kind,row.objectId]);return rows.rows.map(read)
+  const rows=await this.pool.query('select * from teloa_object_conversations where owner_id=$1 and kind=$2 and object_id=$3 order by updated_at,session_id',[owner,row.kind,row.objectId]),manual=rows.rows.map(read)
+  const derived=row.kind==='role'?await this.runDirectory?.(owner,{roleId:row.objectId as string},signal)??[]:[]
+  signal?.throwIfAborted()
+  return [...new Map([...manual,...derived.map(entry=>entry.link)].map(link=>[link.sessionId,link])).values()]
  }
- async bySession(owner:string,input:unknown):Promise<ObjectConversation[]>{
+ async bySession(owner:string,input:unknown,signal?:AbortSignal):Promise<ObjectConversation[]>{
+  signal?.throwIfAborted()
   const row=taskInput(input,['sessionId'])
   if(typeof owner!=='string'||!owner.trim()||owner.length>128||!session(row.sessionId))throw new WorkError('teloa/invalid-input','需要有效的本人及会话身份。')
   const rows=await this.pool.query("select * from teloa_object_conversations where owner_id=$1 and session_id=$2 and active=true and source_only=false order by case when kind='role' then 0 else 1 end,updated_at desc,object_id",[owner,row.sessionId])
-  return rows.rows.map(read)
+  const manual=rows.rows.map(read),derived=await this.runDirectory?.(owner,{sessionId:row.sessionId as string},signal)??[]
+  signal?.throwIfAborted()
+  // 运行身份来自规范Run，不允许手工关联把该会话改挂到另一个员工；普通手工会话不变。
+  return derived.length?[...manual.filter(link=>link.kind!=='role'),...derived.map(entry=>entry.link)]:manual
  }
  async change(owner:string,input:unknown,signal?:AbortSignal,revalidate?:()=>Promise<void>):Promise<ObjectConversation>{
   const row=taskInput(input,['requestId','kind','objectId','expectedObjectVersion','sessionId','expectedLinkVersion','action','scopeId','sourceOnly']);target(owner,row)
@@ -110,6 +119,7 @@ export class ObjectConversationService{
    if(row.action==='link'?(!sourceOnly&&!currentObject.canLink)||current?.active:!current?.active)throw new WorkError('teloa/conflict','当前状态不能执行此关联操作。')
    if(row.action==='link'&&requestedScope&&!currentObject.scopes.includes(requestedScope))throw new WorkError('teloa/forbidden','员工或任务不支持所选业务范围。')
    const conversation=await this.inspect(owner,row.sessionId)
+   if(row.kind==='role'&&conversation.purpose==='task-run')throw new WorkError('teloa/forbidden','自动工作会话仅供阅读，不能变更为手工员工关联。')
    if(conversation.ownerId!==owner||conversation.sessionId!==row.sessionId||conversation.status!=='ready'||!session(conversation.id))throw new WorkError('teloa/forbidden','只能关联本人已就绪的工作会话。')
    if(row.action==='link'&&conversation.purpose==='assistant'&&!sourceOnly)throw new WorkError('teloa/forbidden','小松鼠主聊保留通用身份，执行上下文请关联独立工作会话。')
    if(current&&current.conversationId!==conversation.id)throw new WorkError('teloa/storage-corrupt','会话身份与原关联不一致。')

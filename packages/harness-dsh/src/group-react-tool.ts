@@ -85,7 +85,7 @@ export function registerGroupReactTool(ctx:Context,ports:GroupReactToolPorts):vo
  }
  ctx.tools.register(defineTool({
   name:groupReactToolName,
-  description:`给本次运行所在话题里的一条群消息加一个表情，用来快速表态（收到、同意、有疑问等），不发消息、不推进任何任务。只能用这十二个固定表情之一：${groupReactionEmojis.join(' ')}。跨话题的消息加不了；同一次运行里同一条消息的同一表情只会加一次（重复调用返回 duplicate，不重复计数）；不能取消别人的表情。`,
+  description:`可选的群内表态：给本次运行所在话题里的一条群消息加一个表情（收到、同意、有疑问等），不发消息、不推进任何任务。普通成果由宿主自动回群，表情不是回应、交接或完整交付的前置步骤；本人要求仅分析、禁止代码或不做群内动作时，不调用本工具。只能用这十二个固定表情之一：${groupReactionEmojis.join(' ')}。跨话题的消息加不了；同一次运行里同一条消息的同一表情只会加一次（重复调用返回 duplicate，不重复计数）；不能取消别人的表情。`,
   parameters:{messageId:{type:'string',required:true},emoji:{type:'string',required:true}},
   output:{schema:{type:'string'},render:(_args,value)=>[{type:'text',text:value}]},
   execute:async(args,exec)=>{

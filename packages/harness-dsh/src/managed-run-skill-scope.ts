@@ -207,5 +207,5 @@ export function createManagedRunSkillScope(ctx:Context,options:ManagedRunSkillSc
   return disposal
  }
  ctx.effect(()=>dispose,'Teloa 固定执行技能作用域')
- return {ensure,dispose}
+ return {ensure,dispose,release:async(runId:string)=>{await Promise.all([...active].filter(binding=>binding.runId===runId).map(close))}}
 }

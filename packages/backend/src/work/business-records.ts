@@ -2,12 +2,12 @@ import {isDeepStrictEqual} from 'node:util'
 import {createHash,randomUUID} from 'node:crypto'
 import type {Pool,PoolClient} from 'pg'
 import {registeredBusinessSnapshotSources} from './business-snapshot-source.ts'
-import {WorkError,isBusinessScopeKey,businessObjectReference,readBusinessRecordCreate,readBusinessRecordEdit,readBusinessRecordArchive,readBusinessRecordGet,readBusinessRecordList,readBusinessRecordReceipt,readBusinessRecordBatch,readBusinessRichFieldValue,type BusinessRecordBatchResult,type BusinessObjectTypeDefinition,type BusinessObjectTypeDefinitionV2,type BusinessObjectReference,type BusinessObjectSnapshot,type BusinessDataPage,type BusinessRecordCreate,type BusinessRecordEdit,type BusinessRecordArchive,type BusinessRecordTarget} from '@teloa/contract'
+import {WorkError,isBusinessScopeKey,businessObjectReference,readBusinessRecordCreate,readBusinessRecordEdit,readBusinessRecordArchive,readBusinessRecordGet,readBusinessRecordList,readBusinessRecordReceipt,readBusinessRecordBatch,readBusinessRichFieldValue,type BusinessFieldValue,type BusinessRecordBatchResult,type BusinessObjectTypeDefinition,type BusinessObjectTypeDefinitionV2,type BusinessObjectReference,type BusinessObjectSnapshot,type BusinessDataPage,type BusinessRecordCreate,type BusinessRecordEdit,type BusinessRecordArchive,type BusinessRecordTarget} from '@teloa/contract'
 import {readBusinessObjectSnapshot,businessObjectSnapshotHash} from './business-data.ts'
 import type {BusinessDefinitionSourceReader} from './business-definition-source.ts'
 import type {BusinessWarehouseService} from './business-warehouse.ts'
 import type {BusinessSnapshotReferenceService} from './business-snapshot-references.ts'
-import {assertBusinessRecordFieldValue,assertBusinessRecordUniqueState} from './business-record-values.ts'
+import {assertBusinessRecordFieldValue,assertBusinessRecordUniqueState,normalizeBusinessRecordFieldValue} from './business-record-values.ts'
 import {lockBusinessConfiguration} from './business-configuration-lock.ts'
 import {hasBusinessRecordUniqueConstraints,lockBusinessRecordTypes,readBusinessRecordConstraintState} from './business-record-constraints.ts'
 import {businessRecordSchemaFingerprint,type BusinessRecordBatchDefinitionGuard} from './business-record-schema.ts'
@@ -27,12 +27,21 @@ type BatchRow={request_id:string;request_hash:string;scope_id:string;child_reque
 export type BusinessRecordRecentBatch={requestId:string;scope:string;source:BusinessRecordBatchSource;createdAt:string;operations:Array<{requestId:string;operation:Operation;reference:BusinessObjectReference}>}
 type ReceiptRow={request_hash:string;operation:string;scope_id:string;result_reference:unknown;previous_reference:unknown}
 const invalid=()=>new WorkError('teloa/invalid-input','本地业务记录参数或字段值不合法。')
+/** 只投影已经通过主体、业务范围及可写来源核验的同类型声明；不回显未知入参或记录值。 */
+function unknownField(definition:Prepared['definition']):WorkError{
+ const projected=definition.fields.map(field=>({name:field.name,type:field.type,required:field.required,...(field.type==='number'?{...('integer' in field&&field.integer!==undefined?{integer:field.integer}:{}),...('minimum' in field&&field.minimum!==undefined?{minimum:field.minimum}:{}),...('decimalScale' in field&&field.decimalScale!==undefined?{decimalScale:field.decimalScale}:{})}:{})}))
+ const fields:typeof projected=[]
+ const guidance=()=>({type:definition.id,totalFields:projected.length,truncated:fields.length<projected.length,fields})
+ // 完整 JSON（含总数和截断状态）最多 16 KiB；覆盖契约内 50 个最长字段及数字约束，不迫使受限任务另获读取权限。
+ for(const field of projected){fields.push(field);if(Buffer.byteLength(JSON.stringify(guidance()))>16384){fields.pop();break}}
+ return new WorkError('teloa/invalid-input','字段名称不符合当前业务记录类型，请按该类型的字段定义准备修改。',{reason:'unknown-record-field',fieldGuidance:guidance()})
+}
 const corrupt=()=>new WorkError('teloa/storage-corrupt','本地业务记录、固定快照或回执不一致，已停止读取。')
 const conflict=()=>new WorkError('teloa/conflict','请求标识已用于不同的记录操作。')
-function referenceIds(field:Prepared['definition']['fields'][number],value:string|undefined):string[]{
- if(field.type==='reference')return value===undefined||value===''?[]:[value]
+function referenceIds(field:Prepared['definition']['fields'][number],value:BusinessFieldValue|undefined):string[]{
+ if(field.type==='reference')return typeof value==='string'&&value!==''?[value]:[]
  if(field.type==='multi-reference'){
-  const parsed=readBusinessRichFieldValue(field,value)
+  const parsed=readBusinessRichFieldValue(field,typeof value==='string'?value:undefined)
   return parsed?.type==='multi-reference'?parsed.ids:[]
  }
  return []
@@ -265,8 +274,8 @@ export class BusinessRecordService{
    if(operation!=='archive'){
     if(!('fields' in input))throw invalid()
     const supplied=new Map(input.fields.map(field=>[field.name,field.value]))
-    if(input.fields.some(field=>!definition.fields.some(defined=>defined.name===field.name)))throw invalid()
-    const fields:Array<{label:string;value:string}>=[]
+    if(input.fields.some(field=>!definition.fields.some(defined=>defined.name===field.name)))throw unknownField(definition)
+    const fields:Array<{label:string;value:BusinessFieldValue}>=[]
     for(const field of definition.fields){
      const value=supplied.get(field.name);assertBusinessRecordFieldValue(field,value)
      for(const id of referenceIds(field,value)){
@@ -358,6 +367,20 @@ export class BusinessRecordService{
  }
  async batch(actor:Actor,value:unknown,sourceValue?:BusinessRecordBatchSource):Promise<BusinessRecordBatchResult>{
   return this.transaction(true,db=>this.batchInTransaction(db,actor,value,sourceValue))
+ }
+ /** 新修改草稿先按当前真实定义规范化；同事务共享配置锁覆盖随后的预览和草稿保存。 */
+ async normalizeBatchInTransaction(db:PoolClient,actor:Actor,value:unknown){
+  const input=readBusinessRecordBatch(value);authorize(actor,input.scope)
+  await lockBusinessConfiguration(db,actor.ownerId,input.scope,'shared')
+  const definitions=new Map<string,BusinessObjectTypeDefinition|BusinessObjectTypeDefinitionV2>()
+  for(const operation of input.operations){
+   const definition=definitions.get(operation.type)??await this.definition(db,actor,{scope:input.scope,type:operation.type})
+   definitions.set(operation.type,definition)
+   if(operation.operation==='archive')continue
+   if(operation.fields.some(field=>!definition.fields.some(defined=>defined.name===field.name)))throw unknownField(definition)
+   operation.fields=operation.fields.map(field=>({...field,value:normalizeBusinessRecordFieldValue(definition.fields.find(defined=>defined.name===field.name)!,field.value)!}))
+  }
+  return input
  }
  /** 调用方拥有事务；仍沿记录请求→配置→类型→head顺序取得原有锁。 */
  /** 只准备完整差异；字段、关联与唯一性校验复用真正写入的实现，不落正式记录。 */

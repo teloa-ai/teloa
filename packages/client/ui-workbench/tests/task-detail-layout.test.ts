@@ -160,8 +160,8 @@ test('审批与交接表单只常驻一份且不被低频任务信息折叠包�
 test('资料内容只挂载一次；编号、时间与模式收起但保留锚点定位',()=>{
  const html=paint({knowledge:createElement('span',null,'已核验的安全告警判据')})
  assert.equal(html.match(/已核验的安全告警判据/g)?.length,1)
- assert.match(html,/资料与关联会话/)
- assert.match(html,/执行配置与任务信息/)
+  assert.match(html,/>任务信息<\/button>/)
+  assert.doesNotMatch(html,/>资料与关联会话<\/button>|>执行配置与任务信息<\/button>/)
  assert.match(html,/data-teloa-anchor="evidence"/)
  assert.doesNotMatch(html,/<dt>任务知识<\/dt>[\s\S]*?<span>—<\/span>/)
 })

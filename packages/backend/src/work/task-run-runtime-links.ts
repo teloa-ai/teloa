@@ -3,11 +3,12 @@ import {createHash} from 'node:crypto'
 import {isDeepStrictEqual} from 'node:util'
 import {isAbsolute,normalize} from 'node:path'
 import {WorkError,taskInput} from '@teloa/contract'
-import {runEvidence,type TaskRunEvidence} from './task-run-evidence.ts'
+import {runEvidence,taskRunEvidenceProofEnd,type TaskRunEvidence} from './task-run-evidence.ts'
 import {readStoredTaskRun} from './task-runs.ts'
 
 /** 宿主核对原生终态及实际资源后保存；不进入模型或浏览器写接口。 */
-export type TaskRunOwnerSettlement={schema:'teloa.task-run-owner-settlement/v1';runId:string;nativeId:string;sessionId:string;nativeRequestId:string;inputSha256:string;evidence:Extract<TaskRunEvidence,{state:'ended'}>;prefixLength:number;prefixSha256:string;observedAt:string}
+type OwnerSettlementFields={runId:string;nativeId:string;sessionId:string;nativeRequestId:string;inputSha256:string;evidence:Extract<TaskRunEvidence,{state:'ended'}>;prefixLength:number;prefixSha256:string;observedAt:string}
+export type TaskRunOwnerSettlement=OwnerSettlementFields&({schema:'teloa.task-run-owner-settlement/v1';source?:never}|{schema:'teloa.task-run-owner-settlement/v2';source:import('./task-run-inbox-error.ts').StoppedInboxErrorIssuer})
 
 type JobStatus='running'|'stopping'|'completed'|'killed'|'failed'
 type JobOwner={record:'owner';runtimeId:string;requestId:string}
@@ -24,9 +25,16 @@ const uuid=(value:unknown):value is string=>typeof value==='string'&&/^[a-f0-9]{
 const text=(value:unknown):value is string=>typeof value==='string'&&value.trim().length>0&&value.length<=512&&!/[\u0000-\u001f]/.test(value)
 const invalid=()=>new WorkError('teloa/invalid-input','原生执行关联格式不正确。')
 export function readTaskRunOwnerSettlement(value:unknown):TaskRunOwnerSettlement{
- const row=taskInput(value,['schema','runId','nativeId','sessionId','nativeRequestId','inputSha256','evidence','prefixLength','prefixSha256','observedAt']),evidence=runEvidence(row.evidence)
- if(row.schema!=='teloa.task-run-owner-settlement/v1'||!uuid(row.runId)||!text(row.nativeId)||!text(row.sessionId)||row.sessionId.length>128||!uuid(row.nativeRequestId)||typeof row.inputSha256!=='string'||!/^[a-f0-9]{64}$/.test(row.inputSha256)||typeof row.prefixSha256!=='string'||!/^[a-f0-9]{64}$/.test(row.prefixSha256)||evidence.state!=='ended'||row.prefixLength!==evidence.endSeq+1||typeof row.observedAt!=='string'||!Number.isFinite(Date.parse(row.observedAt))||new Date(row.observedAt).toISOString()!==row.observedAt||Date.parse(row.observedAt)>Date.now())throw invalid()
- return {schema:'teloa.task-run-owner-settlement/v1',runId:row.runId,nativeId:row.nativeId,sessionId:row.sessionId,nativeRequestId:row.nativeRequestId,inputSha256:row.inputSha256,evidence,prefixLength:row.prefixLength as number,prefixSha256:row.prefixSha256,observedAt:row.observedAt}
+ const row=taskInput(value,['schema','runId','nativeId','sessionId','nativeRequestId','inputSha256','evidence','prefixLength','prefixSha256','observedAt','source']),evidence=runEvidence(row.evidence)
+ if(!['teloa.task-run-owner-settlement/v1','teloa.task-run-owner-settlement/v2'].includes(String(row.schema))||!uuid(row.runId)||!text(row.nativeId)||!text(row.sessionId)||row.sessionId.length>128||!uuid(row.nativeRequestId)||typeof row.inputSha256!=='string'||!/^[a-f0-9]{64}$/.test(row.inputSha256)||typeof row.prefixSha256!=='string'||!/^[a-f0-9]{64}$/.test(row.prefixSha256)||evidence.state!=='ended'||row.prefixLength!==taskRunEvidenceProofEnd(evidence)+1||typeof row.observedAt!=='string'||!Number.isFinite(Date.parse(row.observedAt))||new Date(row.observedAt).toISOString()!==row.observedAt||Date.parse(row.observedAt)>Date.now())throw invalid()
+ const fields={runId:row.runId,nativeId:row.nativeId,sessionId:row.sessionId,nativeRequestId:row.nativeRequestId,inputSha256:row.inputSha256,evidence,prefixLength:row.prefixLength as number,prefixSha256:row.prefixSha256,observedAt:row.observedAt}
+ if(row.schema==='teloa.task-run-owner-settlement/v2'){
+  const source=taskInput(row.source,['kind','originalRuntimeId','maintenanceRuntimeId','physicalSha256'])
+  if(source.kind!=='stopped-session-writer-maintenance'||!uuid(source.originalRuntimeId)||!uuid(source.maintenanceRuntimeId)||typeof source.physicalSha256!=='string'||!/^[a-f0-9]{64}$/.test(source.physicalSha256)||!evidence.inputAnchor||!['error','interrupted'].includes(evidence.reason)||row.nativeId!=='owner:'+source.originalRuntimeId+':'+row.sessionId)throw invalid()
+  return {...fields,schema:'teloa.task-run-owner-settlement/v2',source:{kind:source.kind,originalRuntimeId:source.originalRuntimeId,maintenanceRuntimeId:source.maintenanceRuntimeId,physicalSha256:source.physicalSha256}}
+ }
+ if(row.source!==undefined)throw invalid()
+ return {...fields,schema:'teloa.task-run-owner-settlement/v1'}
 }
 const actor=(owner:string)=>{if(!text(owner)||owner.length>128)throw new WorkError('teloa/forbidden','需要本人身份。')}
 const statuses:readonly JobStatus[]=['running','stopping','completed','killed','failed']

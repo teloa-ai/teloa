@@ -186,3 +186,6 @@ export function createSkillSecretStore(credentials:SkillSecretCredentialPort,dec
  }
  return {describe,save,remove,readForUse,handle}
 }
+
+/** 本人技能复用相同的锁定错误语义，不将不可读当成未配置。 */
+export {viaStore as viaSkillSecretStore}

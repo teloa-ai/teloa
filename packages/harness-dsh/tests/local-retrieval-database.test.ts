@@ -13,31 +13,34 @@ import {SessionStore,SessionId} from '@deepseek-ai/dsh-session'
 import {AgentRegistry} from '@deepseek-ai/dsh-agent'
 import {AgentLoop} from '@deepseek-ai/dsh-agent-loop'
 import {SessionProjectionRegistry} from '@deepseek-ai/dsh-session-projection'
-import {initializeResources,openResourceDatabase,type ResourceActor} from '@teloa/backend'
+import {initializeResources,openResourceDatabase,initializeBusinessSpaces,BusinessSpaceService,BusinessScopeService,initializeConversationWork,ConversationWorkService,type ResourceActor} from '@teloa/backend'
 import {WorkError,readRetrievalSearchResult} from '@teloa/contract'
-import {registerLocalRetrieval,embeddingProviderId,knowledgeSearchToolName,type EmbeddingServiceLike} from '../src/local-retrieval.ts'
+import {registerLocalRetrieval,authorizeOrdinaryRetrievalContext,embeddingProviderId,knowledgeSearchToolName,type EmbeddingServiceLike} from '../src/local-retrieval.ts'
 import {registerTaskToolGuard,type TaskToolPolicy} from '../src/task-tool-guard.ts'
+import {readSessionEvents} from '../src/session-events.ts'
+import type {BusinessConversationAuthorizationPorts} from '../src/business-conversation-authorization.ts'
 
 // 只替代向量推理：原生工具守卫、宿主、资料内容仓与 PostgreSQL 索引走真实链路。
 test('原生检索工具与真库：本人加入、会话范围、岗位授权、移出撤回及取消续建',{timeout:60000},async t=>{
- process.env.DOCKER_HOST='unix://'+join(homedir(),'.orbstack/run/docker.sock')
- process.env.TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE='/var/run/docker.sock'
- const container=await new PostgreSqlContainer('postgres:17-alpine').withDatabase('teloa').start()
- const root=await mkdtemp(join(tmpdir(),'teloa-retrieval-host-db-'))
+ // 已有隔离测试库可复用其配置；缺省仍由测试拥有独立容器，不接触产品运行库。
+ const externalConfig=process.env.TELOA_RETRIEVAL_TEST_DATABASE_CONFIG
+ if(!externalConfig){process.env.DOCKER_HOST='unix://'+join(homedir(),'.orbstack/run/docker.sock');process.env.TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE='/var/run/docker.sock'}
+ const container=externalConfig?undefined:await new PostgreSqlContainer('postgres:17-alpine').withDatabase('teloa').start()
+ const root=externalConfig?undefined:await mkdtemp(join(tmpdir(),'teloa-retrieval-host-db-'))
  let database:Awaited<ReturnType<typeof openResourceDatabase>>|undefined
  let ctx:Context|undefined,host:ReturnType<typeof registerLocalRetrieval>|undefined
  t.after(async()=>{
   await host?.dispose()
   await ctx?.fiber.dispose()
   await database?.pool.end()
-  await container.stop()
-  await rm(root,{recursive:true,force:true})
+  await container?.stop()
+  if(root)await rm(root,{recursive:true,force:true})
  })
- const config=join(root,'database.json')
- await writeFile(config,JSON.stringify({connectionString:container.getConnectionUri()}),{mode:0o600})
+ const config=externalConfig??join(root!,'database.json')
+ if(!externalConfig)await writeFile(config,JSON.stringify({connectionString:container!.getConnectionUri()}),{mode:0o600})
  database=await openResourceDatabase(config,{id:randomUUID,now:()=>new Date().toISOString()})
  await initializeResources(database.pool)
- const db=database,owner='retrieval-test-owner'
+ const db=database,owner='retrieval-test-'+randomUUID()
  const human:ResourceActor={ownerId:owner,kind:'human',scopeIds:['general','soc']}
  const add=async(title:string,scopeIds:string[],markdown:string)=>{
   const {item,version}=await db.knowledge.createPaste(human,{requestId:randomUUID(),title,category:'sop',topics:['检索验收'],scopeIds,markdown})
@@ -60,9 +63,11 @@ test('原生检索工具与真库：本人加入、会话范围、岗位授权�
  agent.session.append('turn/start',{turn:1})
  agent.session.append('user/message',createUserMessage({source:{kind:'user',rpcId:'request'},content:[{type:'text',text:'查一下规则'}]}),{surfaceOp:'append'})
  let policy:TaskToolPolicy|null=null
+ let ordinaryPorts:BusinessConversationAuthorizationPorts|undefined
  host=registerLocalRetrieval(ctx,{
   owner,conversation:async id=>({ownerId:owner,sessionId:id,status:'ready',scopeIds:['general']}),requestedRoleId:async()=>null,role:async()=>null,
   readTaskPolicy:async()=>policy,
+  ordinaryAuthorization:(exec,fallback)=>ordinaryPorts?authorizeOrdinaryRetrievalContext(ordinaryPorts,exec,fallback):Promise.resolve(fallback),
   taskAuthorization:async()=>({actor:{ownerId:owner,kind:'agent',scopeIds:['soc']},targetScopes:['soc']}),
   humanActor:async()=>human,retrieval:async()=>db.retrieval,embedding:()=>embedding,admit:work=>work(),log:()=>{},
  })
@@ -137,5 +142,54 @@ test('原生检索工具与真库：本人加入、会话范围、岗位授权�
  assert.deepEqual(batches,[32,32,32,6],'已提交首批不再推理，第二批取消后重新推理')
  assert.equal((await db.retrieval.status(human,hash)).items.find(item=>item.sourceId===handbook.sourceId)!.state,'ready')
  assert.match((await search()).results[0]!.excerpt,/巡检/)
+ assert.deepEqual(downloads,[])
+
+ // 与正常项目入口相同：Conversation 元数据仍为 general，业务身份由正式 work-context 服务保存。
+ await initializeBusinessSpaces(db.pool);await initializeConversationWork(db.pool)
+ const identity={id:randomUUID,now:()=>new Date().toISOString()},space=await new BusinessSpaceService(db.pool,identity).ensurePersonal(owner)
+ const scope='business_'+randomUUID().replaceAll('-','')
+ await BusinessScopeService.ensure(db.pool,owner,{scope,title:'项目资料隔离',kind:'domain',spaceId:space.id})
+ human.scopeIds.push(scope)
+ const {agent:projectAgent}=await ctx.agents.create({sessionId:SessionId('project-'+randomUUID()),agentOptions:{provider:'test',model:'test'}})
+ const conversation=async(id:string)=>({ownerId:owner,sessionId:id,status:'ready' as const,scopeIds:['general']})
+ const contexts=new ConversationWorkService(db.pool,identity.now,async(actor,id)=>{
+  if(actor!==owner||!ctx!.agents.get(SessionId(id)))throw new WorkError('teloa/forbidden','会话不属于本人')
+  return {...await conversation(id),submitted:readSessionEvents(ctx!.agents.get(SessionId(id))!.session).some(event=>event.type==='user/message'&&event.data.source.kind==='user')}
+ })
+ const context=await contexts.setContext(owner,{requestId:randomUUID(),sessionId:projectAgent.id,scopeId:scope,roleId:null,expectedVersion:0})
+ assert.equal(context.scopeId,scope);assert.deepEqual((await conversation(projectAgent.id)).scopeIds,['general'])
+ projectAgent.session.append('turn/start',{turn:1})
+ projectAgent.session.append('user/message',createUserMessage({source:{kind:'user',rpcId:randomUUID()},content:[{type:'text',text:'查阅交付窗口'}]}),{surfaceOp:'append'})
+ const oldGeneral=await add('海棠交付窗口',['general'],'更正：预约须提前5个工作日，负责人为林乙。此版替代v1。')
+ const current=await add('海棠交付窗口',[scope],'预约须提前3个工作日，负责人为陈甲。')
+ let accessRevoked=false
+ ordinaryPorts={owner,conversation,readTaskPolicy:async()=>null,isRoleConversation:async()=>false,isTaskConversation:async()=>false,binding:async()=>undefined,context:id=>contexts.context(owner,{sessionId:id}),scopes:async()=>accessRevoked?[]:(await new BusinessScopeService(db.pool).list(owner)).map(({scope,title})=>({scope,title}))}
+ await host.handle('retrieval/enroll',{sourceIds:[oldGeneral.sourceId,current.sourceId]},AbortSignal.timeout(10000));await host.idle()
+ const result=await ctx.tools.execute({agent:projectAgent,name:knowledgeSearchToolName,arguments:{query:'海棠交付窗口'},callId:ToolCallId(randomUUID()),signal:AbortSignal.timeout(10000)})
+ assert.equal(result.isError,false,JSON.stringify(result))
+ const scoped=readRetrievalSearchResult(JSON.parse(result.content.filter(item=>item.type==='text').map(item=>item.text).join('\n')))
+ assert.deepEqual(scoped.coverage.searched.map(item=>item.resourceId),[current.id])
+ assert.deepEqual(scoped.coverage.pending,[])
+ assert.equal(scoped.results[0]!.resourceId,current.id);assert.match(scoped.results[0]!.excerpt,/3个工作日.*陈甲/)
+ assert.ok(scoped.results.every(hit=>hit.resourceId!==oldGeneral.id&&!hit.excerpt.includes('林乙')),'旧 general D04-v2 不能冒充项目来源')
+ const exec={agent:projectAgent,signal:AbortSignal.timeout(10000)},authorization=await authorizeOrdinaryRetrievalContext(ordinaryPorts,exec,{actor:{ownerId:owner,kind:'agent',scopeIds:['general']},targetScopes:['general']})
+ const hit=scoped.results[0]!,readHit={resourceId:hit.resourceId,resourceVersion:hit.resourceVersion,sourceVersion:hit.sourceVersion,chars:hit.chars}
+ const readExcerpt=async(actor=authorization.actor,targetScopes=authorization.targetScopes,input=readHit)=>{
+  const client=await db.pool.connect()
+  try{await client.query('begin');return await db.service.readExcerptsInTransaction(client,actor,targetScopes,[input])}finally{await client.query('rollback');client.release()}
+ }
+ await authorization.assertCurrent!()
+ assert.equal((await readExcerpt())[0]!.excerpt,hit.excerpt,'检索后读沿同一主体与业务范围取得固定版本摘录')
+ await assert.rejects(readExcerpt({...authorization.actor,ownerId:'other-owner'}),error=>error instanceof WorkError&&error.code==='teloa/forbidden')
+ await assert.rejects(readExcerpt(authorization.actor,['general']),error=>error instanceof WorkError&&error.code==='teloa/forbidden')
+ await assert.rejects(readExcerpt(authorization.actor,authorization.targetScopes,{...readHit,sourceVersion:'0'.repeat(64)}),error=>error instanceof WorkError&&error.code==='teloa/version-conflict')
+ await assert.rejects(readExcerpt(authorization.actor,authorization.targetScopes,{...readHit,resourceId:oldGeneral.id,resourceVersion:oldGeneral.version,sourceVersion:oldGeneral.sourceVersion}),error=>error instanceof WorkError&&error.code==='teloa/forbidden')
+ accessRevoked=true
+ await assert.rejects(authorization.assertCurrent!(),error=>error instanceof WorkError&&error.code==='teloa/forbidden')
+ const revoked=await ctx.tools.execute({agent:projectAgent,name:knowledgeSearchToolName,arguments:{query:'交付窗口'},callId:ToolCallId(randomUUID()),signal:AbortSignal.timeout(10000)})
+ assert.equal(revoked.isError,true)
+ accessRevoked=false
+ await db.service.withdraw(human,{resourceId:current.id,expectedVersion:current.version})
+ await assert.rejects(readExcerpt(),error=>error instanceof WorkError&&error.code==='teloa/resource-withdrawn')
  assert.deepEqual(downloads,[])
 })

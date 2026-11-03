@@ -1,3 +1,4 @@
+import {isScheduledOccurrenceId as scheduledOccurrenceIdentity} from '@teloa/contract'
 import {readOwnerPlanFields,type OwnerPlanFields,isRecord,readScheduleTrigger,readTaskCompletionPolicy,readPlanWorkDefinition,readRunPlanEventContext,planWorkEventMatches,type RunPlanEventContext,taskDefinition,workTaskStates,type PlanWorkDefinition,type TaskCompletionPolicy,type ScheduleTrigger,type WorkTask} from '@teloa/contract'
 import {readPlanSource,type PlanNotificationPolicy,type PlanSource} from './plan-api.ts'
 
@@ -12,7 +13,7 @@ export type PlanScheduleOccurrence={
  invalidated?:{reason:'plan-paused'|'plan-archived'|'plan-version-changed';observedPlanUpdatedAt:string}
  taskRequest:{requestId:string;fields:{groupId?:string|null;title:string;goal:string;scope:string;completionPolicy?:TaskCompletionPolicy};assignee?:{roleId:string;expectedVersion:number}}
 }
-export type PlanScheduleSkip={planId:string;planVersion:number;configVersion:number;occurrenceId:string;scheduledAt:string;skippedAt:string;reason:'previous-pending'|'previous-task-unfinished';blockingClaimId:string;taskId:string|null}
+export type PlanScheduleSkip={planId:string;planVersion:number;configVersion:number;occurrenceId:string;scheduledAt:string;skippedAt:string;reason:'previous-pending'|'previous-task-unfinished'|'no-work-evidence'|'digest-exists';blockingClaimId:string|null;taskId:string|null}
 export type PlanSchedulerHealth={health:'healthy'|'failing';failureCode:string|null;lastAttemptAt:string;lastSuccessAt:string|null}
 export type PlanScheduleOverview={planId:string;planVersion:number;state:'active'|'paused'|'archived';nextAt:string|null;latest:{occurrence:PlanScheduleOccurrence;task:{id:string;state:WorkTask['state']}|null}|null;latestSkip:PlanScheduleSkip|null}
 export type PlanScheduleSummary={available:boolean;overview:PlanScheduleOverview|null;health:PlanSchedulerHealth|null}
@@ -21,7 +22,6 @@ const uuid=(value:unknown):value is string=>typeof value==='string'&&/^[0-9a-f]{
 const positive=(value:unknown):value is number=>Number.isSafeInteger(value)&&Number(value)>0
 const text=(value:unknown,max:number):value is string=>typeof value==='string'&&!!value.trim()&&value.trim()===value&&value.length<=max
 const timestamp=(value:unknown):value is string=>{if(typeof value!=='string')return false;const parsed=new Date(value);return Number.isFinite(parsed.getTime())&&parsed.toISOString()===value}
-const scheduledOccurrenceIdentity=(value:unknown):value is string=>typeof value==='string'&&/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}\[(?:Asia\/Singapore|Asia\/Shanghai|UTC)\]$/.test(value)
 const manualOccurrenceIdentity=(value:unknown):value is string=>typeof value==='string'&&/^manual:[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)
 const eventOccurrenceIdentity=(value:unknown):value is string=>typeof value==='string'&&value.startsWith('event:')&&uuid(value.slice(6))
 const occurrenceIdentity=(value:unknown):value is string=>typeof value==='string'&&value.length<=100&&(scheduledOccurrenceIdentity(value)||manualOccurrenceIdentity(value)||eventOccurrenceIdentity(value))
@@ -60,9 +60,10 @@ function occurrence(value:unknown):PlanScheduleOccurrence{
 }
 function skip(value:unknown,planId:string,planVersion:number):PlanScheduleSkip{
  const row=exact(value,['planId','planVersion','configVersion','occurrenceId','scheduledAt','skippedAt','reason','blockingClaimId','taskId'])
- if(row.planId!==planId||!positive(row.planVersion)||row.planVersion>planVersion||!positive(row.configVersion)||row.configVersion>row.planVersion||!occurrenceIdentity(row.occurrenceId)||!timestamp(row.scheduledAt)||!timestamp(row.skippedAt)||row.skippedAt<row.scheduledAt||!uuid(row.blockingClaimId)||!['previous-pending','previous-task-unfinished'].includes(String(row.reason)))throw Error()
- if(row.reason==='previous-pending'?row.taskId!==null:!uuid(row.taskId))throw Error()
- return {planId:row.planId,planVersion:row.planVersion,configVersion:row.configVersion,occurrenceId:row.occurrenceId,scheduledAt:row.scheduledAt,skippedAt:row.skippedAt,reason:row.reason as PlanScheduleSkip['reason'],blockingClaimId:row.blockingClaimId,taskId:row.taskId as string|null}
+ if(row.planId!==planId||!positive(row.planVersion)||row.planVersion>planVersion||!positive(row.configVersion)||row.configVersion>row.planVersion||!occurrenceIdentity(row.occurrenceId)||!timestamp(row.scheduledAt)||!timestamp(row.skippedAt)||row.skippedAt<row.scheduledAt||typeof row.reason!=='string'||!['previous-pending','previous-task-unfinished','no-work-evidence','digest-exists'].includes(row.reason))throw Error()
+ if(row.reason==='no-work-evidence'||row.reason==='digest-exists'){if(row.blockingClaimId!==null||row.taskId!==null)throw Error()}
+ else if(!uuid(row.blockingClaimId)||(row.reason==='previous-pending'?row.taskId!==null:!uuid(row.taskId)))throw Error()
+ return {planId:row.planId,planVersion:row.planVersion,configVersion:row.configVersion,occurrenceId:row.occurrenceId,scheduledAt:row.scheduledAt,skippedAt:row.skippedAt,reason:row.reason as PlanScheduleSkip['reason'],blockingClaimId:row.blockingClaimId as string|null,taskId:row.taskId as string|null}
 }
 function health(value:unknown):PlanSchedulerHealth{
  const row=exact(value,['health','failureCode','lastAttemptAt','lastSuccessAt'])
@@ -89,3 +90,10 @@ export function readPlanScheduleSummary(value:unknown,expectedPlanId:string):Pla
   return {available:true,overview,health:row.health===null?null:health(row.health)}
  }catch{throw Error('持续计划调度摘要格式不正确。')}
 }
+
+export const planSkipReasonKeys={
+ 'previous-pending':'plan.schedule.skipPending',
+ 'previous-task-unfinished':'plan.schedule.skipRunning',
+ 'no-work-evidence':'plan.schedule.skipNoWork',
+ 'digest-exists':'plan.schedule.skipDigestExists',
+} as const

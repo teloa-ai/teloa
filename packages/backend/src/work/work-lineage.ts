@@ -1,3 +1,4 @@
+import {taskRunStates} from '@teloa/contract'
 import {createHash} from 'node:crypto'
 import {isDeepStrictEqual} from 'node:util'
 import type {Pool,PoolClient} from 'pg'
@@ -85,7 +86,7 @@ export class WorkLineageService{
   const runId=source.kind==='team-child'?source.parentRunId:source.runId
   const run=(await db.query('select r.id,r.owner_id,r.task_id,r.role_id,r.state from teloa_task_runs r join teloa_roles role on role.id=r.role_id and role.owner_id=r.owner_id where r.owner_id=$1 and r.id=$2',[owner,runId])).rows[0]
   // 当前 Run 结局不抹掉已发生的派生关系；执行许可和停止准入由上层负责。
-  if(!run||!uuid(run.task_id)||!uuid(run.role_id)||!['prepared','submitting','accepted','active','ended','withdrawn','configuration_failed'].includes(run.state))throw forbidden()
+  if(!run||!uuid(run.task_id)||!uuid(run.role_id)||!taskRunStates.includes(run.state))throw forbidden()
   await this.task(db,owner,run.task_id)
   if(source.kind==='group-run-message'){
    if(!await present(db,'teloa_group_messages'))throw forbidden()

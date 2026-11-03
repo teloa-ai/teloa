@@ -1,6 +1,8 @@
 import {readWorkBudgetExhaustedCode} from '@teloa/contract'
 import {translateMessage, type MessageKey} from './messages.js'
 import {marketTargetCheckLabel} from './market-target.js'
+import {personalProfileValidationCopy} from '../personal-profile-validation-copy.js'
+import {roleMemoryConflictCopy} from '../role-memory-conflict-copy.js'
 import type {MarketTargetCheck} from '../market-target.js'
 
 export type WorkErrorLike = Readonly<{code?: unknown; message?: unknown; check?: unknown}>
@@ -23,6 +25,7 @@ const errorKeys: Readonly<Record<string, MessageKey>> = {
   'teloa/version-conflict': 'error.versionConflict',
   'teloa/budget-exhausted': 'planWork.budget.exhausted',
   'teloa/file-changed': 'artifactFiles.fileChanged',
+  'teloa/no-work-evidence':'error.noWorkEvidence',
   'teloa/source-unavailable': 'error.sourceUnavailable',
   'teloa/storage-unavailable': 'error.storageUnavailable',
   'teloa/run-configuration-failed': 'error.configurationFailed',
@@ -60,6 +63,9 @@ function detailsFieldOf(error: unknown,field:string): unknown {
 }
 
 export const isTaskWorkOutstandingError=(error:unknown):boolean=>codeOf(error)==='teloa/conflict'&&detailsFieldOf(error,'reason')==='task-work-outstanding'
+export const isNoWorkEvidenceError=(error:unknown):boolean=>codeOf(error)==='teloa/no-work-evidence'
+const contextGoalKey=(error:unknown):MessageKey|undefined=>codeOf(error)!=='teloa/invalid-input'?undefined:detailsFieldOf(error,'reason')==='employee-context-goal-required'?'error.employeeContextGoalRequired':detailsFieldOf(error,'reason')==='detached-project-goal-required'?'error.detachedProjectGoalRequired':undefined
+export const isContextGoalRequiredError=(error:unknown):boolean=>contextGoalKey(error)!==undefined
 
 /** 服务端 message 仅供日志；用户提示只由稳定 code 和当前产品词典决定。 */
 export function localizeWorkError(locale: string, error: unknown): string {
@@ -70,9 +76,21 @@ export function localizeWorkError(locale: string, error: unknown): string {
     if(reason==='mcp-network-unavailable')return translateMessage(locale,'create.app.errorNetwork')
     if(reason==='mcp-service-error')return translateMessage(locale,'create.app.errorService')
   }
+  const contextGoal=contextGoalKey(error)
+  if(contextGoal)return translateMessage(locale,contextGoal)
+  if(codeOf(error)==='teloa/conflict'&&detailsFieldOf(error,'reason')==='role-memory-slot-conflict')return roleMemoryConflictCopy(locale)
+  if(codeOf(error)==='teloa/invalid-input'){
+    const reason=detailsFieldOf(error,'reason'),copy=personalProfileValidationCopy(locale)
+    if(reason==='profile-name-empty')return copy.empty
+    if(reason==='profile-name-email')return copy.email
+    if(reason==='profile-name-too-long')return copy.tooLong
+  }
+  if (codeOf(error) === 'teloa/conflict' && detailsFieldOf(error,'reason') === 'local-material-registration-mismatch') return translateMessage(locale, 'error.localMaterialRegistrationMismatch')
+  if (codeOf(error) === 'teloa/invalid-input' && detailsFieldOf(error,'reason') === 'local-material-format-unsupported') return translateMessage(locale, 'knowledge.local.unsupportedFormat')
   if (codeOf(error) === 'teloa/invalid-input' && detailsFieldOf(error,'reason') === 'secret-in-message') return translateMessage(locale, 'error.secretInMessage')
   // 员工资料范围含不可用资料：只按稳定原因给出可操作提示，不回显内部资料 ID。
   if (codeOf(error) === 'teloa/invalid-input' && detailsFieldOf(error,'reason') === 'role-knowledge-unavailable') return translateMessage(locale, 'error.roleKnowledgeUnavailable')
+  if (codeOf(error) === 'teloa/conflict' && detailsFieldOf(error,'reason') === 'role-work-outstanding') return translateMessage(locale, 'error.roleWorkOutstanding')
   // 请求错误带 details；会话本轮失败只有原生 code（teloa/budget-exhausted/<reason>/<scope>）。
   const exhausted=codeOf(error)==='teloa/budget-exhausted'?{reason:detailsFieldOf(error,'reason'),scope:detailsFieldOf(error,'scope')}:readWorkBudgetExhaustedCode(codeOf(error))
   if(exhausted){

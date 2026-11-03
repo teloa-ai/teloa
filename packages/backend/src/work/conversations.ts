@@ -3,6 +3,8 @@ import { dirname } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { WorkError,isReservedExecutionSessionId, type Conversation, type DigitalRole, readWorkExecutor } from '@teloa/contract'
 import {workAccess} from './work-access.ts'
+import type {ConversationDirectoryPage,ConversationDirectoryPageRequest} from '@teloa/contract'
+import {readConversationPageRequest,conversationPageFingerprint,conversationPageCursor,assertConversationPageSnapshot} from './conversation-directory-page.ts'
 /** 存储层内部字段，与 `requestedWorkspaceId`/`requestedSessionId` 同族：只用于同请求 ID 是否换了岗位的判据，不属对外契约，读回给调用方前一律经 `toPublic` 剥掉。 */
 export type StoredConversation = Conversation & {requestedRoleId?:string}
 export interface ConversationRepository { read():Promise<StoredConversation[]>; write(rows:StoredConversation[]):Promise<void> }
@@ -73,8 +75,10 @@ export class ConversationService {
   readonly identity:{id:()=>string;now:()=>string}
   /** 新增可选端口，与既有可选端口同级。未接线却传了 roleId ⇒ teloa/dependency-unavailable（判不出来就拒）。 */
   readonly readRole:((owner:string,roleId:string)=>Promise<DigitalRole|undefined>)|undefined
+  readonly readRunDirectory:((owner:string,signal?:AbortSignal)=>Promise<Conversation[]>)|undefined
+  readonly readRunDirectoryPage:((owner:string,input:ConversationDirectoryPageRequest,signal?:AbortSignal)=>Promise<ConversationDirectoryPage>)|undefined
   private pending:Promise<unknown>=Promise.resolve()
-  constructor(repository:ConversationRepository,host:SessionHost,identity:{id:()=>string;now:()=>string},readRole?:(owner:string,roleId:string)=>Promise<DigitalRole|undefined>) {this.repository=repository;this.host=host;this.identity=identity;this.readRole=readRole}
+  constructor(repository:ConversationRepository,host:SessionHost,identity:{id:()=>string;now:()=>string},readRole?:(owner:string,roleId:string)=>Promise<DigitalRole|undefined>,readRunDirectory?:(owner:string,signal?:AbortSignal)=>Promise<Conversation[]>,readRunDirectoryPage?:(owner:string,input:ConversationDirectoryPageRequest,signal?:AbortSignal)=>Promise<ConversationDirectoryPage>) {this.repository=repository;this.host=host;this.identity=identity;this.readRole=readRole;this.readRunDirectory=readRunDirectory;this.readRunDirectoryPage=readRunDirectoryPage}
   private async resolveRoleAgentPresetId(owner:string,roleId:string):Promise<string|undefined> {
     if(!this.readRole)throw new WorkError('teloa/dependency-unavailable','当前环境未接线员工读取，暂不能按员工创建会话。')
     const role=await this.readRole(owner,roleId)
@@ -94,8 +98,39 @@ export class ConversationService {
     if(!owner||row.ownerId!==owner)throw new WorkError('teloa/forbidden','当前主体不能访问该工作会话。')
     return row
   }
-  list(owner:string,input:unknown):Promise<Conversation[]> {
-    return this.serial(async()=>{inputObject(input,[]);return (await this.repository.read()).filter(row=>row.ownerId===owner&&row.requestId!==undefined&&row.purpose!=='task-run'&&!isReservedExecutionSessionId(row.sessionId)).map(row=>this.toPublic(row))})
+  async list(owner:string,input:unknown,includeRuns=false,signal?:AbortSignal):Promise<Conversation[]> {
+    signal?.throwIfAborted()
+    const ordinary=await this.serial(async()=>{signal?.throwIfAborted();inputObject(input,[]);return (await this.repository.read()).filter(row=>row.ownerId===owner&&row.requestId!==undefined&&row.purpose!=='task-run'&&!isReservedExecutionSessionId(row.sessionId)).map(row=>this.toPublic(row))})
+    signal?.throwIfAborted()
+    // 规范读口需要读取原预约，不能在本服务serial锁内回调；原task-run身份与只读边界原样保留。
+    const managed=includeRuns?await this.readRunDirectory?.(owner,signal)??[]:[]
+    signal?.throwIfAborted()
+    if(managed.some(row=>row.ownerId!==owner||row.status!=='ready'||row.purpose!=='task-run'))throw new WorkError('teloa/forbidden','自动工作目录归属不正确。')
+    return [...new Map([...ordinary,...managed].map(row=>[row.sessionId,row])).values()]
+  }
+  async listPage(owner:string,input:unknown,includeRuns=false,signal?:AbortSignal):Promise<ConversationDirectoryPage>{
+    signal?.throwIfAborted()
+    if(!owner?.trim()||owner.length>128)throw new WorkError('teloa/forbidden','缺少可信会话目录主体。')
+    const {limit,cursor}=readConversationPageRequest(input)
+    if(includeRuns&&this.readRunDirectory&&!this.readRunDirectoryPage)throw new WorkError('teloa/dependency-unavailable','员工运行目录分页尚未接线。')
+    const ordinary=await this.serial(async()=>{signal?.throwIfAborted();return (await this.repository.read()).filter(row=>row.ownerId===owner&&row.requestId!==undefined&&row.purpose!=='task-run'&&!isReservedExecutionSessionId(row.sessionId)).map(row=>this.toPublic(row))})
+    signal?.throwIfAborted()
+    const snapshot=conversationPageFingerprint(owner,'conversations',ordinary)
+    assertConversationPageSnapshot(cursor,snapshot,['ordinary','managed'])
+    if(cursor?.kind!=='managed'){
+      const offset=cursor?.offset??0
+      if(offset>ordinary.length)throw new WorkError('teloa/conflict','会话目录游标已失效。')
+      const items=ordinary.slice(offset,offset+limit)
+      if(offset+limit<ordinary.length)return {items,nextCursor:conversationPageCursor({kind:'ordinary',snapshot,offset:offset+limit})}
+      if(!includeRuns||!this.readRunDirectoryPage)return {items}
+      // 普通会话先发布，不等待全部员工运行的规范链读取。
+      if(items.length)return {items,nextCursor:conversationPageCursor({kind:'managed',snapshot,offset:0})}
+    }
+    if(!includeRuns||!this.readRunDirectoryPage)throw new WorkError('teloa/conflict','当前目录入口不能延续员工运行页。')
+    const page=await this.readRunDirectoryPage(owner,{limit,...(cursor?.inner?{cursor:cursor.inner}:{})},signal)
+    signal?.throwIfAborted()
+    if(page.items.some(row=>row.ownerId!==owner||row.status!=='ready'||row.purpose!=='task-run'))throw new WorkError('teloa/forbidden','自动工作目录归属不正确。')
+    return {items:page.items,...(page.nextCursor?{nextCursor:conversationPageCursor({kind:'managed',snapshot,offset:0,inner:page.nextCursor})}:{})}
   }
   /** 资料引用可核对本人已绑定的原生历史；读取不会把旧会话自动加入工作目录。 */
   resourceHistoryCandidates(owner:string):Promise<Conversation[]> {
@@ -232,6 +267,28 @@ export class ConversationService {
     this.authorize(owner,row)
     if(row.status!=='ready')throw new WorkError('teloa/binding-pending','工作会话绑定尚未就绪。')
     return this.toPublic(row) as Conversation&{status:'ready'}
+  }
+  /** CID 只是精确读取目标，不以当前目录成员资格替代本人归属；不会创建或重新绑定会话。 */
+  async read(owner:string,input:unknown,signal?:AbortSignal):Promise<Conversation&{status:'ready'}> {
+    const data=inputObject(input,['sessionId','conversationId'])
+    const bySession=Object.hasOwn(data,'sessionId'),byConversation=Object.hasOwn(data,'conversationId')
+    if(bySession===byConversation)throw new WorkError('teloa/invalid-input','请选择一个会话读取身份。')
+    signal?.throwIfAborted()
+    if(bySession){
+      const row=await this.bySession(owner,sessionInput({sessionId:data.sessionId}))
+      signal?.throwIfAborted()
+      return row
+    }
+    if(!validId(data.conversationId))throw new WorkError('teloa/invalid-input','会话身份不合法。')
+    return this.serial(async()=>{
+      signal?.throwIfAborted()
+      const row=(await this.repository.read()).find(item=>item.id===data.conversationId)
+      signal?.throwIfAborted()
+      if(!row)throw new WorkError('teloa/not-bound','当前工作会话尚未建立绑定。')
+      this.authorize(owner,row)
+      if(row.status!=='ready')throw new WorkError('teloa/binding-pending','工作会话绑定尚未就绪。')
+      return this.toPublic(row) as Conversation&{status:'ready'}
+    })
   }
   bySession(owner:string,sessionId:string):Promise<Conversation&{status:'ready'}> {
     return this.serial(()=>this.snapshotBySession(owner,sessionId))

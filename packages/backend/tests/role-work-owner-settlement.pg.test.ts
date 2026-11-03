@@ -70,7 +70,7 @@ test('非零工具必须有宿主固定终态回执，回执严绑原Run/输入/
  assert.deepEqual((await f.pool.query('select owner_settlement from teloa_task_run_runtime_links where run_id=$1',[f.run.id])).rows[0].owner_settlement,stored,'原登记幂等写回不清除独立终态回执')
  await f.links.recordOwnerSettlement(f.owner,{...f.proof,observedAt:identity.now()})
  assert.deepEqual((await f.pool.query('select owner_settlement from teloa_task_run_runtime_links where run_id=$1',[f.run.id])).rows[0].owner_settlement,stored,'幂等保留首次核验回执')
- for(const bad of [{...f.proof,nativeId:'owner:foreign:'+f.run.sessionId},{...f.proof,nativeRequestId:randomUUID()},{...f.proof,sessionId:'foreign-session'},{...f.proof,inputSha256:'b'.repeat(64)},{...f.proof,prefixLength:4},{...f.proof,prefixSha256:'b'.repeat(64)},{...f.proof,evidence:{...f.proof.evidence,reason:'interrupted'}},{...f.proof,observedAt:new Date(Date.now()+60000).toISOString()}])await assert.rejects(f.links.recordOwnerSettlement(f.owner,bad))
+ for(const bad of [{...f.proof,nativeId:'owner:foreign:'+f.run.sessionId},{...f.proof,nativeRequestId:randomUUID()},{...f.proof,sessionId:'foreign-session'},{...f.proof,inputSha256:'b'.repeat(64)},{...f.proof,prefixLength:4},{...f.proof,prefixSha256:'b'.repeat(64)},{...f.proof,evidence:{state:'ended' as const,turn:f.proof.evidence.turn,messageSeq:f.proof.evidence.messageSeq,endSeq:f.proof.evidence.endSeq,reason:'interrupted'}},{...f.proof,observedAt:new Date(Date.now()+60000).toISOString()}])await assert.rejects(f.links.recordOwnerSettlement(f.owner,bad))
  await assert.rejects(f.links.recordOwnerSettlement('foreign-owner',f.proof))
  assert.deepEqual((await f.pool.query('select owner_settlement from teloa_task_run_runtime_links where run_id=$1',[f.run.id])).rows[0].owner_settlement,stored)
 })

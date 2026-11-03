@@ -39,7 +39,7 @@ test('工作目录文件授权独立于任意参数授权，限定官方文件�
   assert.deepEqual(readTaskToolArgumentRules([rule]),[rule])
   const args=name==='read'?{file_path:'outputs/result.txt',offset:1,limit:20}:name==='write'?{file_path:'outputs/result.txt',content:'真实成果'}:{file_path:'outputs/result.txt',old_string:'真实',new_string:'更新',replace_all:false}
   assert.equal(taskToolArgumentsAllowed([rule],name,args),true)
-  assert.equal(taskToolArgumentsAllowed([rule],name,{...args,sandbox_permissions:'danger-full-access',justification:'扩大范围'}),false)
+  assert.equal(taskToolArgumentsAllowed([rule],name,{...args,sandbox_permissions:'danger-full-access',justification:'本次文件变更需正式审批'}),name!=='read')
   assert.equal(taskToolArgumentsAllowed([rule],name,{...args,file_path:'../outside.txt'}),false)
   assert.equal(taskToolArgumentsAllowed([rule],name,{...args,file_path:'.runtime/secret'}),false)
   assert.throws(()=>readTaskToolArgumentRules([{...rule,anyArguments:true}]))
@@ -47,6 +47,34 @@ test('工作目录文件授权独立于任意参数授权，限定官方文件�
  }
  assert.throws(()=>readTaskToolArgumentRules([{name:'bash',allowed:[],workspaceFiles:'default-workspace'}]))
  assert.throws(()=>readTaskToolArgumentRules([{name:'read',allowed:[],workspaceFiles:'/forged'}]))
+})
+
+test('工作目录写入和编辑的官方一次性升级参数成对校验，不能代替工具授权或路径边界',()=>{
+ for(const name of ['write','edit']){
+  const rule={name,allowed:[],workspaceFiles:'default-workspace' as const}
+  const args=name==='write'?{file_path:'j13-recovery-note.md',content:'合成恢复说明'}:{file_path:'j13-recovery-note.md',old_string:'原稿',new_string:'修订稿'}
+  for(const mode of ['workspace-write','danger-full-access']){
+   const retry={...args,sandbox_permissions:mode,justification:'仅申请批准这次工作目录文件变更。'}
+   assert.equal(taskToolArgumentsAllowed([rule],name,retry),true)
+   for(const file_path of ['../outside.txt','nested/../outside.txt','.runtime/private','.git/config'])assert.equal(taskToolArgumentsAllowed([rule],name,{...retry,file_path}),false)
+   assert.equal(taskToolArgumentsAllowed([],name,retry),false)
+   assert.equal(taskToolArgumentsAllowed([{name,allowed:[args]}],name,retry),false)
+  }
+  for(const extra of [
+   {sandbox_permissions:'workspace-write'}, {justification:'只有理由'},
+   {sandbox_permissions:'read-only',justification:'不可升级到只读'},
+   {sandbox_permissions:'bypassPermissions',justification:'未知模式'},
+   {sandbox_permissions:true,justification:'错误类型'},
+   {sandbox_permissions:null,justification:'错误类型'},
+   {sandbox_permissions:'workspace-write',justification:''},
+   {sandbox_permissions:'workspace-write',justification:'  \n'},
+   {sandbox_permissions:'workspace-write',justification:1},
+   {sandbox_permissions:'workspace-write',justification:{}},
+   {sandbox_permissions:'workspace-write',justification:'本次变更',approved:true},
+  ])assert.equal(taskToolArgumentsAllowed([rule],name,{...args,...extra}),false,JSON.stringify(extra))
+ }
+ const read={name:'read',allowed:[],workspaceFiles:'default-workspace' as const}
+ assert.equal(taskToolArgumentsAllowed([read],'read',{file_path:'j13-owner-source.md',sandbox_permissions:'workspace-write',justification:'读取不支持此参数'}),false)
 })
 
 test('本人外部引擎规则只接受官方参数与固定目录，损坏持久规则拒绝且规范化幂等',()=>{

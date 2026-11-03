@@ -5,6 +5,28 @@ import {tmpdir} from 'node:os'
 import {join} from 'node:path'
 import * as setup from '../scripts/准备DSH插件.mjs'
 import * as runtime from '../scripts/runtime/profile.mjs'
+import {readMemoryConfiguration} from '../packages/harness-dsh/src/memory-configuration.ts'
+
+const memoryLaunchLayout={programRoot:'/official-release',dshHome:'/isolated/dsh',runtimeRoot:'/isolated/runtime',workspaceRoot:'/isolated/workspace',profileName:'memory-launch-test'}
+
+test('MEM05 npm启动保留本人进程层经验服务配置，缺省不启用且未知变量不扩权',()=>{
+ const supplied={TELOA_MEMORY_API_URL:'https://memory.example.invalid',TELOA_MEMORY_API_TOKEN:'MEM05_SYNTHETIC_DIRECT_TOKEN',TELOA_MEMORY_TIMEOUT_MS:'1357',TELOA_MEMORY_ALLOW_HTTP:'0',TELOA_MEMORY_UNSUPPORTED:'must-not-forward'}
+ const forwarded=runtime.runtimeEnvironment(memoryLaunchLayout,supplied)
+ assert.deepEqual(readMemoryConfiguration(forwarded),{endpoint:supplied.TELOA_MEMORY_API_URL,timeoutMs:1357,allowHttp:false,token:supplied.TELOA_MEMORY_API_TOKEN})
+ assert.equal(forwarded.TELOA_MEMORY_UNSUPPORTED,undefined)
+ assert.equal(readMemoryConfiguration(runtime.runtimeEnvironment(memoryLaunchLayout,{})),null)
+})
+
+test('MEM05 令牌文件沿既有_FILE规则转交，实际配置读取与互斥校验保持',async t=>{
+ const dir=await mkdtemp(join(tmpdir(),'teloa-memory-launch-')),path=join(dir,'synthetic-token')
+ t.after(()=>rm(dir,{recursive:true,force:true}))
+ await writeFile(path,'MEM05_SYNTHETIC_FILE_TOKEN\n',{mode:0o600})
+ const supplied={TELOA_MEMORY_API_URL:'http://127.0.0.1:1',TELOA_MEMORY_API_TOKEN_FILE:path,TELOA_MEMORY_TIMEOUT_MS:'250',TELOA_MEMORY_ALLOW_HTTP:'1'}
+ const forwarded=runtime.runtimeEnvironment(memoryLaunchLayout,supplied)
+ assert.equal(forwarded.TELOA_MEMORY_API_TOKEN_FILE,path,'令牌文件由原有通用_FILE规则转交，不重复增加实现')
+ assert.deepEqual(readMemoryConfiguration(forwarded),{endpoint:supplied.TELOA_MEMORY_API_URL,timeoutMs:250,allowHttp:true,token:'MEM05_SYNTHETIC_FILE_TOKEN'})
+ assert.throws(()=>readMemoryConfiguration(runtime.runtimeEnvironment(memoryLaunchLayout,{...supplied,TELOA_MEMORY_API_TOKEN:'MEM05_SYNTHETIC_CONFLICT'})))
+})
 
 test('可选原生依赖目录包含 Browser、Computer、Auto review 与两个随附扩展，Remote 不登记到 Web',()=>{
  const specs=runtime.optionalNativeBundleSpecs(new URL('../',import.meta.url).pathname)
@@ -174,4 +196,30 @@ test('发行 Auto Review 仅识别完整随附布局，未知或本人来源不�
   assert.equal(after.dependencies[name],spec)
   assert.deepEqual(runtime.managedAutoReviewModuleSpec(after,specs),{})
  }
+})
+
+test('原生Browser和Computer已声明官方来源时，正常reconcile更新旧发行链接且不启用组合',async t=>{
+ const root=await mkdtemp(join(tmpdir(),'teloa-native-release-links-'));t.after(()=>rm(root,{recursive:true,force:true}))
+ const profile=join(root,'home/instances/default/dsh/profiles/teloa'),old=join(root,'home/releases/0.2.84'),current=join(root,'home/releases/0.2.100'),specs={}
+ for(const name of ['@teloa/native-browser','@teloa/native-computer']){
+  const directory=name.split('/')[1],target=join(current,'packages',directory),previous=join(old,'packages',directory)
+  for(const path of [target,previous,join(profile,'node_modules/@teloa')])await mkdir(path,{recursive:true})
+  await symlink(previous,join(profile,'node_modules',name));specs[name]='link:'+target
+ }
+ const original={dependencies:{other:'1.0.0'},dsh:{profile:{bundles:['base']}},custom:{keep:true}},next=runtime.withOptionalNativeDependencies(original,specs)
+ await runtime.repairBundledModuleLinks(profile,runtime.managedOptionalNativeModuleSpecs(next,specs))
+ assert.deepEqual(await runtime.bundledModuleConflicts(profile,specs),[])
+ assert.deepEqual(next.dsh,original.dsh);assert.deepEqual(next.custom,original.custom);assert.equal(next.dependencies.other,'1.0.0')
+ for(const [name,spec] of Object.entries(specs))assert.equal(await realpath(join(profile,'node_modules',name)),await realpath(spec.slice(5)))
+ assert.deepEqual(runtime.managedOptionalNativeModuleSpecs({dependencies:{'@teloa/native-browser':'file:/custom'}},specs),{})
+})
+
+test('原生可选组合的实体扩展不删除或替换，正常来源核对拒绝冲突',async t=>{
+ const root=await mkdtemp(join(tmpdir(),'teloa-native-real-module-'));t.after(()=>rm(root,{recursive:true,force:true}))
+ const profile=join(root,'profile'),name='@teloa/native-computer',owned=join(profile,'node_modules',name),official=join(root,'release/packages/native-computer')
+ await mkdir(owned,{recursive:true});await mkdir(official,{recursive:true});await writeFile(join(owned,'keep.txt'),'owned data')
+ const specs={[name]:'link:'+official},manifest={dependencies:specs}
+ await runtime.repairBundledModuleLinks(profile,runtime.managedOptionalNativeModuleSpecs(manifest,specs))
+ assert.equal(await readFile(join(owned,'keep.txt'),'utf8'),'owned data')
+ assert.deepEqual(await runtime.bundledModuleConflicts(profile,specs),[name])
 })

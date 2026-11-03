@@ -16,7 +16,7 @@ import type {TaskRunGoalObservationReader} from './task-tool-guard.ts'
 import {subagentReservationId,type SubagentDelegationPorts} from './subagent-delegation.ts'
 import type {TaskToolPolicy,TaskToolPolicyReader} from './task-tool-guard.ts'
 import {resolveSessionLineage} from './subagent-lineage.ts'
-import {readEndedTaskRunSession} from './task-run-cold-session.ts'
+import {readTaskRunSessionForReconcile} from './task-run-cold-session.ts'
 
 /** 取消数据库精确登记的在途子级；身份核对失败不借一般谱系扫描扩大取消范围。 */
 export async function stopTaskRunChildren(ctx:Context,run:Pick<TaskRun,'sessionId'>,rows:readonly {childSessionId?:string}[],signal:AbortSignal):Promise<void>{
@@ -151,14 +151,19 @@ export function createTaskRunTeam(ctx:Context,delegation:SubagentDelegationPorts
   const signal=new AbortController().signal
   const assertBinding=async()=>{
    const policy=await readPolicy(run.sessionId,signal)
-   // 终态策略已核验本人固定 Run/nativeRequest；只读历史不能调用要求当前执行状态的 skillScope。
-   if(run.state!=='ended'||run.evidence?.state!=='ended'||run.stopRequestedAt!=null||!policy||policy.stopRequested||policy.nativeRequestId!==run.nativeRequestId)throw unavailable()
+   // 策略仍核本人固定请求；active 冷候选另核本 Run 的持久 owner 回执，不借历史读口授予执行权。
+   if(!((run.state==='ended'&&run.evidence?.state==='ended')||(run.state==='active'&&run.evidence?.state==='active'))||run.stopRequestedAt!=null||!policy||policy.stopRequested||policy.nativeRequestId!==run.nativeRequestId)throw unavailable()
+   if(run.state==='active'){
+    const owners=(await links.list({runId:run.id,kind:'job'})).filter(row=>row.kind==='job'&&row.payload.record==='owner')
+    const owner=owners[0]
+    if(owners.length!==1||!owner||owner.kind!=='job'||owner.payload.record!=='owner'||!owner.payload.runtimeId||owner.runId!==run.id||owner.sessionId!==run.sessionId||owner.payload.requestId!==run.nativeRequestId||owner.nativeId!=='owner:'+owner.payload.runtimeId+':'+run.sessionId)throw unavailable()
+   }
   }
   await assertBinding()
   // inspect 不激活 Agent。状态读取不能为判断可重试而恢复旧 Inbox、调用模型或重放工具。
   const grants=await grantsFor(run.id,run.sessionId,run.nativeRequestId)
   // 冷 Team 历史不自动续接；有授权记录仍由下面的 interrupted 判据拒绝重试。
-  const {session,inbox}=await readEndedTaskRunSession(ctx,run,events=>goalObservation?.(run.sessionId,events)??Promise.resolve(undefined))
+  const {session,inbox}=await readTaskRunSessionForReconcile(ctx,run,events=>goalObservation?.(run.sessionId,events)??Promise.resolve(undefined))
   const team=ctx.sessionProjections.stateOf(session,'agentTeam')
   if(!team)throw unavailable()
   await assertBinding()

@@ -18,7 +18,9 @@ type StoredReference={resourceId:string;sourceContentId:string;sourceItemId:stri
 type StoredResource={resourceId:string;kind:IndustryResourceKind;version:string;path:string}
 type StoredSummary={id:string;ownerId:string;kind:'atomic-skill'|'industry-template';logicalId:string;version:string;hash:string;baseHash:string;manifestPath:string;metadata:Record<string,unknown>;trust?:MarketTrust;trustHash?:string;provides:StoredResource[];references:StoredReference[];createdAt:string}
 type StoredContent=StoredSummary&{files:StoredFile[]}
-type Pending={requestId:string;kind:StoredSummary['kind'];logicalId:string;version:string;hash:string}
+export type AtomicSkillDerivationBinding={ownerId:string;installationId:string;bundleHash:string;sourceIdentity:string}
+export type AtomicSkillRequirements=Pick<MarketTrust,'compatibility'|'plugins'|'externalCapabilities'|'permissions'>
+type Pending={requestId:string;kind:StoredSummary['kind'];logicalId:string;version:string;hash:string;requestHash?:string;derivation?:AtomicSkillDerivationBinding}
 type PendingGithub={requestId:string;githubRequestId:string;manifestPath:string}
 
 const resourceKinds=['role','knowledge','skill','mcp','plugin','data-source','execution-tool','work-template','plan','object-type','business-view','business-action','business-configuration'] as const
@@ -37,9 +39,9 @@ const decode=(value:unknown)=>{
  const bytes=Uint8Array.from(raw,char=>char.charCodeAt(0));if(encode(bytes)!==value)throw Error('市场固定内容文件字节格式不正确。');return bytes
 }
 function atomicMetadata(value:unknown):AtomicSkillMetadata{
- const row=exact(value,['id','title','version','categories','localized'])
+ const row=exact(value,['id','title','version','categories','localized','modelDependencies'])
  if(typeof row.id!=='string'||typeof row.title!=='string'||typeof row.version!=='string'||!Array.isArray(row.categories)||row.categories.some(value=>typeof value!=='string'))throw Error('市场技能元数据格式不正确。')
- return validateAtomicSkillMetadata({id:row.id,title:row.title,version:row.version,categories:row.categories as string[],...(row.localized===undefined?{}:{localized:row.localized as NonNullable<AtomicSkillMetadata['localized']>})})
+ return validateAtomicSkillMetadata({id:row.id,title:row.title,version:row.version,categories:row.categories as string[],...(row.localized===undefined?{}:{localized:row.localized as NonNullable<AtomicSkillMetadata['localized']>}),...(row.modelDependencies===undefined?{}:{modelDependencies:row.modelDependencies as NonNullable<AtomicSkillMetadata['modelDependencies']>})})
 }
 function references(value:unknown):StoredReference[]{
  if(!Array.isArray(value))throw Error('市场固定内容引用格式不正确。')
@@ -99,11 +101,20 @@ function pendingGithub(value:unknown):PendingGithub{
  return row as unknown as PendingGithub
 }
 function pending(value:unknown):Pending{
- const row=exact(value,['requestId','kind','logicalId','version','hash'])
+ const row=exact(value,['requestId','kind','logicalId','version','hash','requestHash','derivation'])
  if(!uuid(row.requestId)||row.kind!=='atomic-skill'&&row.kind!=='industry-template'||typeof row.logicalId!=='string'||typeof row.version!=='string'||!hex(row.hash))throw Error()
+ if(row.requestHash!==undefined&&!hex(row.requestHash)||row.derivation!==undefined&&(row.kind!=='atomic-skill'||row.requestHash===undefined))throw Error()
+ if(row.derivation!==undefined)derivationBinding(row.derivation)
  return row as unknown as Pending
 }
+function derivationBinding(value:unknown):AtomicSkillDerivationBinding{
+ const row=exact(value,['ownerId','installationId','bundleHash','sourceIdentity'])
+ if(typeof row.ownerId!=='string'||!row.ownerId||row.ownerId.length>512||!uuid(row.installationId)||!hex(row.bundleHash)||typeof row.sourceIdentity!=='string'||!row.sourceIdentity||row.sourceIdentity.length>4096)throw Error('技能派生来源身份不正确。')
+ return row as AtomicSkillDerivationBinding
+}
 const samePending=(a:Pending,b:Omit<Pending,'requestId'>)=>a.kind===b.kind&&a.logicalId===b.logicalId&&a.version===b.version&&a.hash===b.hash
+const sameRequest=(a:Pending,b:Omit<Pending,'requestId'>)=>samePending(a,b)&&a.requestHash===b.requestHash&&stable(a.derivation??null)===stable(b.derivation??null)
+const atomicRequestHash=(value:{hash:string;metadata:unknown;trust:MarketTrust;source:unknown;derivation?:AtomicSkillDerivationBinding})=>digest(new TextEncoder().encode(stable({kind:'atomic-skill',...value})))
 const requestFiles=(files:readonly {path:string;bytes:Uint8Array}[])=>files.map(file=>({path:file.path,base64:encode(file.bytes)}))
 // 文件名只属于上传来源，不能成为发布者身份；本地缺省信任始终未签名、待核对。
 const uploadTrust=():MarketTrust=>({publisher:'本人导入',repository:null,license:{status:'missing'},signature:{status:'unverified',signer:null},compatibility:{teloa:'未声明',dsh:'未声明'},plugins:[],externalCapabilities:[],permissions:[],review:{conclusion:'needs-review',summary:'本地上传来源尚未完成签名与兼容审查'}})
@@ -111,7 +122,7 @@ function summaryItem(value:StoredSummary):MarketItem{
  const storage={contentId:value.id,createdAt:value.createdAt,loaded:false},source={kind:'stored' as const,contentId:value.id}
  if(value.kind==='atomic-skill'){
   const metadata=atomicMetadata(value.metadata)
-  const {status,...text}=atomicSkillCopy('stored',{title:metadata.title,localizedTitle:metadata.localized?.title}),stored={status,text}
+  const {status,...text}=atomicSkillCopy('stored',{title:metadata.title,localizedTitle:metadata.localized?.title,...(metadata.modelDependencies?{modelDependencies:metadata.modelDependencies}:{})}),stored={status,text}
   return {id:fixedMarketItemId(value.id),kind:'skill',resourceKind:'skill',title:metadata.title,version:metadata.version,scope:'general',visibility:'personal',...stored.text,author:value.trust?.publisher??'本人导入',license:value.trust?.license.status==='declared'?value.trust.license.value:'来源许可未声明',source,owner:'DSH',components:[{name:metadata.title,required:true,status:stored.status}],hash:value.hash,capabilityCategories:[...metadata.categories],...(value.trust?{trust:value.trust}:{}),contentStorage:storage}
  }
  const manifest=validateIndustryManifest(value.metadata),raw=JSON.stringify(manifest,null,2),item=itemFromManifest({manifest,raw,hash:value.hash},source)
@@ -156,7 +167,7 @@ export type MarketContentApi=ReturnType<typeof createMarketContentApi>
 export function createMarketContentApi(call:Call,journal?:MarketContentJournal,newId=()=>crypto.randomUUID(),githubJournal?:MarketContentJournal){
  let awaiting:Pending|undefined,recoveryError:ReturnType<typeof recoveryStorageError>|undefined,busy=false
  let awaitingGithub:PendingGithub|undefined,githubRecoveryError:ReturnType<typeof recoveryStorageError>|undefined
- try{const raw=journal?.read();if(raw){if(raw.length>2000)throw Error();const row=exact(JSON.parse(raw),['schema','request']);if(row.schema!=='teloa.market-content-import/v1')throw Error();awaiting=pending(row.request)}}catch{recoveryError=recoveryStorageError()}
+ try{const raw=journal?.read();if(raw){if(raw.length>12000)throw Error();const row=exact(JSON.parse(raw),['schema','request']);if(row.schema!=='teloa.market-content-import/v1')throw Error();awaiting=pending(row.request)}}catch{recoveryError=recoveryStorageError()}
  try{const raw=githubJournal?.read();if(raw){if(raw.length>2000)throw Error();const row=exact(JSON.parse(raw),['schema','request']);if(row.schema!=='teloa.market-import-github/v1')throw Error();awaitingGithub=pendingGithub(row.request)}}catch{githubRecoveryError=recoveryStorageError()}
  const write=()=>{if(awaiting)journal?.write(JSON.stringify({schema:'teloa.market-content-import/v1',request:awaiting}))}
  const clearedCodes=['teloa/invalid-input','teloa/forbidden','teloa/conflict','teloa/source-unavailable']
@@ -166,6 +177,7 @@ export function createMarketContentApi(call:Call,journal?:MarketContentJournal,n
  const checkedResult=async(value:unknown,expected:Pending)=>{
   const row=exact(value,['receipt','content']),receipt=exact(row.receipt,['requestId','contentId','source','createdAt']);receiptSource(receipt.source,record(receipt.source)&&receipt.source.kind==='catalog'?'catalog':'upload');const stored=await content(row.content)
   if(receipt.requestId!==expected.requestId||receipt.contentId!==stored.id||!date(receipt.createdAt)||!samePending(expected,stored))throw Error('市场导入回执与原请求不一致。')
+  if(expected.requestHash!==undefined&&(!stored.trust||stored.kind!=='atomic-skill'||await atomicRequestHash({hash:stored.hash,metadata:stored.metadata,trust:stored.trust,source:receipt.source,...(expected.derivation?{derivation:expected.derivation}:{})})!==expected.requestHash))throw Error('技能保存回执的来源或许可与原请求不一致。')
   return contentItem(stored,await Promise.all(stored.references.map(reference=>getContent(reference.sourceContentId))))
  }
  const checkedGithubResult=async(value:unknown,request:PendingGithub)=>{
@@ -178,7 +190,7 @@ export function createMarketContentApi(call:Call,journal?:MarketContentJournal,n
  const getContent=async(contentId:string)=>{if(!uuid(contentId))throw Error('市场内容身份不正确。');const stored=await content(await call('market-content/get',{contentId}));if(stored.id!==contentId)throw Error('市场内容响应与目标身份不一致。');return stored}
  const send=async(payload:Record<string,unknown>,identity:Omit<Pending,'requestId'>,requestId?:string)=>{
   if(recoveryError)throw recoveryError;if(busy)throw Error('市场导入正在核对。')
-  if(awaiting&&!samePending(awaiting,identity))throw Error('请先恢复同一市场导入请求，再导入其他内容。')
+  if(awaiting&&!sameRequest(awaiting,identity))throw Error('请先恢复同一市场导入请求，再导入其他内容。')
   if(requestId!==undefined&&(!uuid(requestId)||awaiting&&awaiting.requestId!==requestId))throw Error('请先恢复原市场导入请求。')
   awaiting??={requestId:requestId??newId(),...identity};busy=true
   try{write();const result=await checkedResult(await call('market-content/import',{...payload,requestId:awaiting.requestId}),awaiting);clear();return result}
@@ -192,12 +204,17 @@ export function createMarketContentApi(call:Call,journal?:MarketContentJournal,n
   async recover(){
    if(recoveryError)throw recoveryError;if(!awaiting)throw Error('没有待核对的市场导入请求。');if(busy)throw Error('市场导入正在核对。');busy=true
    try{const item=await checkedResult(await call('market-content/receipt',{requestId:awaiting.requestId}),awaiting);clear();return item}
-   catch(error){if(error&&typeof error==='object'&&'rejected' in error&&error.rejected===true&&'code' in error&&error.code==='teloa/not-found')throw Error('服务尚未找到该请求；请重新选择原文件，以同一请求继续核对，不能新建请求。');throw error}finally{busy=false}
+   catch(error){if(error&&typeof error==='object'&&'rejected' in error&&error.rejected===true&&'code' in error&&error.code==='teloa/not-found')throw Object.assign(Error('服务尚未找到该请求；请重新选择原文件，以同一请求继续核对，不能新建请求。'),{code:'teloa/not-found',rejected:true});throw error}finally{busy=false}
   },
-  async importAtomic(value:AtomicSkillContent,name:string){
+  async importAtomic(value:AtomicSkillContent,name:string,options?:{license?:string;derivation?:AtomicSkillDerivationBinding;requirements?:AtomicSkillRequirements}){
    if(!name.trim())throw Error('上传来源名称不能为空。')
-   const identity={kind:'atomic-skill' as const,logicalId:value.id,version:value.version,hash:value.hash}
-   return send({kind:'atomic-skill',source:{kind:'upload',name:name.trim()},metadata:{id:value.id,title:value.title,version:value.version,categories:[...value.categories],...(value.localized?{localized:value.localized}:{})},trust:uploadTrust(),files:requestFiles(value.files)},identity)
+   if(options?.license!==undefined&&(typeof options.license!=='string'||!options.license.trim()||options.license.length>200))throw Error('技能许可声明格式不正确。')
+   const source={kind:'upload',name:name.trim()},metadata={id:value.id,title:value.title,version:value.version,categories:[...value.categories],...(value.localized?{localized:value.localized}:{}),...(value.modelDependencies?{modelDependencies:value.modelDependencies}:{})},derivation=options?.derivation===undefined?undefined:derivationBinding(options.derivation)
+   if(options?.requirements&&!derivation)throw Error('技能配套声明需要核对原安装来源。')
+   const requirements=options?.requirements===undefined?undefined:exact(options.requirements,['compatibility','plugins','externalCapabilities','permissions'])
+   const sourceTrust=trust({...uploadTrust(),...requirements});if(options?.license!==undefined)sourceTrust.license={status:'declared',value:options.license.trim()}
+   const identity={kind:'atomic-skill' as const,logicalId:value.id,version:value.version,hash:value.hash,...(options?{requestHash:await atomicRequestHash({hash:value.hash,source,metadata,trust:sourceTrust,...(derivation?{derivation}:{})})}:{}),...(derivation?{derivation}:{})}
+   return send({kind:'atomic-skill',source,metadata,trust:sourceTrust,files:requestFiles(value.files)},identity)
   },
   async importIndustry(item:MarketItem,requestId?:string){
    if(item.source.kind!=='upload')throw Error('首批行业模板持久化只接受上传来源。')

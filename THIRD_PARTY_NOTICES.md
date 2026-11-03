@@ -33,6 +33,17 @@ pnpm licenses list --json          # full graph, used only for the DSH section b
   Common license texts appear near the end of this file, but that section
   is not a complete copy of every package's license.
 
+## Release 0.2.11-rc.1 dependency addition
+
+- `fast-sha256@1.3.0` is a direct runtime dependency of `@teloa/contract`
+  for browser-compatible SHA-256. Its installed manifest declares `Unlicense`.
+  The exact installed license is preserved in
+  [third-party-licenses/fast-sha256-1.3.0-LICENSE.txt](third-party-licenses/fast-sha256-1.3.0-LICENSE.txt)
+  (SHA-256 `88d9b4eb60579c191ec391ca04c16130572d7eedc4a86daa58bf28c6e14c9bcd`).
+  The release generator requires the fixed template’s existing version, registry
+  URL and integrity to match the current source lock before promoting this leaf
+  to a direct runtime dependency; other lock nodes remain unchanged.
+
 ## Needs attention
 
 - **`argparse@2.0.1`** (production dependency, pulled in transitively) declares

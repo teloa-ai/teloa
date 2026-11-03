@@ -63,6 +63,13 @@ export function managedAutoReviewModuleSpec(manifest,specs){
  return specs[name]&&manifest.dependencies?.[name]===specs[name]?{[name]:specs[name]}:{}
 }
 
+/** 已声明的官方可选组合也随当前发行修复链接；不启用 bundle，不接管第三方来源。 */
+export function managedOptionalNativeModuleSpecs(manifest,specs){
+ const result=managedAutoReviewModuleSpec(manifest,specs)
+ for(const name of ['@teloa/native-browser','@teloa/native-computer'])if(typeof specs[name]==='string'&&specs[name].startsWith('link:')&&manifest.dependencies?.[name]===specs[name])result[name]=specs[name]
+ return result
+}
+
 /** realpath；路径不存在（含悬空链接）时为 undefined。 */
 async function realpathOrUndefined(path){
  try{return await realpath(path)}catch(error){if(error.code==='ENOENT')return undefined;throw error}
@@ -104,6 +111,10 @@ export function runtimeEnvironment(layout,environment=process.env){
  const allowed=['PATH','HOME','USER','LOGNAME','SHELL','TMPDIR','TMP','TEMP','LANG','LC_ALL','LC_CTYPE','TZ','SYSTEMROOT','WINDIR','COMSPEC','PATHEXT','HTTP_PROXY','HTTPS_PROXY','ALL_PROXY','NO_PROXY','http_proxy','https_proxy','all_proxy','no_proxy',
   // 使用统计排除变量：CI / 验收 / 开发环境里用 npm 版 teloa 启动也不上报（宿主据此优先于 on 排除）。
   'CI','TELOA_BROWSER_ACCEPTANCE','NODE_ENV',
+  // 明确启动的模型发送摘要审计；子宿主仍按process层校验冻结绑定。
+  'TELOA_MODEL_SEND_AUDIT_BINDING',
+  // 经验服务仅继承本人启动进程配置；令牌文件沿下方既有 _FILE 规则转交。
+  'TELOA_MEMORY_API_URL','TELOA_MEMORY_API_TOKEN','TELOA_MEMORY_TIMEOUT_MS','TELOA_MEMORY_ALLOW_HTTP',
   // 升级回执由 supervisor 转交宿主；CLI startService 会先清除调用者 shell 中的同名值。
   'TELOA_PLANNED_RESTART',
   // 凭据存储档位与主密钥来源（规格 §3.4）：显式密钥文件、systemd 凭据目录，以及 Linux 桌面 Secret Service 所需的 D-Bus 两项。
@@ -133,14 +144,15 @@ export async function prepareRuntimeProfile(layout){
   const optional=optionalNativeBundleSpecs(layout.programRoot)
   const next=withTeloaProfileDefaults(withOptionalNativeDependencies(manifest,optional))
   if(JSON.stringify(next)!==JSON.stringify(manifest))await pending.writeProfileManifest(profileDir,next)
-  await repairBundledModuleLinks(profileDir,{...bundledSpecs,...managedAutoReviewModuleSpec(next,optional)})
+  await repairBundledModuleLinks(profileDir,{...bundledSpecs,...managedOptionalNativeModuleSpecs(next,optional)})
  })
  await pending.suppressPendingBundles(profileDir)
  if((await pending.pendingBundleConflicts(profileDir)).length)throw Error(pending.pendingBundleRefusal)
  // 依赖已在上面的锁内被 withOptionalNativeDependencies 改写为当前程序目录；迁移失败只告警。
  try{await bundled.migrateBundledExtensions(profileDir,layout.runtimeRoot,layout.programRoot)}
  catch(error){console.warn('[teloa] 官方扩展迁移未完成，本次按现状启动：'+(error instanceof Error?error.message:String(error)))}
- if((await bundled.bundledSourceConflicts(profileDir,layout.programRoot)).length||(await bundledModuleConflicts(profileDir,bundledSpecs)).length)throw Error(bundled.bundledSourceRefusal)
+ const managedSpecs={...bundledSpecs,...managedOptionalNativeModuleSpecs(await pending.readJsonFile(join(profileDir,'package.json')),optionalNativeBundleSpecs(layout.programRoot))}
+ if((await bundled.bundledSourceConflicts(profileDir,layout.programRoot)).length||(await bundledModuleConflicts(profileDir,managedSpecs)).length)throw Error(bundled.bundledSourceRefusal)
  return profileDir
 }
 

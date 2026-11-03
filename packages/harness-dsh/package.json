@@ -26,7 +26,8 @@
     "./managed-goal-round-driver": "./src/managed-goal-round-driver.ts",
     "./managed-tool-jobs": "./src/managed-tool-jobs.ts",
     "./native-ptc-selection": "./src/native-ptc-selection.ts",
-    "./native-working-directory": "./src/native-working-directory-guard.ts"
+    "./native-working-directory": "./src/native-working-directory-guard.ts",
+    "./employee-mention-title": "./src/employee-mention-title-plugin.ts"
   },
   "engines": {
     "dsh": "0.2.1-rc.2"
@@ -79,6 +80,7 @@
     "@deepseek-ai/dsh-token-meter": "0.2.1-rc.2",
     "@deepseek-ai/dsh-tool-fs": "0.2.1-rc.2",
     "@deepseek-ai/dsh-tool-jobs": "0.2.1-rc.2",
+    "@deepseek-ai/dsh-tool-present": "0.2.1-rc.2",
     "@deepseek-ai/dsh-tools": "0.2.1-rc.2",
     "@deepseek-ai/dsh-typert-protocol": "0.2.1-rc.2",
     "@deepseek-ai/dsh-user-approval": "0.2.1-rc.2",

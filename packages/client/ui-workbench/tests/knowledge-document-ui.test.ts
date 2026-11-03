@@ -22,7 +22,7 @@ test('知识文档采用 GitHub 式 Markdown 编辑预览与不可变版本记�
  assert.match(document,/inspectorOpen\s*&&\s*<aside/)
  assert.match(document,/source\.title/)
  assert.match(document,/t\("knowledge\.ui\.015"\)/)
- assert.match(document,/t\("knowledge\.ui\.044"\)/)
+ assert.match(document,/reader\.version/,'阅读优先入口仍明确保存为新版本')
  assert.match(document,/t\("knowledge\.ui\.050"\)/)
  assert.match(document,/t\("knowledge\.ui\.048"\)/)
  assert.match(document,/expectedKnowledgeVersion/)

@@ -1,0 +1,5 @@
+--- a/lib/client.js
++++ b/lib/client.js
+@@ -1423 +1423 @@
+-					return summary !== void 0 && summary.blank && summary.cwd === workspace.path && workspace.sessionIds.includes(id) && !archived.includes(id);
++					return summary !== void 0 && !/^(?:task-run|group-routing)-[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id) && summary.blank && summary.cwd === workspace.path && workspace.sessionIds.includes(id) && !archived.includes(id);

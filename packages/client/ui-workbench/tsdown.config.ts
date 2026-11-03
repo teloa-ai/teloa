@@ -4,12 +4,14 @@ import { createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
 import { clientBundle, clientChunk, standaloneClientBundle } from '../tsdown.preset.ts'
 
-const manifest=JSON.parse(readFileSync(new URL('./package.json',import.meta.url),'utf8'))
+const manifest=JSON.parse(readFileSync(new URL('../../cli/package.json',import.meta.url),'utf8'))
 const baseline=JSON.parse(readFileSync(new URL('../../../config/dsh-baseline.json',import.meta.url),'utf8'))
 const contacts=aboutContactBuildProfile(process.env.TELOA_CONTACT_PROFILE??'community')
 const configs=clientBundle('@teloa/client-ui-workbench', 'src/client/index.ts')
 configs[1]!.alias=contacts.alias
-configs[1]!.outputOptions!.banner='// teloa-contact-profile:'+contacts.profile+'\n'+configs[1]!.outputOptions!.banner
+const clientOutput=configs[1]!.outputOptions
+if(!clientOutput||typeof clientOutput==='function')throw Error('工作台客户端需要固定输出选项')
+clientOutput.banner='// teloa-contact-profile:'+contacts.profile+'\n'+clientOutput.banner
 // 客户端作为内联工厂加载，没有模块文件 URL；ZIP 仅用原生流，禁止为 import.meta.url 注入 Node url 模块。
 configs[1]!.define={'import.meta.url':'undefined',__TELOA_VERSION__:JSON.stringify(manifest.version),__DSH_VERSION__:JSON.stringify(baseline.tag.replace(/^dsh-v/,''))}
 /**

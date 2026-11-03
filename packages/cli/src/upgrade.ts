@@ -1,15 +1,15 @@
 import {readFile,mkdtemp,mkdir,chmod,unlink} from 'node:fs/promises'
-import {join,dirname} from 'node:path'
-import {randomUUID} from 'node:crypto'
+import {join} from 'node:path'
 import type {InstallState} from './contracts.ts'
 import {exactVersion,resolveLayout} from './layout.ts'
 import {writePrivateJson,writeInstall} from './state.ts'
 import {verifyRelease,stageRelease} from './releases.ts'
-import {createBackup,assertMaintenanceStopped} from './maintenance.ts'
+import {assertMaintenanceStopped} from './maintenance.ts'
 import {databasePool,prepareDatabase} from './database.ts'
 import {serviceStatus,startService,stopService,controlPath} from './service.ts'
 import {command} from './process.ts'
 import {canUpgradeData,canUseData} from './data-version.ts'
+import {beginOrdinaryUpgrade,continueOrdinaryUpgrade} from './upgrade-intent.ts'
 
 export {canUpgradeData,canUseData} from './data-version.ts'
 export function verifyRegistryInstall(pkg:any,lock:any,version:string):void{
@@ -36,7 +36,7 @@ export function releaseSource(version:string,cli:{version:string;root:string}):t
 export async function upgradeInstall(state:InstallState,version:string,download=fetchRelease):Promise<InstallState>{
  if(!exactVersion(version))throw Error('升级必须指定确切版本。')
  // 已切换的版本号不能证明升级完成；维护现场必须先核对原恢复点，不能重复迁移。
- if(state.phase==='maintenance')throw Error('上次升级尚未完成；安装保持维护状态。请先核对 '+join(state.layout.instanceRoot,'upgrade.json')+' 中记录的备份，并使用来源版本 CLI 恢复到新目录；原数据与失败现场保留。')
+ if(state.phase==='maintenance')throw Error('安装保持维护状态；请先继续原维护命令并核对备份用途。普通升级备份记录位于 '+join(state.layout.instanceRoot,'upgrade.json')+'；提交维护的专用备份不能用普通restore恢复，也不提供自动回滚。原数据与失败现场保留。')
  if(version===state.version)return state
  assertMaintenanceStopped(await serviceStatus(state),state.phase)
  const current=await verifyRelease(state.layout.releaseRoot)
@@ -44,12 +44,9 @@ export async function upgradeInstall(state:InstallState,version:string,download=
  if(candidate.version!==version||current.version!==state.version||!canUpgradeData(candidate,current.dataVersion))throw Error('候选版本的数据兼容性尚未验证，拒绝切换。')
  const layout=await resolveLayout({home:state.layout.home,workspace:state.layout.workspaceRoot,version})
  await stageRelease(source,layout)
- const directory=state.layout.home+'.backups';await mkdir(directory,{recursive:true,mode:0o700})
- const backup=join(directory,'before-'+version+'-'+randomUUID())
- await createBackup(state,backup)
- const next:InstallState={...state,version,layout,phase:'maintenance'},record=join(layout.instanceRoot,'upgrade.json'),restartId=randomUUID()
- await writePrivateJson(record,{from:state.version,to:version,backup,restartId,status:'switching'})
- await writeInstall(next)
+ await beginOrdinaryUpgrade(state,version)
+ const next=(await continueOrdinaryUpgrade(state,version,source))!,record=join(layout.instanceRoot,'upgrade.json')
+ const {backup,restartId}=JSON.parse(await readFile(record,'utf8')) as {backup:string;restartId:string}
  try{
   await prepareDatabase(next,current.dataVersion===candidate.dataVersion?{}:{migrationBackup:backup})
   const pool=await databasePool(next)

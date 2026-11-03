@@ -4,6 +4,13 @@ import {createTaskAttentionHandler} from '../src/task-attention.ts'
 
 const owner='local:teloa-owner',id='11111111-1111-4111-8111-111111111111'
 const task={id,ownerId:owner,version:3,state:'blocked',createdAt:'2026-09-12T00:00:00.000Z',updatedAt:'2026-09-12T01:00:00.000Z',title:'核对资料',goal:'形成核对结果',scope:'general',assigneeRoleId:null,assigneeRoleVersion:null}
+test('原生审批只属于当前本人进行中的可执行任务，未知与未决引用不能混用',async()=>{
+ const running={...task,state:'running',assigneeRoleId:id,assigneeRoleVersion:1},nativeApproval={runId:id,sessionId:'native-session'},entry={task:running,attention:null,nativeApproval}
+ const read=(entry:unknown)=>createTaskAttentionHandler(owner,async()=>({list:async()=>({items:[entry]})}))({})
+ assert.deepEqual((await read(entry)).items,[entry])
+ assert.equal((await read({task:running,attention:null,nativeApprovalUnknown:true})).items[0]!.nativeApprovalUnknown,true)
+ for(const bad of [{...entry,task:{...running,ownerId:'other'}},{...entry,task:{...running,state:'cancelled'}},{...entry,task:{...running,assigneeRoleId:null,assigneeRoleVersion:null}},{...entry,nativeApproval:{...nativeApproval,runId:'bad'}},{...entry,nativeApproval:{...nativeApproval,sessionId:''}},{...entry,nativeApprovalUnknown:true},{task:running,attention:null,nativeApprovalUnknown:false}])await assert.rejects(read(bad),{code:'teloa/invalid-host-response'})
+})
 test('需要你任务内容版本与完成策略兼容旧回包并严格读取新增字段',async()=>{
  const read=(value:unknown)=>createTaskAttentionHandler(owner,async()=>({list:async()=>({items:[{task:value,attention:{kind:'error',reason:'task-blocked'}}]})}))({})
  const policies=[{kind:'manual'},{kind:'verified',verifier:'material-version-summary',verifierVersion:1,authorizationVersion:2}]

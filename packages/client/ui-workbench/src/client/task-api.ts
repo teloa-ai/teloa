@@ -6,7 +6,8 @@ type Call=(endpoint:string,input:unknown)=>Promise<unknown>
 export type TaskApi=ReturnType<typeof createTaskApi>
 export type TaskAssignee={roleId:string;expectedVersion:number}
 export type TaskAttention={kind:'error'|'review';reason:'task-blocked'|'execution-failed'|'execution-configuration-failed'|'execution-completed'|'task-waiting'}
-export type TaskAttentionItem={task:WorkTask;attention:TaskAttention|null;completedGroupReply?:true}
+export type TaskNativeApproval={runId:string;sessionId:string}
+export type TaskAttentionItem={task:WorkTask;attention:TaskAttention|null;completedGroupReply?:true;nativeApproval?:TaskNativeApproval;nativeApprovalUnknown?:true}
 function readAssignee(value:unknown):TaskAssignee|undefined{
  if(value===undefined)return undefined
  const row=taskInput(value,['roleId','expectedVersion'])
@@ -45,7 +46,7 @@ export function createTaskApi(call:Call,journal?:TaskRequestJournal){
    const response=await call('tasks/attention',{})
    try{
     const value=taskInput(response,['items']);if(!Array.isArray(value.items))throw Error()
-    const items=value.items.map(candidate=>{const item=taskInput(candidate,['task','attention','completedGroupReply']),task=read(item.task);let attention:TaskAttention|null=null
+    const items=value.items.map(candidate=>{const item=taskInput(candidate,['task','attention','completedGroupReply','nativeApproval','nativeApprovalUnknown']),task=read(item.task);let attention:TaskAttention|null=null
 	     if(item.attention!==null){const row=taskInput(item.attention,['kind','reason']);if(typeof row.kind!=='string'||typeof row.reason!=='string'||!['error','review'].includes(row.kind)||!['task-blocked','execution-failed','execution-configuration-failed','execution-completed','task-waiting'].includes(row.reason))throw Error();attention={kind:row.kind as TaskAttention['kind'],reason:row.reason as TaskAttention['reason']}}
      const replied=item.completedGroupReply!==undefined
      if(replied&&(item.completedGroupReply!==true||task.state!=='waiting'||attention!==null||!task.groupId||task.assigneeRoleId===null))throw Error()
@@ -55,7 +56,15 @@ export function createTaskApi(call:Call,journal?:TaskRequestJournal){
 	     else if(task.state==='waiting'&&!replied){if(attention?.kind!=='review'||!['execution-completed','task-waiting'].includes(attention.reason))throw Error()}
 	     else if(attention!==null)throw Error()
      if(attention&&['execution-failed','execution-configuration-failed','execution-completed'].includes(attention.reason)&&task.assigneeRoleId===null&&task.executor?.kind!=='owner')throw Error()
-     return {task,attention,...(replied?{completedGroupReply:true as const}:{})}
+     let nativeApproval:TaskNativeApproval|undefined
+     if(item.nativeApproval!==undefined){
+      const native=taskInput(item.nativeApproval,['runId','sessionId']),uuid=(value:unknown)=>typeof value==='string'&&/^[a-f0-9]{8}-[a-f0-9]{4}-[1-8][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i.test(value)
+      if(task.state!=='running'||attention!==null||replied||!uuid(native.runId)||typeof native.sessionId!=='string'||!native.sessionId.trim()||native.sessionId.length>256||/[\x00-\x1f\x7f]/.test(native.sessionId)||task.assigneeRoleId===null&&task.executor?.kind!=='owner')throw Error()
+      nativeApproval=native as TaskNativeApproval
+     }
+     const unknown=item.nativeApprovalUnknown!==undefined
+     if(unknown&&(item.nativeApprovalUnknown!==true||nativeApproval||task.state!=='running'||attention!==null||replied||task.assigneeRoleId===null&&task.executor?.kind!=='owner'))throw Error()
+     return {task,attention,...(replied?{completedGroupReply:true as const}:{}),...(nativeApproval?{nativeApproval}:{}),...(unknown?{nativeApprovalUnknown:true as const}:{})}
     })
     if(new Set(items.map(item=>item.task.id)).size!==items.length)throw Error()
     return {items}

@@ -22,6 +22,20 @@ export class RoleWorkEligibilityService{
  async authorize(owner:string,input:RoleWorkEligibilityInput,client?:PoolClient):Promise<RoleWorkAdmission>{
   return this.authorizeFixed(owner,input,client)
  }
+ /** 只读来源核验允许原 Task 已结项；不改变普通执行授权的终态拒绝。 */
+ async authorizeCitationSource(owner:string,input:RoleWorkEligibilityInput,client:PoolClient):Promise<RoleWorkAdmission>{
+  roleWorkOwner(owner)
+  if(!roleWorkUuid(input.roleId)||!roleWorkVersion(input.expectedRoleVersion))throw roleWorkInvalid()
+  const authorization=readRoleWorkAuthorization(input.authorization)
+  if(authorization.kind!=='task')return this.authorizeFixed(owner,input,client)
+  const role=await lockRoleWorkRole(client,owner,input.roleId,'share');assertRoleWorkRole(role,input.expectedRoleVersion)
+  const stored=(await client.query('select * from teloa_tasks where owner_id=$1 and id=$2 for share',[owner,authorization.taskId])).rows[0]
+  if(!stored||stored.assignee_role_id!==role.id||stored.assignee_role_version!==role.version)throw new WorkError('teloa/forbidden','原任务负责人已变化。')
+  if(stored.state!=='completed')return this.authorizeFixed(owner,input,client)
+  const task=readStoredTask(stored)
+  if((stored.content_version??1)!==authorization.taskContentVersion||task.scope!==input.scope)throw new WorkError('teloa/version-conflict','已完成来源的内容或范围已变化。')
+  return this.authorizeFixed(owner,input,client,{scope:task.scope,groupId:task.groupId??null})
+ }
  /** 已完成 Task 只证明原消息来源；真实当前群自动许可仍须独立核验，不能转回普通执行授权。 */
  async authorizeGroupRoutingSource(owner:string,input:{groupId:string;messageId:string},client?:PoolClient):Promise<RoleWorkAdmission>{
   roleWorkOwner(owner);const row=taskInput(input,['groupId','messageId']);if(!roleWorkUuid(row.groupId)||!roleWorkUuid(row.messageId))throw roleWorkInvalid()

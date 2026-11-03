@@ -8,6 +8,45 @@ import {
 import {translateMessage} from '../lib/types/client/i18n/messages.js'
 import {createRoleApi} from '../src/client/role-api.ts'
 import {createIndustryRoleApi} from '../src/client/industry-role-api.ts'
+import {createResourceApiFromRpc} from '../src/client/resource-api.ts'
+import {createPendingReceiptRpc} from '../src/client/pending-receipt-rpc.ts'
+
+test('员工有未结束工作时说明收尾和暂停步骤，不将配置阻挡误报为刷新冲突',()=>{
+ const error={code:'teloa/conflict',details:{reason:'role-work-outstanding'},message:'秘密任务ID及内部状态'}
+ for(const [locale,next] of [['zh-CN',/完成或取消.*任务.*暂停.*计划.*委托/],['zh-Hant',/完成或取消.*工作.*暫停.*排程.*委託/],['en',/Finish or cancel.*work.*pause.*automations.*delegations/]] as const){
+  const text=localizeWorkError(locale,error);assert.match(text,next);assert.doesNotMatch(text,/刷新|重新整理|Refresh|秘密|内部状态/)
+ }
+ assert.equal(localizeWorkError('zh-CN',{...error,code:'teloa/forbidden'}),translateMessage('zh-CN','error.forbidden'))
+ assert.equal(localizeWorkError('zh-CN',{...error,details:{reason:'unknown'}}),translateMessage('zh-CN','error.conflict'))
+})
+
+test('正式资源RPC包装保留登记冲突原因，解除已拒绝的恢复记录并给出正确下一步',async()=>{
+ let saved:string|null=null
+ const calls:string[]=[],details={reason:'local-material-registration-mismatch'}
+ const rpc=createPendingReceiptRpc(async(endpoint:string)=>{calls.push(endpoint);return{ok:false as const,error:{code:'teloa/conflict',message:'秘密原件路径',details}}},()=>assert.fail('拒绝回包不能确认成功收讫'))
+ const api=createResourceApiFromRpc(rpc,{read:()=>saved,write:value=>{saved=value},clear:()=>{saved=null}})
+ await assert.rejects(api.localMaterialRequests!.begin({title:'新标题',path:'说明.md',scopeIds:['general']}),error=>{
+  assert.ok(error&&typeof error==='object')
+  assert.equal(Reflect.get(error,'rejected'),true)
+  assert.deepEqual(Reflect.get(error,'details'),details)
+  const message=localizeWorkError('zh-CN',error)
+  assert.match(message,/原登记名称.*范围.*草案/)
+  assert.doesNotMatch(message,/秘密|原件路径|刷新/)
+  return true
+ })
+ assert.deepEqual(calls,['resources/register-local-material'])
+ assert.equal(saved,null)
+ assert.equal(api.localMaterialRequests!.pending(),undefined)
+})
+
+test('本机原件重复登记冲突说明原名称和范围，不误导刷新或泄露服务端正文',()=>{
+ const error={code:'teloa/conflict',details:{reason:'local-material-registration-mismatch'},message:'秘密原件路径'}
+ for(const [locale,expected] of [['zh-CN',/原登记名称.*范围.*草案/],['zh-Hant',/原登記名稱.*範圍.*草稿/],['en',/original registration name.*scope.*draft/]] as const){
+  const message=localizeWorkError(locale,error);assert.match(message,expected);assert.doesNotMatch(message,/秘密|原件路径|刷新|重新整理|Refresh/)
+ }
+ assert.equal(localizeWorkError('zh-CN',{...error,details:{reason:'unknown'}}),translateMessage('zh-CN','error.conflict'))
+ assert.equal(localizeWorkError('zh-CN',{...error,code:'teloa/forbidden'}),translateMessage('zh-CN','error.forbidden'))
+})
 
 test('缺少完整交付复核时提示原记录与重新交办，不泄露原始错误或诱导后台重试',()=>{
  const error={code:'teloa/delivery-review-required',message:'秘密内部堆栈'}

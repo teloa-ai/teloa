@@ -1,4 +1,10 @@
 import {EmployeeApiWorkPanel} from './EmployeeApiWorkPanel.js'
+import {SessionDiagnosticMenuItem} from './SessionDiagnosticMenuItem.js'
+import type {SessionDiagnosticDownloader} from './session-diagnostic-download.js'
+import {taskRunTerminalStates} from '@teloa/contract'
+import {artifactModificationPreparation,type ArtifactModificationFile} from './artifact-modification-preparation.js'
+import {latestTaskRun} from './task-run-presentation.js'
+import {createPlanBusinessSources} from './plan-work-business-sources.js'
 import {createRoleSkillTitleReader} from './capability-skill-runtime.js'
 import {createIndustryTeamMaterials} from './industry-team-materials.js'
 import {findIndustryTeam,industryTeamSeed,type IndustryTeamSeed} from './industry-team.js'
@@ -24,6 +30,7 @@ import {createShareAcceptance,readPublicCatalogSkill} from './template-share-acc
 import {ShareDraftDrawer,TemplateShareProvider,type ShareBridge,type TemplateShareSources} from './EmployeeTemplateShare.js'
 import type {SharePackage} from './share-package-plan.js'
 import {resolveTemplateShareSkills} from './template-share-skill-sources.js'
+import {createTemplateShareObjectSources,readAppBundleSharePackage} from './template-share-object-sources.js'
 import type {TemplateShareIntent} from '@teloa/contract'
 import {WorkProgressPanel} from './WorkProgressPanel.js'
 import type {WorkControlApi} from './work-control-api.js'
@@ -58,7 +65,7 @@ import {taskArtifactPort} from './task-artifact-port.js'
 import type {RuntimeSettingsSurface} from './runtime-settings-surface.js'
 import {StatusLabel} from './StatusLabel.js'
 import {SecurityActions} from './SecurityActions.js'
-import type {SecurityActionApi,SecurityActionAttention,SecurityActionContext} from './security-action-api.js'
+import {securityActionCommands,type SecurityActionApi,type SecurityActionAttention,type SecurityActionContext} from './security-action-api.js'
 import type {MarketPluginInstallPreview,SecurityActionPanel} from '@teloa/contract'
 import {SecurityDecisionActions,SecurityPanelFallback} from './SecurityDecisionActions.js'
 import {HandoffDecisionActions} from './HandoffDecisionActions.js'
@@ -106,7 +113,7 @@ import {PendingRequestReview} from './PendingRequestReview.js'
 import {pendingRequestOperation} from './pending-request-copy.js'
 import {projectSavedTask,type TaskApi,type TaskAssignee,type TaskAttentionItem} from './task-api.js'
 import type {TaskCompletionPort} from './TaskCompletion.js'
-import {mergeTaskAttention} from './task-attention-state.js'
+import {mergeTaskAttention,openTaskNativeApproval} from './task-attention-state.js'
 import type {WorkAttentionApi} from './work-attention-api.js'
 import type {BusinessWorkResultsApi} from './business-work-results-api.js'
 import {useWorkAttention} from './use-work-attention.js'
@@ -129,6 +136,7 @@ import type { HomeResourceSelection } from './home-resource-selection.js'
 import { WorkspaceSearch } from './WorkspaceSearch.js'
 import { presentConversations } from './work-presentation.js'
 import {latestRoleConversation,roleCanStartConversation,readCurrentRoleForConversation} from './role-conversation-selection.js'
+import {employeeAssignmentCreation} from './employee-assignment-creation.js'
 import type { WorkspaceSearchResult } from './workspace-search.js'
 import {searchableKnowledgeDocuments,type WorkspaceKnowledgeSearchEntry} from './workspace-search-knowledge.js'
 import {loadWorkspaceCapabilitySearchDirectory,type WorkspaceCapabilitySearchRow} from './workspace-capability-search.js'
@@ -163,7 +171,7 @@ import type { ArtifactFileApi } from './artifact-files.js'
 import type { CollaborationScope } from './collaboration-preview.js'
 import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
 import clsx from 'clsx'
-import { ArrowLeft, ChevronRight, LayoutPanelLeft, MessageSquare, MoreHorizontal, PanelLeft, Settings2, X } from 'lucide-react'
+import { ArrowLeft, ChevronRight, LayoutPanelLeft, Link2, MessageSquare, MoreHorizontal, PanelLeft, Settings2, X } from 'lucide-react'
 import { StaffAvatar } from './StaffAvatar.js'
 import {WorkbenchHubNavigation,isWorkbenchHubView,workbenchHubNavigation} from './WorkbenchNavigationChrome.js'
 import { WorkNavigation,businessDashboardTitleKey } from './WorkNavigation.js'
@@ -234,6 +242,7 @@ import {EmployeeAvatar} from './EmployeeAvatar.js'
 import {RoleProfileDrawer} from './RoleProfileDrawer.js'
 import { RoleForm, TeamPage } from './TeamPage.js'
 import { rolePeople,roleName } from './role-preview.js'
+import {reconcileRoleDirectory} from './role-directory-reconcile.js'
 import { TaskForm } from './TaskPage.js'
 import { changeTeamPreview } from './team-preview.js'
 import { roleFieldText, twinDisplayName } from './team-presentation.js'
@@ -282,6 +291,8 @@ import {localizeWorkError} from './i18n/errors.js'
 import {browserConversationWorkspacePreferenceStore,resolveConversationWorkspace} from './conversation-workspace-resolution.js'
 import type {WorkbenchNavigationStorage} from './workbench-navigation-state.js'
 import {captureWorkbenchNavigationState,persistWorkbenchNavigationState,readDirectoryFilterCategory,reconcileAvailableDirectoryTarget,writeDirectoryFilterCategory,type WorkbenchDirectoryId,type WorkbenchDirectoryNavigation,type WorkbenchDirectoryPatch} from './workbench-navigation-state.js'
+import {attachWorkbenchObjectHistory,describeWorkbenchObject,navigationForWorkbenchObject,workbenchObjectHash,workbenchObjectLink,type WorkbenchObjectRoute,type WorkbenchObjectTarget} from './workbench-object-url.js'
+import {restoreWorkbenchConversation} from './workbench-conversation-restore.js'
 import {directoryScroller,directoryScrollTopForEvent,visibleDirectoryPane} from './directory-focus.js'
 import type {MainSessionSource} from './main-session.js'
 import {blankNewConversation,conversationAtLocation,draftCarry,moveTextDraft,readBlankNewConversation,rememberBlankNewConversation,type DraftInputPort} from './blank-conversation-draft.js'
@@ -291,11 +302,12 @@ import {canShowConversationOverview,collapseOverviewWithoutRoom,collapseRightbar
 const DETAILS_TRACK_ID='teloa-details-track'
 const dutyLead=(value:string)=>value.split(/[。.!?！？\n]/)[0]?.trim()??''
 
-type Props = {assistantActivity:AssistantCompanionActivity;assistantChat?:AssistantMiniChatPort;groupWorkLinks?:GroupWorkLinkApi;employeeVoiceApi?:EmployeeVoiceApi;insertAssistantVoiceText?:(draft:AssistantVoiceDraft)=>Promise<void>;groupChannels?:GroupChannelContext;navigationStorage:WorkbenchNavigationStorage} & PropsRuntime<'root'> & PropsRenderSlots<'sidebar'|'main'|'rightbar'|'shell.overlay'|'teloa.workbench.toolbar'|'teloa.conversation'> & PropsStore<ReturnType<typeof createWorkbenchStore>> & WorkInjected & {runtimeSettings:RuntimeSettingsSurface;runtimeExtensions:RuntimeExtensionReader;resolveExtensionText:(text:RuntimeText)=>string;mainSession:MainSessionSource;beginNativeNavigation?:()=>AbortSignal;deferNativeConversationNavigation?:(current:()=>boolean)=>()=>void;leaseSidebarToggle?:((toggle:()=>void)=>()=>void);openNativePanel:(id:string)=>void;openLocalModels?:(entryId:string)=>void;setTheme:(value:'light'|'dark')=>void;sidebarRightFace:()=>ISidebarRight|undefined;management:ConversationManagement;conversationSearch:ConversationSearch;planApi:PlanApi;conversationPlans:ConversationPlanDirectory;workControlApi:WorkControlApi;marketContentApi:MarketContentApi;marketCatalogApi:MarketCatalogApi;managedMcpConnectionApi?:ManagedMcpConnectionApi;createBusinessDashboardResources?:(namespace:string,token:BusinessBuilderApi)=>BusinessDashboardResourceApi;createBusinessMcpConnection?:(namespace:string,token:BusinessBuilderApi)=>ManagedMcpConnectionApi;skillSecretsApi:SkillSecretsApi;githubSourceApi:GithubSourceApi;industryLoadApi:IndustryLoadApi;industryKnowledgeApi:IndustryKnowledgeApi;industryDataSourceApi:IndustryDataSourceApi;industryExecutionToolApi:IndustryExecutionToolApi;industryMcpConnectionApi:IndustryMcpConnectionApi;industryPluginApi:IndustryPluginApi;industryRoleApi:IndustryRoleApi;industryTaskApi:IndustryTaskApi;industryPlanApi:IndustryPlanApi;skillInstallApi:SkillInstallApi;marketPluginInstallApi:MarketPluginInstallApi;bundledExtensionsApi:BundledExtensionsApi;skillAvailabilityApi:SkillAvailabilityApi;skillUpgradeApi:SkillUpgradeApi;localRetrievalApi?:LocalRetrievalApi|undefined;resourceApi:ResourceApi;nativeResourceMessages?:NativeResourceMessageApi;roleApi:RoleApi;roleWorkDirectory:RoleWorkDirectory;memoryApi:RoleMemoryApi;dailyLogApi:RoleDailyLogApi;runtimeConfigApi:RoleRuntimeConfigApi;taskApi:TaskApi;workAttentionApi:WorkAttentionApi;attentionBusinessApi:BusinessWorkResultsApi;workAttentionConnection:{getSnapshot:()=>unknown;subscribe:(listener:()=>void)=>()=>void};projectApi:ProjectApi;taskRunApi:TaskRunApi;taskRunChat?:TaskRunChatPresentationDirectory;securityActionApi:SecurityActionApi;taskMaterialApi:TaskMaterialApi;taskTransitions:TaskTransitionApi;pendingRequestApi:PendingRequestApi;roleLifecycle:RoleLifecycleApi;roleToolGrantApi:RoleToolGrantApi;roleDelegationApi:RoleDelegationApi;handoffApi:HandoffApi;objectConversationApi:ObjectConversationApi;groupApi:GroupApi;groupAttachmentApi:GroupAttachmentApi;groupReactionApi:GroupReactionApi;groupRoutingApi:GroupRoutingApi;businessLedgerApi:BusinessLedgerApi;businessDashboardApi:BusinessDashboardApi;businessCustomizationApi:BusinessCustomizationApi;connectorProbeApi:ConnectorProbeApi;businessTaskApi:BusinessTaskApi;businessSpaceApi:BusinessSpaceApi;businessScopeApi:BusinessScopeApi;businessBuilder?:BusinessBuilderController;createBusinessRecordFlow?:()=>BusinessRecordFlow;createBusinessImportFlow?:(namespace:string,token:BusinessBuilderApi,scope:string,type:string)=>BusinessImportFlow;createBusinessResponsibility?:(namespace:string,token:BusinessBuilderApi)=>BusinessResponsibilityApi;createBusinessTaskList?:(namespace:string,token:BusinessBuilderApi)=>BusinessTaskListApi;createBusinessSetup?:(namespace:string,token:BusinessBuilderApi)=>BusinessSetupApi;createTwinDrafts?:(namespace:string,token:BusinessBuilderApi)=>TwinDraftApi;insertBusinessRecord?:(reference:BusinessObjectReference,sessionId:string,token:BusinessBuilderApi,mayInsert:()=>boolean)=>Promise<void>;pageCreateApi:PageCreateApi;planDraftApi:PlanDraftApi;preparation:PromptPreparation;sendConversationMessage:(sessionId:string,text:string)=>void;conversationDraftInput:(sessionId:string)=>DraftInputPort|undefined;prepareHomeSession:(signal:AbortSignal)=>Promise<string|undefined>;homeContextApi:HomeContextApi;insertConversationCapabilities:(selection:CapabilitySelection)=>void;nativeArtifacts:NativeArtifactApi;artifactFileApi:ArtifactFileApi;artifactApi:ArtifactApi}
+type Props = {assistantActivity:AssistantCompanionActivity;sessionDiagnostics?:SessionDiagnosticDownloader;assistantChat?:AssistantMiniChatPort;groupWorkLinks?:GroupWorkLinkApi;employeeVoiceApi?:EmployeeVoiceApi;insertAssistantVoiceText?:(draft:AssistantVoiceDraft)=>Promise<void>;groupChannels?:GroupChannelContext;navigationStorage:WorkbenchNavigationStorage} & PropsRuntime<'root'> & PropsRenderSlots<'sidebar'|'main'|'rightbar'|'shell.overlay'|'teloa.workbench.toolbar'|'teloa.conversation'> & PropsStore<ReturnType<typeof createWorkbenchStore>> & WorkInjected & {runtimeSettings:RuntimeSettingsSurface;runtimeExtensions:RuntimeExtensionReader;resolveExtensionText:(text:RuntimeText)=>string;mainSession:MainSessionSource;beginNativeNavigation?:()=>AbortSignal;deferNativeConversationNavigation?:(current:()=>boolean)=>()=>void;leaseSidebarToggle?:((toggle:()=>void)=>()=>void);openNativePanel:(id:string)=>void;openLocalModels?:(entryId:string)=>void;setTheme:(value:'light'|'dark')=>void;sidebarRightFace:()=>ISidebarRight|undefined;management:ConversationManagement;conversationSearch:ConversationSearch;planApi:PlanApi;conversationPlans:ConversationPlanDirectory;workControlApi:WorkControlApi;marketContentApi:MarketContentApi;marketCatalogApi:MarketCatalogApi;managedMcpConnectionApi?:ManagedMcpConnectionApi;createBusinessDashboardResources?:(namespace:string,token:BusinessBuilderApi)=>BusinessDashboardResourceApi;createBusinessMcpConnection?:(namespace:string,token:BusinessBuilderApi)=>ManagedMcpConnectionApi;skillSecretsApi:SkillSecretsApi;githubSourceApi:GithubSourceApi;industryLoadApi:IndustryLoadApi;industryKnowledgeApi:IndustryKnowledgeApi;industryDataSourceApi:IndustryDataSourceApi;industryExecutionToolApi:IndustryExecutionToolApi;industryMcpConnectionApi:IndustryMcpConnectionApi;industryPluginApi:IndustryPluginApi;industryRoleApi:IndustryRoleApi;industryTaskApi:IndustryTaskApi;industryPlanApi:IndustryPlanApi;skillInstallApi:SkillInstallApi;marketPluginInstallApi:MarketPluginInstallApi;bundledExtensionsApi:BundledExtensionsApi;skillAvailabilityApi:SkillAvailabilityApi;skillUpgradeApi:SkillUpgradeApi;localRetrievalApi?:LocalRetrievalApi|undefined;resourceApi:ResourceApi;nativeResourceMessages?:NativeResourceMessageApi;roleApi:RoleApi;roleWorkDirectory:RoleWorkDirectory;memoryApi:RoleMemoryApi;dailyLogApi:RoleDailyLogApi;runtimeConfigApi:RoleRuntimeConfigApi;taskApi:TaskApi;workAttentionApi:WorkAttentionApi;attentionBusinessApi:BusinessWorkResultsApi;workAttentionConnection:{getSnapshot:()=>unknown;subscribe:(listener:()=>void)=>()=>void};projectApi:ProjectApi;taskRunApi:TaskRunApi;taskRunChat?:TaskRunChatPresentationDirectory;securityActionApi:SecurityActionApi;taskMaterialApi:TaskMaterialApi;taskTransitions:TaskTransitionApi;pendingRequestApi:PendingRequestApi;roleLifecycle:RoleLifecycleApi;roleToolGrantApi:RoleToolGrantApi;roleDelegationApi:RoleDelegationApi;handoffApi:HandoffApi;objectConversationApi:ObjectConversationApi;groupApi:GroupApi;groupAttachmentApi:GroupAttachmentApi;groupReactionApi:GroupReactionApi;groupRoutingApi:GroupRoutingApi;businessLedgerApi:BusinessLedgerApi;businessDashboardApi:BusinessDashboardApi;businessCustomizationApi:BusinessCustomizationApi;connectorProbeApi:ConnectorProbeApi;businessTaskApi:BusinessTaskApi;businessSpaceApi:BusinessSpaceApi;businessScopeApi:BusinessScopeApi;businessBuilder?:BusinessBuilderController;createBusinessRecordFlow?:()=>BusinessRecordFlow;createBusinessImportFlow?:(namespace:string,token:BusinessBuilderApi,scope:string,type:string)=>BusinessImportFlow;createBusinessResponsibility?:(namespace:string,token:BusinessBuilderApi)=>BusinessResponsibilityApi;createBusinessTaskList?:(namespace:string,token:BusinessBuilderApi)=>BusinessTaskListApi;createBusinessSetup?:(namespace:string,token:BusinessBuilderApi)=>BusinessSetupApi;createTwinDrafts?:(namespace:string,token:BusinessBuilderApi)=>TwinDraftApi;insertBusinessRecord?:(reference:BusinessObjectReference,sessionId:string,token:BusinessBuilderApi,mayInsert:()=>boolean)=>Promise<void>;pageCreateApi:PageCreateApi;planDraftApi:PlanDraftApi;preparation:PromptPreparation;sendConversationMessage:(sessionId:string,text:string)=>void;conversationDraftInput:(sessionId:string)=>DraftInputPort|undefined;prepareHomeSession:(signal:AbortSignal)=>Promise<string|undefined>;homeContextApi:HomeContextApi;insertConversationCapabilities:(selection:CapabilitySelection)=>void;nativeArtifacts:NativeArtifactApi;artifactFileApi:ArtifactFileApi;artifactApi:ArtifactApi}
 type SidebarProps=PropsRuntime<'sidebar'>&PropsRenderSlots<'sidebar.settings'|'sidebar.workspaces'>
 type ConversationContinuation={current:()=>boolean;opened:(sessionId:string)=>void}
-type CreationIntent={taskCreation?:true;continuation?:ConversationContinuation;pagePreparation?:true;projectConversation?:ProjectConversationCreation;projectCurrent?:()=>boolean;reject?:(error:unknown)=>void;signal?:AbortSignal;assistant?:boolean;builder?:boolean;daily?:{scope:string;title:string;newConversation?:boolean;record?:BusinessObjectReference};navigationToken?:BusinessNavigationToken;allowDraft?:boolean;object?:ConversationObject;goal?:string;scope?:CollaborationScope;resources?:HomeResourceSelection[];skills?:HomeSkillSelection[];notice?:string;resolve?:(accepted:boolean)=>void}
-type RoleScopeIntent={object:ConversationObject;scopes:readonly CollaborationScope[];goal?:string}
+type CreationIntent={requestId?:string;taskCreation?:true;roleAssignmentCurrent?:()=>boolean;continuation?:ConversationContinuation;pagePreparation?:true;projectConversation?:ProjectConversationCreation;projectCurrent?:()=>boolean;reject?:(error:unknown)=>void;signal?:AbortSignal;assistant?:boolean;builder?:boolean;daily?:{scope:string;title:string;newConversation?:boolean;record?:BusinessObjectReference};navigationToken?:BusinessNavigationToken;allowDraft?:boolean;object?:ConversationObject;goal?:string;scope?:CollaborationScope;resources?:HomeResourceSelection[];skills?:HomeSkillSelection[];notice?:string;resolve?:(accepted:boolean)=>void}
+type RoleCreationOptions=Pick<CreationIntent,'taskCreation'|'roleAssignmentCurrent'|'resolve'|'reject'>
+type RoleScopeIntent=RoleCreationOptions&{object:ConversationObject;scopes:readonly CollaborationScope[];goal?:string}
 export function WorkbenchSidebar({renderSlot}:SidebarProps){
   // 保留工作区 slot 声明权；Teloa 的会话目录继续在工作区主体内呈现。
   return renderSlot('sidebar.settings',{wide:true})
@@ -317,7 +329,7 @@ const readMarketNavigation=(raw:string|undefined)=>{
  return {...fields,appsMine:fields.appsMine===''?fields.category==='resources':fields.appsMine==='true'} as Pick<MarketPageNavigationState,'category'|'mobileLayer'|'appsMine'|'appsCategory'>
 }
 
-export function WorkbenchFrame({assistantActivity,assistantChat,groupWorkLinks,employeeVoiceApi,insertAssistantVoiceText,groupChannels,navigationStorage,openLocalModels,runtimeSettings,runtimeExtensions,resolveExtensionText,setTheme,sidebarRightFace,mainSession,beginNativeNavigation,deferNativeConversationNavigation,leaseSidebarToggle,openNativePanel,useStore,useSessions,actions,renderSlot,work,management,conversationSearch,planApi,conversationPlans,workControlApi,marketContentApi,marketCatalogApi,managedMcpConnectionApi,createBusinessDashboardResources,createBusinessMcpConnection,skillSecretsApi,githubSourceApi,industryLoadApi,industryKnowledgeApi,industryDataSourceApi,industryExecutionToolApi,industryMcpConnectionApi,industryPluginApi,industryRoleApi,industryTaskApi,industryPlanApi,skillInstallApi,marketPluginInstallApi,bundledExtensionsApi,skillAvailabilityApi,skillUpgradeApi,localRetrievalApi,resourceApi,nativeResourceMessages,roleApi,roleWorkDirectory,memoryApi,dailyLogApi,runtimeConfigApi,taskApi,workAttentionApi,attentionBusinessApi,workAttentionConnection,projectApi,taskRunApi,taskRunChat,securityActionApi,taskMaterialApi,taskTransitions,pendingRequestApi,roleLifecycle,roleToolGrantApi,roleDelegationApi,handoffApi,objectConversationApi,groupApi,groupAttachmentApi,groupReactionApi,groupRoutingApi,businessLedgerApi,businessDashboardApi,businessCustomizationApi,connectorProbeApi,businessTaskApi,businessSpaceApi,businessScopeApi,businessBuilder,createBusinessRecordFlow,createBusinessImportFlow,createBusinessResponsibility,createBusinessTaskList,createBusinessSetup,createTwinDrafts,insertBusinessRecord,pageCreateApi,planDraftApi,preparation,sendConversationMessage,conversationDraftInput,prepareHomeSession,homeContextApi,insertConversationCapabilities,nativeArtifacts,artifactFileApi,artifactApi}: Props) {
+export function WorkbenchFrame({assistantActivity,assistantChat,sessionDiagnostics,groupWorkLinks,employeeVoiceApi,insertAssistantVoiceText,groupChannels,navigationStorage,openLocalModels,runtimeSettings,runtimeExtensions,resolveExtensionText,setTheme,sidebarRightFace,mainSession,beginNativeNavigation,deferNativeConversationNavigation,leaseSidebarToggle,openNativePanel,useStore,useSessions,actions,renderSlot,work,management,conversationSearch,planApi,conversationPlans,workControlApi,marketContentApi,marketCatalogApi,managedMcpConnectionApi,createBusinessDashboardResources,createBusinessMcpConnection,skillSecretsApi,githubSourceApi,industryLoadApi,industryKnowledgeApi,industryDataSourceApi,industryExecutionToolApi,industryMcpConnectionApi,industryPluginApi,industryRoleApi,industryTaskApi,industryPlanApi,skillInstallApi,marketPluginInstallApi,bundledExtensionsApi,skillAvailabilityApi,skillUpgradeApi,localRetrievalApi,resourceApi,nativeResourceMessages,roleApi,roleWorkDirectory,memoryApi,dailyLogApi,runtimeConfigApi,taskApi,workAttentionApi,attentionBusinessApi,workAttentionConnection,projectApi,taskRunApi,taskRunChat,securityActionApi,taskMaterialApi,taskTransitions,pendingRequestApi,roleLifecycle,roleToolGrantApi,roleDelegationApi,handoffApi,objectConversationApi,groupApi,groupAttachmentApi,groupReactionApi,groupRoutingApi,businessLedgerApi,businessDashboardApi,businessCustomizationApi,connectorProbeApi,businessTaskApi,businessSpaceApi,businessScopeApi,businessBuilder,createBusinessRecordFlow,createBusinessImportFlow,createBusinessResponsibility,createBusinessTaskList,createBusinessSetup,createTwinDrafts,insertBusinessRecord,pageCreateApi,planDraftApi,preparation,sendConversationMessage,conversationDraftInput,prepareHomeSession,homeContextApi,insertConversationCapabilities,nativeArtifacts,artifactFileApi,artifactApi}: Props) {
   useLayoutEffect(()=>runtimeSettings.attach(()=> <RuntimeSettingsMain useStore={useStore} renderSlot={renderSlot}/>),[runtimeSettings,useStore,renderSlot])
   const projectConnection=useRef({projectApi,homeContextApi,work,preparation})
   if(projectConnection.current.projectApi!==projectApi||projectConnection.current.homeContextApi!==homeContextApi||projectConnection.current.work!==work||projectConnection.current.preparation!==preparation)projectConnection.current={projectApi,homeContextApi,work,preparation}
@@ -330,9 +342,10 @@ export function WorkbenchFrame({assistantActivity,assistantChat,groupWorkLinks,e
   const attentionGeneration=useSyncExternalStore(listener=>workAttentionConnection.subscribe(listener),()=>workAttentionConnection.getSnapshot())
   const attentionIdentity=useMemo(()=>({work,generation:attentionGeneration}),[work,attentionGeneration])
   const workAttention=useWorkAttention(workAttentionApi,attentionIdentity)
-  const [attentionSourceSelection,setAttentionSourceSelection]=useState<{source:WorkAttentionOriginalSource;identity:typeof attentionIdentity}>()
-  const attentionOriginalSource=attentionSourceSelection?.identity===attentionIdentity?attentionSourceSelection.source:undefined
   const planDraftConnection=useMemo(()=>({planDraftApi,pageCreateApi,planApi,roleApi,conversationPlans,attentionIdentity}),[planDraftApi,pageCreateApi,planApi,roleApi,conversationPlans,attentionIdentity])
+  const [attentionSourceSelection,setAttentionSourceSelection]=useState<{source:WorkAttentionOriginalSource;identity:typeof attentionIdentity;creationConnection?:typeof planDraftConnection}>()
+  // 确认来源固定在打开时的服务身份；旧读取刚返回或旧抽屉已打开时换 API，都不能借新服务重新确认。
+  const attentionOriginalSource=attentionSourceSelection?.identity===attentionIdentity&&(!attentionSourceSelection.creationConnection||attentionSourceSelection.creationConnection===planDraftConnection)?attentionSourceSelection.source:undefined
   const planDraftEntry=JSON.stringify([state.view,state.detail,state.rolePreview])
   const planDraftFrame=useRef({connection:planDraftConnection,selection:attentionSourceSelection,entry:planDraftEntry})
   planDraftFrame.current={connection:planDraftConnection,selection:attentionSourceSelection,entry:planDraftEntry}
@@ -349,7 +362,7 @@ export function WorkbenchFrame({assistantActivity,assistantChat,groupWorkLinks,e
         const read=await pageCreateApi.read({draftId:draft.id})
         if(!current())return
         if(read.ownerId!==draft.ownerId||read.id!==draft.id||read.entity!==draft.entity||read.status!=='draft'||read.scope!==draft.scope||read.bodyHash!==draft.bodyHash||read.body!==draft.body)throw Object.assign(Error(),{code:'teloa/version-conflict'})
-        setAttentionSourceSelection({source:{kind:'page-create-draft',entity:read.entity,draftId:read.id,bodyHash:read.bodyHash,...(read.scope===undefined?{}:{scope:read.scope})},identity:attentionIdentity})
+        setAttentionSourceSelection({source:{kind:'page-create-draft',entity:read.entity,draftId:read.id,bodyHash:read.bodyHash,...(read.scope===undefined?{}:{scope:read.scope})},identity:attentionIdentity,creationConnection:origin.connection})
       })().catch(error=>{if(current())setPlanDraftOpenError({connection:origin.connection,message:localizeWorkError(locale,error)})})
     })
     return()=>{live=false;off()}
@@ -444,9 +457,10 @@ export function WorkbenchFrame({assistantActivity,assistantChat,groupWorkLinks,e
   const setCompanionActive=(active:boolean)=>{setAssistantActive(active);try{navigationStorage.setItem('teloa.assistant-visible/v1',String(active))}catch{/* 仅偏好不可写时仍允许本页使用。 */}}
   const homeManagement=useSyncExternalStore(management.subscribe,management.getSnapshot)
   const [homeSessionId,setHomeSessionId]=useState<string>(),[homeInputError,setHomeInputError]=useState<'restore'|'location'|'slow'>(),[homeRetry,setHomeRetry]=useState(0),[homeInputChecking,setHomeInputChecking]=useState(true)
+  const homePreparation=useRef<AbortController>(),conversationRestoration=useRef<()=>boolean>()
   const homeInputValid=homeSessionId!==undefined&&homeSessionId===current&&homeManagement.ready&&!homeInputError&&!knownBusinessSession&&(!businessBuilder||builderState.status==='ready'&&builderState.nativeReady&&!builderState.error)
   useEffect(()=>{
-    if(state.view!=='home')return
+    if(state.view!=='home'||conversationRestoration.current?.())return
     setHomeInputChecking(true)
     if(!homeManagement.ready){
       // 连接层未就绪时准备器不会启动；同样要有到点恢复态，不能让首页永久显示“正在准备”。
@@ -458,6 +472,7 @@ export function WorkbenchFrame({assistantActivity,assistantChat,groupWorkLinks,e
     if(businessBuilder&&builderState.status!=='ready'){setHomeInputError(undefined);return}
     // 业务会话不是首页待用稿；回工作台沿原准备器恢复本人首页，保留业务草案归属。
     const controller=new AbortController()
+    homePreparation.current=controller
     // 慢连接到点显示可重试态，但仍允许同一有效恢复完成；离开页面或重试才撤销旧准备器。
     const timeout=setTimeout(()=>{
       if(controller.signal.aborted)return
@@ -477,16 +492,16 @@ export function WorkbenchFrame({assistantActivity,assistantChat,groupWorkLinks,e
       clearTimeout(timeout);setHomeSessionId(undefined);setHomeInputChecking(false)
       setHomeInputError(cause&&typeof cause==='object'&&cause.code==='teloa/home-location-required'?'location':'restore')
     })
-    return()=>{clearTimeout(timeout);controller.abort()}
+    return()=>{clearTimeout(timeout);controller.abort();if(homePreparation.current===controller)homePreparation.current=undefined}
   },[state.view,homeRetry,prepareHomeSession,homeManagement.ready,businessBuilder,current,builderState.status,builderState.nativeReady,builderState.checkedSessionId,builderState.sessionKind,builderState.error,builderVisible])
 
   const title=useSessions(value=>current?value.byId[current]?.displayTitle:undefined)
   const taskChatSource=current&&taskRunChat?taskRunChat.forSession(current):emptyTaskRunChatSource
   const taskChatSnapshot=useSyncExternalStore(taskChatSource.subscribe,taskChatSource.getSnapshot,taskChatSource.getSnapshot)
   useEffect(()=>{if(taskChatSnapshot.status==='idle')void taskChatSource.load()},[taskChatSource,taskChatSnapshot.status])
-  const pageSessionTitle=taskRunSessionTitle(title,current,taskChatSnapshot.value)
-  const conversationTitle=useSessions(value=>current?value.byId[current]?.title:undefined)
   const binding=useSyncExternalStore(work.subscribe,work.getSnapshot)
+  const pageSessionTitle=taskRunSessionTitle(title,current,taskChatSnapshot.value,binding.conversation)
+  const conversationTitle=useSessions(value=>current?value.byId[current]?.title:undefined)
   useEffect(()=>{void businessBuilder?.followSession(current)},[current,businessBuilder,builderFlow,binding.sessionId,binding.status])
   const assistantCurrent=!!current&&binding.status==='ready'&&binding.conversation?.sessionId===current&&binding.conversation.purpose==='assistant'
   const [dialogueOrganization]=useState(browserDialogueOrganization)
@@ -651,6 +666,7 @@ export function WorkbenchFrame({assistantActivity,assistantChat,groupWorkLinks,e
   const configurationRecords=useMemo(()=>builderFlow&&createBusinessRecordFlow?createBusinessRecordFlow():undefined,[builderFlow,createBusinessRecordFlow])
   const configurationResponsibility=useMemo(()=>builderState.api&&builderState.namespace&&createBusinessResponsibility?{api:createBusinessResponsibility(builderState.namespace,builderState.api),roles:roleWorkDirectory}:undefined,[builderState.api,builderState.namespace,createBusinessResponsibility,roleWorkDirectory])
   const configurationTaskList=useMemo(()=>builderState.api&&builderState.namespace&&createBusinessTaskList?createBusinessTaskList(builderState.namespace,builderState.api):undefined,[builderState.api,builderState.namespace,createBusinessTaskList])
+  const planBusinessSources=useMemo(()=>builderState.status==='ready'&&builderState.api?createPlanBusinessSources(builderState.api,businessLedgerApi):undefined,[builderState.status,builderState.api,businessLedgerApi])
   const configurationSetup=useMemo(()=>builderState.status==='ready'&&builderState.api&&builderState.namespace&&createBusinessSetup?createBusinessSetup(builderState.namespace,builderState.api):undefined,[builderState.status,builderState.api,builderState.namespace,createBusinessSetup])
   const twinDraftApi=useMemo(()=>builderState.status==='ready'&&builderState.api&&builderState.namespace&&createTwinDrafts?createTwinDrafts(builderState.namespace,builderState.api):undefined,[builderState.status,builderState.api,builderState.namespace,createTwinDrafts])
   const currentTwinDraftApi=useRef(twinDraftApi);currentTwinDraftApi.current=twinDraftApi
@@ -830,11 +846,14 @@ export function WorkbenchFrame({assistantActivity,assistantChat,groupWorkLinks,e
   // 页签标题也只能退回「任务详情」。刷新恢复正是这一刻——用户直接落在会话页，不经任何装载视图。
   const conversationLedger=conversationLedgerNeeded(state.view,state.messageMode,state.detail)
   useEffect(()=>{if(['home','tasks','attention'].includes(state.view)||conversationLedger)void loadSecurityAttention().catch(()=>{})},[state.view,conversationLedger,securityActionApi])
-  const [taskLoading,setTaskLoading]=useState(false),[taskLoadError,setTaskLoadError]=useState<string>(),[taskAttention,setTaskAttention]=useState<TaskAttentionItem[]>([]),[taskAttentionKnown,setTaskAttentionKnown]=useState(false)
+  const [taskLoading,setTaskLoading]=useState(false),[taskLoadError,setTaskLoadError]=useState<string>(),[savedTaskAttention,setTaskAttention]=useState<TaskAttentionItem[]>([]),[savedTaskAttentionKnown,setTaskAttentionKnown]=useState(false)
+  const [taskAttentionSource,setTaskAttentionSource]=useState<{api:TaskApi;identity:unknown}>()
+  const taskAttentionCurrent=taskAttentionSource?.api===taskApi&&taskAttentionSource.identity===attentionIdentity
+  const taskAttention=taskAttentionCurrent?savedTaskAttention:[],taskAttentionKnown=taskAttentionCurrent&&savedTaskAttentionKnown
   const tasksRef=useRef(tasks);tasksRef.current=tasks
   const taskAttentionRef=useRef(taskAttention);taskAttentionRef.current=taskAttention
-  const taskLoadGeneration=useRef(0),taskLoadApi=useRef(taskApi)
-  if(taskLoadApi.current!==taskApi){taskLoadApi.current=taskApi;taskLoadGeneration.current++}
+  const taskLoadGeneration=useRef(0),taskLoadApi=useRef(taskApi),taskLoadIdentity=useRef(attentionIdentity)
+  if(taskLoadApi.current!==taskApi||taskLoadIdentity.current!==attentionIdentity){taskLoadApi.current=taskApi;taskLoadIdentity.current=attentionIdentity;taskLoadGeneration.current++}
   /**
    * 任务 → 它的业务对象来源回执。每次重读任务台账都要重新投一遍，所以来源得留在投影之外：
    * `projectSavedTask` 只认契约 `WorkTask`，把补来的引用写进台账行里会被下一次重读原样抹掉。
@@ -844,8 +863,11 @@ export function WorkbenchFrame({assistantActivity,assistantChat,groupWorkLinks,e
   const groupTaskSources=useRef<Record<string,import('@teloa/contract').GroupTaskSource|null>>({})
   const projectTask=(row:import('@teloa/contract').WorkTask)=>withGroupTaskSource(withBusinessTaskSource(projectSavedTask(row),businessSources.current[row.id]??null),groupTaskSources.current[row.id])
   const mergeSavedTasks=(rows:import('@teloa/contract').WorkTask[])=>{taskLoadGeneration.current++;setTasks(current=>{const projected=rows.map(projectTask);return {...current,tasks:[...current.tasks.filter(task=>!projected.some(row=>row.id===task.id)),...projected.map(row=>{const old=current.tasks.find(task=>task.id===row.id);return old&&old.version>row.version?old:row})]}});setTaskAttention(current=>mergeTaskAttention(current,rows,tasksRef.current.tasks));queueMicrotask(()=>{void loadTasks()})}
-  const loadTasks=async(mayApply:()=>boolean=()=>true)=>{const api=taskApi,generation=++taskLoadGeneration.current;setTaskLoading(true);setTaskLoadError(undefined);try{const snapshot=await api.attention();if(generation!==taskLoadGeneration.current||api!==taskLoadApi.current||!mayApply())return false;const current=tasksRef.current.tasks,currentAttention=taskAttentionRef.current,byId=new Map(snapshot.items.map(item=>[item.task.id,item])),kept=current.filter(task=>task.storage==='persistent'&&(!byId.has(task.id)||task.version>byId.get(task.id)!.task.version)),accepted=snapshot.items.filter(item=>!kept.some(task=>task.id===item.task.id));setTasks(value=>({...value,tasks:[...value.tasks.filter(task=>task.storage!=='persistent'),...kept,...accepted.map(item=>projectTask(item.task))]}));setTaskAttention([...currentAttention.filter(item=>kept.some(task=>task.id===item.task.id&&task.version===item.task.version)),...accepted]);setTaskAttentionKnown(true);return true}catch(error){if(generation===taskLoadGeneration.current&&api===taskLoadApi.current&&mayApply())setTaskLoadError(localizeWorkError(locale,error));return false}finally{if(generation===taskLoadGeneration.current)setTaskLoading(false)}}
-  useEffect(()=>{if(['home','team','tasks','attention','spaces'].includes(state.view)||state.view==='messages'&&state.messageMode==='groups'||conversationLedger)void loadTasks()},[state.view,state.messageMode,conversationLedger,taskApi])
+  const loadTasks=async(mayApply:()=>boolean=()=>true)=>{const api=taskApi,generation=++taskLoadGeneration.current;setTaskLoading(true);try{const snapshot=await api.attention();if(generation!==taskLoadGeneration.current||api!==taskLoadApi.current||attentionIdentity!==taskLoadIdentity.current||!mayApply())return false;const current=tasksRef.current.tasks,currentAttention=taskAttentionRef.current,byId=new Map(snapshot.items.map(item=>[item.task.id,item])),kept=current.filter(task=>task.storage==='persistent'&&(!byId.has(task.id)||task.version>byId.get(task.id)!.task.version)),accepted=snapshot.items.filter(item=>!kept.some(task=>task.id===item.task.id));setTasks(value=>({...value,tasks:[...value.tasks.filter(task=>task.storage!=='persistent'),...kept,...accepted.map(item=>projectTask(item.task))]}));setTaskAttention([...currentAttention.filter(item=>kept.some(task=>task.id===item.task.id&&task.version===item.task.version)),...accepted]);setTaskLoadError(undefined);setTaskAttentionSource({api,identity:attentionIdentity});setTaskAttentionKnown(true);return true}catch(error){if(generation===taskLoadGeneration.current&&api===taskLoadApi.current&&attentionIdentity===taskLoadIdentity.current&&mayApply())setTaskLoadError(localizeWorkError(locale,error));return false}finally{if(generation===taskLoadGeneration.current)setTaskLoading(false)}}
+  useEffect(()=>{if(['home','team','tasks','attention','spaces'].includes(state.view)||state.view==='messages'&&state.messageMode==='groups'||conversationLedger)void loadTasks()},[state.view,state.messageMode,conversationLedger,taskApi,attentionIdentity])
+  // 搜索从当前工作直接读取同一台账；关闭不重读，身份变化仍走原 loader 的校验。
+  useEffect(()=>{if(workspaceSearchOpen)void loadTasks()},[workspaceSearchOpen,taskApi,attentionIdentity])
+  useEffect(()=>{if(!['home','tasks','attention'].includes(state.view))return;let live=true,timer:ReturnType<typeof setTimeout>;const refresh=async()=>{if(!live)return;if(!document.hidden)await loadTasks(()=>live);if(live)timer=setTimeout(()=>{void refresh()},3000)};timer=setTimeout(()=>{void refresh()},3000);return()=>{live=false;clearTimeout(timer)}},[state.view,taskApi,attentionIdentity])
   useEffect(()=>{if(!restorePending.current.tasks||!taskAttentionKnown)return;const restored=reconcileAvailableDirectoryTarget({id:state.taskId??undefined},tasks.tasks.filter(task=>task.storage==='persistent').map(task=>task.id),state.detail,'tasks');restorePending.current.tasks=false;actions.reconcileDirectory('tasks',restored.id,restored.detail)},[taskAttentionKnown,tasks.tasks,state.taskId,state.detail,actions])
   /**
    * 持久调查任务的固定输入只能补拉：契约 `WorkTask` 不带业务对象引用，来源单独记在
@@ -917,25 +939,43 @@ export function WorkbenchFrame({assistantActivity,assistantChat,groupWorkLinks,e
   taskCompletionOrigin.current={artifactApi,taskApi,taskTransitions,mergeSavedTasks,refreshTaskState}
   const taskCompletionPort=useMemo<TaskCompletionPort>(()=>({
     list:id=>artifactApi.list(id,'task'),read:taskApi.completion,
+    rework:{candidate:taskTransitions.reworkCandidate,controls:workControlApi,pending:taskTransitions.pending,recoveryMessage:taskTransitions.recoveryMessage,
+      submit:async task=>{const saved=await taskTransitions.change(task.id,task.version,'rework');if(taskCompletionOrigin.current.taskTransitions===taskTransitions)taskCompletionOrigin.current.mergeSavedTasks([saved])},
+      recover:async()=>{const saved=await taskTransitions.recover();if(taskCompletionOrigin.current.taskTransitions===taskTransitions)taskCompletionOrigin.current.mergeSavedTasks([saved])}},
     complete:async(task,ref,note)=>{
       const current=()=>{const latest=taskCompletionOrigin.current;return latest.artifactApi===artifactApi&&latest.taskApi===taskApi&&latest.taskTransitions===taskTransitions?latest:undefined}
       try{const saved=await taskTransitions.change(task.id,task.version,'complete',{artifact:ref,note});current()?.mergeSavedTasks([saved])}
       finally{current()?.refreshTaskState(value=>value+1)}
     },
-  }),[artifactApi,taskApi,taskTransitions])
+  }),[artifactApi,taskApi,taskTransitions,workControlApi])
   const taskPersistence={directoryKnown:taskAttentionKnown&&!taskLoadError,attention:{rows:taskAttention,known:taskAttentionKnown&&!taskLoadError&&securityAttentionKnown},handoffs:handoffPort,completion:taskCompletionPort,stateRequest:taskTransitions.pending(),stateError:taskTransitions.recoveryMessage(),recoverState:async()=>{try{mergeSavedTasks([await taskTransitions.recover()])}finally{refreshTaskState(value=>value+1)}},edit:async(task:import('./task-preview.js').PreviewTask,fields:{title:string;goal:string})=>{mergeSavedTasks([await taskApi.edit(task.id,task.version,fields)])},create:createSavedTask,pendingFields:taskApi.pendingFields,load:()=>{void loadTasks()},loading:taskLoading,error:taskLoadError??Object.values(businessSourceLoadErrors)[0]??(taskApi.recoveryMessage()?localizeWorkError(locale,taskApi.recoveryMessage()):undefined)}
 
   const [roleLoadError,setRoleLoadError]=useState<string>(),[roleLoading,setRoleLoading]=useState(false),[roleDirectoryKnown,setRoleDirectoryKnown]=useState(false)
   const roleWorkAccessRef=useRef<Record<string,RoleDelegationRead>>({}),roleAccessGeneration=useRef(new Map<string,number>()),roleLoadGeneration=useRef(0)
-  const roleLoadApi=useRef(roleApi),roleScopeRefresh=useRef<{api:RoleApi;missing:string}>();roleLoadApi.current=roleApi
-  const mergeRoleWorkAccess=(roleId:string,read:RoleDelegationRead|undefined)=>{
-    if(read)roleWorkAccessRef.current[roleId]=read
-    else delete roleWorkAccessRef.current[roleId]
-    const merge=(current:typeof tasks)=>({...current,roles:current.roles.map(role=>role.id===roleId&&role.storage==='persistent'?{...role,workAccess:read?.roleId===role.id&&read.roleVersion===role.version?read:undefined}:role)})
-    tasksRef.current=merge(tasksRef.current)
-    setTasks(merge)
+  const roleMemberGeneration=useRef(new Map<string,number>())
+  const roleConnection=useMemo(()=>({api:roleApi,delegations:roleDelegationApi,identity:attentionIdentity}),[roleApi,roleDelegationApi,attentionIdentity])
+  const roleConnectionRef=useRef(roleConnection),roleScopeRefresh=useRef<{api:RoleApi;missing:string}>()
+  if(roleConnectionRef.current!==roleConnection){
+    // 连接身份变化时，旧目录及许可不能在新身份首帧继续作为可执行成员使用。
+    roleConnectionRef.current=roleConnection;roleLoadGeneration.current++;roleScopeRefresh.current=undefined
+    roleWorkAccessRef.current={};roleAccessGeneration.current.clear();roleMemberGeneration.current.clear()
+    const clear=(current:typeof tasks)=>({...current,roles:current.roles.filter(role=>role.storage!=='persistent')})
+    tasksRef.current=clear(tasksRef.current);setTasks(clear)
+    setRoleDirectoryKnown(false);setRoleLoadError(undefined);setRoleLoading(false)
   }
+  const roleConnectionCurrent=()=>projectFrameMounted.current&&roleConnectionRef.current===roleConnection
+  const mergeRoleWorkAccess=(roleId:string,read:RoleDelegationRead|undefined)=>{
+    if(!roleConnectionCurrent())return
+    const role=tasksRef.current.roles.find(row=>row.id===roleId&&row.storage==='persistent')
+    const accepted=role&&read?.roleId===role.id&&read.roleVersion===role.version?read:undefined
+    if(accepted)roleWorkAccessRef.current[roleId]=accepted
+    else delete roleWorkAccessRef.current[roleId]
+    const merge=(current:typeof tasks)=>({...current,roles:current.roles.map(role=>role.id===roleId&&role.storage==='persistent'?{...role,workAccess:accepted}:role)})
+    tasksRef.current=merge(tasksRef.current);setTasks(merge)
+  }
+  const renderedRoleMembers=new Map(roleMemberGeneration.current)
   const delegationChanged=(read:RoleDelegationRead)=>{
+    if(!roleConnectionCurrent()||renderedRoleMembers.get(read.roleId)!==roleMemberGeneration.current.get(read.roleId))return
     // 保存/撤销的可信回执优先于此前仍在途的目录读取，旧许可不能回流覆盖新状态。
     roleAccessGeneration.current.set(read.roleId,(roleAccessGeneration.current.get(read.roleId)??0)+1)
     mergeRoleWorkAccess(read.roleId,read)
@@ -943,57 +983,89 @@ export function WorkbenchFrame({assistantActivity,assistantChat,groupWorkLinks,e
   const loadRoleWorkAccess=async(roleId:string)=>{
     const generation=(roleAccessGeneration.current.get(roleId)??0)+1
     roleAccessGeneration.current.set(roleId,generation)
-    try{const read=await roleDelegationApi.get(roleId);if(roleAccessGeneration.current.get(roleId)===generation)mergeRoleWorkAccess(roleId,read)}
-    catch(error){if(roleAccessGeneration.current.get(roleId)===generation)mergeRoleWorkAccess(roleId,undefined);throw error}
+    const current=()=>roleConnectionCurrent()&&roleAccessGeneration.current.get(roleId)===generation
+    try{const read=await roleDelegationApi.get(roleId);if(current())mergeRoleWorkAccess(roleId,read)}
+    catch(error){if(current()){mergeRoleWorkAccess(roleId,undefined);throw error}}
   }
-  const mergeRoles=(rows:DigitalRole[])=>{
+  const applyRoleDirectory=(rows:DigitalRole[],kind:'snapshot'|'receipt')=>{
+    if(!roleConnectionCurrent())throw Object.assign(Error(),{code:'teloa/cancelled'})
     const projected=rows.map((row):PreviewRole=>({...row,scopes:row.scopes.map(scope=>{if(!registeredBusinessScope(scope,scopeLabels))throw Error(t('frame.p5.roleScopeUnknown'));return scope as CollaborationScope}),storage:'persistent',memories:[],history:[],workAccess:roleWorkAccessRef.current[row.id]?.roleVersion===row.version?roleWorkAccessRef.current[row.id]:undefined}))
-    const merge=(current:typeof tasks)=>{const roles=[...current.roles];for(const row of projected){const index=roles.findIndex(item=>item.id===row.id);if(index>=0){const previous=roles[index]!;if(previous.version>row.version||(previous.version===row.version&&previous.updatedAt&&row.updatedAt&&Date.parse(previous.updatedAt)>Date.parse(row.updatedAt)))continue;}if(index>=0)roles[index]=row;else roles.push(row)}return {...current,roles}}
-    // 账号区可能在岗位目录首轮请求完成前就打开默认分身。同步更新 ref，让同一次点击随后创建会话时
-    // 能读到刚拉回的默认身份；React 状态仍按正常更新路径提交给界面。
-    tasksRef.current=merge(tasksRef.current)
-    setTasks(merge)
-  }
-  const loadRoles=async()=>{
-    const generation=++roleLoadGeneration.current
-    // 员工范围依赖本人真实业务目录；目录尚未就绪时不把有效成员判成未知范围。
-    // 同时作废刷新前的在途请求，目录就绪后由同一入口重新载入。
-    if(businessDirectoryStatus!=='ready'){
-      setRoleLoading(businessDirectoryStatus==='loading')
-      setRoleLoadError(businessDirectoryStatus==='failed'?businessDirectoryError:undefined)
-      return
+    const roles=reconcileRoleDirectory(tasksRef.current.roles,projected,kind)
+    // 成员消失或执行版本改变，同时作废其在途许可。迟到许可不能重新赋予目录成员资格。
+    for(const previous of tasksRef.current.roles){
+      if(previous.storage!=='persistent')continue
+      const next=roles.find(role=>role.id===previous.id)
+      if(!next||next.version!==previous.version){
+        roleMemberGeneration.current.set(previous.id,(roleMemberGeneration.current.get(previous.id)??0)+1)
+        roleAccessGeneration.current.set(previous.id,(roleAccessGeneration.current.get(previous.id)??0)+1)
+        delete roleWorkAccessRef.current[previous.id]
+      }
     }
+    // 同步 ref，保证同一次点击后续创建流程读取到本次已确认的成员。
+    tasksRef.current={...tasksRef.current,roles}
+    setTasks(current=>({...current,roles}))
+  }
+  // 模板接收等长生命周期回调保留原连接校验，但采用当前业务范围与刷新入口。
+  const roleDirectoryOperations=useRef<{apply:typeof applyRoleDirectory;read:()=>Promise<DigitalRole[]|undefined>;refresh:()=>Promise<DigitalRole[]|undefined>}>({apply:applyRoleDirectory,read:async()=>undefined,refresh:async()=>undefined})
+  const mergeRoles=(rows:DigitalRole[])=>{
+    if(!roleConnectionCurrent())throw Object.assign(Error(),{code:'teloa/cancelled'})
+    // 资料保存可能不提升执行版本，时间也可能相同；所有可信写回执统一使旧名单失效。
+    roleLoadGeneration.current++;setRoleLoading(false)
+    roleDirectoryOperations.current.apply(rows,'receipt')
+    void roleDirectoryOperations.current.refresh()
+  }
+  const readRoleDirectoryRequest=async()=>{
+    if(!roleConnectionCurrent())return
+    const generation=++roleLoadGeneration.current
+    const current=()=>roleConnectionCurrent()&&generation===roleLoadGeneration.current
     setRoleLoading(true);setRoleLoadError(undefined)
     try{
       const rows=await roleApi.list()
-      if(generation!==roleLoadGeneration.current||roleLoadApi.current!==roleApi)return
+      if(!current())return
       const missing=[...new Set(rows.flatMap(row=>row.scopes.filter(scope=>!registeredBusinessScope(scope,scopeLabels))))].sort().join(',')
       if(missing){
-        // 另一窗口可能刚创建合法业务。只重读一次本人目录，再由目录就绪的 effect 重载整批员工；
-        // 仍未知时保留归属校验，不能过滤该员工或不断刷新，也不把旧目录误报成保存失败。
         if(roleScopeRefresh.current?.api===roleApi&&roleScopeRefresh.current.missing===missing)throw Error(t('frame.p5.roleScopeUnknown'))
         roleScopeRefresh.current={api:roleApi,missing}
         await loadBusinessDirectory()
         return
       }
       roleScopeRefresh.current=undefined
-      mergeRoles(rows);setRoleDirectoryKnown(true)
-      const results=await Promise.allSettled(rows.map(role=>loadRoleWorkAccess(role.id)))
-      const failure=results.find((result):result is PromiseRejectedResult=>result.status==='rejected')
-      if(generation===roleLoadGeneration.current&&failure)setRoleLoadError(localizeWorkError(locale,failure.reason))
+      applyRoleDirectory(rows,'snapshot');setRoleDirectoryKnown(true)
+      // 名单已经可用，许可独立读回；不把后续许可等待变成另一份过时的成员快照。
+      void Promise.allSettled(rows.map(role=>loadRoleWorkAccess(role.id))).then(results=>{
+        const failure=results.find((result):result is PromiseRejectedResult=>result.status==='rejected')
+        if(current()&&failure)setRoleLoadError(localizeWorkError(locale,failure.reason))
+      })
+      return rows
     }catch(error){
-      if(generation!==roleLoadGeneration.current||roleLoadApi.current!==roleApi)return
+      if(!current())return
       for(const roleId of Object.keys(roleWorkAccessRef.current)){roleAccessGeneration.current.set(roleId,(roleAccessGeneration.current.get(roleId)??0)+1);mergeRoleWorkAccess(roleId,undefined)}
-      setRoleLoadError(localizeWorkError(locale,error))
-    }finally{if(generation===roleLoadGeneration.current)setRoleLoading(false)}
+      setRoleLoadError(localizeWorkError(locale,error));throw error
+    }finally{if(current())setRoleLoading(false)}
   }
+  const readRoleDirectory=()=>roleConnectionCurrent()?roleDirectoryOperations.current.read():Promise.resolve(undefined)
+  const loadRoles=async()=>{
+    if(!roleConnectionCurrent())return
+    if(businessDirectoryStatus!=='ready'){
+      roleLoadGeneration.current++
+      setRoleLoading(businessDirectoryStatus==='loading')
+      setRoleLoadError(businessDirectoryStatus==='failed'?businessDirectoryError:undefined)
+      return
+    }
+    try{return await readRoleDirectoryRequest()}catch{return undefined}
+  }
+  roleDirectoryOperations.current={apply:applyRoleDirectory,read:readRoleDirectoryRequest,refresh:loadRoles}
   const roleExecutionAccess=useMemo(()=>Object.fromEntries(tasks.roles.flatMap(role=>role.workAccess?.roleId===role.id&&role.workAccess.roleVersion===role.version?[[role.id,role.workAccess]]:[])),[tasks.roles])
   const refreshRoles=()=>{roleScopeRefresh.current=undefined;return businessDirectoryStatus==='failed'?loadBusinessDirectory().catch(()=>{}):loadRoles()}
-  const openIndustryRole=async(roleId:string)=>{actions.previewRole(roleId);const rows=await roleApi.list();mergeRoles(rows);if(!rows.some(role=>role.id===roleId))throw Error(t('frame.p5.industryRoleUnavailable'))}
-  useEffect(()=>{if(computerRoleId||state.rolePreview||['home','team','tasks','plans','attention','spaces','messages','market'].includes(state.view)||conversationLedger)void loadRoles()},[computerRoleId,state.view,!!state.rolePreview,conversationLedger,roleApi,roleDelegationApi,businessDirectoryStatus,businessDirectoryError,scopeLabels])
-  useEffect(()=>{if(!restorePending.current.team||!roleDirectoryKnown)return;const restored=reconcileAvailableDirectoryTarget({id:state.roleId??undefined},tasks.roles.filter(role=>role.storage==='persistent').map(role=>role.id),state.detail,'team');restorePending.current.team=false;actions.reconcileDirectory('team',restored.id,restored.detail)},[roleDirectoryKnown,tasks.roles,state.roleId,state.detail,actions])
+  const openIndustryRole=async(roleId:string)=>{actions.previewRole(roleId);const rows=await readRoleDirectory();if(!rows)return;if(!rows.some(role=>role.id===roleId))throw Error(t('frame.p5.industryRoleUnavailable'))}
+  useEffect(()=>{if(computerRoleId||state.rolePreview||['home','team','tasks','plans','attention','spaces','messages','market'].includes(state.view)||conversationLedger)void loadRoles()},[computerRoleId,state.view,!!state.rolePreview,conversationLedger,roleConnection,businessDirectoryStatus,businessDirectoryError,scopeLabels])
+  useEffect(()=>{if(!roleDirectoryKnown||roleLoading||roleLoadError)return;if(!restorePending.current.team&&(!state.roleId||tasks.roles.some(role=>role.id===state.roleId&&role.storage==='persistent')))return;const restored=reconcileAvailableDirectoryTarget({id:state.roleId??undefined},tasks.roles.filter(role=>role.storage==='persistent').map(role=>role.id),state.detail,'team');restorePending.current.team=false;actions.reconcileDirectory('team',restored.id,restored.detail)},[roleDirectoryKnown,roleLoading,roleLoadError,tasks.roles,state.roleId,state.detail,actions])
   const pendingRoleFields=()=>{const fields=roleApi.pendingFields();return fields?{...fields,scopes:fields.scopes as CollaborationScope[]}:undefined}
-  const createSavedRole=async(fields:RoleFields)=>{const row=await roleApi.create(fields);mergeRoles([row]);return row.id}
+  const assertAssignableRole=(role:PreviewRole)=>{
+    const current=tasksRef.current.roles.find(row=>row.id===role.id&&row.storage==='persistent')
+    if(!roleConnectionCurrent()||!current||current.version!==role.version||current.state!=='active')throw Error(t('frame.p5.roleGone'))
+  }
+  const createSavedRole=async(fields:RoleFields,requestId?:string)=>{const row=await roleApi.create(fields,requestId);mergeRoles([row]);return row.id}
   // 宿主桥按契约 v1 声明；v2 包与可选投稿见 ShareBridge，契约 v2 合入后改回 TemplateShareBridge。
   const webTemplateShareBridge=useMemo(()=>typeof window==='undefined'?undefined:createWebTemplateShareBridge(window,fetch,navigationStorage),[navigationStorage])
   useEffect(()=>()=>webTemplateShareBridge?.dispose(),[webTemplateShareBridge])
@@ -1007,6 +1079,7 @@ export function WorkbenchFrame({assistantActivity,assistantChat,groupWorkLinks,e
     const release=templateShareBridge.subscribe(notify)
     return()=>{active=false;release()}
   },[templateShareBridge])
+  const shareSourceContext=useRef({api:marketContentApi,storage:navigationStorage});shareSourceContext.current={api:marketContentApi,storage:navigationStorage}
   const templateAcceptance=useMemo(()=>createShareAcceptance(navigationStorage,{
     createRole:async(fields,requestId)=>{const row=await roleApi.create(fields,requestId);mergeRoles([row]);return row.id},
     // v2 复用固定内容 → 加载 → 一键准备：岗位、资料、连接与协调关系都落在同一加载真源，刷新后可从服务读回。
@@ -1063,14 +1136,13 @@ export function WorkbenchFrame({assistantActivity,assistantChat,groupWorkLinks,e
   /** 分享来源：员工绑定的原生技能名解析为真实安装身份与版本；许可已声明的原子正文随包，否则只写成接收方需配置项。 */
   const templateShareSources=useMemo<TemplateShareSources>(()=>({
     skills:(names,selection)=>resolveTemplateShareSkills(names,{skills:skillInstallApi,contents:marketContentApi,loads:industryLoadApi},selection),
-    ...(managedMcpConnectionApi?{connections:async()=>(await managedMcpConnectionApi.list()).flatMap(record=>record.tools?.length?[{serverName:record.serverName,title:record.serverName,tools:record.tools.map(tool=>tool.name)}]:[])}:{}),
-  }),[skillInstallApi,marketContentApi,industryLoadApi,managedMcpConnectionApi])
+    objects:createTemplateShareObjectSources({roles:roleApi,resources:roleResourceApi,industryRoles:industryRoleApi,industryKnowledge:industryKnowledgeApi,loads:industryLoadApi,contents:marketContentApi,...(managedMcpConnectionApi?{mcp:managedMcpConnectionApi}:{}),...(roleToolGrantApi?{tools:roleToolGrantApi}:{}),...(roleDelegationApi?{delegations:roleDelegationApi}:{})}),
+    bundle:async(contentId,publisher)=>readAppBundleSharePackage(await marketContentApi.hydrate({kind:'bundle',contentStorage:{contentId,createdAt:new Date().toISOString(),loaded:true}} as MarketItem),publisher),
+  }),[skillInstallApi,marketContentApi,industryLoadApi,managedMcpConnectionApi,roleApi,roleResourceApi,industryRoleApi,industryKnowledgeApi,roleToolGrantApi,roleDelegationApi])
 
   const editSavedRole=async(role:PreviewRole,fields:RoleFields)=>{mergeRoles([await roleApi.edit(role.id,role.version,fields,{name:role.name,...(role.avatarKey?{avatarKey:role.avatarKey}:{})})])}
   const updateSavedRoleProfile=async(role:PreviewRole,fields:Pick<RoleFields,'name'|'avatarKey'>)=>{
     const saved=await roleApi.updateProfile(role.id,role.version,role,fields)
-    // 身份资料不提升执行版本；保存前在途的目录即使同一毫秒也不能覆盖可信回执。
-    roleLoadGeneration.current++;setRoleLoading(false)
     mergeRoles([saved])
   }
 
@@ -1081,6 +1153,13 @@ export function WorkbenchFrame({assistantActivity,assistantChat,groupWorkLinks,e
   const restoreObjectPanelFocus=(sessionId:string|undefined)=>requestAnimationFrame(()=>{const trigger=objectPanelTrigger.current;if(sessionId&&work.getSnapshot().sessionId===sessionId&&trigger?.isConnected)trigger.focus()})
   const closeObjectPanel=()=>{closeRailObjectTab();actions.closeDetail();restoreObjectPanelFocus(current)}
   const [conversationObject,setConversationObject]=useState<{object:ConversationObject;sessionId:string;scopeId?:CollaborationScope}|null>(null)
+  useEffect(()=>{setConversationObject(value=>{
+    if(value?.object.kind!=='role')return value
+    const role=tasks.roles.find(row=>row.id===value.object.id&&row.storage==='persistent')
+    if(!role)return null
+    const canStart=roleCanStartConversation(role.state)
+    return value.object.version===role.version&&value.object.canStart===canStart?value:{...value,object:{...value.object,version:role.version,canStart}}
+  })},[tasks.roles])
   const [conversationProject,setConversationProject]=useState<{sessionId:string;project:import('@teloa/contract').WorkProject;memoryMode:ProjectMemoryMode}>()
   useEffect(()=>{
     if(voiceSelectionReady&&!voiceSessionId&&conversationObject?.object.kind==='role'&&conversationObject.object.id===voiceRoleId&&work.getSnapshot().sessionId===conversationObject.sessionId)setVoiceSessionId(conversationObject.sessionId)
@@ -1133,7 +1212,7 @@ export function WorkbenchFrame({assistantActivity,assistantChat,groupWorkLinks,e
   const searchableMarketItems=()=>currentSolutionCatalog(marketRef.current.items).filter(item=>marketCategoryOf(item)!=='work-template')
   const workspaceSearchSource={
     conversations:searchableConversations,
-    tasks:tasks.tasks.filter(task=>task.storage==='persistent'),
+    tasks:taskAttentionKnown?tasks.tasks.filter(task=>task.storage==='persistent'):[],
     roles:tasks.roles.filter(role=>role.storage==='persistent'),
     groups:(groupApi.directorySnapshot()?.items??[]).map(group=>({...group,storage:'persistent' as const})),
     spaces:scopeLabels.filter(label=>savedIndustryLoads.some(load=>load.space.scope===label.scope)).map(label=>({...label,storage:'persistent' as const})),
@@ -1204,6 +1283,7 @@ export function WorkbenchFrame({assistantActivity,assistantChat,groupWorkLinks,e
   const artifactOpen=detailTarget?.kind==='artifact'
   const [artifactMounts,setArtifactMounts]=useState<ReadonlyMap<string,HTMLElement>>(()=>new Map())
   const [artifactRailMount,setArtifactRailMount]=useState<HTMLDivElement|null>(null)
+  const [libraryArtifactMount,setLibraryArtifactMount]=useState<HTMLDivElement|null>(null)
   const [groupArtifactSeat,setGroupArtifactSeat]=useState<{groupId:string;token:object}>(),[groupArtifactCollapse,setGroupArtifactCollapse]=useState(0)
   const reportGroupArtifact=useMemo(()=>(token:object,groupId:string,open:boolean)=>{if(open){actions.closeDetail();setGroupArtifactSeat({groupId,token})}else setGroupArtifactSeat(current=>current?.token===token?undefined:current)},[actions])
   // Teloa 不再与原生右栏互斥：原生右栏现在同时承载官方页类型与 Teloa 的对象页签，
@@ -1243,6 +1323,8 @@ export function WorkbenchFrame({assistantActivity,assistantChat,groupWorkLinks,e
   }
   const taskArtifactSources=useMemo(()=>taskArtifactPort(work,id=>artifactApi.taskSessions(id)),[work,artifactApi])
   const artifactReadIntent=useRef(0)
+  const libraryArtifactLocation=useRef({view:state.view})
+  if(libraryArtifactLocation.current.view!==state.view)libraryArtifactLocation.current={view:state.view}
   const openArtifacts:OpenArtifacts=(source,artifact)=>{
     artifactReadIntent.current++
     // 新的持久任务结果预览须能读取原 Run 会话，不随旧会话切换被隐藏。
@@ -1257,7 +1339,9 @@ export function WorkbenchFrame({assistantActivity,assistantChat,groupWorkLinks,e
   // 拉取键把「任务台账已认出它是持久任务」算进依赖：刷新后详情种子先于台账到位，
   // 只盯来源身份的话首屏这一跳被跳过后就再没有第二次，成果目录会一直空着。
   // 进入任务时就回读已保存成果，不能等到点「整理」后才发现已有稿件。
-  const artifactFetchKey=artifactListFetchKey(artifactOpen?artifactTarget:null,tasks.tasks,state.view==='tasks'?state.taskId:undefined)
+  // 资料页已选定的正式成果由 get 读全历史；不以任务目录的按需定版改变一次固定阅读。
+  const fixedLibraryArtifact=state.view==='resources'&&!!artifactTarget?.artifact
+  const artifactFetchKey=artifactListFetchKey(!fixedLibraryArtifact&&artifactOpen?artifactTarget:null,tasks.tasks,state.view==='tasks'?state.taskId:undefined)
   useEffect(()=>{if(!artifactFetchKey)return;const [kind,id]=[artifactFetchKey.slice(0,artifactFetchKey.indexOf(' ')) as 'session'|'task',artifactFetchKey.slice(artifactFetchKey.indexOf(' ')+1)];let active=true;setArtifactLoadError('');void artifactApi.list(id,kind).then(rows=>{if(active)mergeArtifacts(rows)}).catch(error=>{if(active)setArtifactLoadError(localizeWorkError(locale,error))});return()=>{active=false}},[artifactFetchKey,artifactApi])
   useEffect(()=>{
     if(!artifactOpen||!artifactFetchKey)return
@@ -1458,7 +1542,20 @@ export function WorkbenchFrame({assistantActivity,assistantChat,groupWorkLinks,e
         },
       }
     }
-    if(source.entity==='role')creation={onConfirm:preview=>createSavedRole(roleWriteDefinition(JSON.parse(preview.draft.body))),afterConfirm:actions.previewRole}
+    if(source.entity==='role'){
+      const origin=planDraftFrame.current
+      const current=()=>projectFrameMounted.current&&planDraftFrame.current.connection===origin.connection&&planDraftFrame.current.selection===origin.selection&&planDraftFrame.current.entry===origin.entry
+      creation={
+        onConfirm:async preview=>{
+          if(!current()||preview.draft.entity!=='role'||preview.draft.id!==source.draftId||preview.draft.bodyHash!==source.bodyHash)throw Object.assign(Error(),{name:'AbortError'})
+          const row=await roleApi.create(roleWriteDefinition(JSON.parse(preview.draft.body)))
+          if(!current())throw Object.assign(Error(),{name:'AbortError'})
+          mergeRoles([row])
+          return row.id
+        },
+        afterConfirm:id=>{if(current())actions.previewRole(id)},
+      }
+    }
     else if(source.entity==='skill')creation={onConfirm:confirmPageCreateSkill,afterConfirm:openConfirmedPageCreateSkill}
     else if(source.entity==='extension')creation={renderConfirmation:({preview,apply})=><ExtensionCreateEntry preview={preview} api={marketPluginInstallApi} apply={apply}/>}
     else if(source.entity==='share')creation={renderConfirmation:({preview,apply})=><PageCreateShareConfirmation preview={preview} apply={apply} api={pageCreateApi} confirmed={()=>{finishAttentionSource(source);void workAttention.reload()}}/>}
@@ -1570,14 +1667,34 @@ export function WorkbenchFrame({assistantActivity,assistantChat,groupWorkLinks,e
   const localRecoveries=localRecoveryItems({taskMaterial:materialRequest&&materialTask?{taskId:materialRequest.taskId,title:materialTask.title,scope:materialTask.scope}:undefined,artifacts:artifactRecoveries,artifactDirectory:recoveryArtifacts,group:groupRequest&&groupRequest.kind!=='create'?{id:groupRequest.request.groupId}:undefined,groupDirectory:groupDirectory??[],industryLoad:industryRequest&&industryItem?{id:industryRequest.requestId,item:industryItem,scope:industryRequest.target.kind==='existing'?savedIndustryLoads.find(load=>load.space.id===industryRequest.target.spaceId)?.space.scope??'general':'general'}:undefined,skillInstall:skillRequest&&skillSource?.kind==='atomic'&&skillItem?{id:skillRequest.requestId,item:skillItem}:skillRequest&&skillSource?.kind==='industry'&&industrySkill?{id:skillRequest.requestId,item:{id:industrySkill.instanceId,title:industrySkill.title},source:skillSource}:undefined})
   const attentionItems=useMemo(()=>aggregateAttentionItems({tasks:tasks.tasks,taskAttention,workAttention:workAttention.items,securityAttention,handoffs,business:tasks.business,continuous:tasks.continuous,savedPlanIds:new Set(savedPlans.map(plan=>plan.id)),bindings:[],localRecoveries,serverRecoveries:serverRecoveryItems(serverRecoveries,t('attention.recovery.serverTitle'),endpoint=>pendingRequestOperation(locale,endpoint))},t),[tasks.tasks,taskAttention,workAttention.items,securityAttention,handoffs,tasks.business,tasks.continuous,savedPlans,localRecoveries,serverRecoveries,t,locale])
   const needCount=formalAttentionCount(attentionItems)
-  const attentionStatus={count:needCount,known:pendingMarketKnown&&workAttention.known&&securityAttentionKnown&&handoffsKnown&&!handoffError&&savedPlanDirectory==='ready'&&!serverRecoveryError,incomplete:workAttention.loaded&&!workAttention.known||workAttention.error!==undefined}
+  const attentionStatus={count:needCount,known:taskAttentionKnown&&!taskLoadError&&!taskAttention.some(item=>item.nativeApprovalUnknown)&&pendingMarketKnown&&workAttention.known&&securityAttentionKnown&&handoffsKnown&&!handoffError&&savedPlanDirectory==='ready'&&!serverRecoveryError,incomplete:!!taskLoadError||taskAttention.some(item=>item.nativeApprovalUnknown)||workAttention.loaded&&!workAttention.known||workAttention.error!==undefined}
   // 「需要你」页与左栏徽标共用这一份重读：任一来源（交接、任务、外部动作、计划、服务端待恢复）读取失败
   // 都会让 attentionStatus.known 变 false，重试就把它们全部再拉一遍，而不是只挑失败的那个。
   const retryAttention=()=>{retryPendingMarketRead(value=>value+1);void Promise.allSettled([workAttention.reload(),loadTasks(),loadHandoffs(),loadSecurityAttention(),loadSavedPlans(),loadServerRecoveries()])}
   // 需要你里点任务类事项在原地选中，保留收件箱与筛选；其它页面进入时仍跳转任务页
   // 决策卡在“需要你”内展开；右侧箭头才进入真实任务详情，避免两种页面混在同一入口。
   const openAttentionTask=(taskId:string)=>actions.openTask(taskId)
-  const openAttention=(item:AttentionItem)=>openAttentionItem(item,{openWorkAttention:source=>setAttentionSourceSelection({source,identity:attentionIdentity}),openSecurityAction:(taskId,actionId)=>{setSecurityFocus(current=>({taskId,actionId,revision:(current?.revision??0)+1}));openAttentionTask(taskId)},openTask:openAttentionTask,openArtifact:(source,artifactId,version)=>openArtifacts(source,{id:artifactId,version}),openGroup:id=>openGroupTopic(id,''),openMarket:actions.openMarket,openIndustrySkill:(loadId,itemInstanceId)=>{void loadIndustryLoads().then(()=>{const load=savedIndustryLoadsRef.current.find(item=>item.id===loadId),skill=load?.items.find(candidate=>candidate.instanceId===itemInstanceId&&candidate.kind==='skill'&&candidate.status==='pending-adapter');if(skill)actions.openIndustrySkill(loadId,itemInstanceId)}).catch(()=>{})},openBusiness:enterBusiness,openPlans:actions.openPlans,openBinding:actions.openBinding,openInstallation:actions.openInstallations,openPendingRequest:()=>{}})
+  const latestAttentionIdentity=useRef(attentionIdentity),nativeApprovalNavigationIntent=useRef(0);latestAttentionIdentity.current=attentionIdentity
+  const openAttention=(item:AttentionItem)=>openAttentionItem(item,{openNativeApproval:target=>{
+    const api=taskApi,origin=attentionIdentity,location=homeCreationLocation(latestState.current),previous=mainSession.getSnapshot(),intent=++nativeApprovalNavigationIntent.current
+    let destination:string|undefined
+    const identityCurrent=()=>taskLoadApi.current===api&&latestAttentionIdentity.current===origin&&nativeApprovalNavigationIntent.current===intent
+    const current=()=>{
+      if(!identityCurrent())return false
+      const now=latestState.current,main=mainSession.getSnapshot(),sameLocation=homeCreationLocation(now)===location
+      if(destination===undefined)return sameLocation&&main===previous
+      return work.getSnapshot().sessionId===destination&&(main===previous||main===destination)&&(sameLocation||now.view==='messages'&&now.messageMode==='native')
+    }
+    void openTaskNativeApproval(target,()=>api.attention(),async(sessionId,mayOpen)=>{
+      const result=await work.openSessionResult(sessionId,undefined,mayOpen)
+      if(result==='opened')destination=sessionId
+      return result
+    },current).then(opened=>{
+      if(!current())return
+      if(opened)actions.navigate('messages')
+      void loadTasks(current)
+    }).catch(error=>{if(current())setTaskLoadError(localizeWorkError(locale,error))})
+  },openWorkAttention:source=>setAttentionSourceSelection({source,identity:attentionIdentity,...(source.kind==='page-create-draft'&&['plan','role'].includes(source.entity)?{creationConnection:planDraftConnection}:{})}),openSecurityAction:(taskId,actionId)=>{setSecurityFocus(current=>({taskId,actionId,revision:(current?.revision??0)+1}));openAttentionTask(taskId)},openTask:openAttentionTask,openArtifact:(source,artifactId,version)=>openArtifacts(source,{id:artifactId,version}),openGroup:id=>openGroupTopic(id,''),openMarket:actions.openMarket,openIndustrySkill:(loadId,itemInstanceId)=>{void loadIndustryLoads().then(()=>{const load=savedIndustryLoadsRef.current.find(item=>item.id===loadId),skill=load?.items.find(candidate=>candidate.instanceId===itemInstanceId&&candidate.kind==='skill'&&candidate.status==='pending-adapter');if(skill)actions.openIndustrySkill(loadId,itemInstanceId)}).catch(()=>{})},openBusiness:enterBusiness,openPlans:actions.openPlans,openBinding:actions.openBinding,openInstallation:actions.openInstallations,openPendingRequest:()=>{}})
   // 只在需要你列表里出现过的安全动作任务上各拉一次，面板没到位时卡片退回“去处理”。
   const loadSecurityPanel=async(taskId:string)=>{
     const generation=(securityPanelLoads.current[taskId]??0)+1
@@ -1883,7 +2000,7 @@ export function WorkbenchFrame({assistantActivity,assistantChat,groupWorkLinks,e
   }
   async function createWork(workspaceId?:string,intent:CreationIntent|null=creationIntent,automatic=false){
     if(!intent)return
-    if(intent.object?.kind==='role'&&!applicationPresentation.can('people'))return
+    if(intent.object?.kind==='role'&&!applicationPresentation.can('people')){intent.reject?.(Object.assign(Error(),{code:'teloa/forbidden'}));return}
     setCreating(true)
     const creationLocation=homeCreationLocation(latestState.current)
     try {
@@ -1895,6 +2012,8 @@ export function WorkbenchFrame({assistantActivity,assistantChat,groupWorkLinks,e
         if(bound.sessionId!==undefined&&mayContinueHomeCreation(creationLocation,latestState.current,mainSession.getSnapshot(),bound.sessionId)&&bound.sessionId===mainSession.getSnapshot()){if(intent.daily)offerRecordPreparation(bound);actions.closeDetail();actions.openMessages('native');actions.closeSidebar();setBuilderTab('conversation')}
         return
       }
+      if(intent.roleAssignmentCurrent?.()===false)throw Object.assign(Error(),{code:'teloa/cancelled'})
+      if(intent.taskCreation&&intent.object?.kind==='role')await freshEmployeeAssignment(intent.object.id,intent.object.version,intent.scope)
       if(intent.object){if(intent.object.kind==='role'){const role=await readLatestConversationRole(intent.object.id);if(!intent.scope||!role.scopes.includes(intent.scope))throw Object.assign(Error(),{code:'teloa/version-conflict'})}const object=resolveConversationObject(intent.object.kind,intent.object.id);if(!object.canStart||object.version!==intent.object.version)throw Object.assign(Error(t('frame.p5.sourceObjectChanged')),{code:'teloa/version-conflict'})}
       const pending=homeContextApi.pending()
       const assistantRequest=intent.assistant?pendingAssistantCreation(navigationStorage):undefined
@@ -1902,12 +2021,16 @@ export function WorkbenchFrame({assistantActivity,assistantChat,groupWorkLinks,e
       if(intent.scope&&!intent.object&&pending&&!recoveringAssistantContext&&(!work.getPendingCreation()||pending.scopeId!==intent.scope))throw Error(homeNativeCopy(locale,'pendingContext'))
       if(intent.projectConversation)projectApi.runtime!.creationWorkspace(intent.projectConversation.projectId,workspaceId)
       const options={
+        ...(intent.requestId?{requestId:intent.requestId}:{}),
+        ...(!intent.assistant&&intent.continuation?{onOpened:intent.continuation.opened}:{}),
         ...(intent.projectConversation?{requestId:intent.projectConversation.requestId,title:intent.projectConversation.title}:{}),
         ...(workspaceId===undefined?{}:{workspaceId}),...(intent.object?.kind==='role'?{roleId:intent.object.id}:{}),
-        mayOpen:()=>!intent.signal?.aborted&&intent.continuation?.current()!==false&&intent.projectCurrent?.()!==false&&homeCreationLocation(latestState.current)===creationLocation,
+        mayOpen:()=>intent.roleAssignmentCurrent?.()!==false&&!intent.signal?.aborted&&intent.continuation?.current()!==false&&intent.projectCurrent?.()!==false&&homeCreationLocation(latestState.current)===creationLocation,
         beforeOpen:async(row:Conversation)=>{
           if(intent.continuation?.current()===false)return
           if(intent.assistant){await rememberAssistantConversation(row,navigationStorage,homeContextApi);return}
+          if(intent.roleAssignmentCurrent?.()===false)throw Object.assign(Error(),{code:'teloa/cancelled'})
+          if(intent.taskCreation&&intent.object?.kind==='role')await freshEmployeeAssignment(intent.object.id,intent.object.version,intent.scope)
           if(intent.object){
             const object=resolveConversationObject(intent.object.kind,intent.object.id)
             if(persistentObject(object))mergeObjectLinks([await ensureHomeObjectContext(objectConversationApi,object,row.sessionId,intent.scope)])
@@ -1929,8 +2052,8 @@ export function WorkbenchFrame({assistantActivity,assistantChat,groupWorkLinks,e
       if(intent.projectConversation&&!intent.projectConversation.preparation)projectApi.runtime!.completeCreation(intent.projectConversation.projectId,intent.projectConversation.requestId)
       if(intent.taskCreation)rememberTaskCreation(navigationStorage,conversation.sessionId,intent.scope??'general')
       if(intent.scope&&intent.scope!=='general'&&workspaceId)workspacePreferences.write(intent.scope,workspaceId)
-      const canContinue=()=>!intent.signal?.aborted&&intent.continuation?.current()!==false&&intent.projectCurrent?.()!==false&&mayContinueHomeCreation(creationLocation,latestState.current,mainSession.getSnapshot(),conversation.sessionId)
-      if(!canContinue()){intent.resolve?.(!intent.pagePreparation&&!intent.projectConversation?.preparation);setCreationIntent(null);setWorkspaceSelection(false);setCreationError(undefined);return conversation}
+      const canContinue=()=>intent.roleAssignmentCurrent?.()!==false&&!intent.signal?.aborted&&intent.continuation?.current()!==false&&intent.projectCurrent?.()!==false&&mayContinueHomeCreation(creationLocation,latestState.current,mainSession.getSnapshot(),conversation.sessionId)
+      if(!canContinue()){intent.resolve?.(!intent.roleAssignmentCurrent&&!intent.pagePreparation&&!intent.projectConversation?.preparation);setCreationIntent(null);setWorkspaceSelection(false);setCreationError(undefined);return conversation}
       if(intent.object){
         const object=resolveConversationObject(intent.object.kind,intent.object.id)
         if(!persistentObject(object))setObjectLinks(linkObjectConversation(objectLinks,object,conversation,intent.scope))
@@ -2130,13 +2253,13 @@ export function WorkbenchFrame({assistantActivity,assistantChat,groupWorkLinks,e
   }
   const readLatestConversationRole=(roleId:string)=>readCurrentRoleForConversation(async()=>{
     const rows=await roleApi.list()
-    if(roleLoadApi.current!==roleApi)throw Object.assign(Error(),{code:'teloa/source-unavailable'})
+    if(!roleConnectionCurrent())throw Object.assign(Error(),{code:'teloa/source-unavailable'})
     mergeRoles(rows)
     return rows.map(row=>tasksRef.current.roles.find(role=>role.id===row.id&&role.storage==='persistent')!).filter(Boolean)
   },roleId)
   const roleCreationOpening=useRef(new Set<string>())
-  const requestRoleCreation=async(object:ConversationObject,scopes:readonly CollaborationScope[],goal?:string)=>{
-    if(!applicationPresentation.can('people')||roleCreationOpening.current.has(object.id))return
+  const requestRoleCreation=async(object:ConversationObject,scopes:readonly CollaborationScope[],goal?:string,options:RoleCreationOptions={})=>{
+    if(!applicationPresentation.can('people')||roleCreationOpening.current.has(object.id)){options.reject?.(Object.assign(Error(),{code:'teloa/forbidden'}));return}
     roleCreationOpening.current.add(object.id)
     const key=crypto.randomUUID();setRoleNavigationStatus({key,message:t('roleDelegation.openingConversation',{name:object.title})})
     try{
@@ -2145,9 +2268,9 @@ export function WorkbenchFrame({assistantActivity,assistantChat,groupWorkLinks,e
       const fresh:ConversationObject={...object,title:role.kind==='twin'?twinDisplayName(profile.displayName,t):role.name,version:role.version,canStart:true}
       const available=[...new Set(role.scopes.filter(scope=>scopes.includes(scope)))]
       if(!available.length)throw Object.assign(Error(),{code:'teloa/version-conflict'})
-      if(available.length>1){setRoleScopeIntent({object:fresh,scopes:available,...(goal?{goal}:{})});return}
-      return await requestCreation({object:fresh,scope:available[0]!,...(goal?{goal}:{})})
-    }catch(error){setCreationIntent({object,...(goal?{goal}:{})});setCreationError(localizeWorkError(locale,error));setWorkspaceSelection(true)}
+      if(available.length>1){setRoleScopeIntent({object:fresh,scopes:available,...(goal?{goal}:{}),...options});return}
+      return await requestCreation({object:fresh,scope:available[0]!,...(goal?{goal}:{}),...options})
+    }catch(error){options.reject?.(error);setCreationIntent({object,...(goal?{goal}:{})});setCreationError(localizeWorkError(locale,error));setWorkspaceSelection(true)}
     finally{roleCreationOpening.current.delete(object.id);setRoleNavigationStatus(value=>value?.key===key?undefined:value)}
   }
   const reloadCreationRole=async()=>{
@@ -2160,6 +2283,86 @@ export function WorkbenchFrame({assistantActivity,assistantChat,groupWorkLinks,e
     const scope=intent.scope&&role.scopes.includes(intent.scope)?intent.scope:role.scopes.length===1?role.scopes[0]:undefined
     setCreationIntent(current=>current===intent?{...rest,object,...(scope?{scope}:{})}:current)
     setCreationError(undefined)
+  }
+  const assignmentConnection=useRef({roles:roleApi,work})
+  if(assignmentConnection.current.roles!==roleApi||assignmentConnection.current.work!==work)assignmentConnection.current={roles:roleApi,work}
+  const assignmentOpening=useRef(false)
+  const freshEmployeeAssignment=async(roleId:string,expectedVersion:number,scope?:CollaborationScope)=>{
+    const connection=assignmentConnection.current,rows=await readRoleDirectory()
+    if(!rows||!projectFrameMounted.current||assignmentConnection.current!==connection)throw Object.assign(Error(),{code:'teloa/cancelled'})
+    const intent=employeeAssignmentCreation(rows,roleId,expectedVersion,scope)
+    return intent
+  }
+  const assignConversation=async(roleId:string,expectedVersion:number,scope?:CollaborationScope,goal?:string)=>{
+    if(!applicationPresentation.can('people'))throw Object.assign(Error(),{code:'teloa/forbidden'})
+    if(assignmentOpening.current||creating||work.getPendingCreation()||taskApi.pendingAssignee())throw Object.assign(Error(),{code:'teloa/conflict'})
+    assignmentOpening.current=true
+    const connection=assignmentConnection.current,location=homeCreationLocation(latestState.current),current=()=>projectFrameMounted.current&&assignmentConnection.current===connection
+    const context=scope??(latestState.current.view==='spaces'&&latestState.current.navigationDirectories.spaces?.businessHome===false?latestState.current.businessTarget.scope:latestState.current.view==='team'?teamFocusScope??undefined:undefined)
+    try{
+      const intent=await freshEmployeeAssignment(roleId,expectedVersion,context)
+      if(!current()||location!==homeCreationLocation(latestState.current))throw Object.assign(Error(),{code:'teloa/cancelled'})
+      if(work.getPendingCreation()||taskApi.pendingAssignee())throw Object.assign(Error(),{code:'teloa/conflict'})
+      await new Promise<void>((resolve,reject)=>requestRoleCreation(intent.object,intent.scopes,goal?.trim()?goal:undefined,{taskCreation:true,roleAssignmentCurrent:current,resolve:accepted=>accepted?resolve():reject(Object.assign(Error(),{code:'teloa/cancelled'})),reject}))
+    }finally{assignmentOpening.current=false}
+  }
+  const modificationConnection=useRef({artifactApi,taskApi,roleApi,homeContextApi,work,preparation,objectConversationApi})
+  if(modificationConnection.current.artifactApi!==artifactApi||modificationConnection.current.taskApi!==taskApi||modificationConnection.current.roleApi!==roleApi||modificationConnection.current.homeContextApi!==homeContextApi||modificationConnection.current.work!==work||modificationConnection.current.preparation!==preparation||modificationConnection.current.objectConversationApi!==objectConversationApi)modificationConnection.current={artifactApi,taskApi,roleApi,homeContextApi,work,preparation,objectConversationApi}
+  const modificationOpening=useRef(false)
+  /** 任意成果修改复用新工作输入；只准备固定引用，不把二进制交给局部文字修订或自动覆盖旧版。 */
+  const prepareArtifactModification=async(artifactId:string,version:number,instruction:string,file?:ArtifactModificationFile,mayContinue?:(afterNavigation?:boolean)=>boolean)=>{
+    const cancelled=()=>Object.assign(Error(),{code:'teloa/cancelled'})
+    if(modificationOpening.current||creating||work.getPendingCreation()||taskApi.pendingAssignee())throw Object.assign(Error(),{code:'teloa/conflict'})
+    const connection=modificationConnection.current,intent=artifactReadIntent.current,entry=JSON.stringify(latestState.current.detail.target),location=homeCreationLocation(latestState.current)
+    let destination:string|undefined
+    const current=()=>{
+      if(!projectFrameMounted.current||modificationConnection.current!==connection||artifactReadIntent.current!==intent||mayContinue?.(destination!==undefined)===false)return false
+      const stored=tasksRef.current.artifacts.find(row=>row.id===artifactId)
+      if(stored&&stored.versions.at(-1)?.number!==version)return false
+      const now=latestState.current,same=JSON.stringify(now.detail.target)===entry
+      return destination===undefined?now.detail.open&&same&&homeCreationLocation(now)===location:mainSession.getSnapshot()===destination&&(now.detail.open&&same||!now.detail.open)&&(homeCreationLocation(now)===location||now.view==='messages'&&now.messageMode==='native')
+    }
+    if(!current())throw cancelled()
+    modificationOpening.current=true
+    try{
+      if(connection.artifactApi.withdrawalPending(artifactId))throw Object.assign(Error(),{code:'teloa/conflict'})
+      const fresh=await connection.artifactApi.get(artifactId)
+      if(!current())throw cancelled()
+      const ensureAvailable=async()=>{
+        const availability=await connection.artifactApi.availability(artifactId)
+        if(!current())throw cancelled()
+        if(availability.state!=='available')throw Object.assign(Error(),{code:'teloa/source-unavailable',details:{reason:'artifact-withdrawn'}})
+      }
+      await ensureAvailable()
+      const prepared=artifactModificationPreparation(fresh,version,instruction,file,locale)
+      let roleId:string|undefined
+      if(fresh.source.kind==='task'){
+        const rows=await connection.taskApi.list()
+        if(!current())throw cancelled()
+        const task=rows.find(row=>row.id===fresh.source.id)
+        if(!task||task.scope!==prepared.scope)throw Object.assign(Error(),{code:'teloa/source-unavailable'})
+        roleId=task.assigneeRoleId??undefined
+      }else if(fresh.source.kind==='session'){
+        const context=await connection.homeContextApi.read(fresh.source.id)
+        if(!current())throw cancelled()
+        if(context&&context.scopeId!==prepared.scope)throw Object.assign(Error(),{code:'teloa/version-conflict'})
+        roleId=context?.roleId??undefined
+      }
+      let object:ConversationObject|undefined
+      if(roleId){
+        const roles=await readRoleDirectory()
+        if(!roles||!current())throw cancelled()
+        const role=roles.find(row=>row.id===roleId)
+        if(!role)throw Object.assign(Error(),{code:'teloa/source-unavailable'})
+        object=employeeAssignmentCreation(roles,roleId,role.version,prepared.scope).object
+      }
+      await ensureAvailable()
+      if(!current()||work.getPendingCreation()||taskApi.pendingAssignee())throw cancelled()
+      mergeArtifacts([fresh])
+      await new Promise<void>((resolve,reject)=>requestCreation({requestId:crypto.randomUUID(),scope:prepared.scope,goal:prepared.goal,pagePreparation:true,...(object?{object,taskCreation:true as const}:{}),roleAssignmentCurrent:current,continuation:{current,opened:id=>{destination=id}},resolve:accepted=>accepted?resolve():reject(cancelled()),reject}))
+      if(!current())throw cancelled()
+      closeArtifacts();actions.openMessages('native')
+    }finally{modificationOpening.current=false}
   }
   /**
    * 账号区的“我的分身”是会话快捷入口，不是分身资料页入口。
@@ -2194,7 +2397,7 @@ export function WorkbenchFrame({assistantActivity,assistantChat,groupWorkLinks,e
   }
   const openTwinConversation=async()=>{
     let twin=tasksRef.current.roles.find(role=>role.kind==='twin'&&role.storage==='persistent')
-    if(!twin){const rows=await roleApi.list();mergeRoles(rows);twin=tasksRef.current.roles.find(role=>role.kind==='twin'&&role.storage==='persistent')}
+    if(!twin){if(!await readRoleDirectory())return false;twin=tasksRef.current.roles.find(role=>role.kind==='twin'&&role.storage==='persistent')}
     if(!twin)throw Error(t('frame.p5.roleGone'))
     return openRoleConversation(twin.id)
   }
@@ -2209,11 +2412,138 @@ export function WorkbenchFrame({assistantActivity,assistantChat,groupWorkLinks,e
     // 本次原会话回填仍受选稿守卫约束；仅延后自身打开引起的自动关闭，完成后由原入口明确导航。
     const draftOpening=twinDraftOpening.current
     if(draftOpening&&draftOpening.sessionId===current&&draftOpening.connected()&&work.getSnapshot().sessionId===current){previous.current=current;return}
-    if(previous.current!==undefined&&state.rolePreview)actions.closeRolePreview(state.rolePreview.request)
+    if(previous.current!==undefined&&state.rolePreview)actions.reconcileRolePreview()
     previous.current=current
     actions.retainDetailForSession(current);actions.closeCapabilities()
-    if(follow&&!(detailTarget?.kind==='artifact'&&!detailTarget.sessionId&&detailTarget.source.kind!=='session')){actions.navigate('messages');if(window.matchMedia('(max-width:740px)').matches)actions.closeSidebar()}
+    if(follow&&!(detailTarget?.kind==='artifact'&&!detailTarget.sessionId&&detailTarget.source.kind!=='session')){actions.followConversation();if(window.matchMedia('(max-width:740px)').matches)actions.closeSidebar()}
   },[current,state.view,actions])
+  const [objectUrlError,setObjectUrlError]=useState<string>()
+  const [objectLink,setObjectLink]=useState<WorkbenchObjectRoute>(),[objectLinkCopied,setObjectLinkCopied]=useState(false)
+  const objectHistory=useRef<ReturnType<typeof attachWorkbenchObjectHistory>>()
+  const objectResourcePin=useRef<{id:string;version:number;sourceVersion:string}>()
+  const resourceWriteIdentity=useMemo(()=>({attentionIdentity,resourceApi}),[attentionIdentity,resourceApi])
+  const resourceWriteCurrent=useRef(resourceWriteIdentity);resourceWriteCurrent.current=resourceWriteIdentity
+  // 固定地址的资料只读同一版本；目录轮询或迟到刷新不能把它偷偷替换为最新版。
+  const objectResourceApi=useMemo(()=>{
+    const verify=(rows:Awaited<ReturnType<typeof resourceApi.directory>>)=>{
+      const pin=objectResourcePin.current
+      if(pin&&!rows.resources.some(row=>row.id===pin.id&&row.version===pin.version&&row.sourceVersion===pin.sourceVersion&&row.status==='active'))throw Object.assign(Error(),{code:'teloa/version-conflict'})
+      return rows
+    }
+    const changed=async<T,>(write:()=>Promise<T>):Promise<T>=>{
+      const identity=resourceWriteCurrent.current,revision=latestState.current.objectNavigationRevision,value=await write()
+      if(resourceWriteCurrent.current===identity&&latestState.current.objectNavigationRevision===revision){objectResourcePin.current=undefined;actions.refreshObjectNavigation()}
+      return value
+    }
+    return {...resourceApi,
+      apply:async(...args:Parameters<typeof resourceApi.apply>)=>changed(()=>resourceApi.apply(...args)),
+      withdraw:async(...args:Parameters<typeof resourceApi.withdraw>)=>changed(()=>resourceApi.withdraw(...args)),
+      reviseKnowledgeResource:async(...args:Parameters<typeof resourceApi.reviseKnowledgeResource>)=>changed(()=>resourceApi.reviseKnowledgeResource(...args)),
+      restoreKnowledgeResource:async(...args:Parameters<typeof resourceApi.restoreKnowledgeResource>)=>changed(()=>resourceApi.restoreKnowledgeResource(...args)),
+      reviseStandaloneKnowledge:async(...args:Parameters<typeof resourceApi.reviseStandaloneKnowledge>)=>changed(()=>resourceApi.reviseStandaloneKnowledge(...args)),
+      restoreStandaloneKnowledge:async(...args:Parameters<typeof resourceApi.restoreStandaloneKnowledge>)=>changed(()=>resourceApi.restoreStandaloneKnowledge(...args)),
+      directory:async()=>verify(await resourceApi.directory()),...(resourceApi.readContent?{readContent:(resource:Parameters<NonNullable<typeof resourceApi.readContent>>[0],signal:AbortSignal)=>{
+      const pin=objectResourcePin.current
+      if(pin&&resource.id===pin.id&&(resource.version!==pin.version||resource.sourceVersion!==pin.sourceVersion))return Promise.reject(Object.assign(Error(),{code:'teloa/version-conflict'}))
+      return resourceApi.readContent!(resource,signal)
+    }}:{})}
+  },[resourceApi,actions])
+  useEffect(()=>{
+    // namespace 来自正常本人空间读取，同时隔离安装与 owner；未知身份不恢复旧本地位置。
+    const namespace=builderState.status==='ready'?builderState.namespace:undefined
+    if(!namespace)return
+    const scope=namespace+'/'+(applicationPresentation.getNavigationStorageScope()??new URL(window.location.href).origin)
+    objectResourcePin.current=undefined;setObjectLink(undefined)
+    const unavailable=()=>Object.assign(Error(),{code:'teloa/source-unavailable'})
+    const versionConflict=()=>Object.assign(Error(),{code:'teloa/version-conflict'})
+    const adapter=attachWorkbenchObjectHistory({window,scope,
+      capture:()=>captureWorkbenchNavigationState(latestState.current),
+      describe:async()=>{
+        const snapshot=latestState.current,binding=work.getSnapshot()
+        const resourceId=snapshot.view==='resources'?snapshot.navigationDirectories.resources?.selectedId:undefined
+        const row=resourceId?(await resourceApi.directory()).resources.find(row=>row.id===resourceId&&row.status==='active'):undefined
+        const resource=row?{id:row.id,version:row.version,sourceVersion:row.sourceVersion}:undefined
+        return describeWorkbenchObject(snapshot,{...(binding.status==='ready'&&binding.conversation&&binding.conversation.sessionId===mainSession.getSnapshot()?{conversationId:binding.conversation.id}:{}),...(resource?{resource}:{})})
+      },
+      restore:async(route,local,current,signal)=>{
+        const release=route.base.kind==='conversation'?deferNativeConversationNavigation?.(current):undefined
+        if(route.base.kind==='conversation'){
+          // 仍显示 Home 时先暂停其准备器；目标选中回填不能被当作重新准备首页的机会。
+          conversationRestoration.current=current
+          homePreparation.current?.abort()
+        }
+        try{
+        setObjectUrlError(undefined)
+        const saved=navigationForWorkbenchObject(route,local)
+        let business:BusinessTarget|undefined,previewRoleId:string|undefined,sessionId:string|undefined
+        let resourcePin:{id:string;version:number;sourceVersion:string}|undefined
+        const validate=async(target:WorkbenchObjectTarget)=>{
+          if(target.kind==='task'){if(!(await taskApi.list()).some(row=>row.id===target.id))throw unavailable()}
+          else if(target.kind==='role'||target.kind==='role-preview'){if(!(await roleApi.list()).some(row=>row.id===target.id))throw unavailable()}
+          else if(target.kind==='project'){
+            const result=await projectApi.get(target.id)
+            if(result.project.id!==target.id)throw unavailable()
+            return {scope:result.project.scope as CollaborationScope,section:'projects' as const,id:target.id}
+          }else if(target.kind==='business'){
+            if(!(await businessScopeApi.list()).some(row=>row.scope===target.scope))throw unavailable()
+            return {scope:target.scope as CollaborationScope,section:target.section}
+          }else if(target.kind==='resource'){
+            const row=(await resourceApi.directory()).resources.find(row=>row.id===target.id&&row.status==='active')
+            if(!row)throw unavailable()
+            if(row.version!==target.version||row.sourceVersion!==target.sourceVersion)throw versionConflict()
+            resourcePin={id:row.id,version:row.version,sourceVersion:row.sourceVersion}
+          }else if(target.kind==='artifact'){
+            const artifact=await artifactApi.get(target.id)
+            if(artifact.id!==target.id||!artifact.versions.some(row=>row.number===target.version))throw versionConflict()
+            if(current()){mergeArtifacts([artifact]);saved.detail={open:true,target:{kind:'artifact',source:artifact.source,artifactId:artifact.id,version:target.version}}}
+          }
+        }
+        business=await validate(route.base)
+        let detailBusiness:BusinessTarget|undefined
+        if(route.detail)detailBusiness=await validate(route.detail)
+        if(!current())return
+        if(route.base.kind==='conversation'){
+          sessionId=await restoreWorkbenchConversation(work,mainSession,route.base.id,current,signal)
+          if(!current())return
+          if(!sessionId)throw unavailable()
+        }
+        if(!current())return
+        const detail=route.detail
+        if(detail?.kind==='role-preview')previewRoleId=detail.id
+        else if(detail&&(detail.kind==='task'||detail.kind==='role'))saved.detail={open:true,target:sessionId?{kind:'conversation-object',sessionId,objectKind:detail.kind,id:detail.id}:{kind:'directory-object',view:detail.kind==='task'?'tasks':'team',id:detail.id,source:{kind:'directory'}}}
+        else if(detailBusiness){if(!sessionId)throw unavailable();saved.detail={open:true,target:{kind:'conversation-object',sessionId,objectKind:'business',target:detailBusiness}}}
+        if(route.base.kind==='artifact')saved.view='resources'
+        objectResourcePin.current=resourcePin
+        if(sessionId){const restoredSession=mainSession.getSnapshot();if(restoredSession===undefined||restoredSession!==sessionId)return;previous.current=restoredSession}
+        setObjectLink(route);setObjectLinkCopied(false)
+        restorePending.current={tasks:false,team:false,market:false,spaces:false,plans:false}
+        actions.restoreObjectNavigation(saved,business,previewRoleId)
+        }finally{if(conversationRestoration.current===current)conversationRestoration.current=undefined;release?.()}
+      },
+      published:route=>{objectResourcePin.current=route.base.kind==='resource'?{id:route.base.id,version:route.base.version,sourceVersion:route.base.sourceVersion}:undefined;setObjectLink(route);setObjectLinkCopied(false)},
+      error:error=>{setObjectLink(undefined);setObjectUrlError(localizeWorkError(locale,error))},
+    })
+    objectHistory.current=adapter
+    adapter.observe(latestState.current.objectNavigationRevision,work.getSnapshot().conversation?.id)
+    return()=>{adapter.dispose();if(objectHistory.current===adapter)objectHistory.current=undefined;objectResourcePin.current=undefined}
+  },[useStore,actions,work,mainSession,deferNativeConversationNavigation,taskApi,roleApi,projectApi,resourceApi,artifactApi,businessScopeApi,navigationStorage,attentionIdentity,builderState.status,builderState.namespace,locale])
+  const objectNavigationRevision=useRef(state.objectNavigationRevision)
+  useEffect(()=>{
+    const explicit=objectNavigationRevision.current!==state.objectNavigationRevision
+    if(explicit){objectNavigationRevision.current=state.objectNavigationRevision;objectResourcePin.current=undefined;setObjectUrlError(undefined);setObjectLink(undefined)}
+    objectHistory.current?.observe(state.objectNavigationRevision,binding.status==='ready'&&binding.conversation?.sessionId===current?binding.conversation?.id:undefined)
+    // 先让新导航撤销旧恢复；仅显式回 Home 且没有有效准备时重试，不响应准备器自己的 navigate(home)。
+    if(explicit&&state.view==='home'&&homeSessionId!==current&&!conversationRestoration.current?.()&&(!homePreparation.current||homePreparation.current.signal.aborted))setHomeRetry(value=>value+1)
+  },[state,binding.status,binding.conversation?.id,current,homeSessionId])
+  const copyObjectLink=()=>{
+    if(!objectLink||workbenchObjectHash(objectLink)!==window.location.hash)return
+    // 只复制重新生成的读取地址；当前认证 query 与原生一次入口不得进入剪贴板。
+    const hash=workbenchObjectHash(objectLink),revision=latestState.current.objectNavigationRevision
+    try{void navigator.clipboard.writeText(workbenchObjectLink(window.location.href,objectLink)).then(()=>{if(window.location.hash===hash&&latestState.current.objectNavigationRevision===revision)setObjectLinkCopied(true)}).catch(error=>setObjectUrlError(localizeWorkError(locale,error)))}
+    catch(error){setObjectUrlError(localizeWorkError(locale,error))}
+  }
+  const objectLinkButton=objectLink?<ActionButton className={css.iconButton} onClick={copyObjectLink} aria-label={t(objectLinkCopied?'templateShare.copied':'templateShare.copy')} title={t(objectLinkCopied?'templateShare.copied':'templateShare.copy')} icon={<Link2 size={17}/>}/>:undefined
+  const objectLinkInRoleDrawer=!!state.rolePreview||state.view==='team'&&!!state.roleId
   const conversationContextGeneration=useRef(0)
   useEffect(()=>{
     const generation=++conversationContextGeneration.current
@@ -2225,7 +2555,7 @@ export function WorkbenchFrame({assistantActivity,assistantChat,groupWorkLinks,e
       const link=links.find(row=>row.kind==='role')
       if(!link){setConversationObject(value=>value?.sessionId===current?value:null);return}
       let role=tasksRef.current.roles.find(row=>row.id===link.objectId&&row.storage==='persistent')
-      if(!role){const rows=await roleApi.list();if(generation!==conversationContextGeneration.current)return;mergeRoles(rows);role=tasksRef.current.roles.find(row=>row.id===link.objectId&&row.storage==='persistent')}
+      if(!role){const rows=await readRoleDirectory();if(!rows||generation!==conversationContextGeneration.current)return;role=tasksRef.current.roles.find(row=>row.id===link.objectId&&row.storage==='persistent')}
       if(!role){setConversationObject(value=>value?.sessionId===current?value:null);return}
       const object:ConversationObject={kind:'role',id:role.id,title:role.kind==='twin'?twinDisplayName(profile.displayName,t):role.name,version:role.version,canStart:roleCanStartConversation(role.state)}
       const restoredScope=link.scopeId&&roleSupportsScope(role.scopes,link.scopeId)?link.scopeId as CollaborationScope:role.scopes.length===1?role.scopes[0]:undefined
@@ -2279,7 +2609,8 @@ export function WorkbenchFrame({assistantActivity,assistantChat,groupWorkLinks,e
   // 由 syncPresentation 报到 layout.openRightbar/closeRightbar，落在 store 的 rightbar 切片上。
   const nativeRailShown=!builderVisible&&conversationVisible&&state.rightbar.shown
   const groupArtifactShown=!!groupArtifactSeat&&state.view==='messages'&&state.messageMode==='groups'&&groupArtifactSeat?.groupId===state.groupTarget?.groupId
-  const artifactRailShown=!builderVisible&&(artifactOpen||!!groupArtifactShown)
+  const libraryArtifactShown=state.view==='resources'&&artifactOpen&&!!libraryArtifactMount
+  const artifactRailShown=!builderVisible&&!libraryArtifactShown&&(artifactOpen||!!groupArtifactShown)
   const conversationArtifactMount=nativeRailShown&&current?artifactMounts.get(current):undefined
   const artifactFallbackShown=artifactRailShown&&!conversationArtifactMount
   const railShown=nativeRailShown||artifactRailShown
@@ -2380,7 +2711,7 @@ export function WorkbenchFrame({assistantActivity,assistantChat,groupWorkLinks,e
    * 两边只在“嵌入、可见、选中、选择回调”上不同，别的事实一份即可。
    */
   const renderTaskPage=(options:{embedded:boolean;visible:boolean;autoFocus?:boolean;selected:string|null;select:(id:string|null)=>void;navigation?:{state:WorkbenchDirectoryNavigation;change:(patch:WorkbenchDirectoryPatch)=>void}})=>
-    <TaskPage roleDirectory={{known:roleDirectoryKnown,loading:roleLoading,error:roleLoadError}} createConversation={requestTaskCreationConversation} workProgress={runs=>{const latest=runs.at(-1);return latest?.lineage?<WorkProgressPanel api={workControlApi} rootTaskId={latest.lineage.rootTaskId} budgetAccountId={latest.lineage.budgetAccountId} revision={latest.id+':'+latest.state+':'+latest.taskVersion}/>:null}} groups={savedGroupOptions} openGroup={openSavedGroup} securityActions={task=>task.storage==='persistent'&&task.scope==='SOC'?<SecurityActions key={'security-'+task.id} taskId={task.id} taskVersion={task.version} api={securityActionApi} sourceApi={businessTaskApi} attention={securityAttention} attentionKnown={securityAttentionKnown} focus={securityFocus?.taskId===task.id?securityFocus:undefined} invalidateAttention={invalidateSecurityAttention} changed={async()=>{await Promise.all([loadSecurityAttention(),loadTasks()])}}/>:null} decisionFacts={item=>{
+    <TaskPage roleDirectory={{known:roleDirectoryKnown,loading:roleLoading,error:roleLoadError}} createConversation={requestTaskCreationConversation} workProgress={(runs,exhaustion,verified)=>{const latest=latestTaskRun(runs);return latest?.lineage?<WorkProgressPanel api={workControlApi} rootTaskId={latest.lineage.rootTaskId} budgetAccountId={latest.lineage.budgetAccountId} exhaustion={exhaustion} active={!!verified&&runs.some(run=>!taskRunTerminalStates.includes(run.state))} revision={latest.id+':'+latest.state+':'+latest.taskVersion}/>:null}} groups={savedGroupOptions} openGroup={openSavedGroup} securityRecoveryPending={task=>securityActionCommands.some(kind=>securityActionApi.pending(kind)?.context.panel.taskId===task.id||!!securityActionApi.recoveryError(kind))} securityActions={task=>task.storage==='persistent'&&task.scope==='SOC'?<SecurityActions key={'security-'+task.id} taskId={task.id} taskVersion={task.version} api={securityActionApi} sourceApi={businessTaskApi} attention={securityAttention} attentionKnown={securityAttentionKnown} focus={securityFocus?.taskId===task.id?securityFocus:undefined} invalidateAttention={invalidateSecurityAttention} changed={async()=>{await Promise.all([loadSecurityAttention(),loadTasks()])}}/>:null} decisionFacts={item=>{
       // 依据行要的对象摘要：安全动作取 goal，任务取目标，交接的原因本来就在 reason 里。
       if(item.target.kind==='security-action'){
         const {taskId,actionId}=item.target,action=securityPanels[taskId]?.panel.actions.find(row=>row.id===actionId)
@@ -2414,7 +2745,7 @@ export function WorkbenchFrame({assistantActivity,assistantChat,groupWorkLinks,e
 
   /** 岗位目录与详情的唯一装配处：页内第三栏与右栏 teloa.role 页签共用。 */
   const renderTeamPage=(options:{embedded:boolean;visible:boolean;autoFocus?:boolean;selected:string|null;select:(id:string|null)=>void;navigation?:{state:WorkbenchDirectoryNavigation;change:(patch:WorkbenchDirectoryPatch)=>void}})=>
-    <TeamPage localRetrievalApi={localRetrievalApi} openRetrieval={openResourceRetrieval} twinDrafts={twinDraftApi?{api:twinDraftApi,openConversationDraft:openSavedTwinDraft,...(openTwinDraft?{openDraft:openTwinDraft}:{})}:undefined} employeeArtifacts={artifactApi} openEmployeeArtifact={async(output,current)=>{const artifact=await artifactApi.get(output.artifactId);if(!current()||artifactRevisionConnection.current.artifactApi!==artifactApi)return;mergeArtifacts([artifact]);openArtifacts(artifact.source,{id:artifact.id,version:output.number})}} taskRuns={taskRunApi} skillTitleReader={options.visible?roleSkillTitleReader:undefined} phone={employeeVoiceApi?async id=>{if(voiceTarget||voiceOpening.current)throw Error(employeeVoiceCopy(locale,'call'));const role=tasks.roles.find(row=>row.id===id);if(!role)throw Error(employeeVoiceCopy(locale,'failed'));voiceOpening.current=true;setVoiceSelectionReady(false);setVoiceSessionId(undefined);setConversationObject(null);selectVoiceTarget({...role,kind:'role',roleKind:role.kind,initials:profile.initials,name:role.kind==='twin'?twinDisplayName(profile.displayName,t):role.name});try{if(await openRoleConversation(id))setVoiceSelectionReady(true);else selectVoiceTarget(undefined)}catch(error){selectVoiceTarget(undefined);throw error}finally{voiceOpening.current=false}}:undefined} templateSharing={{storage:navigationStorage,bridge:templateShareBridge,receive:()=>setTemplateReceiveOpen(true)}} delegations={roleDelegationApi} roleTools={roleToolGrantApi} delegationChanged={delegationChanged} savedGroups={groupApi} {...(options.navigation?{navigation:options.navigation}:{})} profileName={profile.displayName} profileInitials={profile.initials} pageCreate={{api:pageCreateApi,prepare:(prompt,scope)=>preparePageCreation(prompt,scope),openMarket:()=>actions.openMarket()}} work={work} resourceApi={roleResourceApi} memoryApi={memoryApi} dailyLogApi={dailyLogApi} dailyLogSchedule={id=>dailySchedules[id]} runtimeConfigs={runtimeConfigApi} persistence={{assignmentPending:!!taskApi.pendingAssignee(),recoverAssignment:async()=>{try{const row=await taskApi.recoverCreate();mergeSavedTasks([row]);return row.id}finally{refreshTaskState(value=>value+1)}},assign:async(role,fields)=>{try{const row=await taskApi.create({...fields,groupId:null,skills:[]},{roleId:role.id,expectedVersion:role.version});mergeSavedTasks([row]);return row.id}finally{refreshTaskState(value=>value+1)}},assignConfirmed:async(role,fields)=>{try{const row=await taskApi.createConfirmed({...fields,groupId:null,skills:[]},{roleId:role.id,expectedVersion:role.version});mergeSavedTasks([row]);return row.id}finally{refreshTaskState(value=>value+1)}},lifecycle:{pending:roleLifecycle.pending(),error:roleLoadError??(roleApi.recoveryMessage()?localizeWorkError(locale,roleApi.recoveryMessage()):undefined),change:async(role,action,reason)=>{try{const result=await roleLifecycle.change(role.id,role.version,action,reason);mergeRoles([result.role]);if(result.handoffTaskIds.length){handoffLoadGeneration.current++;setHandoffsKnown(false);await loadHandoffs()}}finally{refreshTaskState(value=>value+1)}},recover:async()=>{try{const result=await roleLifecycle.recover();mergeRoles([result.role]);if(result.handoffTaskIds.length){handoffLoadGeneration.current++;setHandoffsKnown(false);await loadHandoffs()}}finally{refreshTaskState(value=>value+1)}}},pendingFields:pendingRoleFields,create:createSavedRole,edit:editSavedRole,updateProfile:updateSavedRoleProfile,load:()=>{void refreshRoles()},error:roleLoadError??(roleApi.recoveryMessage()?localizeWorkError(locale,roleApi.recoveryMessage()):undefined),loading:roleLoading}} autoFocus={options.autoFocus!==false} embedded={options.embedded} conversations={id=>objectConversations('role',id)} talk={openRoleConversation} plans={id=><RolePlans heading={false} state={tasks} id={id} open={target=>{if(target.kind==='plan')setConversationPlanTarget(target);else actions.openPlans(target)}} savedPlanIds={new Set(savedPlans.map(plan=>plan.id))}/>} capabilities={id=>{const role=tasks.roles.find(row=>row.id===id&&row.storage==='persistent');return <>{role&&<RoleToolGrants role={role} api={roleToolGrantApi} delegations={roleDelegationApi} resources={resourceApi} changed={()=>{void loadRoles()}}/>}{industryResources({roleId:id})}<CapabilityTargetPanel market={()=>actions.openMarket()}/></>}} visible={options.visible} state={tasks} collaboration={collaboration} selected={options.selected} select={options.select} change={change=>{if('roleId' in change&&tasks.roles.some(role=>role.id===change.roleId&&role.storage==='persistent'))throw Error(t('frame.p5.roleServiceUnsupported'));setTasks(changeTeamPreview(tasks,change))}} openTask={actions.openTask} openGroup={id=>openGroupTopic(id,'')} openBusiness={openBusinessScope} resources={()=>actions.openResources()} nativeSettings={openNativePlugins} scopeLabels={scopeLabels} focusScope={teamFocusScope}/>
+    <TeamPage localRetrievalApi={localRetrievalApi} openRetrieval={openResourceRetrieval} objectLinkActions={state.view==='team'&&!!state.roleId&&!state.rolePreview?objectLinkButton:undefined} assignConversation={assignConversation} twinDrafts={twinDraftApi?{api:twinDraftApi,openConversationDraft:openSavedTwinDraft,...(openTwinDraft?{openDraft:openTwinDraft}:{})}:undefined} employeeArtifacts={artifactApi} openEmployeeArtifact={async(output,current)=>{const artifact=await artifactApi.get(output.artifactId);if(!current()||artifactRevisionConnection.current.artifactApi!==artifactApi)return;mergeArtifacts([artifact]);openArtifacts(artifact.source,{id:artifact.id,version:output.number})}} taskRuns={taskRunApi} skillTitleReader={options.visible?roleSkillTitleReader:undefined} phone={employeeVoiceApi?async id=>{if(voiceTarget||voiceOpening.current)throw Error(employeeVoiceCopy(locale,'call'));const role=tasksRef.current.roles.find(row=>row.id===id);if(!roleConnectionCurrent()||!role)throw Error(employeeVoiceCopy(locale,'failed'));voiceOpening.current=true;setVoiceSelectionReady(false);setVoiceSessionId(undefined);setConversationObject(null);selectVoiceTarget({...role,kind:'role',roleKind:role.kind,initials:profile.initials,name:role.kind==='twin'?twinDisplayName(profile.displayName,t):role.name});try{if(await openRoleConversation(id))setVoiceSelectionReady(true);else selectVoiceTarget(undefined)}catch(error){selectVoiceTarget(undefined);throw error}finally{voiceOpening.current=false}}:undefined} templateSharing={{storage:navigationStorage,bridge:templateShareBridge,receive:()=>setTemplateReceiveOpen(true)}} delegations={roleDelegationApi} roleTools={roleToolGrantApi} delegationChanged={delegationChanged} savedGroups={groupApi} {...(options.navigation?{navigation:options.navigation}:{})} profileName={profile.displayName} profileInitials={profile.initials} pageCreate={{api:pageCreateApi,prepare:(prompt,scope)=>preparePageCreation(prompt,scope),openMarket:()=>actions.openMarket()}} work={work} resourceApi={roleResourceApi} memoryApi={memoryApi} dailyLogApi={dailyLogApi} dailyLogSchedule={id=>dailySchedules[id]} runtimeConfigs={runtimeConfigApi} persistence={{directoryKnown:roleDirectoryKnown,assignmentPending:!!taskApi.pendingAssignee(),recoverAssignment:async()=>{try{const row=await taskApi.recoverCreate();mergeSavedTasks([row]);return row.id}finally{refreshTaskState(value=>value+1)}},assign:async(role,fields)=>{try{assertAssignableRole(role);const row=await taskApi.create({...fields,groupId:null,skills:[]},{roleId:role.id,expectedVersion:role.version});mergeSavedTasks([row]);return row.id}finally{refreshTaskState(value=>value+1)}},assignConfirmed:async(role,fields)=>{try{assertAssignableRole(role);const row=await taskApi.createConfirmed({...fields,groupId:null,skills:[]},{roleId:role.id,expectedVersion:role.version});mergeSavedTasks([row]);return row.id}finally{refreshTaskState(value=>value+1)}},lifecycle:{pending:roleLifecycle.pending(),error:roleLoadError??(roleApi.recoveryMessage()?localizeWorkError(locale,roleApi.recoveryMessage()):undefined),change:async(role,action,reason)=>{try{const result=await roleLifecycle.change(role.id,role.version,action,reason);mergeRoles([result.role]);if(result.handoffTaskIds.length){handoffLoadGeneration.current++;setHandoffsKnown(false);await loadHandoffs()}}finally{refreshTaskState(value=>value+1)}},recover:async()=>{try{const result=await roleLifecycle.recover();mergeRoles([result.role]);if(result.handoffTaskIds.length){handoffLoadGeneration.current++;setHandoffsKnown(false);await loadHandoffs()}}finally{refreshTaskState(value=>value+1)}}},pendingFields:pendingRoleFields,create:createSavedRole,edit:editSavedRole,updateProfile:updateSavedRoleProfile,load:()=>{void refreshRoles()},error:roleLoadError??(roleApi.recoveryMessage()?localizeWorkError(locale,roleApi.recoveryMessage()):undefined),loading:roleLoading}} autoFocus={options.autoFocus!==false} embedded={options.embedded} conversations={id=>objectConversations('role',id)} talk={openRoleConversation} plans={id=><RolePlans heading={false} state={tasks} id={id} open={target=>{if(target.kind==='plan')setConversationPlanTarget(target);else actions.openPlans(target)}} savedPlanIds={new Set(savedPlans.map(plan=>plan.id))}/>} capabilities={id=>{const role=tasks.roles.find(row=>row.id===id&&row.storage==='persistent');return <>{role&&<RoleToolGrants role={role} api={roleToolGrantApi} delegations={roleDelegationApi} resources={resourceApi} changed={()=>{void loadRoles()}}/>}{industryResources({roleId:id})}<CapabilityTargetPanel market={()=>actions.openMarket()}/></>}} permissionTools={(id,refresh)=>{const role=tasks.roles.find(row=>row.id===id&&row.storage==='persistent');return role?<RoleToolGrants role={role} api={roleToolGrantApi} delegations={roleDelegationApi} resources={resourceApi} changed={()=>{refresh();void loadRoles()}}/>:null}} permissionConnections={id=>industryResources({roleId:id})} visible={options.visible} state={tasks} collaboration={collaboration} selected={options.selected} select={options.select} change={change=>{if('roleId' in change&&tasks.roles.some(role=>role.id===change.roleId&&role.storage==='persistent'))throw Error(t('frame.p5.roleServiceUnsupported'));setTasks(changeTeamPreview(tasks,change))}} openTask={actions.openTask} openGroup={id=>openGroupTopic(id,'')} openBusiness={openBusinessScope} resources={()=>actions.openResources()} nativeSettings={openNativePlugins} scopeLabels={scopeLabels} focusScope={teamFocusScope}/>
 
   /** 空间目录与详情的唯一装配处：页内第三栏与右栏 teloa.business 页签共用。 */
   /** 只统计当前范围里真实启用的已保存自动化；模板加载数不是自动化数。 */
@@ -2559,12 +2890,12 @@ export function WorkbenchFrame({assistantActivity,assistantChat,groupWorkLinks,e
   const renderContinuousPage=(visible:boolean,target:import('./continuous-preview.js').ContinuousTarget,go:(target:import('./continuous-preview.js').ContinuousTarget)=>void,embedded=false)=>{
     const navigate=<Args extends unknown[],Result>(action:(...args:Args)=>Result)=>(...args:Args)=>{if(embedded)setConversationPlanTarget(undefined);return action(...args)}
     return (
-<ContinuousPage draftStorage={builderState.status==='ready'&&builderState.namespace?{namespace:builderState.namespace,storage:navigationStorage}:null} groups={savedGroupOptions} openConversation={openPlanSourceConversation} prepareConversation={navigate(request=>{const employee=request.roleId?tasks.roles.find(row=>row.id===request.roleId&&row.storage==='persistent'):undefined;const goal=t('workbench.create.planPrompt',{goal:request.goal})+(employee?' '+t('workbench.create.employee',{name:employee.name}):'');if(request.roleId){const object=resolveConversationObject('role',request.roleId);return requestRoleCreation(object,request.scope?[request.scope]:employee?.scopes??[],goal)}return requestCreation({scope:request.scope??'general',goal})})} navigation={{state:state.navigationDirectories.plans??{},change:patch=>actions.rememberDirectory('plans',patch)}} persistence={{api:planApi,controls:workControlApi,resources:resourceApi,plans:savedPlans,merge:mergeSavedPlans,refreshRoles:()=>{void refreshRoles()},industrySource:plan=><IndustryPlanSourcePanel key={'industry-plan-source-'+plan.id} planId={plan.id} api={industryPlanApi}/>}} openArtifacts={navigate(openArtifacts)} seed={state.templatePlanSeed} clearSeed={actions.clearPlanSeed} openMarket={navigate(actions.openMarket)} visible={visible} embedded={embedded} state={tasks} target={target} go={go} change={command=>{const id='planId' in command?command.planId:'id' in command?command.id:undefined;if(savedPlansRef.current.some(plan=>plan.id===id))throw Error(t('frame.p5.planServiceRequired'));const next=changeContinuousWork(tasks,command,marketRef.current);setTasks(next);return next}} openTask={navigate(actions.openTask)} openRole={actions.previewRole} openBusiness={navigate(enterBusiness)} team={navigate(()=>actions.navigate('team'))} attention={navigate(actions.openAttention)}/>
+<ContinuousPage draftStorage={builderState.status==='ready'&&builderState.namespace?{namespace:builderState.namespace,storage:navigationStorage}:null} groups={savedGroupOptions} openConversation={openPlanSourceConversation} prepareConversation={navigate(request=>{const employee=request.roleId?tasks.roles.find(row=>row.id===request.roleId&&row.storage==='persistent'):undefined;const goal=t('workbench.create.planPrompt',{goal:request.goal})+(employee?' '+t('workbench.create.employee',{name:employee.name}):'');if(request.roleId){const object=resolveConversationObject('role',request.roleId);return requestRoleCreation(object,request.scope?[request.scope]:employee?.scopes??[],goal)}return requestCreation({scope:request.scope??'general',goal})})} navigation={{state:state.navigationDirectories.plans??{},change:patch=>actions.rememberDirectory('plans',patch)}} persistence={{api:planApi,controls:workControlApi,resources:resourceApi,businessSources:planBusinessSources,plans:savedPlans,merge:mergeSavedPlans,refreshRoles:()=>{void refreshRoles()},industrySource:plan=><IndustryPlanSourcePanel key={'industry-plan-source-'+plan.id} planId={plan.id} api={industryPlanApi}/>}} openArtifacts={navigate(openArtifacts)} seed={state.templatePlanSeed} clearSeed={actions.clearPlanSeed} openMarket={navigate(actions.openMarket)} visible={visible} embedded={embedded} state={tasks} target={target} go={go} change={command=>{const id='planId' in command?command.planId:'id' in command?command.id:undefined;if(savedPlansRef.current.some(plan=>plan.id===id))throw Error(t('frame.p5.planServiceRequired'));const next=changeContinuousWork(tasks,command,marketRef.current);setTasks(next);return next}} openTask={navigate(actions.openTask)} openRole={actions.previewRole} openBusiness={navigate(enterBusiness)} team={navigate(()=>actions.navigate('team'))} attention={navigate(actions.openAttention)}/>
   )
   }
   const rolePreview=state.rolePreview,previewRole=tasks.roles.find(role=>role.id===rolePreview?.id)
   const closeRolePreview=()=>{if(rolePreview)actions.closeRolePreview(rolePreview.request)}
-  const rolePreviewDrawer=<RoleProfileDrawer kind={previewRole?.kind} open={!!rolePreview} title={previewRole?.kind==='twin'?t('team.twin.tabsAria'):previewRole?.name??t('navigation.team')} close={closeRolePreview}>
+  const rolePreviewDrawer=<RoleProfileDrawer kind={previewRole?.kind} open={!!rolePreview} title={previewRole?.kind==='twin'?t('team.twin.tabsAria'):previewRole?.name??t('navigation.team')} close={closeRolePreview} headerActions={previewRole?objectLinkButton:undefined}>
     {rolePreview&&!previewRole?<p role={roleLoading||!roleDirectoryKnown&&!roleLoadError?'status':'alert'}>{roleLoading||!roleDirectoryKnown&&!roleLoadError?t('team.loading'):roleLoadError??t('frame.p5.industryRoleUnavailable')}</p>:null}
     {renderTeamPage({embedded:true,visible:!!rolePreview&&!!previewRole,autoFocus:false,selected:rolePreview?.id??null,select:id=>{if(id)actions.previewRole(id);else closeRolePreview()}})}
   </RoleProfileDrawer>
@@ -2573,20 +2904,21 @@ export function WorkbenchFrame({assistantActivity,assistantChat,groupWorkLinks,e
   // 但它挂在 `.details` 里的座位上，只包 <main> 的 provider 够不着，一渲染就抛。
   return <ToastProvider><PageCreateRevisionContext.Provider value={prepareDraftRevision}>{voicePanel}<BusinessScopeProvider labels={scopeLabels}><TemplateShareProvider value={{storage:navigationStorage,bridge:templateShareBridge,publisher:profile.displayName,sources:templateShareSources,receive:()=>setTemplateReceiveOpen(true),openDraft:setShareDraft}}><ApprovalNotesProvider>{conversationPlanTarget&&renderContinuousPage(true,conversationPlanTarget,target=>{if(target.kind==='plan')setConversationPlanTarget(target);else{setConversationPlanTarget(undefined);if(target.kind!=='plans')actions.openPlans(target)}},true)}<div ref={frameRef} onScrollCapture={rememberDirectoryScroll} className={clsx(tokens.tokens,css.frame,state.navOpen&&css.navOpen,state.view==='messages'&&directoryVisible&&(!conversationVisible||!objectEmbedded)&&css.directoryOpen,railShown&&css.detailsOpen,detailsDragging&&css.dragging)}>
     {rolePreviewDrawer}
-    <WorkspaceSearch visible={workspaceSearchOpen} source={workspaceSearchSource} conversationStatus={searchDirectory.error?t('error.unknown'):!searchManagement.ready||searchDirectory.status!=='ready'?t('workspaceSearch.conversationsUnavailable'):''} knowledgeStatus={workspaceSearchKnowledgeStatus==='loading'?t('workspaceSearch.knowledgeLoading'):workspaceSearchKnowledgeStatus==='failed'?t('workspaceSearch.knowledgeUnavailable'):''} capabilityStatus={workspaceSearchCapabilityStatus==='loading'?t('workspaceSearch.capabilityLoading'):workspaceSearchCapabilityStatus==='failed'?t('workspaceSearch.capabilityUnavailable'):''} searching={workspaceSearchKnowledgeStatus==='loading'||workspaceSearchCapabilityStatus==='loading'} close={()=>setWorkspaceSearchOpen(false)} open={openSearchResult} searchMessages={actions.focusConversationSearch}/>
+    <WorkspaceSearch visible={workspaceSearchOpen} source={workspaceSearchSource} taskState={taskLoading?'loading':taskLoadError?'failed':taskAttentionKnown?'ready':'loading'} retryTasks={()=>{void loadTasks()}} conversationStatus={searchDirectory.error?t('error.unknown'):!searchManagement.ready||searchDirectory.status!=='ready'?t('workspaceSearch.conversationsUnavailable'):''} knowledgeStatus={workspaceSearchKnowledgeStatus==='loading'?t('workspaceSearch.knowledgeLoading'):workspaceSearchKnowledgeStatus==='failed'?t('workspaceSearch.knowledgeUnavailable'):''} capabilityStatus={workspaceSearchCapabilityStatus==='loading'?t('workspaceSearch.capabilityLoading'):workspaceSearchCapabilityStatus==='failed'?t('workspaceSearch.capabilityUnavailable'):''} searching={workspaceSearchKnowledgeStatus==='loading'||workspaceSearchCapabilityStatus==='loading'} close={()=>setWorkspaceSearchOpen(false)} open={openSearchResult} searchMessages={actions.focusConversationSearch}/>
     <a href="#teloa-main" className={css.skip}>{t('shell.skipToWorkspace')}</a>
     {state.navOpen&&<button className={css.navMask} aria-label={t('shell.navigation.close')} onClick={actions.closeNavigation}/>}
     <AssistantCompanion name={assistantName} startCall={employeeVoiceApi?startAssistantCall:undefined} voiceMessage={employeeVoiceApi&&insertAssistantVoiceText?<AssistantVoiceMessage api={employeeVoiceApi} prepare={prepareAssistantVoiceNote} insert={insertAssistantVoiceText}/>:undefined} activity={companionActivity} storage={navigationStorage} active={assistantActive} setActive={setCompanionActive} openConversation={openPersonalAssistant} chat={assistantChat} openAttention={actions.openAttention} needCount={needCount} attentionKnown={attentionStatus.known}/>
-    <WorkNavigation beforeNavigate={builderVisible?beforeBuilderLeave:undefined} marketApps={marketAppsPage} assistantName={assistantName} renameAssistant={dialogueOrganization.renameAssistant} conversationPlans={conversationPlans} openAssistant={openPersonalAssistant} assistantSelected={!builderVisible&&conversationVisible&&!!current&&companionActivity.sessionId===current} assistantActive={assistantActive} setAssistantActive={setCompanionActive} onSearch={()=>{actions.closeNavigation();setWorkspaceSearchOpen(true)}} view={state.view} colorScheme={state.colorScheme} actions={actions} work={work} management={management} useSessions={useSessions} create={options=>requestCreation(state.view==='spaces'?{scope:state.businessTarget.scope}:{},options?.chooseWorkspace)} creating={creating} needCount={needCount} attentionKnown={attentionStatus.known} createTask={()=>requestTaskCreationConversation(state.view==='spaces'?state.businessTarget.scope:'general')} createGroup={createDirectoryGroup} openTwin={async()=>{await openTwinConversation()}} setTheme={setTheme} businessShortcuts={businessShortcuts} businessScopeNames={localizedScopeNames} businessTarget={state.businessTarget} openBusinessShortcut={openBusinessShortcut} unpinBusinessShortcut={personalBusinessShortcuts.unpin} businessDashboardTitles={businessDashboardTitles}/>
+    <WorkNavigation taskRunChat={taskRunChat} beforeNavigate={builderVisible?beforeBuilderLeave:undefined} marketApps={marketAppsPage} assistantName={assistantName} renameAssistant={dialogueOrganization.renameAssistant} conversationPlans={conversationPlans} openAssistant={openPersonalAssistant} assistantSelected={!builderVisible&&conversationVisible&&!!current&&companionActivity.sessionId===current} assistantActive={assistantActive} setAssistantActive={setCompanionActive} onSearch={()=>{actions.closeNavigation();setWorkspaceSearchOpen(true)}} view={state.view} colorScheme={state.colorScheme} actions={actions} work={work} management={management} useSessions={useSessions} create={options=>requestCreation(state.view==='spaces'?{scope:state.businessTarget.scope}:{},options?.chooseWorkspace)} creating={creating} needCount={needCount} attentionKnown={attentionStatus.known} createTask={()=>requestTaskCreationConversation(state.view==='spaces'?state.businessTarget.scope:'general')} createGroup={createDirectoryGroup} openTwin={async()=>{await openTwinConversation()}} setTheme={setTheme} businessShortcuts={businessShortcuts} businessScopeNames={localizedScopeNames} businessTarget={state.businessTarget} openBusinessShortcut={openBusinessShortcut} unpinBusinessShortcut={personalBusinessShortcuts.unpin} businessDashboardTitles={businessDashboardTitles}/>
     <div className={css.workspace}>
       {returnOrigin&&<div className={css.setupReturn}><button type="button" className={light.back} onClick={returnToSetupBusiness}><ArrowLeft size={14} aria-hidden/>{t('business.setup.return',{title:returnOrigin.title})}</button></div>}
       <header className={css.topbar}>
         <ActionButton className={css.mobileNavigation} aria-label={t('shell.navigation.open')} onClick={actions.toggleNavigation}><PanelLeft size={18}/></ActionButton>
         {!builderVisible&&conversationVisible&&(contextRole||assistantCurrent)
-          ? <EmployeeConversationHeader name={contextRole?(contextRole.kind==='twin'?twinDisplayName(profile.displayName,t):contextRole.name):assistantName} avatar={contextRole?(contextRole.kind==='twin'?<TwinAvatar initials={profile.initials}/>:<EmployeeAvatar avatarKey={contextRole.avatarKey} size="md"/>):<EmployeeAvatar assistant size="md"/>} topic={assistantCurrent&&(!conversationTitle||conversationTitle===assistantConversationTitle)?conversationHeaderCopy(locale,'main'):conversationTitle||title} {...(contextRole?{viewProfile:toggleContextObject,profileRef:objectPanelTrigger,profileOpen:contextDetailShown&&!businessDetailOpen}:{})}/>
+          ? <EmployeeConversationHeader name={contextRole?(contextRole.kind==='twin'?twinDisplayName(profile.displayName,t):contextRole.name):assistantName} avatar={contextRole?(contextRole.kind==='twin'?<TwinAvatar initials={profile.initials}/>:<EmployeeAvatar avatarKey={contextRole.avatarKey} size="md"/>):<EmployeeAvatar assistant size="md"/>} topic={assistantCurrent&&(!conversationTitle||conversationTitle===assistantConversationTitle)?conversationHeaderCopy(locale,'main'):taskRunSessionTitle(conversationTitle||title,current,taskChatSnapshot.value,binding.conversation)} {...(contextRole?{viewProfile:toggleContextObject,profileRef:objectPanelTrigger,profileOpen:contextDetailShown&&!businessDetailOpen}:{})}/>
           : <nav className={css.crumbs} aria-label={t('shell.breadcrumbAria')}>{isWorkbenchHubView(state.view)&&state.view!=='home'&&<><button type="button" className={css.crumb} onClick={()=>actions.navigate('home')}>{t('navigation.home')}</button><ChevronRight size={12} aria-hidden/></>}{marketAppsPage&&<><button type="button" className={css.crumb} onClick={()=>actions.openMarketCategory('home')}>{t('market.title')}</button><ChevronRight size={12} aria-hidden/></>}{businessInnerTitle&&<><button type="button" className={css.crumb} onClick={()=>openViewRoot('spaces')}>{labels.spaces}</button><ChevronRight size={12} aria-hidden/></>}{settingsInnerTitle&&<><span className={css.crumbText}>{labels.settings}</span><ChevronRight size={12} aria-hidden/></>}<button type="button" className={css.crumb} aria-current="page" onClick={isWorkbenchHubView(state.view)&&state.view!=='home'?undefined:()=>isWorkbenchHubView(state.view)?actions.navigate('home'):openViewRoot(state.view)}><strong>{isWorkbenchHubView(state.view)?t(state.view==='home'?'navigation.home':workbenchHubNavigation.find(([id])=>id===state.view)![1]):marketAppsPage?t('market.apps.title'):businessInnerTitle??settingsInnerTitle??labels[state.view]}</strong></button></nav>}
         <div className={css.toolbar}>
           {renderSlot('teloa.workbench.toolbar',{})}
+          {!objectLinkInRoleDrawer&&objectLinkButton}
           {/* 1.0 分身会话：页头右侧直达分身工作区（代拟、判断力样本、习惯观察、授权边界），复用员工详情抽屉，不另建页面。 */}
           {!builderVisible&&conversationVisible&&contextRole?.kind==='twin'&&<button type="button" className={css.twinWorkspace} onClick={()=>actions.previewRole(contextRole.id)}><LayoutPanelLeft size={15} aria-hidden/>{t('team.twin.tabsAria')}</button>}
           {state.view==='messages'&&<ActionButton className={css.iconButton} onClick={toggleDirectoryColumn} aria-label={t('shell.conversationDirectory')} title={t('shell.conversationDirectory')} aria-expanded={directoryVisible} icon={<PanelLeft size={17}/>}/> }
@@ -2596,6 +2928,7 @@ export function WorkbenchFrame({assistantActivity,assistantChat,groupWorkLinks,e
             <div role="menu">
               <button type="button" role="menuitem" disabled={creating||!!contextRole&&(!peopleAllowed||contextRole.state==='retired')} onClick={()=>{messageContextMenu.current?.removeAttribute('open');createContextConversation()}}>{t('navigation.newConversation')}</button>
               <button type="button" role="menuitem" disabled={!canViewConversationArtifacts} onClick={()=>{messageContextMenu.current?.removeAttribute('open');if(current)openArtifacts({kind:'session',id:current})}}>{t('shell.artifacts')}</button>
+              {current&&sessionDiagnostics&&<SessionDiagnosticMenuItem sessionId={current} download={sessionDiagnostics}/>}
             </div>
           </DetailsMenu>}
         </div>
@@ -2607,10 +2940,11 @@ export function WorkbenchFrame({assistantActivity,assistantChat,groupWorkLinks,e
         </aside>
         <main id="teloa-main" tabIndex={-1} className={clsx(css.main,nativeMainVisible&&css.conversationMain,objectEmbedded&&css.withObjectPanel,builderVisible&&css.withBuilder,builderVisible&&builderTab==='preview'&&css.builderPreviewSelected)}>
           {nativePanelError&&<p role="alert">{nativePanelError}</p>}
+          {objectUrlError&&<p role="alert">{objectUrlError} <button type="button" onClick={()=>objectHistory.current?.retry()}>{t('common.retry')}</button></p>}
           {builderError&&!businessLedgerHome&&<p role="alert">{builderError}</p>}
           {!!builderState.error&&!businessLedgerHome&&(state.view==='messages'||state.view==='home'&&!knownBusinessSession)&&<p role="alert">{t('business.builder.error')} <button type="button" onClick={()=>void businessBuilder?.retry()}>{t('common.retry')}</button></p>}
           {!builderVisible&&conversationVisible&&contextRole&&<CapabilityNotice capability="people"/>}
-          {!builderVisible&&conversationVisible&&current&&projectApi.runtime&&<ProjectConversationContext sessionId={current} api={projectApi} resolved={setConversationProject} className={css.objectContext} openProject={project=>openContextBusiness({scope:project.scope as CollaborationScope,section:'projects',id:project.id})} newConversation={(project,mode)=>{void projectConversationActions.create(project,mode,projectRuntimeCopy(locale).newConversation).catch(error=>setServerRecoveryNotice(localizeWorkError(locale,error)))}}/>}
+          {!builderVisible&&conversationVisible&&current&&projectApi.runtime&&<ProjectConversationContext sessionId={current} api={projectApi} generation={attentionGeneration} resolved={setConversationProject} className={css.objectContext} openProject={project=>openContextBusiness({scope:project.scope as CollaborationScope,section:'projects',id:project.id})} newConversation={(project,mode)=>{void projectConversationActions.create(project,mode,projectRuntimeCopy(locale).newConversation).catch(error=>setServerRecoveryNotice(localizeWorkError(locale,error)))}}/>}
           {!builderVisible&&conversationVisible&&conversationObject&&contextLinked&&(conversationObject.object.kind==='role'&&contextRole
             ? <section className={css.conversationContext} aria-label={t('frame.context.sourceAria')}>
                 <span title={roleFieldText(contextRole,'duty',t)}>{dutyLead(roleFieldText(contextRole,'duty',t))}</span>
@@ -2634,7 +2968,7 @@ export function WorkbenchFrame({assistantActivity,assistantChat,groupWorkLinks,e
             home:state.view==='home',ready:state.view!=='home'||homeInputValid&&!homeInputChecking,retainingInput:homeInputValid&&homeInputChecking,
             engaged:sessionId=>{if(latestState.current.view==='home'&&mainSession.getSnapshot()===sessionId)actions.openMessages('native')},
             notice:state.view==='home'&&(!homeInputValid||homeInputChecking)?<HomeNativePreparationNotice locale={locale} error={homeInputError} retry={()=>setHomeRetry(value=>value+1)} reload={()=>window.location.reload()} ready={homeManagement.ready} resetKey={homeRetry} chooseLocation={()=>requestCreation({},true)}/>:undefined,
-            overview:<WorkHome assistantName={assistantName} current={current} workTasks={tasks.tasks} colleagues={tasks.roles} conversationLinks={activeObjectLinks} attention={actions.openAttention} attentionStatus={attentionStatus} planStatus={planStatus} management={management} plans={()=>actions.openPlans()} visible={state.view==='home'} work={work} useSessions={useSessions} open={()=>actions.navigate('messages')} openTask={actions.openTask} openTasks={()=>actions.navigate('tasks')}/>,
+            overview:<WorkHome taskRunChat={taskRunChat} assistantName={assistantName} current={current} workTasks={tasks.tasks} colleagues={tasks.roles} conversationLinks={activeObjectLinks} attention={actions.openAttention} attentionStatus={attentionStatus} planStatus={planStatus} management={management} plans={()=>actions.openPlans()} visible={state.view==='home'} work={work} useSessions={useSessions} open={()=>actions.navigate('messages')} openTask={actions.openTask} openTasks={()=>actions.navigate('tasks')}/>,
           })}</div></AssistantConversationTitleContext.Provider>
           {builderState.sessionKind==='daily'&&(state.view==='home'||conversationVisible)&&dailyStatus}
           {builderVisible&&builderFlow&&<section key="business-builder" className={css.builderPreview}><BusinessBuilderPanel flow={builderFlow} onContinueEditing={()=>{const sessionId=builderFlow.getSnapshot().binding?.sessionId;if(!sessionId||mainSession.getSnapshot()!==sessionId||work.getSnapshot().sessionId!==sessionId)return;setBuilderTab('conversation');requestAnimationFrame(()=>{if(latestState.current.view==='messages'&&latestState.current.messageMode==='native'&&mainSession.getSnapshot()===sessionId&&work.getSnapshot().sessionId===sessionId)conversationDraftInput(sessionId)?.focus?.()})}} openConnections={(scope,loadId)=>actions.openIndustryResources({scope,loadId})} renderPage={projection=><BusinessConfigurationPage projection={projection} colorScheme={state.colorScheme}/>} onOpenSaved={result=>openBusinessScope(result.scope)}/></section>}
@@ -2662,7 +2996,13 @@ export function WorkbenchFrame({assistantActivity,assistantChat,groupWorkLinks,e
           <div className={css.capabilityCenter} hidden={state.view!=='market'}>
           <MarketPage inCapabilityCenter refreshScopes={loadBusinessDirectory} dashboardResources={dashboardResources} colorScheme={state.colorScheme} openConnections={scope=>actions.openIndustryResources({scope})} openBusiness={openBusinessScope} key={marketConfigurationKey} {...(marketMcpConnectionApi?{managedMcpConnectionApi:marketMcpConnectionApi}:{})} {...(returnOrigin&&catalogEntryRequest?{catalogEntryRequest}:{})} manageIndustryLoad={loadId=>actions.openIndustryResources({loadId})} navigationState={{...marketEntryNavigation,query:state.navigationDirectories.market?.query??'',selectedId:state.navigationDirectories.market?.selectedId}} onNavigationChange={next=>actions.rememberDirectory('market',{query:next.query,category:writeDirectoryFilterCategory({category:next.category,mobileLayer:next.mobileLayer,appsMine:String(next.appsMine??false),appsCategory:next.appsCategory??'all'}),selectedId:next.selectedId})} onCatalogReady={availableIds=>{if(!restorePending.current.market||state.marketMode!=='catalog')return;restorePending.current.market=false;if(!state.marketItemId||availableIds.includes(state.marketItemId))return;const restored=reconcileAvailableDirectoryTarget({id:state.marketItemId},availableIds,state.detail,'market');actions.reconcileDirectory('market',restored.id,restored.detail)}} marketCatalogApi={marketCatalogApi} skillSecretsApi={skillSecretsApi} githubSourceApi={githubSourceApi} skillUpgradeApi={skillUpgradeApi} skillAvailabilityApi={skillAvailabilityApi} skillInstallApi={skillInstallApi} marketPluginInstallApi={marketPluginInstallApi} contentApi={marketContentApi} industryReview={{loads:savedIndustryLoads,upgrade:upgradeIndustryLoad,rolesReady:industryRoleDirectory==='ready',rolesFailed:industryRoleDirectory==='failed',refreshRoles:()=>{void loadIndustryRoles().catch(()=>{})},context:{industryRoles,tasks:tasks.tasks.filter(task=>task.storage==='persistent'),plans:tasks.continuous.plans},open:(kind,id)=>{if(kind==='role')actions.previewRole(id);else if(kind==='task')actions.openTask(id);else actions.openPlans({kind:'plan',id})}}} {...(businessSpace?{space:businessSpace}:{})} saveResolved={item=>{const current=marketRef.current;changeMarket({...current,items:mergeMarketItems(current.items,[item])});actions.openMarket(item.id)}} spaces={scopeLabels} industryLoads={{api:industryLoadApi,loads:savedIndustryLoads,error:industryLoadError,save:async(input:IndustryLoadCreateInput)=>{try{const row=await industryLoadApi.create(input);industryLoadGeneration.current++;mergeIndustryLoad(row);void loadBusinessDirectory().catch(()=>{});void loadIndustryLoads().catch(()=>{});actions.openIndustryResources({loadId:row.id})}finally{refreshIndustryLoadState(value=>value+1)}},recover:async()=>{try{const row=await industryLoadApi.recover();industryLoadGeneration.current++;mergeIndustryLoad(row);void loadBusinessDirectory().catch(()=>{});void loadIndustryLoads().catch(()=>{});actions.openIndustryResources({loadId:row.id})}finally{refreshIndustryLoadState(value=>value+1)}}}} planFromTemplate={item=>{const source=findMarketItem(marketRef.current.items,item.id);if(!source)throw Error(t('frame.p5.templateMissing'));const template=planTemplate(source);actions.preparePlan({template,...(template.example?{}:{source:fixedPlanSource(template,source)}),fields:templatePlanFields(template,localizedScopeNames)})}} {...(pendingMarketCategory?{forceCategory:pendingMarketCategory}:{})} onForceCategoryHandled={completeMarketCategory} installations={{visible:state.marketMode==='installations',selected:state.installationId,open:actions.openInstallations,market:actions.openMarket}} industryResources={state.marketMode==='industry-resources'&&industryResourceFilter?industryResources(industryResourceFilter):undefined} visible={state.view==='market'} state={market} itemId={state.marketItemId} intentId={state.marketIntentId} open={actions.openMarket} change={changeMarket} update={updateIntent} prepare={prepareMarket} capabilities={()=>actions.openCapabilityCatalog()} mine={{skillInstallApi:skillInstallApi,pluginDirectory:{loading:industryPluginLoading,error:industryPluginError,partial:industryPluginPartial},runtimeExtensions:runtimeExtensions,resolveExtensionText:resolveExtensionText,plugins:industryPlugins,refreshPlugins:loadIndustryPlugins,configureIndustryResource:target=>actions.openIndustryResources(target),industryLoadsReady:industryLoadDirectory==='ready',navigationState:{...capabilityNavigation,query:state.navigationDirectories.capabilities?.query??'',selectedId:state.navigationDirectories.capabilities?.selectedId},onNavigationChange:next=>actions.rememberDirectory('capabilities',{query:next.query,category:writeDirectoryFilterCategory({category:next.category,mobileLayer:next.mobileLayer}),selectedId:next.selectedId}),industryLoads:savedIndustryLoads,openConversation:()=>actions.navigate('messages'),work:work,nativeSettings:openNativePlugins,pageCreate:{api:pageCreateApi,prepare:prompt=>preparePageCreation(prompt),confirmSkill:confirmPageCreateSkill,openSkill:openConfirmedPageCreateSkill,marketPluginInstallApi:marketPluginInstallApi,openExtensionMarket:()=>openMarketCategory('plugin')},businessNames:localizedScopeNames,go:openComposition}} nativeSettings={openNativePlugins} nativeModels={openNativeModels} {...(openLocalModels?{openLocalModels}:{})} openLocalModel={openNativePlugins} openRole={roleId=>{actions.previewRole(roleId);void loadRoles()}} seed={state.templateSeed} clearSeed={actions.clearTemplateSeed} configureBinding={configureBinding} targets={targets} openTarget={openTarget}/>
           </div>
-          <ResourceManager {...(openLocalModels?{onLocalModels:()=>openLocalModels('teloa.local-retrieval')}:{})} openUsage={(target,current)=>openResourceUsage(target,current,resourceUsageNavigation)} preferenceStorage={navigationStorage} onUseResource={resource=>requestCreation({goal:t('library.prepare',{name:resource.title}),scope:(resource.scopeIds.includes('general')?'general':resource.scopeIds[0]) as CollaborationScope,resources:[{id:resource.id,version:resource.version,title:resource.title}]})} localRetrievalApi={localRetrievalApi} navigationState={{...resourceNavigation,query:state.navigationDirectories.resources?.query??'',selectedId:state.navigationDirectories.resources?.selectedId}} onNavigationChange={next=>actions.rememberDirectory('resources',{query:next.query,category:writeDirectoryFilterCategory({category:next.category,mobileLayer:next.mobileLayer,libraryView:next.libraryView,browseNodeId:next.browseNodeId??''}),selectedId:next.selectedId})} api={resourceApi} roleApi={roleApi} artifactApi={artifactApi} openArtifact={async output=>{const artifact=await artifactApi.get(output.artifactId);mergeArtifacts([artifact]);openArtifacts(artifact.source,{id:artifact.id,version:artifact.versions.at(-1)!.number})}} visible={state.view==='resources'} selectedDraftId={state.resourceDraftId} targetResource={state.resourceTarget} clearTarget={actions.clearResourceTarget} openConversation={request=>requestCreation({goal:request.goal,scope:request.scope as CollaborationScope})}/>
+          <ResourceManager {...(openLocalModels?{onLocalModels:()=>openLocalModels('teloa.local-retrieval')}:{})} openUsage={(target,current)=>openResourceUsage(target,current,resourceUsageNavigation)} preferenceStorage={navigationStorage} onUseResource={resource=>requestCreation({goal:t('library.prepare',{name:resource.title}),scope:(resource.scopeIds.includes('general')?'general':resource.scopeIds[0]) as CollaborationScope,resources:[{id:resource.id,version:resource.version,title:resource.title}]})} localRetrievalApi={localRetrievalApi} navigationState={{...resourceNavigation,query:state.navigationDirectories.resources?.query??'',selectedId:state.navigationDirectories.resources?.selectedId}} onNavigationChange={next=>actions.rememberDirectory('resources',{query:next.query,category:writeDirectoryFilterCategory({category:next.category,mobileLayer:next.mobileLayer,libraryView:next.libraryView,browseNodeId:next.browseNodeId??''}),selectedId:next.selectedId})} api={objectResourceApi} roleApi={roleApi} artifactApi={artifactApi} artifactReaderRef={setLibraryArtifactMount} artifactReaderOpen={state.view==='resources'&&artifactOpen} onCloseArtifact={closeArtifacts} openArtifact={async output=>{
+            const request=++artifactReadIntent.current,location=libraryArtifactLocation.current,api=artifactApi
+            const artifact=await api.get(output.artifactId)
+            if(artifactReadIntent.current!==request||libraryArtifactLocation.current!==location||latestState.current.view!=='resources'||artifactRevisionConnection.current.artifactApi!==api)return
+            if(!artifact.versions.some(version=>version.number===output.number))throw Object.assign(Error(),{code:'teloa/version-conflict'})
+            mergeArtifacts([artifact]);openArtifacts(artifact.source,{id:artifact.id,version:output.number})
+          }} visible={state.view==='resources'} selectedDraftId={state.resourceDraftId} targetResource={state.resourceTarget} clearTarget={actions.clearResourceTarget} openConversation={request=>requestCreation({goal:request.goal,scope:request.scope as CollaborationScope})}/>
 
         </main>
         <div id={DETAILS_TRACK_ID} role="region" hidden={!conversationVisible&&!artifactRailShown||builderVisible} className={clsx(css.details,artifactRailShown&&css.artifactDetails)} style={{['--teloa-details-width' as string]:detailsWidth+'px'}} aria-label={t('frame.nativeToolDetailsAria')}>
@@ -2670,7 +3010,7 @@ export function WorkbenchFrame({assistantActivity,assistantChat,groupWorkLinks,e
           <div className={css.nativeRail} hidden={artifactFallbackShown}>{renderSlot('rightbar',{width:detailsWidth,viewportWidth,canShow:detailsCanShow})}</div>
           <div ref={setArtifactRailMount} className={css.artifactMount} hidden={!artifactFallbackShown}/>
         </div>
-        <ArtifactPanel revisionIdentity={artifactRevisionConnection.current} requestRevision={requestArtifactRevision} methodReuseIdentity={artifactMethodReuseConnection.current} requestMethodReuse={requestArtifactMethodReuse} messageAuthor={artifactTarget?.source.kind==='session'&&artifactTarget.source.id===current?contextRole?.name:undefined} inline portal={conversationArtifactMount??artifactRailMount} open={artifactOpen} taskSources={taskArtifactSources} taskRuns={taskRunApi} recovery={{message:artifactApi.recoveryMessage(),pending:()=>artifactTarget&&(artifactTarget.source.kind==='session'||artifactTarget.source.kind==='task')?artifactApi.pendingFor(artifactTarget.source.id,artifactTarget.source.kind):[],resume:async key=>{const saved=await artifactApi.recover(key);mergeArtifacts([saved]);return {id:saved.id,version:saved.versions.at(-1)!.number}}}} loadError={artifactLoadError} artifactFileApi={artifactFileApi} nativeArtifacts={nativeArtifacts} target={artifactTarget} state={tasks} conversation={artifactConversation} close={closeArtifacts} change={saveArtifactCommand} openSource={openArtifactSource} openTask={actions.openTask}/>
+        <ArtifactPanel artifactAvailability={artifactApi} prepareModification={prepareArtifactModification} revisionIdentity={artifactRevisionConnection.current} requestRevision={requestArtifactRevision} methodReuseIdentity={artifactMethodReuseConnection.current} requestMethodReuse={requestArtifactMethodReuse} messageAuthor={artifactTarget?.source.kind==='session'&&artifactTarget.source.id===current?contextRole?.name:undefined} inline portal={libraryArtifactShown?libraryArtifactMount:conversationArtifactMount??artifactRailMount} open={artifactOpen} taskSources={taskArtifactSources} taskRuns={taskRunApi} recovery={{message:artifactApi.recoveryMessage(),pending:()=>artifactTarget&&(artifactTarget.source.kind==='session'||artifactTarget.source.kind==='task')?artifactApi.pendingFor(artifactTarget.source.id,artifactTarget.source.kind):[],resume:async key=>{const saved=await artifactApi.recover(key);mergeArtifacts([saved]);return {id:saved.id,version:saved.versions.at(-1)!.number}}}} loadError={artifactLoadError} artifactFileApi={artifactFileApi} nativeArtifacts={nativeArtifacts} target={artifactTarget} state={tasks} conversation={artifactConversation} close={closeArtifacts} change={saveArtifactCommand} openSource={openArtifactSource} openTask={actions.openTask}/>
       </div>
     </div>
     {manualBusiness&&manualBusiness.api===builderState.api&&manualBusiness.controller===businessBuilder&&<BusinessSetupManualWorkspace key={manualBusiness.requestId} controller={manualBusiness.controller} api={manualBusiness.api} scope={manualBusiness.scope} close={()=>setManualBusiness(current=>current===manualBusiness?undefined:current)} review={flow=>{const binding=flow.getSnapshot().binding;if(builderState.api!==manualBusiness.api||!binding?.sessionId||binding.scope!==manualBusiness.scope||mainSession.getSnapshot()!==binding.sessionId||work.getSnapshot().sessionId!==binding.sessionId)return;actions.closeDetail();actions.openMessages('native');setBuilderTab('preview')}}/>}
@@ -2679,9 +3019,9 @@ export function WorkbenchFrame({assistantActivity,assistantChat,groupWorkLinks,e
     {homeCreation==='group'&&<GroupForm people={rolePeople(tasks.roles.filter(role=>role.storage==='persistent'),t)} profileName={profile.displayName} error={homeCreationError} group={undefined} rules={{historyVisibleToNewMembers:true,draftsVisibleInGroup:true,mentionAllAllowed:true}} close={()=>setHomeCreation(null)} save={value=>{void saveHomeGroup(value)}}/>}
     {homeCreation==='role'&&<RoleForm work={work} resourceApi={resourceApi} runtimeConfigs={runtimeConfigApi} initial={pendingRoleFields()??homeRoleDraft} onDraft={setHomeRoleDraft} persistent close={()=>setHomeCreation(null)} save={async fields=>{const id=await createSavedRole(fields);setHomeRoleDraft(undefined);setHomeCreation(null);actions.openRole(id)}}/>}
     {builderSwitch&&<BusinessBuilderSwitchDialog switching={builderSwitch.switching} stay={()=>{setBuilderSwitch(undefined);setCreationIntent(null)}} create={()=>{const intent=builderSwitch;setBuilderSwitch(undefined);try{businessBuilder!.approveNavigation(intent.token);intent.proceed()}catch(error){setBuilderError(localizeWorkError(locale,error))}}}/>}
-    {roleScopeIntent&&<ConversationScopeDialog options={roleScopeIntent.scopes.map(id=>({id,label:localizedScopeNames[id]??id}))} name={roleScopeIntent.object.title} close={()=>setRoleScopeIntent(null)} select={scope=>{const intent=roleScopeIntent;setRoleScopeIntent(null);requestCreation({object:intent.object,scope,...(intent.goal?{goal:intent.goal}:{})})}}/>}
+    {roleScopeIntent&&<ConversationScopeDialog options={roleScopeIntent.scopes.map(id=>({id,label:localizedScopeNames[id]??id}))} name={roleScopeIntent.object.title} close={()=>{const intent=roleScopeIntent;setRoleScopeIntent(null);intent.resolve?.(false)}} select={scope=>{const {scopes:_scopes,...intent}=roleScopeIntent;setRoleScopeIntent(null);requestCreation({...intent,scope})}}/>}
     {creationIntent&&workspaceSelection&&<CreateConversationDialog management={management} current={current} initialWorkspaceId={work.getPendingCreation()?.workspaceId??assistantRecovery?.workspaceId} pendingRequestId={assistantRecovery?undefined:work.getPendingCreation()?.requestId} restart={requestId=>work.releaseCreationForNewWork(requestId)} locked={!!work.getPendingCreation()||!!assistantRecovery} busy={creating} goal={creationIntent.goal} notice={creationIntent.notice} initialError={creationError} {...(creationIntent.object?.kind==='role'?{reloadConfiguration:reloadCreationRole,scopeChoices:(tasksRef.current.roles.find(role=>role.id===creationIntent.object!.id)?.scopes??[]).map(id=>({id,label:localizedScopeNames[id]??id})),selectedScope:creationIntent.scope,onScopeChange:(scope:string)=>setCreationIntent(current=>current?{...current,scope:scope as CollaborationScope}:current)}:{})} mode={creationMode} create={async workspaceId=>{if(creationMode==='chooseWorkspace')await changeCreationLocation(workspaceId);else await createWork(workspaceId,creationIntent)}} close={closeCreation} settings={()=>{closeCreation();actions.openDirectory()}}/>}
-    <TemplateShareReceive createTeam={createIndustryTeam} openGroup={openSavedGroup} open={templateReceiveOpen} close={()=>setTemplateReceiveOpen(false)} intent={templateIntent} bridge={templateShareBridge} accept={(pkg,choice,intent)=>templateAcceptance.accept(pkg,choice,intent)} savedChoice={pkg=>templateAcceptance.choice(pkg)} openRole={actions.previewRole} configure={loadId=>actions.openIndustryResources({loadId})} openSkill={()=>actions.openCapabilityCatalog()} openConnections={()=>actions.openMarket()} targets={scopeLabels.map(label=>({scope:label.scope,title:label.title}))}/>
+    <TemplateShareReceive openOriginalSource={async(source,isCurrent)=>{const item=await marketContentApi.hydrate({kind:'bundle',contentStorage:{contentId:source.contentId,createdAt:new Date().toISOString(),loaded:true}} as MarketItem);if(!isCurrent()||shareSourceContext.current.api!==marketContentApi||shareSourceContext.current.storage!==navigationStorage)return;if(item.contentStorage?.contentId!==source.contentId||item.packageContent?.hash!==source.contentHash)throw Object.assign(Error('Original sharing source changed.'),{code:'teloa/source-unavailable'});const current=marketRef.current;changeMarket({...current,items:mergeMarketItems(current.items,[item])});actions.openMarket(item.id)}} createTeam={createIndustryTeam} openGroup={openSavedGroup} open={templateReceiveOpen} close={()=>setTemplateReceiveOpen(false)} intent={templateIntent} bridge={templateShareBridge} accept={(pkg,choice,intent)=>templateAcceptance.accept(pkg,choice,intent)} savedChoice={pkg=>templateAcceptance.choice(pkg)} openRole={actions.previewRole} configure={loadId=>actions.openIndustryResources({loadId})} openSkill={id=>actions.openInstallations('skill:'+id)} openConnections={()=>actions.openMarket()} targets={scopeLabels.map(label=>({scope:label.scope,title:label.title}))}/>
     {planDraftOpenError?.connection===planDraftConnection&&<p role="alert">{planDraftOpenError.message}</p>}
     {attentionOriginalSource&&<WorkAttentionSourceView creationIdentity={attentionOriginalSource.kind==='page-create-draft'&&['plan','role'].includes(attentionOriginalSource.entity)?planDraftConnection:undefined} source={attentionOriginalSource} businessWork={attentionBusinessApi} businessDashboard={businessDashboardApi} pageCreate={pageCreateApi} {...(attentionCreation(attentionOriginalSource)?{creation:attentionCreation(attentionOriginalSource)!}:{})} close={()=>{const key=JSON.stringify(attentionOriginalSource);setAttentionSourceSelection(current=>current?.identity===attentionIdentity&&JSON.stringify(current.source)===key?undefined:current)}} changed={()=>{void workAttention.reload()}}/>}
     {resourceMessage&&resourceMessageCurrent()&&<ResourceMessageDrawer target={resourceMessage.target} api={resourceMessage.api} isCurrent={resourceMessageCurrent} close={()=>setResourceMessage(undefined)} openConversation={async current=>{if(!current()||!resourceMessageCurrent())return;const result=await work.openSessionResult(resourceMessage.target.id,undefined,()=>current()&&resourceMessageCurrent());if(result==='opened'&&current()&&resourceMessageCurrent()){setResourceMessage(undefined);actions.openMessages('native')}}}/>}

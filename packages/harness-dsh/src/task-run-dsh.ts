@@ -1,3 +1,16 @@
+import {sourceFollowupUnpublishedProof,sourceFollowupStoppedProof} from '@teloa/backend'
+import {withColdInboxErrorWriter} from './task-run-inbox-error-cold.ts'
+import {withAcceptedInboxErrorFence,taskRunEvidenceProofEnd} from '@teloa/backend'
+import {acceptedInboxErrorEvidence} from './task-run-inbox-error.ts'
+import {filterRunToolAssembly,runToolNames as catalogRunToolNames,runToolApplicability,type RunToolApplicability} from './task-run-tool-catalog.ts'
+export type {RunToolApplicability} from './task-run-tool-catalog.ts'
+import {renderToolsSdk,renderToolsSdkPy} from '@deepseek-ai/dsh-tools'
+import {taskRunHasPublicationEvidence} from './task-run-publication.ts'
+import {markSubmissionFailure,type SubmissionPhase,type SubmissionModelStage} from './task-run-submission-diagnostic.ts'
+import {verifiedAnalysisRun} from './task-run-analysis.ts'
+import {leaseRunTools} from './task-run-tool-lease.ts'
+import {assertSourceFollowupEvents,assertUnpublishedSourceFollowupEvents,inspectSourceFollowup} from './task-run-source-followup.ts'
+import {readTaskRunSourceFollowup} from '@teloa/contract'
 import {runContextMode,runContextNotice,runSkillCatalog,runKnowledgeCatalog,runContextToolNames} from '@teloa/backend'
 import {isDeepStrictEqual} from 'node:util'
 import {readRunKnowledge,readRunSkills,readRunPlanContext,planContextNotice,planWorkContextNotice,readArtifactRevisionContext,readRunGroupContinuation,groupContinuationNotice,currentGroupContinuationNotice,TaskRunPresetError} from '@teloa/backend'
@@ -14,7 +27,8 @@ import type {SessionRequestId} from '@deepseek-ai/dsh-api-session-controller'
 import type {WorkspaceId} from '@deepseek-ai/dsh-workspace'
 import type {RunGroupFile,TaskExecutionScope,TaskRun,TaskRunSkillDatabase} from '@teloa/backend'
 import type {TaskRunRuntimeLinks} from '@teloa/backend'
-import {WorkError,taskInput,groupAttachmentImageMediaTypes,groupPromptImageBytes,groupPromptImageCount,skillFrontmatterName} from '@teloa/contract'
+import {WorkError,taskInput,readRunRoleSnapshot,groupAttachmentImageMediaTypes,groupPromptImageBytes,groupPromptImageCount,skillFrontmatterName} from '@teloa/contract'
+import {verifiedAcceptedInboxError} from './task-run-inbox-error.ts'
 import {observeTaskRun,settledStopSeq,type StopFreeze} from './task-run-observation.ts'
 import {createTaskRunBackground,isTextOnlyTaskRun,taskRunRuntimeId} from './task-run-background.ts'
 import type {TaskRunPorts} from './task-run-driver.ts'
@@ -23,11 +37,6 @@ import type {ManagedRunSkillResolver} from './managed-run-skills.ts'
 import type {ReadManagedSkillAvailability} from './role-skills-dsh.ts'
 import {readSessionEvents} from './session-events.ts'
 import {readModelVision,visionAllowsImages,type ModelVision} from './model-vision.ts'
-import {selfAuthorizedToolNames} from './self-authorized-tools.ts'
-import {groupAttachToolName} from './group-attach-tool.ts'
-import {groupReactToolName} from './group-react-tool.ts'
-import {groupMentionToolName} from './group-mention-tool.ts'
-import {roleDailyDigestToolNames} from './role-daily-log.ts'
 import {teamDelegationTools} from './role-tool-grants.ts'
 import type {} from '@deepseek-ai/dsh-system-prompt'
 import {skillHttpGrantedSkills,skillHttpToolName} from './skill-http-tool.ts'
@@ -43,12 +52,13 @@ import {readNativeReassignmentInspection,withNativeResourceInspection,type Nativ
 import {taskInputWithoutMemory} from './task-memory-input.ts'
 import {readEndedTaskRunSession} from './task-run-cold-session.ts'
 import {leaseEmployeeSystemPrompt} from './employee-system-prompt.ts'
-import {artifactRevisionScope,createReviewSourceCatalog,leaseTaskDeliveryReview,taskMethodPriority,type ReviewMaterial,type ReviewSourceInput} from './task-delivery-review.ts'
+import {leaseTaskRunApprovalContext} from './task-run-approval-context.ts'
+import {artifactRevisionScope,createReviewSourceCatalog,deliveryReviewToolName,ownsDeliveryReviewToolDefinition,leaseTaskDeliveryReview,taskMethodPriority,type ReviewMaterial,type ReviewSourceInput} from './task-delivery-review.ts'
 import type {DeliveryReviewExecutionSnapshot} from './task-delivery-review-tools.ts'
 import {readNativeReviewChildren} from './task-delivery-review-native-children.ts'
 import {leaseTaskRunToolUsage} from './task-run-tool-usage.ts'
 
-export type DshTaskNativeInput=Pick<ReturnType<typeof createNativeWorkInput>,'withNewInput'>&Partial<Pick<ReturnType<typeof createNativeWorkInput>,'readReviewState'>>
+export type DshTaskNativeInput=Pick<ReturnType<typeof createNativeWorkInput>,'withNewInput'>&Partial<Pick<ReturnType<typeof createNativeWorkInput>,'readReviewState'|'withQuiescentSession'>>
 
 export type ExactManagedSkillLoader=(sessionId:string,installationIds:readonly string[],signal:AbortSignal,database?:TaskRunSkillDatabase)=>Promise<TaskRun['skills']>
 
@@ -56,6 +66,8 @@ export type ExactManagedSkillLoader=(sessionId:string,installationIds:readonly s
 type PromptImageMediaType=typeof groupAttachmentImageMediaTypes[number]
 type PromptImagePart={type:'image';mediaType:PromptImageMediaType;data:string;name:string}
 type PromptTextPart={type:'text';text:string}
+// 来源追溯仍由固定输入和正式引用承载，展示规则不改写旧 Run 快照或来源 notice。
+const sourcePresentationNotice='来源追溯与答复展示：来源ID、消息ID、hash和固定版本用于工具、结构化引用与审计；保留这些真实字段不等于在正文逐项罗列技术标识。默认按本人当前要求展示业务事实或结果，必要引用使用已提供的可读资料名和版本；本人只要求状态、简短答复或指定格式时，不额外附上技术标识。本人明确要求技术标识时，仅提供已授权输入中实际存在的值，不猜造来源名或标识、不扩大权限。来源读取、撤回和固定版本校验仍须遵守，工具所需的精确引用继续保留，不隐藏必要的授权、审批或真实阻断。'
 
 /** 冻结快照仍保留作审计输入；本人本次目标另作为明确请求，不能从知识或历史消息抽取替代目标。 */
 function readTaskRunGoal(run:Pick<TaskRun,'taskId'|'taskVersion'|'inputText'>):string|undefined{
@@ -64,6 +76,7 @@ function readTaskRunGoal(run:Pick<TaskRun,'taskId'|'taskVersion'|'inputText'>):s
  if(!snapshot||typeof snapshot!=='object'||!('schema' in snapshot)||!['teloa.task-run-input/v2','teloa.task-run-input/v3'].includes(String(snapshot.schema)))return
  const task='task' in snapshot?snapshot.task:undefined
  if(!task||typeof task!=='object'||!('id' in task)||task.id!==run.taskId||!('version' in task)||task.version!==run.taskVersion||!('goal' in task)||typeof task.goal!=='string')throw new WorkError('teloa/storage-corrupt','任务目标与固定运行身份不一致。')
+ if('sourceFollowup' in snapshot){const f=readTaskRunSourceFollowup(snapshot.sourceFollowup);return f.notice+'\n\n本人本轮核验要求：\n'+f.instruction+'\n\n原目标与持续限制：\n'+task.goal}
  return task.goal
 }
 /** 冻结输入中服务端已核验的业务、计划与行业上下文字段；只用于说明本轮输入的来源种类。 */
@@ -72,7 +85,7 @@ const reviewContextKeys=['businessContext','planContext','industryContext','arti
 function reviewPlanContext(snapshot:Record<string,unknown>,owner:boolean){
  if(owner&&snapshot.schema==='teloa.task-run-input/v3')return readRunPlanContext(snapshot.planContext)!
  try{
-  const {notice,work,...fields}=taskInput(snapshot.planContext,['occurrenceId','goal','dataScope','delivery','work','reportGroup','event','notice'])
+  const {notice,work,...fields}=taskInput(snapshot.planContext,['occurrenceId','goal','dataScope','delivery','work','reportGroup','event','notice','goalEdit'])
   if(notice!==planContextNotice)throw Error()
   let fixedWork:Record<string,unknown>|undefined
   if(work!==undefined){
@@ -107,8 +120,14 @@ export function taskRunReviewMaterial(run:Pick<TaskRun,'taskId'|'taskVersion'|'i
    if(revision.basis)sources.push({id:'revision-original-user',kind:'context',title:'原成果的本人原指令',text:revision.basis.sourceText,sha256:revision.basis.sourceTextSha256,origin:{field:'inputText',pointer:'/artifactRevision/basis/sourceText'}})
  }else if(snapshot.planContext!==undefined){
    const plan=reviewPlanContext(snapshot,run.executor?.kind==='owner')
-   if(plan.goal!==goal)throw new WorkError('teloa/storage-corrupt','本人计划目标与固定来源不一致。')
-   goal=plan.goal;sources=[{id:'goal',kind:'goal',title:'本人已确认的计划目标',text:goal,origin:{field:'inputText',pointer:'/planContext/goal'}}]
+   if(plan.goalEdit){
+    const edit=plan.goalEdit,role=readRunRoleSnapshot(snapshot.role),business=taskInput(snapshot.businessContext,['taskId','sourceId','object','updates','action','resultMappings','notice'])
+    if(edit.taskId!==run.taskId||edit.editVersion>run.taskVersion||edit.goal!==goal||role.authorization.kind!=='task'||role.authorization.taskId!==run.taskId||role.authorization.taskContentVersion!==edit.taskContentVersion||!Array.isArray(business.updates)||!business.updates.length)throw new WorkError('teloa/storage-corrupt','本人任务编辑与固定来源不一致。')
+    sources=[{id:'goal',kind:'goal',title:'本人本轮任务目标',text:goal,origin:{field:'inputText',pointer:'/task/goal'}},{id:'plan-original-goal',kind:'context',title:'原计划领取目标',text:plan.goal,origin:{field:'inputText',pointer:'/planContext/goal'}}]
+   }else{
+    if(plan.goal!==goal)throw new WorkError('teloa/storage-corrupt','本人计划目标与固定来源不一致。')
+    goal=plan.goal;sources=[{id:'goal',kind:'goal',title:'本人已确认的计划目标',text:goal,origin:{field:'inputText',pointer:'/planContext/goal'}}]
+   }
  }else if(run.executor?.kind==='owner'||conversationSource){
    if(!conversationSource||!conversationSource.source||typeof conversationSource.sourceText!=='string'||!conversationSource.sourceText.trim()||typeof conversationSource.summary!=='string'||!conversationSource.summary.trim()||!isDeepStrictEqual([conversationSource.runId,conversationSource.taskId,conversationSource.taskVersion,conversationSource.roleId,conversationSource.roleVersion,conversationSource.sessionId,conversationSource.nativeRequestId,conversationSource.inputSha256],[run.id,run.taskId,run.taskVersion,run.roleId??null,run.roleVersion??null,run.sessionId,run.nativeRequestId,createHash('sha256').update(run.inputText).digest('hex')])||run.executor?.kind==='owner'&&(conversationSource.source.requestId!==run.executor.grantId||run.executor.grantVersion!==1)||!Number.isSafeInteger(conversationSource.source.messageSeq)||conversationSource.source.messageSeq<0||!conversationSource.source.sessionId||!conversationSource.source.messageId)throw new WorkError('teloa/forbidden','本人复核来源与固定运行不一致。')
    goal=conversationSource.sourceText;sources=[{id:'goal',kind:'goal',title:'本人原指令',text:goal,origin:{field:'workRequest',pointer:'/sourceText'}}]
@@ -120,11 +139,13 @@ export function taskRunReviewMaterial(run:Pick<TaskRun,'taskId'|'taskVersion'|'i
   sources=sources.map(source=>source.id==='goal'?{...source,id:'assignment',kind:'context' as const,title:'员工工作分工'}:source)
   sources.unshift({id:'goal',kind:'goal',title:'宿主核实的本人当前要求',text:ownerRequest.text,sha256:ownerRequest.sha256,origin:{field:'inputText',pointer:'/groupContext/ownerRequest/text'}})
   ownerGoal=ownerRequest.text
-  goal='本人当前要求：\n'+ownerRequest.text+'\n\n员工分工（不得扩大本人授权）：\n'+goal
+  const assignment=goal
+  goal='本人当前要求：\n'+ownerRequest.text
   for(const [index,prior] of (ownerRequest.priorRequests??[]).entries()){
-   goal+='\n\n原本人消息（数据、工具和审批限制继续适用，业务目标按当前要求更新）：\n'+prior.text
+   goal+='\n\n本人此前已受理要求（对当前Run和接手员工持续适用；数据、工具和审批限制仅由本人后续明确变更，业务目标按当前要求更新）：\n'+prior.text
    sources.push({id:'owner-prior:'+index,kind:'context',title:'原本人固定限制与上下文',text:prior.text,sha256:prior.sha256,origin:{field:'inputText',pointer:'/groupContext/ownerRequest/priorRequests/'+index+'/text'}})
   }
+  goal+='\n\n员工分工（不得扩大本人授权）：\n'+assignment
  }
  if(snapshot.groupContinuation!==undefined){
   if(!run.groupContext)throw new WorkError('teloa/storage-corrupt','群续办缺少原任务群来源。')
@@ -139,6 +160,7 @@ export function taskRunReviewMaterial(run:Pick<TaskRun,'taskId'|'taskVersion'|'i
    sources.push({id:'continuation-goal',kind:'goal',title:'本轮本人固定续办要求',text:continuation.text,origin:{field:'inputText',pointer:'/groupContinuation/text'}})
   }
  }
+ if(snapshot.sourceFollowup!==undefined){const f=readTaskRunSourceFollowup(snapshot.sourceFollowup);sources=sources.map(source=>source.id==='goal'?{...source,id:'original-goal',kind:'context' as const}:source);sources.unshift({id:'goal',kind:'goal',title:'本人新确认的后续核验要求',text:f.instruction,origin:{field:'inputText',pointer:'/sourceFollowup/instruction'}})}
  const ownerNames=((snapshot.groupTopic as {messages?:{authorKind?:string;authorName?:string}[]}|undefined)?.messages??[]).filter(message=>message.authorKind==='self').flatMap(message=>message.authorName?[message.authorName]:[])
  const requiredDeclarations=ownerReviewDeclarations(ownerGoal,ownerNames)
  skills.forEach((skill,index)=>sources.push({id:`method:${index+1}`,kind:'method',title:skill.name,text:skill.content,sha256:skill.sha256,origin:{field:'skills',pointer:`/${index}/content`}}))
@@ -170,7 +192,7 @@ export type GroupPromptPorts={
  /** 本轮图片没能交给模型时登记一次；回帖由发布器前置固定文案，模型自陈不可信。 */
  markNoVision:(sessionId:string,nativeRequestId:string,signal?:AbortSignal)=>void|Promise<void>
 }
-export type DshTaskRunPorts=TaskRunPorts&{groupPrompt?:GroupPromptPorts;employeeExperienceEnabled?:(run:TaskRun,signal:AbortSignal)=>Promise<boolean>;isDigestRun?:(run:TaskRun,signal:AbortSignal)=>Promise<boolean>;ensureModels:(agent:Agent,run:TaskRun)=>void;reassignmentInspection:(run:Pick<TaskRun,'id'|'taskId'|'sessionId'|'nativeRequestId'>,signal:AbortSignal)=>Promise<NativeAbortInspection>;withReassignmentInspection:<T>(run:Pick<TaskRun,'id'|'taskId'|'sessionId'|'nativeRequestId'>,signal:AbortSignal,work:(inspection:NativeAbortInspection,resources:NativeResourceFacts|undefined,signal:AbortSignal)=>Promise<T>)=>Promise<T>}
+export type DshTaskRunPorts=TaskRunPorts&{groupPrompt?:GroupPromptPorts;employeeExperienceEnabled?:(run:TaskRun,signal:AbortSignal)=>Promise<boolean>;isDigestRun?:(run:TaskRun,signal:AbortSignal)=>Promise<boolean>;isReplyRun?:(run:TaskRun,signal:AbortSignal)=>Promise<boolean>;isAnalysisRun?:(run:TaskRun,signal:AbortSignal)=>Promise<boolean>;ensureModels:(agent:Agent,run:TaskRun)=>void;reassignmentInspection:(run:Pick<TaskRun,'id'|'taskId'|'sessionId'|'nativeRequestId'>,signal:AbortSignal)=>Promise<NativeAbortInspection>;withReassignmentInspection:<T>(run:Pick<TaskRun,'id'|'taskId'|'sessionId'|'nativeRequestId'>,signal:AbortSignal,work:(inspection:NativeAbortInspection,resources:NativeResourceFacts|undefined,signal:AbortSignal)=>Promise<T>)=>Promise<T>}
 /** 按 Run 快照里的 roleId 补读岗位自身范围的窄端口；找不到岗位回 undefined，由调用方退回任务范围。 */
 export type ReadRoleScopes=(owner:string,roleId:string,signal:AbortSignal)=>Promise<readonly string[]|undefined>
 
@@ -201,7 +223,6 @@ export function runDateLine(now=new Date()):string{
  return `Run date: ${date} (time zone ${timeZone})`
 }
 
-const browserToolPrefix='mcp__playwright-mcp__',browserCloseTool=browserToolPrefix+'browser_close'
 /**
  * 发送前用 DSH 公开的 `tools.restrict` 把本次运行没授权的全局工具从该会话的工具列表里拿掉：从前守卫只在
  * 模型真调用时拒绝，工具仍摆在列表里，模型会先试 skill/bash/write 各一两次再转正文，每次白花数秒。
@@ -211,35 +232,59 @@ const browserToolPrefix='mcp__playwright-mcp__',browserCloseTool=browserToolPref
  * 回的是撤掉这次收窄的 disposer：只在请求确定没交给原生时由发送方调用（见 `send`）。
  *
  * 只在特定运行里有用的工具按本次运行的静态前提再筛一次：没有群上下文时不放群工具，不是每日小结运行时不放
- * 小结工具；固定计划汇报只保留本轮成果声明，不开放群表情。授权清单写了也一样，各自的闸仍是最终裁定。
+ * 小结工具；小结运行只保留两个小结工具。固定计划汇报只保留本轮成果声明，不开放群表情。授权清单写了也一样，各自的闸仍是最终裁定。
  *
  * DSH Team 把整组工具和 `team:policy` 策略段注册在每个根 Agent 自己的作用域里，`restrict` 只作用于继承来的
  * 工具（自身作用域的名字传进去会抛错），所以它们既不进 allow 名单，也收不掉。这里在同一 Agent 的提示组装里
  * 撤下未授权的 Team 工具；一个都没授权时连策略段一起撤下。执行闸（`delegationToolAllowed`）不变。
+ * 小结对最终工具面使用白名单，覆盖预设在 Agent 自身层或稍后注册的工具；同时撤下不可用的委派说明。
  */
-export type RunToolApplicability={group:boolean;digest:boolean;report?:boolean;context?:boolean}
-const groupRunToolNames:readonly string[]=[groupAttachToolName,groupReactToolName,groupMentionToolName]
 const teamPolicySection='team:policy'
+/** 交付已有文件复用工作目录 read；真正范围与当前 Run 仍由文件守卫核对，不作为自授权工具。 */
 function runToolNames(allowedTools:readonly string[],applicable:RunToolApplicability):Set<string>{
- const inapplicable=new Set<string>([...(applicable.context?[]:runContextToolNames),...(applicable.group?[]:groupRunToolNames.filter(name=>!applicable.report||name!==groupAttachToolName&&name!==groupMentionToolName)),...(applicable.digest?[]:roleDailyDigestToolNames)])
- const keep=new Set<string>([...allowedTools,...selfAuthorizedToolNames].filter(name=>!inapplicable.has(name)))
- if(allowedTools.some(name=>name.startsWith(browserToolPrefix)))keep.add(browserCloseTool)
+ const keep=catalogRunToolNames(allowedTools,applicable)
+ keep.delete('present')
+ if(!applicable.text&&!applicable.digest&&allowedTools.includes('read'))keep.add('present')
  return keep
 }
 export function restrictRunTools(agent:Pick<Agent,'ctx'>,allowedTools:readonly string[],applicable:RunToolApplicability):()=>void{
  const keep=runToolNames(allowedTools,applicable)
- const scoped=new Set<string>(teamDelegationTools),hiddenScoped=new Set<string>(teamDelegationTools.filter(name=>!allowedTools.includes(name)))
- const visible=agent.ctx.tools.schemas(agent).map(schema=>schema.name)
- const lift=agent.ctx.tools.restrict({allow:visible.filter(name=>name!=='run_code'&&!scoped.has(name)&&keep.has(name))})
- const keepPolicy=hiddenScoped.size<scoped.size
- let release:()=>void
+ const scoped=new Set<string>(teamDelegationTools)
+ // PTC 预设在父作用域声明呈现方式；小结不能执行 run_code，只在本 Agent 租用原生呈现。
+ const restorePresentation=applicable.digest||applicable.text?agent.ctx.tools.presentAs('native'):undefined
+ let lift:(()=>void)|undefined,release:(()=>void)|undefined,denyTextTools:(()=>void)|undefined
+ const dispose=()=>{try{release?.()}finally{try{lift?.()}finally{try{denyTextTools?.()}finally{restorePresentation?.()}}}}
  try{
-  release=agent.ctx.on('system-prompt/assemble',async(_assembly,_context,next)=>{
+  // 单调守卫位于原生扩展审批之后、工具体派发之前；局部/后注册工具与PTC传输也不能绕过。
+  if(applicable.text)denyTextTools=agent.ctx.tools.guard(exec=>keep.has(exec.name)?undefined:keep.size?'本次工作只允许提出本人分身的私有记忆候选。':'本次工作仅获准处理固定文本资料，不能执行任何工具。')
+  const visible=agent.ctx.tools.schemas(agent).map(schema=>schema.name)
+  lift=agent.ctx.tools.restrict({allow:visible.filter(name=>name!=='run_code'&&!scoped.has(name)&&keep.has(name))})
+  release=agent.ctx.on('system-prompt/assemble',async(_assembly,context,next)=>{
    const result=await next()
-   return {...result,tools:result.tools.filter(tool=>!hiddenScoped.has(tool.name)),sections:keepPolicy?result.sections:result.sections.filter(section=>section.name!==teamPolicySection)}
+   if(applicable.text)return filterRunToolAssembly(result,keep)
+   if(applicable.digest)return {...result,
+    tools:result.tools.filter(tool=>keep.has(tool.name)),
+    sections:result.sections.filter(section=>section.name!==teamPolicySection&&section.name!=='tool:subagent'),
+    contexts:result.contexts.filter(context=>context.name!=='tool:subagent:depth'),
+   }
+   // 父本地及迟注册工具不受 restrict 的继承过滤约束，最终目录与说明再按同一 Run 白名单收窄。
+   const finalKeep=new Set(keep);finalKeep.add('run_code')
+   if(context.scope===agent&&ownsDeliveryReviewToolDefinition(agent))finalKeep.add(deliveryReviewToolName)
+   const filtered=filterRunToolAssembly(result,finalKeep)
+   if(!filtered.tools.some(tool=>tool.name==='run_code')||!filtered.sections.some(section=>section.name==='tools:sdk'))return filtered
+   // PTC 的 schema 是 transport；真正能力列在官方 SDK section 中，必须同步投影，不能只删 wire schema。
+   const scope=context.scope??agent,runtime=agent.ctx.get('ptcRuntime')
+   if(!runtime)throw new WorkError('teloa/unavailable','当前运行的工具传输不可用。')
+   const schemas=agent.ctx.tools.schemas(scope).filter(tool=>tool.name!=='run_code'&&keep.has(tool.name)).map(tool=>{
+    const definition=agent.ctx.tools.get(tool.name,scope)
+    if(!definition)throw new WorkError('teloa/conflict','当前运行的工具目录已变化。')
+    return {...tool,output:structuredClone(definition.output.schema)}
+   })
+   const sdk=runtime.language==='python'?renderToolsSdkPy(schemas):renderToolsSdk(schemas,runtime.programFormat)
+   return {...filtered,sections:filtered.sections.map(section=>section.name==='tools:sdk'?{...section,text:sdk}:section)}
   })
- }catch(error){lift();throw error}
- return ()=>{release();lift()}
+ }catch(error){dispose();throw error}
+ return dispose
 }
 
 /**
@@ -359,16 +404,37 @@ export async function prepareDshTaskSession(ctx:Context,sessionId:string,agentPr
 }
 
 /** 公开 SessionController 解析身份；有固定模型时经附件准入 + Agent 队列发送，SessionStore 落盘。 */
-export function dshTaskRunPorts(ctx:Context,owner:string,inspect:(sessionId:string)=>Promise<{ownerId:string;sessionId:string;status:string}>,loadKnowledge?:TaskRunPorts['loadKnowledge'],resolveManaged?:ManagedRunSkillResolver,readManagedAvailability?:ReadManagedSkillAvailability,ensureRunSkills?:(run:TaskRun,signal:AbortSignal)=>Promise<void>,loadExactManaged?:ExactManagedSkillLoader,readRoleScopes?:ReadRoleScopes,runtimeLinks?:TaskRunRuntimeLinks,prepareModel?:Parameters<typeof createTaskModelRouting>[1],declaredSkillSecrets?:(skill:string)=>Promise<ResolvedSkillSecrets|undefined>,nativeInput?:DshTaskNativeInput,goal?:Pick<TaskRunPorts,'goalObservation'|'stopGoal'>):DshTaskRunPorts{
+export function dshTaskRunPorts(ctx:Context,owner:string,inspect:(sessionId:string)=>Promise<{ownerId:string;sessionId:string;status:string}>,loadKnowledge?:TaskRunPorts['loadKnowledge'],resolveManaged?:ManagedRunSkillResolver,readManagedAvailability?:ReadManagedSkillAvailability,ensureRunSkills?:(run:TaskRun,signal:AbortSignal)=>Promise<void>,loadExactManaged?:ExactManagedSkillLoader,readRoleScopes?:ReadRoleScopes,runtimeLinks?:TaskRunRuntimeLinks,prepareModel?:Parameters<typeof createTaskModelRouting>[1],declaredSkillSecrets?:(skill:string)=>Promise<ResolvedSkillSecrets|undefined>,nativeInput?:DshTaskNativeInput,goal?:Pick<TaskRunPorts,'goalObservation'|'stopGoal'>,runtimeId:string=taskRunRuntimeId):DshTaskRunPorts{
  const store=Reflect.get(ctx,'sessions') as unknown as SessionStore
  const ensureModels=createTaskModelRouting(ctx,prepareModel)
+ type ContinuationProof={unknown?:true;errorRecovery?:true;stoppedContinuation?:true;previous:TaskRun;team:ReadonlySet<string>|undefined;goal:Parameters<typeof observeTaskRun>[3]}
+ const runLeases=new WeakMap<Agent,{runId:string;dispose:()=>void}>(),retired=new WeakMap<Agent,string>(),continuing=new WeakMap<Agent,ContinuationProof>()
+ const approvalLeases=new WeakMap<Agent,{runId:string;dispose:()=>void}>()
+ const ensureApprovalContext=(agent:Agent,run:TaskRun)=>{
+  // 子 Agent 的审批留在其自己的日志，不把根 Run 的事实移植到子会话。
+  if(!agent.ctx||String(agent.session.id)!==run.sessionId)return
+  const previous=approvalLeases.get(agent)
+  if(previous){if(previous.runId!==run.id)throw new WorkError('teloa/conflict','会话已装配其他执行的审批事实。');return previous.dispose}
+  const release=leaseTaskRunApprovalContext(agent,run,async events=>({team:await ports.continuations?.(run,events),goal:await ports.goalObservation?.(run,events)}))
+  const state={runId:run.id,dispose:()=>{release();if(approvalLeases.get(agent)===state)approvalLeases.delete(agent)}}
+  approvalLeases.set(agent,state);return state.dispose
+ }
  if(Reflect.get(ctx,'jobs')&&!runtimeLinks)throw new WorkError('teloa/dependency-unavailable','后台工作关联存储未配置。')
- const background=runtimeLinks?createTaskRunBackground(ctx,runtimeLinks,undefined,taskRunRuntimeId,goal?.goalObservation):undefined
+ // 精确未发布 owner 仅退出活动判据；数据库原始关联与提交审计永久保留。
+ if(runtimeLinks){
+  const raw=runtimeLinks
+  runtimeLinks={...raw,list:async input=>{
+   const rows=await raw.list(input),unpublished=await ports.submissions?.unpublishedOwnerIds?.(input.runId)??[]
+   return rows.filter(row=>!(row.kind==='job'&&row.payload.record==='owner'&&row.nativeId==='owner:'+row.payload.runtimeId+':'+row.sessionId&&unpublished.includes(row.nativeId)))
+  }}
+ }
+ const background=runtimeLinks?createTaskRunBackground(ctx,runtimeLinks,undefined,runtimeId,goal?.goalObservation):undefined
  if(background)ctx.effect(()=>background.dispose)
  // 停止后日志 seq 的冻结计时。只为「已请求停止」的记录建条目，收口或恢复运行即清除。
  const stopFreeze=new Map<string,StopFreeze>()
  // 只串行同一固定请求的本地模型代发；结束即释放，不保存另一份受理状态。
  const sending=new Map<string,Promise<void>>()
+ const fencedSubmissions=new Set<string>()
  const serialize=async(key:string,operation:()=>Promise<void>)=>{
   const previous=sending.get(key)
   let release!:()=>void
@@ -431,11 +497,29 @@ export function dshTaskRunPorts(ctx:Context,owner:string,inspect:(sessionId:stri
   }
   return created
  }
- const checkAgent=async(run:Pick<TaskRun,'sessionId'>&Partial<Pick<TaskRun,'id'|'modelPolicy'|'permissionMode'|'taskId'|'taskVersion'|'linkVersion'|'agentPresetId'|'roleId'|'skills'|'knowledge'|'inputText'>>,signal:AbortSignal,target?:TaskExecutionScope,resolved?:Agent)=>{
+ const checkPreset=(run:Partial<Pick<TaskRun,'agentPresetId'>>,agent:Agent)=>{
+  const effectivePreset=run.agentPresetId===undefined?undefined:ctx.agentPresets?.composedPreset(agent.ctx)
+  if(run.agentPresetId==='cordis'||agent.session.header?.agentPreset==='cordis'||effectivePreset==='cordis')throw new WorkError('teloa/forbidden','创造模式仅供本人会话使用，不能用于员工运行。')
+  if(run.agentPresetId!==undefined&&(agent.session.header.agentPreset!==run.agentPresetId||effectivePreset!==run.agentPresetId))throw new WorkError('teloa/version-conflict','原生会话运行配置与本次执行快照不一致。')
+ }
+ const assertReady=(agent:Agent,proof?:ContinuationProof)=>{
+  const previous=proof?.previous
+  const events=readSessionEvents(agent.session)
+  if(agent.status!=='idle'||agent.inbox.nextTurn.length||agent.inbox.nextStep.length)throw new WorkError('teloa/conflict','原会话尚未空闲，不能接续执行。')
+  if(!events.some(event=>event.type==='turn/start'||event.type==='user/message')){if(previous)throw new WorkError('teloa/conflict','原告警历史不可核对，不能接续空会话。');return}
+  if(proof?.unknown){if(previous?.sessionId!==agent.session.id)throw new WorkError('teloa/forbidden','核验会话与原执行不一致。');assertSourceFollowupEvents(previous,events);return}
+  if(proof?.errorRecovery&&previous?.sessionId===agent.session.id&&sourceFollowupUnpublishedProof(previous)){assertUnpublishedSourceFollowupEvents(previous,events);return}
+  if(!previous||previous.sessionId!==agent.session.id||previous.state!=='ended'||previous.evidence?.state!=='ended'||previous.stopRequestedAt!==null&&!(proof?.stoppedContinuation&&sourceFollowupStoppedProof(previous))||(previous.evidence.reason!=='completed'&&!((proof?.errorRecovery||proof?.stoppedContinuation)&&previous.evidence.reason==='error')))throw new WorkError('teloa/conflict','已有会话缺少正常收尾的同源续报依据。')
+  const observed=previous.evidence.inputAnchor?verifiedAcceptedInboxError(previous,events):observeTaskRun(events,previous.nativeRequestId,proof?.team,proof?.goal)
+  if(!isDeepStrictEqual(observed,previous.evidence)||events.slice(previous.evidence.endSeq+1).some(event=>event.type==='turn/start'||event.type==='user/message'||event.type==='agent/inbox/spliced'&&event.data.inserted.length>0))throw new WorkError('teloa/conflict','原执行终态或后续输入已变化，不能接续会话。')
+ }
+ const checkAgent=async(run:Parameters<TaskRunPorts['check']>[0],signal:AbortSignal,target?:TaskExecutionScope,resolved?:Agent)=>{
   if(target)validateTarget(run,target)
+  const special=run.id?await ports.sourceFollowup?.(run as TaskRun):null,unknown=special?.state==='submission_unknown',errorRecovery=(run as TaskRun).sourceFollowup?.kind==='error-recovery'&&!!special&&(special.state==='ended'&&special.evidence?.state==='ended'&&special.evidence.reason==='error'||sourceFollowupUnpublishedProof(special)!==undefined)
+  const stoppedContinuation=(run as TaskRun).sourceFollowup?.kind==='stopped-continuation'&&!!special&&sourceFollowupStoppedProof(special)!==undefined
+  if(special)await ports.inspectSourceFollowup!(special,signal)
   signal.throwIfAborted();const agent=resolved??await resolve(run);signal.throwIfAborted()
-  if(run.agentPresetId==='cordis'||agent.session.header?.agentPreset==='cordis')throw new WorkError('teloa/forbidden','创造模式仅供本人会话使用，不能用于员工运行。')
-  if(run.agentPresetId!==undefined&&agent.session.header.agentPreset!==run.agentPresetId)throw new WorkError('teloa/version-conflict','原生会话运行配置与本次执行快照不一致。')
+  checkPreset(run,agent)
   if(run.permissionMode)applyDshTaskPermissionMode(ctx,agent.session,run.permissionMode,signal)
   if(run.knowledge?.length){
    if(!loadKnowledge||!target)throw new WorkError('teloa/conflict','知识资料读取缺少可信任务关联。')
@@ -453,14 +537,40 @@ export function dshTaskRunPorts(ctx:Context,owner:string,inspect:(sessionId:stri
    const current=await reloadSkills({sessionId:run.sessionId,skills:run.skills},signal)
    if(JSON.stringify(current)!==JSON.stringify(run.skills))throw new WorkError('teloa/version-conflict','员工技能已变化，请重新核对执行准备。')
   }
-  if(agent.status!=='idle'||(agent.inbox.nextTurn.length>0||agent.inbox.nextStep.length>0)||readSessionEvents(agent.session).some(event=>event.type==='turn/start'||event.type==='user/message'))throw new WorkError('teloa/conflict','请为本次执行创建新的空闲会话，不能占用已有对话。')
+  const previous=special??run.previousRun??(run.id?await ports.sourceContinuation?.(run as TaskRun):undefined)??undefined
+  const events=readSessionEvents(agent.session),proof=previous?{...(unknown?{unknown:true as const}:{}),...(errorRecovery?{errorRecovery:true as const}:{}),...(stoppedContinuation?{stoppedContinuation:true as const}:{}),previous,team:await ports.continuations?.(previous,events),goal:await ports.goalObservation?.(previous,events)}:undefined
+  signal.throwIfAborted();assertReady(agent,proof)
+  if(previous){
+   if(run.taskId!==undefined&&run.taskId!==previous.taskId||run.roleId!==undefined&&run.roleId!==previous.roleId)throw new WorkError('teloa/forbidden','续报不能换用其他任务或员工的会话。')
+   await serialize('continuation:'+run.sessionId,async()=>{
+    if(retired.get(agent)===previous.id){
+     // 旧发送的 finally 可能迟到；只清这一已核验旧 Run，不能撤掉当前新 Run。
+     const late=runLeases.get(agent)
+     if(late?.runId===previous.id){late.dispose();if(runLeases.get(agent)===late)runLeases.delete(agent)}
+     return
+    }
+    signal.throwIfAborted();assertReady(agent,proof)
+    if(await ports.subagentState?.(previous,signal)==='outstanding'||await ports.flowState?.(previous)==='outstanding')throw new WorkError('teloa/conflict','原告警仍有未结清的子工作。')
+    await ports.prepareContinuation?.(previous,signal,unknown?{unknownVerification:true}:stoppedContinuation?{stoppedContinuation:true}:errorRecovery?{errorRecovery:true}:undefined)
+    await background?.prepareContinuation(previous)
+    await ports.releaseRunSkills?.(previous,signal)
+    signal.throwIfAborted();assertReady(agent,proof)
+    const leases=runLeases.get(agent)
+    if(leases&&leases.runId!==previous.id)throw new WorkError('teloa/conflict','会话已装配其他执行的运行配置。')
+    const approvals=approvalLeases.get(agent)
+    if(approvals&&approvals.runId!==previous.id)throw new WorkError('teloa/conflict','会话已装配其他执行的审批事实。')
+    leases?.dispose();if(runLeases.get(agent)===leases)runLeases.delete(agent);approvals?.dispose();ensureModels.release(agent,previous.id);retired.set(agent,previous.id)
+   })
+   continuing.set(agent,proof!)
+  }else continuing.delete(agent)
   return agent
  }
  const ports:DshTaskRunPorts={
   ...goal,
+  inspectSourceFollowup:(run,signal)=>inspectSourceFollowup(ctx,run,signal,async events=>{const observed=observeTaskRun(events,run.nativeRequestId,await ports.continuations?.(run,events),await ports.goalObservation?.(run,events));if(!isDeepStrictEqual(run.evidence?.state==='ended'&&run.evidence.inputAnchor?verifiedAcceptedInboxError(run,events):observed,run.evidence))throw new WorkError('teloa/conflict','原执行终态已变化，不能重核成果。')}),
   resolvePreset,
   prepareSession,
-  ensureModels:(agent,run)=>{ensureModels(agent,run)},
+  ensureModels:(agent,run)=>{ensureApprovalContext(agent,run);ensureModels(agent,run)},
   prepareModels:(runtime,signal)=>resolveTaskModelPolicy(ctx,runtime,signal),
   checkPermissionMode:async(permissionMode,signal)=>{signal.throwIfAborted();taskRunPermissionPreset(ctx,permissionMode)},
   checkModel:async(model,signal)=>{await resolveRequestedTaskModelPolicy(ctx,model,signal)},
@@ -479,28 +589,41 @@ export function dshTaskRunPorts(ctx:Context,owner:string,inspect:(sessionId:stri
    if((run.roleSnapshot||run.executor?.kind==='owner')&&!nativeInput)throw new WorkError('teloa/unavailable','工作服务正在准备，请稍后重试。')
    if(typeof run.nativeRequestId!=='string'||!run.nativeRequestId)throw new WorkError('teloa/forbidden','执行请求身份未就绪。')
    const context=Object.freeze({producer:'task-run' as const,identity:JSON.stringify([owner,run.id,run.taskId,run.taskVersion,run.linkVersion,run.sessionId,run.nativeRequestId])})
+   let closed=false,enteredPublication=false,phase:SubmissionPhase='resolve',modelStage:SubmissionModelStage|undefined
+   const enterPublication=()=>{if(closed||fencedSubmissions.has(run.id))throw new WorkError('teloa/conflict','原提交尝试已经关闭，请核对原运行。');enteredPublication=true;phase='publication'}
    const operation=async()=>{
     validateTarget(run,target)
     signal.throwIfAborted()
     // 排队或历史中同 rpcId 已受理时只回原回执，不读新附件或重新申请工作许可。
+    const unknownPrevious=await ports.sourceFollowup?.(run)
+    if(unknownPrevious)await ports.inspectSourceFollowup!(unknownPrevious,signal)
     const agent=await resolve(run)
     signal.throwIfAborted()
     const session=agent.session
     if(nativeInput&&(agent.id!==run.sessionId||session.id!==run.sessionId||ctx.agents.get(agent.id)!==agent||store.get(agent.id)!==session))throw new WorkError('teloa/forbidden','执行会话与固定请求身份不一致。')
     if(accepted(agent,run.nativeRequestId))return
     // 收窄与发送都用核对过的那一个 agent，不再另解析一次。
-    await checkAgent(run,signal,target,agent)
+    phase='check';await checkAgent(run,signal,target,agent)
     await ensureRunSkills?.(run,signal)
     signal.throwIfAborted()
-    await background?.start(run)
     // 小结身份只认宿主接入的可信端口（与小结工具的闸同一真源）；判不出或没接端口按「不是」收起，取消照常上抛。
     let digest=false
     if(ports.isDigestRun){try{digest=await ports.isDigestRun(run,signal)===true}catch{digest=false}}
+    let noTools=run.textCapability!==undefined||await verifiedAnalysisRun(run,signal,ports.isAnalysisRun)
+    if(!noTools&&!digest&&run.groupContext){
+     if(!ports.isReplyRun)throw new WorkError('teloa/dependency-unavailable','群执行模式的可信读口尚未就绪。')
+     const reply=await ports.isReplyRun(run,signal)
+     if(typeof reply!=='boolean')throw new WorkError('teloa/storage-corrupt','群执行模式的固定回执无效。')
+     noTools=reply
+    }
+    if(noTools&&run.allowedTools.length)throw new WorkError('teloa/storage-corrupt','纯文本执行不能携带工具授权。')
     signal.throwIfAborted()
+    phase='background';await background?.start(run);phase='tools'
     // 测试替身的 agent 可能没有 ctx；真实 Agent 一定有。收窄失败原样上抛，不让「看起来能跑」掩盖装配问题。
-    const lift=agent.ctx?restrictRunTools(agent,run.allowedTools,{group:run.groupContext!==undefined,digest,report:taskRunPlanReportOccurrence(run)!==undefined,context:run.contextMode===runContextMode}):undefined
+    const lift=agent.ctx?leaseRunTools(agent,run.nativeRequestId,noTools,()=>restrictRunTools(agent,run.allowedTools,runToolApplicability(run,digest,noTools)),noTools?[...runToolNames([],runToolApplicability(run,digest,true))].join(','):''):undefined
     let releaseMethods:(()=>void)|undefined
     let releaseEmployee:(()=>void)|undefined
+    let releaseApprovals:(()=>void)|undefined
     let releaseReview:(()=>void)|undefined
     let releaseToolUsage:(()=>void)|undefined
     // 固定技能与本人运行在本次请求的轮次收尾前复核交付（task-delivery-review.ts）；复核输入沿用本运行的
@@ -511,9 +634,9 @@ export function dshTaskRunPorts(ctx:Context,owner:string,inspect:(sessionId:stri
     // 保留运行期实际呈现的传输身份；复核切到原生模式后不能重猜，也不把传输写回岗位逻辑权限。
     const reviewAllowedTools=Object.freeze((()=>{
      if(!agent.ctx||!(run.executor?.kind==='owner'||requiresGroupDeliveryReview)||!runtimeLinks||!nativeInput?.readReviewState)return []
-     const tools=runToolNames(run.allowedTools,{group:run.groupContext!==undefined,digest,report:taskRunPlanReportOccurrence(run)!==undefined,context:run.contextMode===runContextMode})
+     const tools=runToolNames(run.allowedTools,runToolApplicability(run,digest,noTools))
      tools.delete('run_code')
-     const textOnly=isTextOnlyTaskRun(run)&&!(run.contextMode===runContextMode&&run.knowledge?.length)
+     const textOnly=noTools||isTextOnlyTaskRun(run)&&!(run.contextMode===runContextMode&&run.knowledge?.length)
      if(!digest&&!textOnly&&agent.ctx.tools.schemas(agent).some(tool=>tool.name==='run_code'))tools.add('run_code')
      return [...tools]
     })())
@@ -546,30 +669,45 @@ export function dshTaskRunPorts(ctx:Context,owner:string,inspect:(sessionId:stri
      ...(readExecution?{readExecution}:{}),
      publish:async(message,reviewSignal)=>{if(nativeInput)await nativeInput.withNewInput(agent,message,context,()=>{agent.inject(message)},reviewSignal);else agent.inject(message)},
      trace:entry=>ctx.logger.info(JSON.stringify({event:'task-run.delivery-review',...entry}))}):undefined
-    const modelState=(()=>{
+    phase='model';const modelState=(()=>{
      // 固定模型路由先装，复核租约沿用同一路由及参数。
-     try{releaseEmployee=agent.ctx?leaseEmployeeSystemPrompt(agent,run.roleSnapshot?.kind):undefined;releaseMethods=agent.ctx?leaseTaskRunMethods(agent,run.skills,run.contextMode===runContextMode,run.knowledge):undefined;releaseToolUsage=typeof agent.ctx?.systemPrompt?.context==='function'?leaseTaskRunToolUsage(agent,run,{continuations:events=>ports.continuations?.(run,events)??Promise.resolve(undefined),goal:events=>ports.goalObservation?.(run,events)??Promise.resolve(undefined)}):undefined;return ensureModels(agent,run)}
-     catch(error){releaseToolUsage?.();releaseReview?.();releaseMethods?.();releaseEmployee?.();lift?.();throw error}
+     try{modelStage='approval-context';releaseApprovals=ensureApprovalContext(agent,run);modelStage='employee-prompt';releaseEmployee=agent.ctx?leaseEmployeeSystemPrompt(agent,run.roleSnapshot?.kind):undefined;modelStage='run-methods';releaseMethods=agent.ctx?leaseTaskRunMethods(agent,run.skills,run.contextMode===runContextMode&&!noTools&&!digest,run.knowledge):undefined;releaseToolUsage=typeof agent.ctx?.systemPrompt?.context==='function'?leaseTaskRunToolUsage(agent,run,{continuations:events=>ports.continuations?.(run,events)??Promise.resolve(undefined),goal:events=>ports.goalObservation?.(run,events)??Promise.resolve(undefined)}):undefined;modelStage='model-routing-install';return ensureModels(agent,run)}
+     catch(error){releaseToolUsage?.();releaseReview?.();releaseMethods?.();releaseEmployee?.();releaseApprovals?.();lift?.();throw error}
     })(),routing=modelState?.routing
     // 请求确定没交给原生就失败（取消、读图失败等）时撤掉收窄，会话不带着这次运行的限制留下；
     // 一旦调到 prompt，原生可能已接下这一轮（上层按「需核对、不重发」处理），收窄必须保留。
+    // 装配完成即登记所有权：原生可能先结束，发送 Promise 的 finally 才返回。
+    // 续办此时必须能退休旧租约；finally 不再把旧 Run 写回覆盖新 Run。
+    let leaseDisposed=false
+    const runLease={runId:run.id,dispose:()=>{
+     if(leaseDisposed)return
+     leaseDisposed=true
+     try{releaseToolUsage?.();releaseReview?.();releaseMethods?.();releaseEmployee?.();releaseApprovals?.();lift?.()}
+     finally{if(runLeases.get(agent)===runLease)runLeases.delete(agent)}
+    }}
+    runLeases.set(agent,runLease)
     let handedOff=false
     const request={sessionId:brandString<SessionId>(run.sessionId),requestId:brandString<SessionRequestId>(run.nativeRequestId),mode:'queue' as const}
     const prompt=async(content:(PromptTextPart|PromptImagePart)[])=>{
-     if(!routing){handedOff=true;return ctx.sessionController.prompt({...request,content},signal)}
+     checkPreset(run,agent)
+     if(!routing){enterPublication();handedOff=true;return ctx.sessionController.prompt({...request,content},signal)}
      // rc.2 Controller.prompt 按全局默认的会话缓存做模型/图片准入，且没有局部选模参数。
      // Run 独占空会话且载荷只有可信文字/已授权图片；复用官方附件准入与 Agent 队列，不复制 loop。
      // 纯文本也必须经过同一准入：凭据防泄漏闸挂在此公开接口上。
-     const admitted=await ctx.attachments.admitPromptContent(content)
+     phase='attachments';const admitted=await ctx.attachments.admitPromptContent(content)
      signal.throwIfAborted()
      const ready=()=>{
       signal.throwIfAborted()
-      if(ctx.agents.get(agent.id)!==agent||agent.session!==session||agent.status!=='idle'||agent.inbox.nextTurn.length||agent.inbox.nextStep.length||readSessionEvents(session).some(event=>event.type==='turn/start'||event.type==='user/message'))throw new WorkError('teloa/conflict','执行会话在发送前已变化，请核对原运行。')
+      checkPreset(run,agent)
+      if(ctx.agents.get(agent.id)!==agent||agent.session!==session)throw new WorkError('teloa/conflict','执行会话在发送前已变化，请核对原运行。')
+      assertReady(agent,continuing.get(agent))
      }
      ready()
      const message=createUserMessage({source:{kind:'user',rpcId:run.nativeRequestId},content:admitted})
      const submit=()=>{
+      if(closed)throw new WorkError('teloa/conflict','原提交尝试已经关闭，请核对原运行。')
       ready()
+      enterPublication();handedOff=true
       const startSeq=session.seq
       let committed=false
       try{agent.followup(message)}catch(error){
@@ -577,9 +715,9 @@ export function dshTaskRunPorts(ctx:Context,owner:string,inspect:(sessionId:stri
        try{committed=readSessionEvents(session).some(event=>event.seq>=startSeq&&session.isOwnSeq(event.seq)&&event.type==='agent/inbox/spliced'&&event.data.target==='next-turn'&&event.data.inserted.some(input=>isDeepStrictEqual(input,message)))}catch{}
        if(!committed)throw error
        // 此回执只确认已受理；官方 append 与 wakeDriver 非原子，不补唤醒或再次投递。
-      }finally{handedOff=committed||accepted(agent,run.nativeRequestId)}
+      }finally{handedOff=handedOff||committed||accepted(agent,run.nativeRequestId)}
      }
-     if(nativeInput)await nativeInput.withNewInput(agent,message,context,submit,signal)
+     if(nativeInput){phase='native-input';await nativeInput.withNewInput(agent,message,context,submit,signal)}
      else submit()
      return {accepted:true as const}
     }
@@ -593,7 +731,9 @@ export function dshTaskRunPorts(ctx:Context,owner:string,inspect:(sessionId:stri
      const hintParts:PromptTextPart[]=hint?[{type:'text',text:hint}]:[]
      const inputText=await ports.employeeExperienceEnabled?.(run,signal)?taskInputWithoutMemory(run.inputText):run.inputText
      signal.throwIfAborted()
-     const snapshot=run.executor?.kind==='owner'||ports.conversationReviewSource?JSON.parse(inputText) as Record<string,unknown>:undefined
+     // owner/原本人材料仍要求严格快照；旧群端口也允许纯文本，只有可选对象形状才尝试读取新增续办结构。
+     const requiredSnapshot=run.executor?.kind==='owner'||ports.conversationReviewSource||run.groupContext?.ownerRequest!==undefined
+     const snapshot=requiredSnapshot||run.groupContext&&inputText.trimStart().startsWith('{')?JSON.parse(inputText) as Record<string,unknown>:undefined
      let conversationSource:NonNullable<Awaited<ReturnType<NonNullable<TaskRunPorts['conversationReviewSource']>>>>|undefined
      if(snapshot&&snapshot.artifactRevision===undefined&&snapshot.planContext===undefined){
       if(ports.conversationReviewSource)conversationSource=(await ports.conversationReviewSource(run,signal))??undefined
@@ -603,11 +743,13 @@ export function dshTaskRunPorts(ctx:Context,owner:string,inspect:(sessionId:stri
       }
       signal.throwIfAborted()
      }
-     const material=agent.ctx&&(run.skills?.length||run.executor?.kind==='owner'||conversationSource)?taskRunReviewMaterial(run,inputText,conversationSource):undefined
+     // 手工群任务没有 ownerRequest 链；正式版本化续办仍是后端已核实并冻结的本人追加，不能只保留在 JSON 中。
+     const material=agent.ctx&&(run.skills?.length||run.executor?.kind==='owner'||conversationSource||run.groupContext?.ownerRequest||run.groupContext&&snapshot?.groupContinuation!==undefined)?taskRunReviewMaterial(run,inputText,conversationSource):undefined
      const goalPart=taskRunGoalPart(run,material)
      releaseReview=run.skills?.length||run.executor?.kind==='owner'?leaseReview(material):undefined
-     const textOnly:PromptTextPart[]=[{type:'text',text:inputText},...hintParts,dateLine,...goalPart?[goalPart]:[]]
-     await routing?.resolve(signal)
+     const contextParts:PromptTextPart[]=[...hintParts,dateLine,...goalPart?[{type:'text' as const,text:sourcePresentationNotice},goalPart]:[]]
+     const textOnly:PromptTextPart[]=[{type:'text',text:inputText},...contextParts]
+     phase='model';modelStage='model-routing-resolve';await routing?.resolve(signal)
      const group=ports.groupPrompt
      const {picked,skipped}=group?pickPromptImages(run.groupContext?.files??[]):{picked:[],skipped:0}
      // 没有可进模型的图片就走从前那条路：普通运行不因本期改动多一次能力查询。
@@ -630,7 +772,7 @@ export function dshTaskRunPorts(ctx:Context,owner:string,inspect:(sessionId:stri
      }
      const text=skipped?`${inputText}\n\n本轮还有 ${skipped} 张已授权图片未进模型。`:inputText
      if(modelState)modelState.imagesAdmitted=true
-     try{await prompt([{type:'text',text},...hintParts,dateLine,...goalPart?[goalPart]:[],...images])}
+     try{await prompt([{type:'text',text},...contextParts,...images])}
      catch(error){
       // 能力查不到时可用性优先：先发图，被原生以 session/attachment-invalid 拒了再去图重发。
       // 声明支持却被拒是另一回事，原样上抛，不掩盖不一致。
@@ -639,10 +781,23 @@ export function dshTaskRunPorts(ctx:Context,owner:string,inspect:(sessionId:stri
       if(modelState)modelState.imagesAdmitted=false
       await prompt(textOnly)
      }
-    }catch(error){if(!handedOff){releaseToolUsage?.();releaseReview?.();releaseMethods?.();releaseEmployee?.();lift?.();modelState?.dispose()}throw error}
+    }catch(error){if(!handedOff){runLease.dispose();modelState?.dispose()}throw error}
+    finally{const retiredId=retired.get(agent);if(retiredId!==undefined&&retiredId===run.id)runLease.dispose()}
    }
-   if(run.modelPolicy)await serialize(JSON.stringify([run.sessionId,run.nativeRequestId]),operation)
-   else await operation()
+   const dispatch=async()=>{
+    const attempt=await ports.submissions?.begin(run)
+    try{await operation();closed=true;if(attempt)await ports.submissions!.finish(attempt,'accepted')}
+    catch(error){
+     closed=true
+     // 记录的是从未调用实际发布原语；不是 handedOff、日志缺失或异常种类的推测。
+     // 持久写失败继续 unknown。回调已经关闭，后续异步回调也无法重新发布。
+     markSubmissionFailure(error,phase,modelStage)
+     if(attempt&&!enteredPublication)await ports.submissions!.finish(attempt,'not-published').catch(()=>{})
+     throw error
+    }
+   }
+   if(run.modelPolicy)await serialize(JSON.stringify([run.sessionId,run.nativeRequestId]),dispatch)
+   else await dispatch()
   },
   stop:async(run,signal)=>{
    signal.throwIfAborted()
@@ -651,7 +806,7 @@ export function dshTaskRunPorts(ctx:Context,owner:string,inspect:(sessionId:stri
    await ports.stopGoal?.(run)
    await background?.cancel(run,signal)
    const events=readSessionEvents(agent.session),goalState=await ports.goalObservation?.(run,events),observed=observeTaskRun(events,run.nativeRequestId,await ports.continuations?.(run,events),goalState)
-   if(observed.state==='ended')return
+   if(observed.state==='ended'||observed.state==='unobserved'&&acceptedInboxErrorEvidence(run,events,Number(agent.session.inheritedEventCount)))return
    if(observed.state!=='active'||(agent.inbox.nextTurn.length>0||agent.inbox.nextStep.length>0))throw new WorkError('teloa/conflict','尚未确认原请求正在执行，或会话仍有排队消息，请先核对执行会话。')
    let turnStart=0
    for(let index=0;index<events.length;index++)if(events[index]!.type==='turn/start')turnStart=index
@@ -700,7 +855,68 @@ export function dshTaskRunPorts(ctx:Context,owner:string,inspect:(sessionId:stri
    await validateBinding(run);signal.throwIfAborted();return snapshot
   },
   reassignmentInspection:async(run,signal)=>readNativeReassignmentInspection({get:id=>store.get(brandString<SessionId>(id)),flush:session=>store.flush(session),inspect:id=>ctx.sessionController.inspect(brandString<SessionId>(id))},run,signal),
-  withReassignmentInspection:async(run,signal,work)=>withNativeResourceInspection(ctx.agents.get(brandString<SessionId>(run.sessionId)),{get:id=>store.get(brandString<SessionId>(id)),flush:session=>store.flush(session),inspect:id=>ctx.sessionController.inspect(brandString<SessionId>(id))},run,runtimeLinks,taskRunRuntimeId,Reflect.get(ctx,'jobs'),signal,work),
+  withReassignmentInspection:async(run,signal,work)=>withNativeResourceInspection(ctx.agents.get(brandString<SessionId>(run.sessionId)),{get:id=>store.get(brandString<SessionId>(id)),flush:session=>store.flush(session),inspect:id=>ctx.sessionController.inspect(brandString<SessionId>(id))},run,runtimeLinks,runtimeId,Reflect.get(ctx,'jobs'),signal,work),
+  withAcceptedInboxFailureFence:async(run,signal,work)=>{
+   if(!nativeInput?.withQuiescentSession||!background||!runtimeLinks||!ports.subagentState||!ports.flowState)return null
+   signal.throwIfAborted();await validateBinding(run)
+   const agent=ctx.agents.get(brandString<SessionId>(run.sessionId)),session=store.get(brandString<SessionId>(run.sessionId))
+   if(!agent&&!session){
+    const persistence=ctx.sessionPersistence,identity=persistence.identity
+    const assertAbsent=()=>{signal.throwIfAborted();if(ctx.agents.get(brandString<SessionId>(run.sessionId))||store.get(brandString<SessionId>(run.sessionId))||ctx.sessionPersistence.identity!==identity)throw new WorkError('teloa/conflict','存储维护期间原会话已被其他入口领用。')}
+    const checkedOwner=async()=>{
+     const links=await runtimeLinks!.list({runId:run.id}),link=links[0]
+     if(links.length!==1||link?.kind!=='job'||link.payload.record!=='owner'||link.runId!==run.id||link.sessionId!==run.sessionId||link.payload.requestId!==run.nativeRequestId||link.nativeId!=='owner:'+link.payload.runtimeId+':'+run.sessionId)return null
+     const state=await background.state(run)
+     if(state?.outstanding!==false||typeof state.interrupted!=='boolean'||state.cancelled===true||await ports.subagentState!(run,signal)!=='none'||await ports.flowState!(run)!=='none'||!await background.retryOwnerOnly(run))return null
+     const events=await ports.events(run)
+     if((await ports.continuations?.(run,events))?.size||await ports.goalObservation?.(run,events)!==undefined)return null
+     await validateBinding(run);assertAbsent();return link
+    }
+    return withColdInboxErrorWriter(persistence,run,signal,assertAbsent,async proof=>{
+     const link=await checkedOwner();proof.assertCurrent();if(!link)return null
+     const originalRuntimeId=link.payload.runtimeId
+     return withAcceptedInboxErrorFence({runId:run.id,sessionId:run.sessionId,nativeRequestId:run.nativeRequestId,runtimeId:originalRuntimeId,inputSha256:createHash('sha256').update(run.inputText).digest('hex'),endedAt:proof.endedAt,evidence:proof.evidence,issuer:{kind:'stopped-session-writer-maintenance',originalRuntimeId,maintenanceRuntimeId:runtimeId,physicalSha256:proof.physicalSha256}},proof.assertCurrent,work)
+    },{sessions:store,assertSafe:async()=>{if(!await checkedOwner())throw new WorkError('teloa/conflict','原受理输入仍有活动或未知工作，不能封口。')}})
+   }
+   if(!agent||!session||agent.session!==session||agent.status!=='idle'||agent.inbox.nextTurn.length||agent.inbox.nextStep.length)return null
+   const initial=acceptedInboxErrorEvidence(run,readSessionEvents(session),Number(session.inheritedEventCount));if(!initial)return null
+   return nativeInput.withQuiescentSession(agent,async maintenanceSignal=>{
+    const assertIdle=()=>{
+     signal.throwIfAborted();maintenanceSignal.throwIfAborted()
+     if(ctx.agents.get(agent.id)!==agent||store.get(agent.id)!==session||agent.session!==session||agent.status!=='idle'||agent.inbox.nextTurn.length||agent.inbox.nextStep.length||ctx.jobs.list(agent.id).some(j=>j.owner===agent.id)||ctx.get('teloaNativeInput')?.input.hasPendingJobCompletion(agent.id)||ctx.get('teloaNativeInput')?.input.hasCancelledJobCompletion(agent.id))throw new WorkError('teloa/conflict','原受理会话仍有活动或输入，不能收口。')
+    }
+    assertIdle();if(!await store.flush(session))throw new WorkError('teloa/session-unavailable','原失败尚未可靠保存。')
+    const events=readSessionEvents(session),evidence=acceptedInboxErrorEvidence(run,events,Number(session.inheritedEventCount));if(!evidence||!isDeepStrictEqual(initial,evidence))return null
+    const state=await ports.backgroundState?.(run)
+    if(state?.outstanding!==false||state.interrupted!==false||state.cancelled===true||await ports.subagentState!(run,signal)!=='none'||await ports.flowState!(run)!=='none'||!await background.retryOwnerOnly(run))return null
+    if((await ports.continuations?.(run,events))?.size||await ports.goalObservation?.(run,events)!==undefined)return null
+    await validateBinding(run);assertIdle()
+    const seq=session.seq
+    const assertCurrent=()=>{assertIdle();if(session.seq!==seq||!isDeepStrictEqual(events,readSessionEvents(session)))throw new WorkError('teloa/conflict','原生失败证据在核对期间已变化。')}
+    assertCurrent()
+    return withAcceptedInboxErrorFence({runId:run.id,sessionId:run.sessionId,nativeRequestId:run.nativeRequestId,runtimeId,inputSha256:createHash('sha256').update(run.inputText).digest('hex'),endedAt:new Date(events[taskRunEvidenceProofEnd(evidence)]!.time).toISOString(),evidence},assertCurrent,work)
+   })
+  },
+  withSubmissionFence:async(run,signal,work)=>{
+   if(!run.stopRequestedAt||run.state!=='submitting'&&run.state!=='submission_unknown')throw new WorkError('teloa/conflict','请先停止本次提交。')
+   // 与持久停止意图共同封闭本宿主晚到的发布回调；此集合不授予重新执行。
+   fencedSubmissions.add(run.id)
+   await validateBinding(run);signal.throwIfAborted()
+   if(sending.has(JSON.stringify([run.sessionId,run.nativeRequestId])))throw new WorkError('teloa/conflict','提交请求仍在收尾，请稍后再次核对。')
+   const id=brandString<SessionId>(run.sessionId),agent=ctx.agents.get(id),session=store.get(id)
+   if(!agent||!session||agent.session!==session)throw new WorkError('teloa/conflict','需要原宿主的活动栅栏，冷会话不能代替原宿主停发证明。')
+   const owners=runtimeLinks?await runtimeLinks.list({runId:run.id,kind:'job'}):[]
+   if(owners.some(row=>row.kind!=='job'||row.payload.record!=='owner'||row.payload.runtimeId!==runtimeId||row.payload.requestId!==run.nativeRequestId||row.sessionId!==run.sessionId))throw new WorkError('teloa/conflict','原宿主世代或后台工作尚未核清，不能处置未知提交。')
+   const assertIdle=()=>{
+    signal.throwIfAborted()
+    if(ctx.agents.get(id)!==agent||store.get(id)!==session||agent.session!==session||agent.status!=='idle'||agent.inbox.nextTurn.length||agent.inbox.nextStep.length||ctx.jobs?.list(id).some(job=>job.owner===id&&(job.status==='running'||job.status==='stopping'))||ctx.get('teloaNativeInput')?.input.hasPendingJobCompletion(agent.id))throw new WorkError('teloa/conflict','原执行仍有活动或待处理输入，请等待收尾后核对。')
+   }
+   assertIdle()
+   if(!await store.flush(session))throw new WorkError('teloa/session-unavailable','原运行记录尚未可靠保存。')
+   assertIdle();const events=readSessionEvents(session),notPublished=!accepted(agent,run.nativeRequestId)&&!taskRunHasPublicationEvidence(events,run.nativeRequestId),logSha256=createHash('sha256').update(JSON.stringify(events)).digest('hex'),seq=session.seq
+   const assertCurrent=()=>{assertIdle();if(session.seq!==seq)throw new WorkError('teloa/conflict','核对期间原运行记录已变化，请重新核对。')}
+   return work({runId:run.id,sessionId:run.sessionId,nativeRequestId:run.nativeRequestId,inputSha256:createHash('sha256').update(run.inputText).digest('hex'),runtimeId,logCut:events.length-1,logSha256,...(notPublished?{notPublished:true as const}:{}),assertCurrent})
+  },
   events:async run=>{
    await validateBinding(run)
    const attached=store.get(brandString<SessionId>(run.sessionId))

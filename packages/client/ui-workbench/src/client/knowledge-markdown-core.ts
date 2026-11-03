@@ -43,7 +43,7 @@ export function applyMarkdownCommand(value:string,start:number,end:number,comman
  const selected=value.slice(start,end),body=selected||placeholder
  const wrap=(prefix:string,suffix=prefix):MarkdownEdit=>({value:value.slice(0,start)+prefix+body+suffix+value.slice(end),selectionStart:start+prefix.length,selectionEnd:start+prefix.length+body.length})
  if(command==='bold')return wrap('**')
- if(command==='italic')return wrap('_')
+ if(command==='italic')return wrap('*')
  if(command==='code')return selected.includes('\n')?wrap('```\n','\n```'):wrap('`')
  if(command==='link'){const replacement=`[${body}](https://)`;return {value:value.slice(0,start)+replacement+value.slice(end),selectionStart:start+body.length+3,selectionEnd:start+body.length+11}}
  const lineStart=value.lastIndexOf('\n',Math.max(0,start-1))+1,lineEnd=value.indexOf('\n',end)<0?value.length:value.indexOf('\n',end),lines=value.slice(lineStart,lineEnd).split('\n')

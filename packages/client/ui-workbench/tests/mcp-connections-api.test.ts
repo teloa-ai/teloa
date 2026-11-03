@@ -100,5 +100,8 @@ test('自定义应用认证走独立端点，绑定定义摘要；公开回包�
  assert.equal(calls.length,3)
  response={...connection,credentials:input.credentials};await assert.rejects(()=>api.get(id),/格式不正确/)
  response={schema:'teloa.mcp-preview/v1',definition,definitionHash:hash,authorizationConfigured:true,credentials:input.credentials};await assert.rejects(()=>api.getCustom(id))
+ response={schema:'teloa.mcp-preview/v1',definition,definitionHash:hash,connection,authorizationConfigured:true,authorizedReadOnlyTools:['search']};assert.deepEqual((await api.getCustom(id)).authorizedReadOnlyTools,['search'])
+ response={...response as object,authorizedReadOnlyTools:[]};assert.deepEqual((await api.getCustom(id)).authorizedReadOnlyTools,[],'明确空授权不能回退成工具发现结果')
+ for(const change of [{authorizedReadOnlyTools:['search','search']},{authorizedReadOnlyTools:['not a tool']},{authorizedReadOnlyTools:['search'],authorizationConfigured:false},{authorizedReadOnlyTools:['search'],connection:undefined}]){response={schema:'teloa.mcp-preview/v1',definition,definitionHash:hash,connection,authorizationConfigured:true,...change};await assert.rejects(()=>api.getCustom(id))}
  unsubscribe();response=connection;await api.disconnect(id);assert.equal(notifications,2)
 })

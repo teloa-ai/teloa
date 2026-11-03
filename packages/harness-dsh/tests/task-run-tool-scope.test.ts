@@ -4,7 +4,7 @@ import {createHash} from 'node:crypto'
 import {Context} from '@deepseek-ai/cordis'
 import {AgentRegistry} from '@deepseek-ai/dsh-agent'
 import {AgentLoop} from '@deepseek-ai/dsh-agent-loop'
-import {LlmAdapter,LlmRuntime,createUserMessage,type GenerateOptions,type StreamChunk} from '@deepseek-ai/dsh-llm'
+import {LlmAdapter,LlmRuntime,createUserMessage,ToolCallId,type GenerateOptions,type StreamChunk} from '@deepseek-ai/dsh-llm'
 import {SessionId,SessionStore} from '@deepseek-ai/dsh-session'
 import {SessionProjectionRegistry} from '@deepseek-ai/dsh-session-projection'
 import {SystemPrompt,type PromptAssembly} from '@deepseek-ai/dsh-system-prompt'
@@ -16,6 +16,8 @@ import {groupReactToolName} from '../src/group-react-tool.ts'
 import {groupMentionToolName} from '../src/group-mention-tool.ts'
 import {roleDailyDigestToolNames} from '../src/role-daily-log.ts'
 import {roleMemoryProposalToolName} from '../src/role-memory.ts'
+import {leaseRunTools} from '../src/task-run-tool-lease.ts'
+import {createReviewSourceCatalog,deliveryReviewToolName,leaseTaskDeliveryReview} from '../src/task-delivery-review.ts'
 
 const target:TaskExecutionScope={taskId:'task',taskVersion:3,sessionId:'session',linkVersion:2,scope:'SOC'}
 const [dayEvidence,digestSubmit]=roleDailyDigestToolNames
@@ -26,13 +28,27 @@ const skill={name:'review',provider:'native',source:'project',description:'核�
 function harness(){
  const visible=['bash',roleMemoryProposalToolName,dayEvidence,digestSubmit,groupAttachToolName,groupReactToolName,'teloa_capabilities']
  const restrictions:Array<readonly string[]|undefined>=[],sent:Array<{content:Array<{type:string;text?:string}>}>=[]
- const agent={status:'idle',inbox:{nextTurn:[],nextStep:[]},session:{header:{cwd:'/target'},snapshotEvents:()=>[]},ctx:{tools:{schemas:()=>visible.map(name=>({name})),restrict:(filter:{allow?:readonly string[]})=>{restrictions.push(filter.allow);return ()=>{}},guard:()=>()=>{}},on:()=>()=>{}}}
+ const agent={status:'idle',inbox:{nextTurn:[],nextStep:[]},session:{header:{cwd:'/target'},snapshotEvents:()=>[]},ctx:{tools:{presentAs:()=>()=>{},schemas:()=>visible.map(name=>({name})),restrict:(filter:{allow?:readonly string[]})=>{restrictions.push(filter.allow);return ()=>{}},guard:()=>()=>{}},on:()=>()=>{}}}
  const skills={get:async()=>({...skill,invocation:{modelInvocable:true,userInvocable:true}})}
  const ctx={sessionController:{resolveAgent:async()=>({agent}),prompt:async(request:{content:Array<{type:string;text?:string}>})=>{sent.push(request);return {accepted:true}}},agentPresets:{serviceFor:()=>skills},logger:{warn:()=>{}}} as unknown as Context
  const ports=dshTaskRunPorts(ctx,'owner',async()=>({ownerId:'owner',sessionId:'session',status:'ready'}))
+ ports.isReplyRun=async()=>false
  const run=(over:Record<string,unknown>={})=>({id:'run',taskId:'task',taskVersion:3,linkVersion:2,sessionId:'session',nativeRequestId:'native',inputText:'固定目标',allowedTools:[],...over}) as unknown as TaskRun
  return {ports,restrictions,sent,run}
 }
+
+test('小结收窄准备失败时释放已取得的呈现与目录租约',()=>{
+ for(const stage of ['schemas','restrict','on'] as const){
+  const released:string[]=[],failure=Error(stage)
+  const agent={ctx:{tools:{
+   presentAs:()=>()=>released.push('presentation'),
+   schemas:()=>{if(stage==='schemas')throw failure;return [{name:dayEvidence},{name:digestSubmit}]},
+   restrict:()=>{if(stage==='restrict')throw failure;return ()=>released.push('restriction')},
+  },on:()=>{throw failure}}} as unknown as Parameters<typeof restrictRunTools>[0]
+  assert.throws(()=>restrictRunTools(agent,[],{group:false,digest:true}),error=>error===failure)
+  assert.deepEqual(released,stage==='on'?['restriction','presentation']:['presentation'])
+ }
+})
 
 test('普通运行不向模型显示群与每日小结工具；岗位记忆候选维持原有可见',async()=>{
  const {ports,restrictions,run}=harness()
@@ -58,7 +74,7 @@ test('群运行只放出群工具，小结运行只放出小结工具',async()=>
  const digest=harness()
  digest.ports.isDigestRun=async run=>run.id==='run'
  await digest.ports.send(digest.run(),new AbortController().signal,target)
- assert.deepEqual(digest.restrictions,[[roleMemoryProposalToolName,dayEvidence,digestSubmit]])
+ assert.deepEqual(digest.restrictions,[[dayEvidence,digestSubmit]])
 })
 
 test('小结身份判不出或宿主没接判定端口时保守收起，发送照常进行',async()=>{
@@ -101,6 +117,19 @@ test('固定 v2 任务以原目标作为明确的当前请求，不把知识正�
  assert.equal(bad.sent.length,0)
 })
 
+test('QLT004：接手reply的实际Current task保留原本人持续限制，不靠话题历史或新增提示补丁',async()=>{
+ const f=harness(),sha=(text:string)=>createHash('sha256').update(text).digest('hex')
+ const original='根据给定合成材料核对。',restriction='本轮及后续只分析，不使用代码或工具，也不外发。',current='请接手者按原要求完整交付。'
+ const context={...groupContext,materials:[],ownerRequest:{messageId:'current',text:current,sha256:sha(current),priorRequests:[{messageId:'original',text:original,sha256:sha(original)},{messageId:'restriction',text:restriction,sha256:sha(restriction)}]}}
+ const inputText=JSON.stringify({schema:'teloa.task-run-input/v2',task:{id:'task',version:3,goal:'接手原任务'},role:{},groupContext:context})
+ await f.ports.send(f.run({inputText,groupContext:context,skills:[],knowledge:[]}),new AbortController().signal,target)
+ const sent=f.sent[0]!.content,goal=sent.find(part=>part.text?.startsWith('Current task (fulfill the original goal):'))?.text
+ assert.ok(goal);assert.ok(goal.includes(current));assert.ok(goal.includes(restriction));assert.ok(goal.includes(original))
+ assert.match(goal,/对当前Run和接手员工持续适用/)
+ assert.equal(sent[0]!.text,inputText,'冻结输入与正文不改写；限制来自原本人来源链')
+ assert.ok(!inputText.includes('groupTopic'),'验收不借历史话题碰巧携带限制')
+})
+
 class CaptureAdapter extends LlmAdapter{
  requests:GenerateOptions[]=[]
  override async resolveModel(provider:string,model:string){return {provider,id:model,name:model,inputModalities:['text'] as const}}
@@ -113,9 +142,11 @@ class CaptureAdapter extends LlmAdapter{
  }
 }
 
-async function runtime(t:TestContext){
+async function runtime(t:TestContext,ptc=false){
  const ctx=new Context();t.after(()=>ctx.fiber.dispose())
- for(const plugin of [LlmRuntime,SessionStore,SessionProjectionRegistry,SystemPrompt,ToolRuntime,AgentRegistry])await ctx.plugin(plugin)
+ for(const plugin of [LlmRuntime,SessionStore,SessionProjectionRegistry,SystemPrompt])await ctx.plugin(plugin)
+ if(ptc)ctx.provide('ptcRuntime',{language:'typescript',isolation:'fixture',resolve:(request:unknown)=>request,run:async()=>{throw Error('本测试不执行程序')}} as never)
+ await ctx.plugin(ToolRuntime,{mode:ptc?'ptc':'native'});await ctx.plugin(AgentRegistry)
  await ctx.plugin(AgentLoop,{agents:[]})
  const adapter=new CaptureAdapter();ctx.llm.registerAdapter(['capture'],adapter)
  const {agent}=await ctx.agents.create({sessionId:SessionId('tool-scope-'+t.name),agentOptions:{provider:'capture',model:'model'}})
@@ -129,6 +160,54 @@ async function runtime(t:TestContext){
  const modules=(assembly:PromptAssembly)=>JSON.parse(assembly.contexts.find(row=>row.name==='teloa:work-behavior-runtime')!.text.split('\n').at(-1)!).modules as string[]
  return {ctx,agent,adapter,modules,assemble:()=>ctx.systemPrompt.assemble({agent,scope:agent})}
 }
+
+test('QLT004：可信reply最终provider目录为空，PTC传输与自授权工具不泄漏到兄弟work会话',async t=>{
+ const {ctx,agent,adapter}=await runtime(t,true)
+ ctx.provide('sessionController',{resolveAgent:async(sessionId:string)=>({agent:ctx.agents.get(SessionId(sessionId))!}),prompt:async(request:{sessionId:string;requestId:string;content:Parameters<typeof createUserMessage>[0]['content']})=>{ctx.agents.get(SessionId(request.sessionId))!.followup(createUserMessage({source:{kind:'user',rpcId:request.requestId},content:request.content}));return {accepted:true}}} as never)
+ const ports=dshTaskRunPorts(ctx,'owner',async sessionId=>({ownerId:'owner',sessionId,status:'ready'}))
+ let checks=0
+ Object.assign(ports,{isReplyRun:async(run:TaskRun,signal:AbortSignal)=>{signal.throwIfAborted();checks++;return run.id==='reply'}})
+ const make=(id:string,sessionId:string,allowedTools:string[])=>({id,taskId:'task',taskVersion:3,linkVersion:2,sessionId,nativeRequestId:id+'-request',inputText:'原固定工作输入',allowedTools,skills:[],knowledge:[],groupContext}) as unknown as TaskRun
+ await ports.send(make('reply',agent.id,[]),AbortSignal.timeout(5000),{...target,sessionId:agent.id});await agent.whenIdle()
+ assert.equal(checks,1,'模式只由同owner/Run的后端可信端口判定')
+ assert.deepEqual((await ctx.systemPrompt.assemble({agent,scope:agent})).tools,[],'最终组装目录必须为空，不能只删提示或调用后拒绝')
+ assert.equal(adapter.requests[0]!.tools,undefined,'固定DSH把空目录正规化为省略provider tools字段；不能留下run_code或其他schema')
+ const rendered=JSON.stringify(adapter.requests[0]!.messages)
+ assert.doesNotMatch(rendered,/run_code is the only tool|Program-only SDK bindings|TEAM POLICY/)
+ let lateCalls=0
+ agent.ctx.tools.register(defineTool({name:'late_fixture',description:'后注册工具',parameters:{},output:{schema:{type:'string'},render:(_args,value)=>[{type:'text',text:value}]},execute:async()=>{lateCalls++;return '不应执行'}}))
+ const denied=await ctx.tools.execute({name:'late_fixture',arguments:{},callId:ToolCallId('late-call'),agent,signal:AbortSignal.timeout(5000)})
+ assert.equal(denied.isError,true);assert.equal(lateCalls,0)
+ assert.match(JSON.stringify(denied.content),/不能执行任何工具/,'同Agent后注册工具仍受最终单调守卫约束')
+ assert.deepEqual((await ctx.systemPrompt.assemble({agent,scope:agent})).tools,[])
+ const {agent:work}=await ctx.agents.create({sessionId:SessionId('sibling-work'),agentOptions:{provider:'capture',model:'model'}})
+ await ports.send(make('work',work.id,['teloa_capabilities']),AbortSignal.timeout(5000),{...target,sessionId:work.id});await work.whenIdle()
+ assert.deepEqual(adapter.requests.at(-1)!.tools?.map(tool=>tool.name),['run_code'],'兄弟work保持原PTC工具呈现')
+ assert.match(JSON.stringify(adapter.requests.at(-1)!.messages),/teloa_capabilities/)
+})
+
+test('QLT004：群模式端口缺失或失败时在原生发送前停止，不以本人链或空工具猜reply',async()=>{
+ for(const mode of ['missing','error'] as const){
+  const f=harness()
+  delete f.ports.isReplyRun
+  if(mode==='error')Object.assign(f.ports,{isReplyRun:async()=>{throw Error('固定来源读取失败')}})
+  await assert.rejects(f.ports.send(f.run({groupContext}),AbortSignal.timeout(5000),target),mode==='error'?/固定来源读取失败/:/群执行模式/)
+  assert.equal(f.sent.length,0);assert.deepEqual(f.restrictions,[])
+ }
+})
+
+test('QLT004：同一真实会话text终态后才切回work工具；旧disposer不能卸掉新租约',async t=>{
+ const {ctx,agent,adapter}=await runtime(t,true)
+ const send=async(requestId:string)=>{agent.followup(createUserMessage({source:{kind:'user',rpcId:requestId},content:[{type:'text',text:'固定文本任务'}]}));await agent.whenIdle()}
+ const old=leaseRunTools(agent,'text-request',true,()=>restrictRunTools(agent,[],{group:false,digest:false,text:true}))
+ await send('text-request');assert.equal(adapter.requests[0]!.tools,undefined)
+ old();assert.deepEqual((await ctx.systemPrompt.assemble({agent,scope:agent})).tools,[],'已受理text的普通清理不会提前解除能力')
+ const current=leaseRunTools(agent,'work-request',false,()=>restrictRunTools(agent,['teloa_capabilities'],{group:false,digest:false}))
+ old();await send('work-request')
+ assert.deepEqual(adapter.requests[1]!.tools?.map(tool=>tool.name),['run_code'])
+ assert.match(JSON.stringify(adapter.requests[1]!.messages),/teloa_capabilities/)
+ current()
+})
 
 test('真实Run发送只向模型投一份方法约定，固定JSON、Skill原文摘要和工具权限保持',async t=>{
  const {ctx,agent,adapter}=await runtime(t)
@@ -166,6 +245,73 @@ test('Agent 自身作用域的 Team 工具不受全局收窄约束：未授权�
  assert.equal(restored.sections.some(section=>section.name==='team:policy'),true)
 })
 
+test('H19 #141：父本地 legacy 与迟注册工具及说明在最终 native 目录被收窄，合法 subagent_task 和普通会话不变',async t=>{
+ const {ctx,agent,assemble}=await runtime(t)
+ const add=(name:string)=>(name==='subagent_task'?ctx:agent.ctx).tools.register(defineTool({name,description:name,parameters:{},output:{schema:{type:'string'},render:()=>[]},execute:async()=> 'fixture'}))
+ add('subagent');add('subagent_task');add(deliveryReviewToolName)
+ agent.ctx.systemPrompt.section({name:'tool:subagent',order:0,text:'legacy helper description'})
+ agent.ctx.systemPrompt.context({name:'tool:subagent:depth',order:0,text:'legacy depth'})
+ const ordinary=await assemble();assert.ok(ordinary.tools.some(tool=>tool.name==='subagent'))
+ const release=restrictRunTools(agent,['subagent_task'],{group:false,digest:false})
+ add('late_local_write');agent.ctx.systemPrompt.section({name:'tool:late_local_write',order:0,text:'late tool description'})
+ const result=await assemble()
+ assert.deepEqual(result.tools.map(tool=>tool.name).sort(),['subagent_task',roleMemoryProposalToolName].sort())
+ assert.ok(!result.sections.some(section=>section.name==='tool:subagent'||section.name==='tool:late_local_write'))
+ assert.ok(!result.contexts.some(context=>context.name==='tool:subagent:depth'))
+ release();assert.ok((await assemble()).tools.some(tool=>tool.name==='subagent'),'解除未受理测试租约后本人普通目录恢复')
+ const sibling=(await ctx.agents.create({sessionId:SessionId('ordinary-141'),agentOptions:{provider:'capture',model:'model'}})).agent
+ sibling.ctx.tools.register(defineTool({name:'ordinary_subagent',description:'本人正常工具',parameters:{},output:{schema:{type:'string'},render:()=>[]},execute:async()=> 'fixture'}))
+ assert.ok((await ctx.systemPrompt.assemble({scope:sibling})).tools.some(tool=>tool.name==='ordinary_subagent'))
+})
+for(const language of ['typescript','python']as const)test('H19 #141：PTC '+language+' 保留真实 transport 与授权输出 schema，不广告父本地 legacy/late 工具',async t=>{
+ const {ctx,agent,assemble}=await runtime(t,true)
+ if(language==='python')Object.assign(ctx.get('ptcRuntime')!,{language:'python'})
+ const add=(name:string)=>(name==='subagent_task'?ctx:agent.ctx).tools.register(defineTool({name,description:name,parameters:{},output:{schema:{type:'object',additionalProperties:false,properties:{ok:{type:'boolean',required:true}}},render:()=>[]},execute:async()=>({ok:true})}))
+ add('subagent');add('subagent_task')
+ restrictRunTools(agent,['subagent_task'],{group:false,digest:false});add('late_local_write')
+ const result=await assemble();assert.deepEqual(result.tools.map(tool=>tool.name),['run_code'])
+ const sdk=result.sections.find(section=>section.name==='tools:sdk')!.text
+ assert.match(sdk,/subagent_task/);assert.match(sdk,/ok/)
+ assert.doesNotMatch(sdk,/late_local_write|subagent\s*[:(]/)
+})
+test('H19 #141：真正存活的结构化 review 租约仍完成正常原生回执，不按同名工具豁免',async t=>{
+ const {agent,adapter}=await runtime(t)
+ restrictRunTools(agent,[],{group:false,digest:false})
+ const goal='仅核对合成文本。',material={goal,inputs:{knowledge:0,group:false,context:false},methods:[],catalog:createReviewSourceCatalog([{id:'goal',kind:'goal',title:'原目标',text:goal,origin:{field:'inputText',pointer:'/task/goal'}}])}
+ const traces:string[]=[]
+ leaseTaskDeliveryReview(agent,{runId:'141-review',requestId:'141-rpc',material,trace:entry=>traces.push(entry.state),publish:async message=>{agent.inject(message)}})
+ let step=0
+ adapter.stream=async function*(options:GenerateOptions):AsyncGenerator<StreamChunk>{
+  this.requests.push(options);const current=step++
+  if(current===0){yield{type:'block-start',index:0,blockType:'text'};yield{type:'text-delta',index:0,text:'合成文本。'};yield{type:'block-end',index:0,block:{type:'text',text:'合成文本。'}};yield{type:'finish',reason:{kind:'stop'}};return}
+  assert.deepEqual(options.tools?.map(tool=>tool.name),[deliveryReviewToolName])
+  const args=current===1?{phase:'revise',issues:[]}:{phase:'verify',verdict:'accept',checks:['goal',1,2,3,4,5,6,7,8].map(id=>({id,status:'pass'})),changeChecks:[],findings:[]}
+  yield{type:'block-start',index:0,blockType:'tool-call'}
+  yield{type:'block-end',index:0,block:{type:'tool-call',id:ToolCallId('141-review-'+current),name:deliveryReviewToolName,arguments:JSON.stringify(args)}}
+  yield{type:'finish',reason:{kind:'tool-calls'}}
+ }
+ agent.followup(createUserMessage({source:{kind:'user',rpcId:'141-rpc'},content:[{type:'text',text:goal}]}));await agent.whenIdle()
+ assert.equal(adapter.requests.length,3);assert.ok(traces.includes('applied'))
+ assert.ok(!(await agent.ctx.systemPrompt.assemble({scope:agent})).tools.some(tool=>tool.name===deliveryReviewToolName),'完成复核后原租约撤下回执，不将其留在普通工作目录')
+})
+
+test('J13：只有具备 read 的执行态保留官方 present 可见性，小结与固定文本仍不开放交付',async t=>{
+ const {ctx,agent}=await runtime(t)
+ for(const name of ['read','write','present'])ctx.tools.register(defineTool({name,description:name,parameters:{},output:{schema:{type:'string'},render:(_args,value)=>[{type:'text',text:value}]},execute:async()=> 'fixture'}))
+ for(const [allowed,applicable,expected] of [
+  [['read'],{group:false,digest:false},true],
+  [['write'],{group:false,digest:false},false],
+  [['present'],{group:false,digest:false},false],
+  [[],{group:false,digest:false},false],
+  [['read'],{group:false,digest:true},false],
+  [['read'],{group:false,digest:false,text:true},false],
+ ] as const){
+  const release=restrictRunTools(agent,allowed,applicable)
+  assert.equal(ctx.tools.schemas(agent).some(tool=>tool.name==='present'),expected,JSON.stringify({allowed,applicable}))
+  release()
+ }
+})
+
 test('显式授权的 Team 工具与业务工具保留并照常选择规则；授权里的群工具在普通运行仍被收起',async t=>{
  const {agent,modules,assemble}=await runtime(t)
  restrictRunTools(agent,['spawn_teammate','teloa_capabilities',groupAttachToolName],{group:false,digest:false})
@@ -183,8 +329,13 @@ test('群运行与小结运行在真实目录中只放出各自的工具',async 
  restrictRunTools(report.agent,[],{group:false,digest:false,report:true})
  assert.deepEqual((await report.assemble()).tools.map(tool=>tool.name).sort(),[groupAttachToolName,groupMentionToolName,roleMemoryProposalToolName].sort(),'计划汇报只能声明附件与提及，不获得群表情或其他群历史能力')
  const digest=await runtime(t)
- restrictRunTools(digest.agent,[],{group:false,digest:true})
- assert.deepEqual((await digest.assemble()).tools.map(tool=>tool.name).sort(),[dayEvidence,digestSubmit,roleMemoryProposalToolName].sort())
+ // 小结只开放两种专用工具；即使岗位授权其它工具，也不能把注定拒绝的操作交给模型。
+ restrictRunTools(digest.agent,['spawn_teammate','teloa_capabilities',groupAttachToolName,roleMemoryProposalToolName],{group:true,digest:true})
+ const assembled=await digest.assemble()
+ assert.deepEqual(assembled.tools.map(tool=>tool.name).sort(),[dayEvidence,digestSubmit].sort())
+ assert.equal(assembled.sections.some(section=>section.name==='team:policy'),false)
+ digest.agent.followup(createUserMessage({source:{kind:'user',rpcId:'digest-tool-scope'},content:[{type:'text',text:'只读当天证据并提交小结'}]}));await digest.agent.whenIdle()
+ assert.deepEqual(digest.adapter.requests[0]!.tools?.map(tool=>tool.name).sort(),[dayEvidence,digestSubmit].sort(),'最终模型请求与小结执行闸一致')
 })
 
 test('选择的固定 Skill 进入真实模型系统方法段，原正文与变量字面量不变；撤销后不污染后续会话',async t=>{
@@ -285,4 +436,30 @@ test('原生模型循环：目录启动→选择方法与检索→读取相邻�
  assert.equal(adapter.requests.length,3)
  const results=agent.session.snapshotEvents().filter(e=>e.type==='tool/result')
  assert.equal(results.length,3);assert.ok(results.every(e=>e.type==='tool/result'&&!e.data.message.isError))
+})
+
+
+test('真实分析输入构造与SDK发送保留固定方法和资料全文，不新增执行工具',async t=>{
+ const {taskRunExecutionInput}=await import('../../backend/src/work/task-runs.ts')
+ const {readRunKnowledge}=await import('@teloa/backend')
+ const {readRunAnalysisScope,runAnalysisNotice}=await import('@teloa/contract')
+ const {randomUUID}=await import('node:crypto'),{ctx,agent,adapter}=await runtime(t)
+ const taskId=randomUUID(),roleId=randomUUID(),task={id:taskId,version:3,title:'仅分析',goal:'阅读固定依据，不使用工具',scope:'general'} as Parameters<typeof taskRunExecutionInput>[0]
+ const role={id:roleId,version:2,name:'分析岗',duty:'核对',dataScope:'固定资料',executionScope:'仅分析'} as Parameters<typeof taskRunExecutionInput>[1]
+ const scope=readRunAnalysisScope({schema:'teloa.run-analysis-scope/v1',kind:'owner-task-derived',ownerId:'owner',taskId,taskVersion:3,roleId,roleVersion:2,requestId:randomUUID(),sourceDigest:'a'.repeat(64),contextSha256:'b'.repeat(64),lineageSha256:'c'.repeat(64),controls:[{id:randomUUID(),generation:1}],files:[],notice:runAnalysisNotice,materialsSha256:'d'.repeat(64),knowledgeSha256:'e'.repeat(64)})
+ const methodBody='ANALYSIS-FULL-METHOD: 保留证据和未知。',chosen={...skill,content:methodBody,sha256:createHash('sha256').update(methodBody).digest('hex')}
+ const body='ANALYSIS-FULL-KNOWLEDGE: 本次仅有受控合成来源。',knowledge=readRunKnowledge([{id:randomUUID(),version:1,title:'固定资料',sourceId:'analysis-fixture',sourceVersion:createHash('sha256').update(body).digest('hex'),scopeIds:['general'],text:body}])[0]!
+ const inputText=taskRunExecutionInput(task,role,[chosen],[knowledge],undefined,undefined,undefined,undefined,[],undefined,undefined,true,undefined,undefined,undefined,undefined,undefined,undefined,undefined,undefined,false,undefined,undefined,scope)
+ assert.equal(JSON.parse(inputText).contextMode,undefined,'生产prepare/claim共用输入构造器的分析默认模式保留全文')
+ assert.ok(inputText.includes(methodBody)&&inputText.includes(body))
+ ctx.provide('agentPresets',{serviceFor:()=>({get:async()=>({...chosen,invocation:{modelInvocable:true,userInvocable:true}})})} as never)
+ ctx.provide('sessionController',{resolveAgent:async()=>({agent}),prompt:async(request:{requestId:string;content:Parameters<typeof createUserMessage>[0]['content']})=>{agent.followup(createUserMessage({source:{kind:'user',rpcId:request.requestId},content:request.content}));return {accepted:true}}} as never)
+ const ports=dshTaskRunPorts(ctx,'owner',async sessionId=>({ownerId:'owner',sessionId,status:'ready'}),async()=>[knowledge]);ports.isAnalysisRun=async()=>true
+ const run={id:randomUUID(),taskId,taskVersion:3,roleId,roleVersion:2,linkVersion:2,sessionId:agent.id,nativeRequestId:randomUUID(),inputText,allowedTools:[],skills:[chosen],knowledge:[knowledge],analysisScope:scope} as unknown as TaskRun
+ await ports.send(run,AbortSignal.timeout(5000),{...target,taskId,sessionId:agent.id});await agent.whenIdle()
+ assert.equal(adapter.requests.length,1)
+ const request=adapter.requests[0]!,rendered=JSON.stringify(request.messages)
+ assert.ok(rendered.includes(methodBody)&&rendered.includes(body),'固定方法与资料全文必须实际进入官方SDK请求')
+ assert.equal(request.tools,undefined,'分析执行不能为加载目录新增任何执行工具')
+ assert.deepEqual((await ctx.systemPrompt.assemble({agent,scope:agent})).tools,[])
 })

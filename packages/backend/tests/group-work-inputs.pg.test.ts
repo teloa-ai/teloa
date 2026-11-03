@@ -9,7 +9,8 @@ import {GroupAgentGrantService} from '../src/work/group-agent-grants.ts'
 import {GroupTaskService} from '../src/work/group-tasks.ts'
 import {TaskService} from '../src/work/tasks.ts'
 import {RoleService} from '../src/work/roles.ts'
-import {GroupWorkInputService,readGroupWorkContinuation} from '../src/work/group-work-inputs.ts'
+import {GroupWorkInputService,readGroupWorkContinuation,readGroupWorkOwnerMessages} from '../src/work/group-work-inputs.ts'
+import {readGroupRunOwnerRequest} from '../src/work/group-owner-request.ts'
 import {testRoleResponsibility} from './role-test-fixture.ts'
 
 let container:StartedPostgreSqlContainer,pool:Pool,tick=0
@@ -118,14 +119,25 @@ test('完成后追加：保留同一 taskId、新增任务版本；原来源快�
  assert.deepEqual(await taskRow(f.owner,f.created.task.id),{version:original.version+1,state:'ready'})
  assert.deepEqual(await sourceRow(f.created.task.id),before,'原群任务来源快照与摘要不回写')
  assert.equal((await readGroupWorkContinuation(pool,f.owner,f.created.task.id,original.version+1))?.text,'补上负责人列。')
+ const ownerMessages=()=>readGroupWorkOwnerMessages(pool,f.owner,f.group.id,f.created.task.id,original.version+1)
+ assert.equal((await ownerMessages())[0]?.messageId,follow.id)
+ assert.deepEqual(await readGroupWorkOwnerMessages(pool,f.owner,f.group.id,f.created.task.id,original.version),[],'旧 Run 固定版本读不到未来追加')
+ assert.deepEqual(await readGroupWorkOwnerMessages(pool,'other-owner',f.group.id,f.created.task.id,original.version+1),[])
+ assert.deepEqual(await readGroupWorkOwnerMessages(pool,f.owner,randomUUID(),f.created.task.id,original.version+1),[])
+ assert.deepEqual(await readGroupWorkOwnerMessages(pool,f.owner,f.group.id,randomUUID(),original.version+1),[])
+ const reserved=await f.reserve((await f.send('尚未受理的群意见，不是本人持续要求。')).id,'continue')
+ assert.equal(reserved.state,'reserved');assert.equal((await ownerMessages()).length,1,'仅保存/预约尚未升版本的群消息不进权威链')
+
  assert.equal(await readGroupWorkContinuation(pool,f.owner,f.created.task.id,original.version),undefined,'旧版本 Run 读不到后来的追加')
  const runId=randomUUID()
  assert.equal((await f.inputs.settle(f.owner,{requestId:first.requestId,state:'continued',runId,reason:null})).runId,runId,'先记录续办 Run 身份')
  assert.equal((await f.inputs.settle(f.owner,{requestId:first.requestId,state:'continued',runId:randomUUID(),reason:null})).runId,runId,'已绑定的 Run 身份不可更换')
  assert.equal((await f.inputs.settle(f.owner,{requestId:first.requestId,state:'unknown',runId,reason:'teloa/execution-pending'})).state,'unknown')
+ assert.deepEqual(await ownerMessages(),[],'unknown 无可核实原 Run 的固定续办输入时不能提升为本人指令')
  assert.equal((await f.inputs.continueTask(f.owner,first.requestId)).taskVersion,original.version+1,'未知回执不再升版本')
  const accepted=await f.inputs.settle(f.owner,{requestId:first.requestId,state:'accepted',runId,nativeRequestId:'native-1',reason:null})
  assert.deepEqual([accepted.state,accepted.nativeRequestId],['accepted','native-1'])
+ assert.equal((await ownerMessages())[0]?.messageId,follow.id,'明确受理来源仍可读')
  assert.equal((await f.inputs.settle(f.owner,{requestId:first.requestId,state:'unknown',runId,reason:'x'})).state,'accepted','终态不能改回未知')
  assert.equal((await readGroupWorkContinuation(pool,f.owner,f.created.task.id,original.version+1))?.references.length,0)
  // 执行失败只推进状态版本，重试仍需收到同一明确追加；本人改了目标后则不能套用旧追加。
@@ -134,6 +146,24 @@ test('完成后追加：保留同一 taskId、新增任务版本；原来源快�
  await new TaskService(pool,identity).edit(f.owner,{taskId:f.created.task.id,expectedVersion:original.version+3,fields:{title:f.created.task.title,goal:'新的独立目标。'}})
  assert.equal(await readGroupWorkContinuation(pool,f.owner,f.created.task.id,original.version+4),undefined,'内容版本改变不能继承先前追加')
  await assert.rejects(pool.query('delete from teloa_group_work_inputs where owner_id=$1',[f.owner]),/immutable/)
+})
+
+test('新完整链超过原上限明确拒绝，旧冻结选择仍可逐字回验且不能冒用同群其他本人消息',async()=>{
+ const f=await fixture(),source=f.created.source
+ assert.ok(source.schema==='teloa.group-task-source/v2'&&source.ownerRequest)
+ for(let i=0;i<17;i++){
+  const saved=await f.reserve((await f.send('同一原任务追加限制 '+i)).id,'continue')
+  assert.equal((await f.inputs.continueTask(f.owner,saved.requestId)).state,'continued')
+ }
+ const version=(await taskRow(f.owner,f.created.task.id)).version
+ await assert.rejects(readGroupRunOwnerRequest(pool,f.owner,source,version,pool),{code:'teloa/conflict'},'不能为凑进上限静默丢弃持续限制')
+ assert.deepEqual(await readGroupRunOwnerRequest(pool,f.owner,source,version,pool,{ownerRequest:source.ownerRequest}),source.ownerRequest,'完整链上限不影响旧冻结子集回验')
+ const unrelated=await f.send('群里其他本人意见，未续办这个任务。'),foreign={messageId:unrelated.id,text:unrelated.text,sha256:'0'.repeat(64)}
+ await assert.rejects(readGroupRunOwnerRequest(pool,f.owner,source,version,pool,{ownerRequest:foreign}),{code:'teloa/forbidden'})
+ await assert.rejects(readGroupRunOwnerRequest(pool,f.owner,source,version,pool,{ownerRequest:{...source.ownerRequest,sha256:'0'.repeat(64)}}),{code:'teloa/forbidden'})
+ await assert.rejects(readGroupRunOwnerRequest(pool,f.owner,source,version,pool,{ownerRequest:undefined}),{code:'teloa/storage-corrupt'})
+ const legacy={...source};delete legacy.ownerRequest
+ assert.equal(await readGroupRunOwnerRequest(pool,f.owner,legacy,version,pool,{ownerRequest:undefined}),undefined,'无本人链的旧快照保持原可选字段形态')
 })
 
 test('原 Run 进行中只保存不续办；登记后本人要求停止则续办被拒，停止后不复活；版本过期与别群消息被拒',async()=>{

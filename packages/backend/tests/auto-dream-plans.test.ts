@@ -16,6 +16,7 @@ import {AUTO_DREAM_DEFAULT_TRIGGER,AUTO_DREAM_PLAN_TITLE,ensureAutoDreamPlan,pau
 import {testRoleResponsibility} from './role-test-fixture.ts'
 import {initializeCollaboration} from '../src/work/collaboration.ts'
 import {initializeGroupAgentGrants} from '../src/work/group-agent-grants.ts'
+import {workAccess} from '../src/work/work-access.ts'
 
 let container:StartedPostgreSqlContainer,pool:Pool
 const identity={id:randomUUID,now:()=>new Date().toISOString()}
@@ -103,6 +104,45 @@ test('新同事沿用最早系统计划的时刻与时区，即使那条已被�
  const second=await roles.create(owner,{requestId:randomUUID(),fields:{...employee(['SOC']),name:'核对岗'}})
  const plan=(await systemPlans(owner)).find(item=>item.roleId===second.id)!
  assert.equal(plan.state,'active');assert.deepEqual(plan.trigger,trigger)
+})
+
+test('Auto Dream 时刻更新不授予执行权：职责换版、暂停、移出范围与退役不锁死全局时刻',async()=>{
+ const owner=randomUUID(),{roles,plans,lifecycle}=services()
+ let role=await roles.create(owner,{requestId:randomUUID(),fields:employee(['SOC','general'])})
+ let plan=(await systemPlans(owner))[0]!
+ const update=async(time:string)=>{
+  const previous=plan
+  plan=await plans.change(owner,{planId:plan.id,requestId:randomUUID(),expectedVersion:plan.version,expectedConfigVersion:plan.configVersion,action:'update',fields:{title:plan.title,goal:plan.goal,dataScope:plan.dataScope,delivery:plan.delivery,trigger:{...plan.trigger,time},notificationPolicy:plan.notificationPolicy,completionPolicy:plan.completionPolicy}})
+  assert.equal(plan.state,previous.state);assert.equal(plan.roleVersion,previous.roleVersion)
+  assert.equal(plan.configVersion,previous.configVersion+1);assert.equal(plan.trigger.time,time)
+ }
+ role=await roles.edit(owner,{roleId:role.id,expectedVersion:role.version,fields:{...employee(['SOC','general']),duty:'更新后的只读核对职责'}})
+ assert.notEqual(role.version,plan.roleVersion)
+ await update('20:10')
+ role=(await lifecycle.change(owner,command(role.id,role.version,'pause'))).role;plan=(await systemPlans(owner))[0]!
+ await update('20:20');assert.equal(plan.state,'paused')
+ role=await roles.edit(owner,{roleId:role.id,expectedVersion:role.version,fields:employee(['general'])})
+ role=(await lifecycle.change(owner,command(role.id,role.version,'resume'))).role;plan=(await systemPlans(owner))[0]!
+ await update('20:30');assert.equal(plan.state,'paused')
+ await assert.rejects(plans.change(owner,{planId:plan.id,requestId:randomUUID(),expectedVersion:plan.version,action:'enable'}),{code:'teloa/forbidden'})
+ role=(await lifecycle.change(owner,command(role.id,role.version,'retire'))).role;plan=(await systemPlans(owner))[0]!
+ await update('20:40');assert.equal(plan.state,'paused')
+ await assert.rejects(plans.change(owner,{planId:plan.id,requestId:randomUUID(),expectedVersion:plan.version,action:'enable'}),{code:'teloa/conflict'})
+ for(const changed of [{goal:'越界业务任务'},{trigger:{...plan.trigger,cadence:'weekly'}},{completionPolicy:{kind:'manual'}}]){
+  await assert.rejects(plans.change(owner,{planId:plan.id,requestId:randomUUID(),expectedVersion:plan.version,expectedConfigVersion:plan.configVersion,action:'update',fields:{title:plan.title,goal:plan.goal,dataScope:plan.dataScope,delivery:plan.delivery,trigger:plan.trigger,notificationPolicy:plan.notificationPolicy,completionPolicy:plan.completionPolicy,...changed}}),{code:'teloa/forbidden'})
+  assert.deepEqual((await systemPlans(owner))[0],plan)
+ }
+ const fresh=await roles.create(owner,{requestId:randomUUID(),fields:{...employee(['general']),name:'新在岗核对员'}})
+ assert.equal((await systemPlans(owner)).find(row=>row.roleId===fresh.id)?.trigger.time,'20:40')
+ assert.equal((await roles.get(owner,role.id))?.state,'retired')
+})
+
+test('普通计划时刻更新仍核对冻结岗位版本，不能借系统小结规则绕过',async()=>{
+ const owner=randomUUID(),{roles,plans}=services(),role=await roles.create(owner,{requestId:randomUUID(),fields:employee(['general'])})
+ const plan=await plans.create(owner,{requestId:randomUUID(),fields:{title:'本人计划',goal:'核对已给资料',scope:'general',dataScope:'本人资料',delivery:'私有核对稿',roleId:role.id,expectedRoleVersion:role.version,trigger:AUTO_DREAM_DEFAULT_TRIGGER,notificationPolicy:'silent'},source:{kind:'manual'}})
+ await roles.edit(owner,{roleId:role.id,expectedVersion:role.version,fields:{...employee(['general']),duty:'修订职责'}})
+ await assert.rejects(plans.change(owner,{planId:plan.id,requestId:randomUUID(),expectedVersion:plan.version,expectedConfigVersion:plan.configVersion,action:'update',fields:{title:plan.title,goal:plan.goal,dataScope:plan.dataScope,delivery:plan.delivery,trigger:{...plan.trigger,time:'20:00'},notificationPolicy:plan.notificationPolicy}}),{code:'teloa/version-conflict'})
+ assert.equal((await plans.list(owner,{})).find(row=>row.id===plan.id)?.trigger.time,'23:30')
 })
 
 test('本人手动暂停的小结不会因员工复岗重新启用，已有日程和修订号不变',async()=>{
@@ -228,4 +268,17 @@ test('私有系统小结不能通过普通计划编辑扩大发布到群',async(
  const owner=randomUUID(),{roles,plans}=services();await roles.create(owner,{requestId:randomUUID(),fields:employee(['general'])})
  const plan=(await systemPlans(owner))[0]!
  await assert.rejects(plans.change(owner,{planId:plan.id,requestId:randomUUID(),expectedVersion:plan.version,expectedConfigVersion:plan.configVersion,action:'update',fields:{title:plan.title,goal:plan.goal,dataScope:plan.dataScope,delivery:plan.delivery,trigger:plan.trigger,notificationPolicy:plan.notificationPolicy,completionPolicy:plan.completionPolicy,groupId:randomUUID()}}),{code:'teloa/forbidden'})
+})
+
+test('系统小结只改时刻也必须通过 automation edit 许可，拒绝时不写新版本',async()=>{
+ const owner=randomUUID(),{roles,plans}=services();await roles.create(owner,{requestId:randomUUID(),fields:employee(['general'])})
+ const plan=(await systemPlans(owner))[0]!,requests:unknown[]=[]
+ let mode:'deny'|'revoke'='deny',checks=0
+ workAccess.installPolicy(async request=>{if(request.kind==='capability'&&request.ownerId===owner&&request.capability==='automation'&&request.operation==='edit'){requests.push(request);if(mode==='deny')throw Error('本轮测试拒绝编辑');return {assertCurrent(){if(++checks===3)throw Error('写入后提交前失效')}}}return {assertCurrent(){}}})
+ await assert.rejects(plans.change(owner,{planId:plan.id,requestId:randomUUID(),expectedVersion:plan.version,expectedConfigVersion:plan.configVersion,action:'update',fields:{title:plan.title,goal:plan.goal,dataScope:plan.dataScope,delivery:plan.delivery,trigger:{...plan.trigger,time:'20:00'},notificationPolicy:plan.notificationPolicy,completionPolicy:plan.completionPolicy}}),{code:'teloa/forbidden'})
+ assert.equal(requests.length,1);assert.deepEqual((await systemPlans(owner))[0],plan)
+ mode='revoke';const requestId=randomUUID()
+ await assert.rejects(plans.change(owner,{planId:plan.id,requestId,expectedVersion:plan.version,expectedConfigVersion:plan.configVersion,action:'update',fields:{title:plan.title,goal:plan.goal,dataScope:plan.dataScope,delivery:plan.delivery,trigger:{...plan.trigger,time:'20:00'},notificationPolicy:plan.notificationPolicy,completionPolicy:plan.completionPolicy}}),{code:'teloa/forbidden'})
+ assert.equal(checks,3);assert.deepEqual((await systemPlans(owner))[0],plan)
+ assert.equal((await pool.query('select 1 from teloa_plan_changes where owner_id=$1 and request_id=$2',[owner,requestId])).rowCount,0)
 })

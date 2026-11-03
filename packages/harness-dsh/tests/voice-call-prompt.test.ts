@@ -1,12 +1,107 @@
 import test,{type TestContext} from 'node:test'
 import assert from 'node:assert/strict'
-import {randomUUID} from 'node:crypto'
+import {randomUUID,createHash} from 'node:crypto'
 import {createUserMessage,type GenerateOptions} from '@deepseek-ai/dsh-llm'
 import {renderContextSnapshot,type PromptAssembly} from '@deepseek-ai/dsh-system-prompt'
 import type {Conversation,VoiceCall} from '@teloa/contract'
 import {createBrowserVoiceHost} from '../src/browser-voice-host.ts'
 import type {VoiceMediaSnapshot} from '../src/voice-media-registry.ts'
-import {hotGate,nativeHotCausalityFixture,textAnswer} from './fixtures/native-hot-causality.ts'
+import {HotAdapter,hotGate,nativeHotCausalityFixture,textAnswer} from './fixtures/native-hot-causality.ts'
+import {nativeProviderFixture} from './fixtures/native-input-provider.ts'
+import {installNativeSessionController} from './fixtures/native-host-services.ts'
+import {TeloaNativeInput} from '../src/native-input-provider.ts'
+import type {VoiceSpeech} from '../src/voice-service.ts'
+
+/** 正式浏览器媒体/宿主/Controller/NativeInput/Loop；仅替代语音供应商、模型及本人目录端口。 */
+async function mediaHost(t:TestContext){
+ const f=await nativeProviderFixture(t,{maintenance:false}),owner=randomUUID(),model=new HotAdapter()
+ f.ctx.llm.registerAdapter(['test'],model)
+ await f.ctx.plugin(TeloaNativeInput);await installNativeSessionController(f.ctx,{nativeOpen:false})
+ const counts={transcribe:0,speak:0},controls:{asr?:ReturnType<typeof hotGate>;tts?:ReturnType<typeof hotGate>;silence?:boolean}={}
+ const speech:VoiceSpeech={async transcribe(audio){counts.transcribe++;await controls.asr?.wait();return controls.silence?null:{text:'核对原会话的资料。',audioSha256:createHash('sha256').update(audio).digest('hex'),receiptId:'synthetic-stt-receipt',providerId:'minimax'}},async speak(_text,_signal,onAudio){counts.speak++;await controls.tts?.wait();await onAudio(new Uint8Array([255,251,1,2]))}}
+ const host=createBrowserVoiceHost(f.ctx,{owner,configured:async()=>true,speech,conversation:async sessionId=>({id:'owned-'+sessionId,ownerId:owner,title:'本人原会话',scopeIds:['general'],version:1,status:'ready',requestedSessionId:sessionId,sessionId,createdAt:'2026-10-16T00:00:00Z',purpose:'assistant'}),requestedRoleId:async()=>null,role:async()=>null,links:{bySession:async()=>[]},readHomeContext:async sessionId=>({sessionId,scopeId:'general',roleId:null,version:3}),assistantEligible:async()=>true})
+ let bound:{callId:string;callGeneration:string;token:string}|undefined
+ t.after(async()=>{controls.asr?.release();controls.tts?.release();if(bound)await host.handler('voice-calls/media-closed',bound).catch(()=>{});await host.dispose()})
+ const requestId=randomUUID(),pending=host.handler('voice-calls/start',{requestId,target:'assistant',expectedContextVersion:3,sessionId:String(f.agent.id)}) as Promise<VoiceCall>
+ void pending.catch(()=>{})
+ let call:VoiceCall|null=null,snapshot:VoiceMediaSnapshot|null=null
+ for(let attempt=0;attempt<100&&!snapshot;attempt++){
+  await new Promise<void>(resolve=>setImmediate(resolve));call=await host.handler('voice-calls/get-by-request',{requestId}) as VoiceCall|null
+  if(call)snapshot=await host.handler('voice-calls/media',{callId:call.id,callGeneration:call.callGeneration}) as VoiceMediaSnapshot|null
+ }
+ assert.ok(call&&snapshot,'正式媒体必须建立可握手的预约')
+ bound={callId:call.id,callGeneration:call.callGeneration,token:snapshot.token};await host.handler('voice-calls/media-ready',bound);call=await pending
+ const identity={callId:call.id,callGeneration:call.callGeneration}
+ return {...f,host,model,counts,controls,call,bound,identity,
+  audio:()=>({...bound,turnId:randomUUID(),audio:Buffer.from('synthetic-wave').toString('base64')}),
+  snapshot:()=>host.handler('voice-calls/media',identity) as Promise<VoiceMediaSnapshot>,
+  current:()=>host.handler('voice-calls/get',{callId:call.id}) as Promise<VoiceCall>,
+  async close(){await host.handler('voice-calls/media-closed',bound);return host.handler('voice-calls/end',{callId:call.id})},
+ }
+}
+
+type AudioReceipt={text:string|null;receipt:null|{state:string;commitId:string;sessionId:string}}
+type TurnReceipt={state:string;speech:string;replyExpected:boolean;reason:string|null}
+async function settledVoiceTurn(f:Awaited<ReturnType<typeof mediaHost>>,commitId:string){
+ let value!:TurnReceipt
+ for(let attempt=0;attempt<100;attempt++){
+  value=await f.host.handler('voice-calls/turn',{callId:f.call.id,commitId}) as TurnReceipt
+  if(value.state==='ended'&&value.speech!=='not-ready')return value
+  await new Promise<void>(resolve=>setImmediate(resolve))
+ }
+ assert.fail('原语音轮次没有收口：'+JSON.stringify(value))
+}
+
+test('E07：宿主audio经封口和正式Controller只派发一次，turn纯读、播放回执按原世代生效',{timeout:30000},async t=>{
+ const f=await mediaHost(t),input=f.audio()
+ for(const bad of [{...input,token:randomUUID()},{...input,callGeneration:randomUUID()},{...input,text:'页面伪造转写'}])await assert.rejects(f.host.handler('voice-calls/audio',bad))
+ assert.equal(f.counts.transcribe,0);assert.equal(f.model.requests.length,0)
+ f.controls.silence=true
+ assert.deepEqual(await f.host.handler('voice-calls/audio',f.audio()),{text:null,receipt:null});assert.equal(f.model.requests.length,0)
+ f.controls.silence=false;f.model.scripts.push(textAnswer)
+ const [first,duplicate]=await Promise.all([f.host.handler('voice-calls/audio',input),f.host.handler('voice-calls/audio',input)]) as AudioReceipt[]
+ assert.ok(first?.receipt&&duplicate?.receipt);assert.equal(first.text,'核对原会话的资料。');assert.equal(first.receipt.sessionId,String(f.agent.id));assert.equal(first.receipt.commitId,duplicate.receipt.commitId)
+ await f.agent.whenIdle()
+ const result=await settledVoiceTurn(f,first.receipt.commitId)
+ assert.deepEqual(result,{state:'ended',speech:'queued',replyExpected:true,reason:'completed'})
+ assert.equal(f.counts.transcribe,2);assert.equal(f.counts.speak,1);assert.equal(f.model.requests.length,1)
+ const messages=f.agent.session.snapshotEvents().filter(event=>event.type==='user/message'&&event.data.source.kind==='user')
+ assert.equal(messages.length,1);const user=messages[0];assert.ok(user?.type==='user/message');assert.deepEqual(user.data.content,[{type:'text',text:first.text}]);assert.equal(f.other.session.snapshotEvents().filter(event=>event.type==='user/message').length,0)
+ const events=f.agent.session.snapshotEvents()
+ for(let i=0;i<3;i++)assert.deepEqual(await f.host.handler('voice-calls/turn',{callId:f.call.id,commitId:first.receipt.commitId}),result)
+ await assert.rejects(f.host.handler('voice-calls/turn',{callId:f.call.id,commitId:randomUUID()}))
+ await assert.rejects(f.host.handler('voice-calls/turn',{callId:f.call.id,commitId:first.receipt.commitId,sessionId:String(f.other.id)}))
+ await assert.rejects(f.host.handler('voice-calls/audio',{...input,audio:Buffer.from('changed-wave').toString('base64')}))
+ assert.deepEqual(f.agent.session.snapshotEvents(),events);assert.equal(f.model.requests.length,1);assert.equal(f.counts.speak,1)
+ const media=await f.snapshot();assert.ok(media.speech);assert.equal((await f.current()).playback,'idle')
+ const playback={...f.bound,playbackGeneration:media.playbackGeneration,state:'playing'}
+ await assert.rejects(f.host.handler('voice-calls/playback',{...playback,token:randomUUID()}))
+ await f.host.handler('voice-calls/playback',{...playback,playbackGeneration:media.playbackGeneration-1});assert.equal((await f.current()).playback,'idle')
+ assert.deepEqual(await f.host.handler('voice-calls/playback',playback),{accepted:true});assert.equal((await f.current()).playback,'playing')
+ await f.host.handler('voice-calls/interrupt',{callId:f.call.id});await f.host.handler('voice-calls/playback',playback)
+ assert.equal((await f.current()).playback,'idle');assert.equal((await f.snapshot()).speech,null)
+ await f.close();await assert.rejects(f.host.handler('voice-calls/playback',playback));await assert.rejects(f.host.handler('voice-calls/audio',f.audio()))
+ assert.equal((await f.current()).state,'ended');assert.equal(f.model.requests.length,1)
+})
+
+for(const action of ['hangup','revoke'] as const)test(`E07：ASR忽略取消迟答，${action}后不能封口或提交原会话`,{timeout:30000},async t=>{
+ const f=await mediaHost(t),gate=hotGate();f.controls.asr=gate;t.after(gate.release)
+ const before=f.agent.session.snapshotEvents(),pending=f.host.handler('voice-calls/audio',f.audio());void pending.catch(()=>{})
+ await gate.entered
+ if(action==='hangup')await f.close();else{f.host.invalidateSession(String(f.agent.id));await f.host.handler('voice-calls/media-closed',f.bound)}
+ gate.release();await assert.rejects(pending)
+ assert.deepEqual(f.agent.session.snapshotEvents(),before);assert.equal(f.model.requests.length,0);assert.equal(f.counts.speak,0);assert.equal((await f.snapshot()).speech,null)
+})
+
+test('E07：挂断后迟到TTS不能重新发布音频；已受理工作保留完成且轮询不重发',{timeout:30000},async t=>{
+ const f=await mediaHost(t),gate=hotGate();f.controls.tts=gate;t.after(gate.release);f.model.scripts.push(textAnswer)
+ const result=await f.host.handler('voice-calls/audio',f.audio()) as AudioReceipt;assert.ok(result.receipt)
+ await gate.entered;await f.agent.whenIdle();await f.close();gate.release()
+ const receipt=await settledVoiceTurn(f,result.receipt.commitId)
+ assert.equal(receipt.state,'ended');assert.equal(receipt.reason,'completed');assert.notEqual(receipt.speech,'queued')
+ assert.equal((await f.snapshot()).speech,null);assert.equal((await f.current()).state,'ended');assert.equal(f.model.requests.length,1);assert.equal(f.counts.speak,1)
+ await f.host.handler('voice-calls/turn',{callId:f.call.id,commitId:result.receipt.commitId});assert.equal(f.model.requests.length,1);assert.equal(f.counts.speak,1)
+})
 
 async function fixture(t:TestContext,connecting=false,legacy=false){
  const f=await nativeHotCausalityFixture(t),owner=randomUUID(),gate=hotGate()

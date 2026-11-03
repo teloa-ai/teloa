@@ -1,4 +1,5 @@
 import {createHash} from 'node:crypto'
+import {preparedMaintenanceHash} from './prepared-maintenance.ts'
 import {isDeepStrictEqual} from 'node:util'
 import type {Pool,PoolClient} from 'pg'
 import {WorkError,groupDefinition,groupRoutingListInput,isGroupRoutingDecision,readGroupDispatchItem,readGroupRunSource,isMessageReference,ungrantedGroupReferences,type MessageReference,groupRoutedAttemptTaskRequestId,type GroupRoutingDecision,type GroupTaskCreateInput,type WorkSource,type GroupDispatchItem,type GroupRunSource} from '@teloa/contract'
@@ -184,7 +185,7 @@ export class GroupRoutingOutboxService{
    const priors=(await db.query('select o.*,r.state as run_state,r.evidence as run_evidence from teloa_group_routing_outbox o left join teloa_task_runs r on r.owner_id=o.owner_id and r.id=o.run_id where o.owner_id=$1 and o.message_id=$2 and o.decision_version=$3 and o.stage<$4 order by o.stage desc,o.role_id',[owner,current.message_id,current.decision_version,current.stage])).rows
    const blocked=(reason:string)=>db.query("update teloa_group_routing_outbox set state='blocked',reason=$3 where owner_id=$1 and id=$2 and state='waiting'",[owner,current.id,reason]).then(()=>0)
    if(!priors.length)return blocked('teloa/storage-corrupt')
-   if(priors.some(prior=>prior.state==='blocked'||['withdrawn','configuration_failed'].includes(String(prior.run_state))))return blocked('teloa/conflict')
+   if(priors.some(prior=>prior.state==='blocked'||['withdrawn','configuration_failed','submission_unknown'].includes(String(prior.run_state))))return blocked('teloa/conflict')
    // 原生轮次以错误／中断结束不是前序成果就绪；已贴回的失败说明也不能据此启动后序工作。
    if(priors.some(prior=>prior.run_state==='ended'&&(prior.run_evidence?.state!=='ended'||prior.run_evidence?.reason!=='completed')))return blocked('teloa/conflict')
    if(priors.some(prior=>prior.run_state!=='ended'))return 0
@@ -223,7 +224,7 @@ export class GroupRoutingOutboxService{
  async list(owner:string,input:unknown):Promise<GroupDispatchItem[]>{actor(owner);const request=groupRoutingListInput(input);if(!(await this.pool.query('select 1 from teloa_groups where owner_id=$1 and id=$2',[owner,request.groupId])).rowCount)throw new WorkError('teloa/forbidden','群不属于当前本人。');return (await this.pool.query('select * from teloa_group_routing_outbox where owner_id=$1 and group_id=$2 and message_id=any($3::uuid[]) order by message_id,role_id',[owner,request.groupId,request.messageIds])).rows.map(item)}
  async claim(owner:string,input:{itemId:string;expectedLeaseGeneration:number}):Promise<GroupDispatchItem|null>{
   actor(owner);exact(input,['itemId','expectedLeaseGeneration']);if(!uuid(input.itemId)||!Number.isSafeInteger(input.expectedLeaseGeneration)||input.expectedLeaseGeneration<0)throw invalid()
-  return this.transaction(async db=>{const row=(await db.query(`update teloa_group_routing_outbox set state='leased',attempts=attempts+1,lease_generation=lease_generation+1,dispatch_control_snapshot=null,next_attempt_at=$4::timestamptz+interval '30 seconds'
+  return this.transaction(async db=>{const row=(await db.query(`update teloa_group_routing_outbox set state='leased',attempts=attempts+1,lease_generation=lease_generation+1,next_attempt_at=$4::timestamptz+interval '30 seconds'
    where owner_id=$1 and id=$2 and lease_generation=$3 and state in ('pending','leased','unknown','submitted') and (next_attempt_at is null or next_attempt_at<=$4) returning *`,[owner,input.itemId,input.expectedLeaseGeneration,this.identity.now()])).rows[0];return row?item(row):null})
  }
  async assertDispatch(owner:string,input:{itemId:string;leaseGeneration:number}):Promise<void>{
@@ -236,8 +237,9 @@ export class GroupRoutingOutboxService{
   if(work){const message=(await this.pool.query('select text,author_id from teloa_group_messages where owner_id=$1 and group_id=$2 and id=$3',[owner,fixed.groupId,fixed.messageId])).rows[0],text=message?.text,range=row.instruction_range as {start?:unknown;end?:unknown}|null;if(typeof text!=='string'||!range||!Number.isSafeInteger(range.start)||!Number.isSafeInteger(range.end)||(range.end as number)>text.length||(range.start as number)>=(range.end as number))throw corrupt();goal=(message.author_id==='self'?groupRoutedWorkGoal:groupRoutedHandoffWorkGoal)(text.slice(range.start as number,range.end as number))}
   return {requestId:fixed.requestId,groupId:fixed.groupId,messageId:fixed.messageId,expectedGroupVersion:row.group_version as number,goal,assignee:{roleId:fixed.roleId,expectedVersion:fixed.roleVersion},trigger:'routed',executionMode:work?'work':'reply',routingAttemptVersion:fixed.decisionVersion,...(row.handoff_message_id?{handoffMessageId:String(row.handoff_message_id)}:{}),...(Array.isArray(row.handoff_message_ids)?{handoffMessageIds:(row.handoff_message_ids as unknown[]).map(String)}:{}),...(row.business_target?{businessTarget:groupTaskBusinessTarget(row.business_target)}:{})}
  }
- async receipt(owner:string,input:{itemId:string}):Promise<GroupDispatchReceipt>{
-  exact(input,['itemId']);return this.transaction(async db=>{const fixed=item(await this.stored(db,owner,input.itemId)),task=(await db.query('select t.id,s.* from teloa_tasks t join teloa_group_task_sources s on s.owner_id=t.owner_id and s.task_id=t.id and s.request_id=t.request_id where t.owner_id=$1 and t.request_id=$2',[owner,fixed.requestId])).rows[0]
+ async receipt(owner:string,input:{itemId:string}):Promise<GroupDispatchReceipt>{exact(input,['itemId']);return this.transaction(db=>this.receiptInTransaction(db,owner,input.itemId))}
+ private async receiptInTransaction(db:PoolClient,owner:string,itemId:string):Promise<GroupDispatchReceipt>{
+   const fixed=item(await this.stored(db,owner,itemId)),task=(await db.query('select t.id,s.* from teloa_tasks t join teloa_group_task_sources s on s.owner_id=t.owner_id and s.task_id=t.id and s.request_id=t.request_id where t.owner_id=$1 and t.request_id=$2',[owner,fixed.requestId])).rows[0]
    if(!task){if(fixed.taskId||fixed.runId)throw corrupt();return {taskId:null,runId:null,state:null}}
    const source=readGroupTaskSource(task)
    if(source.createdAssignee?.roleId!==fixed.roleId||source.createdAssignee.roleVersion!==fixed.roleVersion||source.messageId!==fixed.messageId||source.groupId!==fixed.groupId||fixed.taskId&&fixed.taskId!==task.id)throw corrupt()
@@ -248,13 +250,27 @@ export class GroupRoutingOutboxService{
    const run=readStoredTaskRun(raw)
    if(run.taskId!==task.id||run.roleId!==fixed.roleId||run.roleVersion!==fixed.roleVersion||fixed.runId&&fixed.runId!==run.id||!run.lineage||!isDeepStrictEqual(run.lineage,lineage))throw corrupt()
    return {taskId:task.id,runId:run.id,state:run.state}
-  })
+ }
+ /** 本人明确续办的维护 Run 已真实受理：沿原请求回执收口，不再领取或派发旧 blocked 行。 */
+ async settleMaintainedRunInTransaction(db:PoolClient,owner:string,runId:string):Promise<void>{
+  actor(owner)
+  if(!(await db.query("select to_regclass('teloa_prepared_run_maintenance') as name")).rows[0]?.name)return
+  const saved=(await db.query('select audit,resume,dispatch from teloa_prepared_run_maintenance where owner_id=$1 and run_id=$2',[owner,runId])).rows[0]
+  if(!saved?.resume||saved.dispatch===null)return
+  const raw=(await db.query('select * from teloa_task_runs where owner_id=$1 and id=$2 for share',[owner,runId])).rows[0],run=readStoredTaskRun(raw),fixed=saved.dispatch
+  if(!['accepted','active','ended'].includes(run.state)||!run.evidence||run.taskId!==saved.audit.taskId||run.sessionId!==saved.audit.sessionId||run.nativeRequestId!==saved.audit.nativeRequestId||createHash('sha256').update(run.inputText).digest('hex')!==saved.audit.inputSha256||raw.request_id!==fixed.request_id||run.roleId!==fixed.role_id||run.roleVersion!==fixed.role_version||run.groupContext?.groupId!==fixed.group_id)throw corrupt()
+  const current=(await db.query('select * from teloa_group_routing_outbox where owner_id=$1 and id=$2 for update',[owner,fixed.id])).rows[0]
+  if(current?.state==='settled'&&current.task_id===run.taskId&&current.run_id===run.id)return
+  if(!current||preparedMaintenanceHash(current)!==preparedMaintenanceHash(fixed)||current.state!=='blocked'||current.task_id!==run.taskId||current.run_id!==null&&current.run_id!==run.id)throw new WorkError('teloa/version-conflict','原群派工已变化，保留真实受理记录，不重复派发。')
+  const receipt=await this.receiptInTransaction(db,owner,fixed.id)
+  if(receipt.taskId!==run.taskId||receipt.runId!==run.id||!['accepted','active','ended'].includes(receipt.state??''))throw corrupt()
+  await db.query("update teloa_group_routing_outbox set state='settled',run_id=$3,reason=null,next_attempt_at=null where owner_id=$1 and id=$2",[owner,fixed.id,run.id])
  }
  async settle(owner:string,input:{itemId:string;leaseGeneration:number;taskId:string|null;runId:string|null;state:'submitted'|'unknown'|'settled'|'blocked';reason:string|null}):Promise<GroupDispatchItem>{
   actor(owner);exact(input,['itemId','leaseGeneration','taskId','runId','state','reason']);if(!uuid(input.itemId)||!positive(input.leaseGeneration)||input.taskId!==null&&!uuid(input.taskId)||input.runId!==null&&!uuid(input.runId)||input.runId!==null&&input.taskId===null||!['submitted','unknown','settled','blocked'].includes(input.state)||input.reason!==null&&(typeof input.reason!=='string'||input.reason.length>200))throw invalid()
   const receipt=await this.receipt(owner,{itemId:input.itemId})
   if(input.taskId!==receipt.taskId||input.runId!==receipt.runId)throw corrupt()
-  if(input.state==='settled'&&!['accepted','active','ended','withdrawn','configuration_failed'].includes(receipt.state??''))throw corrupt()
+  if(input.state==='settled'&&!['accepted','active','ended','withdrawn','configuration_failed','submission_unknown'].includes(receipt.state??''))throw corrupt()
   const row=(await this.pool.query(`update teloa_group_routing_outbox set state=$4,task_id=$5,run_id=$6,reason=$7,lineage=coalesce(lineage,(select lineage from teloa_task_work_lineage where owner_id=$1 and task_id=$5)),next_attempt_at=case when $4 in ('unknown','submitted') then $8::timestamptz+interval '5 seconds' else null end
    where owner_id=$1 and id=$2 and lease_generation=$3 and state in ('leased','unknown') returning *`,[owner,input.itemId,input.leaseGeneration,input.state,input.taskId,input.runId,input.reason,this.identity.now()])).rows[0]
   if(!row)throw new WorkError('teloa/version-conflict','群投递租约已变化，旧worker不能回写。');return item(row)

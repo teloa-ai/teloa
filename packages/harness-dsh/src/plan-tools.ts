@@ -1,14 +1,14 @@
 import {createHash} from 'node:crypto'
 import type {Context} from '@deepseek-ai/cordis'
 import {defineTool,type PreToolDecision} from '@deepseek-ai/dsh-tools'
-import {WorkError,isRecord,roleDefinition} from '@teloa/contract'
+import {WorkError,isRecord,roleDefinition,scheduleTimezones,type ScheduleTrigger} from '@teloa/contract'
 import type {TaskToolPolicyReader} from './task-tool-guard.ts'
 import {authorizeOrdinaryConversationMutation} from './conversation-mutation.ts'
 
 export const planToolNames=['teloa_plans_directory','teloa_plans_list','teloa_plans_get','teloa_plans_history','teloa_plans_create','teloa_plans_change','teloa_plans_update'] as const
 type PlanToolName=typeof planToolNames[number]
 type PlanEndpoint='plans/list'|'plans/get'|'plans/create'|'plans/change'
-type PlanTimezone='Asia/Singapore'|'Asia/Shanghai'|'UTC'
+type PlanTimezone=ScheduleTrigger['timezone']
 type ConversationBinding={ownerId:string;sessionId:string;status:'pending'|'ready'}
 
 export type PlanToolsPorts={
@@ -64,9 +64,9 @@ const emptyParameters={} as const
 const planIdParameters={planId:{type:'string',required:true}} as const
 const cursorSpec={type:'object',additionalProperties:false,properties:{claimedAt:{type:'string',required:true},claimId:{type:'string',required:true}}} as const
 const historyParameters={planId:{type:'string',required:true},limit:{type:'integer',required:true},cursor:cursorSpec} as const
-const createParameters={title:{type:'string',required:true},goal:{type:'string',required:true},scope:{type:'string',required:true},dataScope:{type:'string',required:true},delivery:{type:'string',required:true},notificationPolicy:{type:'string',enum:['always','attention','failure','silent'],required:true},roleId:{type:'string',required:true},expectedRoleVersion:{type:'integer',required:true},cadence:{type:'string',enum:['daily','weekly'],required:true},weekday:{type:'integer',enum:[1,2,3,4,5,6,7],required:true},time:{type:'string',required:true},timezone:{type:'string',enum:['Asia/Singapore','Asia/Shanghai','UTC'],required:true}} as const
+const createParameters={title:{type:'string',required:true},goal:{type:'string',required:true},scope:{type:'string',required:true},dataScope:{type:'string',required:true},delivery:{type:'string',required:true},notificationPolicy:{type:'string',enum:['always','attention','failure','silent'],required:true},roleId:{type:'string',required:true},expectedRoleVersion:{type:'integer',required:true},cadence:{type:'string',enum:['daily','weekly'],required:true},weekday:{type:'integer',enum:[1,2,3,4,5,6,7],required:true},time:{type:'string',required:true},timezone:{type:'string',enum:scheduleTimezones,required:true}} as const
 const changeParameters={planId:{type:'string',required:true},expectedVersion:{type:'integer',required:true},action:{type:'string',enum:['enable','pause','archive'],required:true},note:{type:'string'}} as const
-const updateParameters={planId:{type:'string',required:true},expectedVersion:{type:'integer',required:true},expectedConfigVersion:{type:'integer',required:true},title:{type:'string',required:true},goal:{type:'string',required:true},dataScope:{type:'string',required:true},delivery:{type:'string',required:true},notificationPolicy:{type:'string',enum:['always','attention','failure','silent'],required:true},cadence:{type:'string',enum:['daily','weekly'],required:true},weekday:{type:'integer',enum:[1,2,3,4,5,6,7],required:true},time:{type:'string',required:true},timezone:{type:'string',enum:['Asia/Singapore','Asia/Shanghai','UTC'],required:true}} as const
+const updateParameters={planId:{type:'string',required:true},expectedVersion:{type:'integer',required:true},expectedConfigVersion:{type:'integer',required:true},title:{type:'string',required:true},goal:{type:'string',required:true},dataScope:{type:'string',required:true},delivery:{type:'string',required:true},notificationPolicy:{type:'string',enum:['always','attention','failure','silent'],required:true},cadence:{type:'string',enum:['daily','weekly'],required:true},weekday:{type:'integer',enum:[1,2,3,4,5,6,7],required:true},time:{type:'string',required:true},timezone:{type:'string',enum:scheduleTimezones,required:true}} as const
 const output={schema:{type:'string'} as const,render:(_args:unknown,value:string)=>[{type:'text' as const,text:value}]}
 
 export function registerPlanTools(ctx:Context,ports:PlanToolsPorts){
@@ -86,7 +86,7 @@ export function registerPlanTools(ctx:Context,ports:PlanToolsPorts){
     let value:unknown
     if(definition.name==='teloa_plans_directory'){
      exact(args,[]);const observedAt=ports.now(),defaultTimezone=ports.timezone()
-     if(!timestamp(observedAt)||!['Asia/Singapore','Asia/Shanghai','UTC'].includes(defaultTimezone))throw hostFailure()
+     if(!timestamp(observedAt)||!scheduleTimezones.includes(defaultTimezone))throw hostFailure()
      value={observedAt,defaultTimezone,roles:roleDirectory(await ports.roles.list(ports.owner,{}),ports.owner)}
     }else if(definition.name==='teloa_plans_list'){
      exact(args,[]);value=await ports.planHandler('plans/list',{})

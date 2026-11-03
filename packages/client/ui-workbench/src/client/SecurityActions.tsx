@@ -90,10 +90,10 @@ export function SecurityActions({taskId,taskVersion,api,sourceApi,attention,atte
    return api[kind](request,context)
   })
  }
- if(source===null&&!error)return null
  // journal 锁语义与需要你决策卡同出一处：同任务的未决写保留因果保护，其它任务只占用它原来的命令 journal。
  const locks=securityJournalLocks(api,securityActionCommands,taskId,{busy,verified})
  const pending=locks.pendingKinds,broken=locks.brokenKinds,blocked=locks.blocked,disabledCommands=locks.disabledCommands,proposalBlocked=locks.locked('propose')
+ if(source===null&&!error&&!pending.length&&!broken.length)return null
  const allowed=panel?.proposal.tools.find(tool=>tool.tool==='security.endpoint.isolate')?.allowedTargets??[]
  const validReason=reason.trim().length>0&&reason.trim().length<=1000&&!/[\x00-\x1f\x7f]/.test(reason)
  return <section className={css.root} aria-label={t('security.title')}>
@@ -103,7 +103,7 @@ export function SecurityActions({taskId,taskVersion,api,sourceApi,attention,atte
   {error&&<p role="alert">{error}</p>}{broken.map(kind=><p role="alert" key={kind}>{t('security.command.'+kind)}: {localizeWorkError(locale,api.recoveryError(kind))} {t('recovery.nextStep')} <button type="button" onClick={()=>{api.discardRecovery(kind);setDiscardedCommands(current=>[...current,kind])}}>{t('recovery.discard')}</button></p>)}
   {discardedCommands.length>0&&<p role="status">{t('recovery.discarded')}</p>}
   {pending.length>0&&<p role="status">{t('security.pending')}</p>}
-  <div className={css.buttons}>{pending.map(kind=>{const saved=api.pending(kind)!;return <button key={kind} type="button" disabled={busy} onClick={()=>void act(async()=>{await api.recover(kind);if(saved.context.panel.taskId!==taskId)await api.list(saved.context.panel.taskId)},saved.context.panel.taskId)}>{t('security.recover')} · {t('security.command.'+kind)} · {saved.context.panel.taskId}</button>})}</div>
+  <div className={css.buttons}>{pending.map(kind=>{const saved=api.pending(kind)!;return <button key={kind} type="button" disabled={busy} onClick={()=>void act(async()=>{await api.recover(kind);if(saved.context.panel.taskId!==taskId)await api.list(saved.context.panel.taskId)},saved.context.panel.taskId)}>{t('security.recover')} · {t('security.command.'+kind)}{saved.context.panel.taskId!==taskId&&<> · {saved.context.panel.taskId}</>}</button>})}</div>
   {panel&&<>
    {!panel.actions.length&&<p className={css.muted}>{t('security.empty')}</p>}
    {panel.actions.map(action=><SecurityActionCard key={action.id} action={action} panel={panel} attention={attention} known={verified&&attentionKnown} busy={busy} disabled={blocked} disabledCommands={disabledCommands} focus={focus?.actionId===action.id?focus.revision:proposedAction?.id===action.id?proposedAction.version:undefined} run={run} repropose={action=>{if(proposal.current)proposal.current.open=true;setSupersedes(action.id);setTitle(action.title);setGoal(action.goal);setReason(String(action.params.reason??''));setTargets(action.targetSet.filter(v=>allowed.includes(v)));form.current?.querySelector('input')?.focus();form.current?.scrollIntoView({block:'nearest'})}}/>)}

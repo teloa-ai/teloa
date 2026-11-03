@@ -166,6 +166,13 @@ test('导入后旧正文不再能通过普通知识来源回读；只有真实�
  await assert.rejects(f.resources.executionKnowledge(agent,['general'],[first.document.resource.id],undefined,{runId} as unknown as FixedRunKnowledgeRead),{code:'teloa/not-found'})
  const capability=createFixedRunKnowledgeRead(f.actor.ownerId,runId,references)
  assert.equal((await f.resources.executionKnowledge(agent,['general'],[first.document.resource.id],undefined,capability))[0]?.text,first.document.markdown)
+ const fixedClient=await pool.connect()
+ try{
+  const expected={resourceId:first.document.resource.id,resourceVersion:first.document.resource.version,sourceVersion:first.document.contentHash}
+  await assert.rejects(f.resources.isRetrievalSourceCurrentInTransaction(fixedClient,agent,expected),{code:'teloa/not-found'})
+  assert.equal(await f.resources.isRetrievalSourceCurrentInTransaction(fixedClient,agent,expected,capability),true,'最终命中新鲜度复核复用同Run固定正文资格')
+  await assert.rejects(f.resources.isRetrievalSourceCurrentInTransaction(fixedClient,agent,expected,{runId} as unknown as FixedRunKnowledgeRead),{code:'teloa/not-found'})
+ }finally{fixedClient.release()}
  await assert.rejects(f.resources.executionKnowledge(agent,['general'],[first.document.resource.id],undefined,createFixedRunKnowledgeRead(f.actor.ownerId,randomUUID(),references)),{code:'teloa/not-found'})
  await assert.rejects(f.resources.executionKnowledge(f.actor,['general'],[first.document.resource.id]),{code:'teloa/not-found'})
 })

@@ -65,7 +65,7 @@ export function createSkillEditHandler(ports:SkillEditPorts){
   const files=(original.content.files as Record<string,unknown>[]).map(file=>{if(typeof file.path!=='string'||typeof file.base64!=='string')throw new WorkError('teloa/invalid-host-response','技能附件来源不完整。');return {path:file.path,base64:file.path==='SKILL.md'?Buffer.from(nextMarkdown).toString('base64'):file.base64}})
   // 保留原许可证和能力要求；新内容不继承旧字节的签名或审批结论。
   const originalTrust=normalizeMarketSourceTrust(original.content.trust),trust={...originalTrust,publisher:'本人修订',repository:null,signature:{status:'unverified' as const,signer:null},review:{conclusion:'needs-review' as const,summary:'本人修改后的新版本尚未经来源审核'}}
-  const metadata={id:original.result.skill.id,title:row.title,version,categories:original.metadata.categories}
+  const metadata={id:original.result.skill.id,title:row.title,version,categories:original.metadata.categories,...(original.metadata.modelDependencies===undefined?{}:{modelDependencies:original.metadata.modelDependencies})}
   signal.throwIfAborted();await beforeWrite?.()
   const imported=record(await ports.content('market-content/import',{kind:'atomic-skill',requestId:child(row.requestId as string,'import'),source:{kind:'upload',name:'会话修改技能'},metadata,trust,files},signal)),content=record(imported.content)
   if(!uuid(content.id)||content.ownerId!==ports.owner||content.logicalId!==original.result.skill.id||content.version!==version)throw new WorkError('teloa/invalid-host-response','技能修订来源身份不一致。')

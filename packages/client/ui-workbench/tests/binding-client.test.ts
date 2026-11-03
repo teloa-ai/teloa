@@ -10,6 +10,45 @@ function fixture() {
   const port:WorkPort={isNativeChild:()=>false,list:async()=>[],read:async id=>row(id),ensure:async id=>{const d=deferred<Conversation>();calls.set(id,d);return d.promise},catalog:async id=>({schema:'teloa.capabilities/v1',conversation:row(id),observedAt:'2026-09-10T00:00:00Z',skills:[],knowledge:{status:'not-connected'},connections:{status:'not-connected'},writes:{status:'not-implemented'}}),block:(id,reason)=>{blocks.set(id,reason)},create:async input=>({...row('new'),requestId:input.requestId,...(input.workspaceId===undefined?{}:{requestedWorkspaceId:input.workspaceId})}),adopt:async id=>id,open:()=>{},current:()=>undefined}
   return {calls,blocks,port,client:new BindingClient(port)}
 }
+test('分页首屏在后页未完成前发布，最终完整且不重复走旧全量 list',async()=>{
+ const f=fixture(),later=deferred<{items:Conversation[]}>(),started=deferred<void>(),snapshots:string[][]=[]
+ f.port.list=async()=>{throw Error('不应调用旧全量入口')}
+ f.port.listPage=async input=>{if(!input.cursor)return {items:[row('first')],nextCursor:'next'};started.resolve();return later.promise}
+ f.client.subscribe(()=>snapshots.push(f.client.getDirectorySnapshot().rows.map(r=>r.sessionId)))
+ const pending=f.client.refreshDirectory();await started.promise
+ assert.equal(f.client.getDirectorySnapshot().status,'ready');assert.equal(f.client.getDirectorySnapshot().loadingMore,true)
+ assert.deepEqual(f.client.getDirectorySnapshot().rows.map(r=>r.sessionId),['first'])
+ const generation=f.client.getDirectorySnapshot().generation
+ later.resolve({items:[row('second')]})
+ assert.deepEqual((await pending)?.map(r=>r.sessionId),['first','second'])
+ assert.equal(f.client.getDirectorySnapshot().loadingMore,false);assert.equal(f.client.getDirectorySnapshot().generation,generation,'追加页沿用当前刷新代次');assert.ok(snapshots.some(ids=>ids.join(',')==='first'))
+})
+test('较新刷新取消旧分页，旧页迟到不混进新目录',async()=>{
+ const f=fixture(),old=deferred<{items:Conversation[]}>(),waiting=deferred<void>();let first=true,oldSignal:AbortSignal|undefined
+ f.port.listPage=async(input,signal)=>{
+  if(input.cursor){oldSignal=signal;waiting.resolve();return old.promise}
+  if(first){first=false;return {items:[row('old-first')],nextCursor:'old-next'}}
+  return {items:[row('new')]}
+ }
+ const before=f.client.refreshDirectory();await waiting.promise
+ await f.client.refreshDirectory();assert.equal(oldSignal?.aborted,true)
+ old.resolve({items:[row('old-late')]});await before
+ assert.deepEqual(f.client.getDirectorySnapshot().rows.map(r=>r.sessionId),['new'])
+})
+test('分页取消保留已读取项并结束loadingMore，不冒充空目录',async()=>{
+ const f=fixture(),later=deferred<{items:Conversation[]}>(),waiting=deferred<void>(),controller=new AbortController()
+ f.port.listPage=async input=>{if(input.cursor){waiting.resolve();return later.promise}return {items:[row('kept')],nextCursor:'next'}}
+ const pending=f.client.refreshDirectory(controller.signal);await waiting.promise;controller.abort();later.resolve({items:[row('not-added')]});await pending
+ assert.deepEqual(f.client.getDirectorySnapshot().rows.map(r=>r.sessionId),['kept']);assert.equal(f.client.getDirectorySnapshot().loadingMore,false)
+})
+test('重复游标/重复会话/owner切换均拒绝拼页，已发布页不被污染',async()=>{
+ for(const kind of ['cursor','duplicate','owner']){
+  const f=fixture()
+  f.port.listPage=async input=>!input.cursor?{items:[row('first')],nextCursor:'next'}:kind==='cursor'?{items:[],nextCursor:'next'}:kind==='duplicate'?{items:[row('first')]}:{items:[{...row('foreign'),ownerId:'other'}]}
+  await f.client.refreshDirectory()
+  assert.equal(f.client.getDirectorySnapshot().status,'failed',kind);assert.deepEqual(f.client.getDirectorySnapshot().rows.map(r=>r.sessionId),['first'],kind)
+ }
+})
 test('专用运行重新选中只读原预约，不走普通 ensure 且保留任务输入保护',async()=>{
  const f=fixture(),conversation={...row('managed-run'),purpose:'task-run' as const},calls:string[]=[]
  Object.assign(f.port,{selectBinding:async()=>{calls.push('read-run');return conversation}})
@@ -573,4 +612,21 @@ test('openSessionResult在同ID已选时仍区分read/adopt期间外部取消，
   assert.equal(await pending,'cancelled',stage)
   assert.deepEqual(opened,[],stage);assert.deepEqual(f.client.getSnapshot(),before,stage)
  }
+})
+
+
+test('目录显式refresh代次贯穿追加页，新刷新换代，取消信号立即生效且旧页不能回写',async()=>{
+ const f=fixture(),later=deferred<{items:Conversation[]}>(),waiting=deferred<void>(),abort=new AbortController();let phase=0
+ f.port.listPage=async input=>{if(phase)return {items:[]};if(input.cursor){waiting.resolve();return later.promise}return {items:[row('first')],nextCursor:'later'}}
+ const initial=f.client.getDirectorySnapshot().generation,pending=f.client.refreshDirectory(abort.signal);await waiting.promise
+ const first=f.client.getDirectorySnapshot();assert.ok(first.generation>initial);assert.equal(first.ownerId,'owner');assert.equal(first.signal?.aborted,false)
+ const generation=first.generation;abort.abort();assert.equal(first.signal?.aborted,true);later.resolve({items:[row('ignored')]});await pending;assert.equal(f.client.getDirectorySnapshot().generation,generation);assert.deepEqual(f.client.getDirectorySnapshot().rows.map(row=>row.sessionId),['first'])
+ phase=1;await f.client.refreshDirectory();const next=f.client.getDirectorySnapshot();assert.ok(next.generation>generation);assert.equal(next.ownerId,undefined);assert.deepEqual(next.rows,[])
+})
+
+
+test('目录请求完成后上游取消仍撤销该代身份读取资格，不必等待另一轮刷新',async()=>{
+ const f=fixture(),abort=new AbortController();f.port.list=async()=>[row('kept')]
+ await f.client.refreshDirectory(abort.signal);const snapshot=f.client.getDirectorySnapshot();assert.equal(snapshot.signal?.aborted,false)
+ abort.abort();assert.equal(snapshot.signal?.aborted,true);assert.deepEqual(snapshot.rows.map(row=>row.sessionId),['kept'],'取消只隔离迟到身份，不删除已读目录')
 })

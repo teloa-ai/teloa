@@ -1,4 +1,5 @@
 import {sha256Digest} from '@teloa/contract'
+import {industryResourceModelDependencies} from '@teloa/contract'
 import type {IndustryLoadApi} from './industry-load-api.ts'
 import {readIndustryFiles} from './industry-directory.ts'
 import {isIndustryManifest} from './industry-manifest.ts'
@@ -7,7 +8,7 @@ import type {MarketItem} from './market-preview.ts'
 import type {ShareSkillSource} from './share-package-plan.ts'
 import type {SkillInstallApi,SkillInstallationRecord,SkillInstallPreview} from './skill-install-api.ts'
 
-type Ports={skills:Pick<SkillInstallApi,'list'|'preview'>;contents:Pick<MarketContentApi,'hydrate'>;loads:Pick<IndustryLoadApi,'get'>}
+type Ports={skills:Pick<SkillInstallApi,'list'|'preview'>&Partial<Pick<SkillInstallApi,'observe'>>;contents:Pick<MarketContentApi,'hydrate'>;loads:Pick<IndustryLoadApi,'get'>}
 export type ShareSkillSelection={installationId:string}
 const unavailable=()=>Object.assign(Error('The installed skill’s fixed sharing source is unavailable.'),{code:'teloa/source-unavailable'})
 const stable=(value:unknown):string=>JSON.stringify(value&&typeof value==='object'?Array.isArray(value)?value.map(item=>JSON.parse(stable(item))):Object.fromEntries(Object.entries(value).sort(([a],[b])=>a<b?-1:a>b?1:0).map(([key,item])=>[key,JSON.parse(stable(item))])):value)
@@ -36,7 +37,7 @@ async function staticSource(record:SkillInstallationRecord,item:MarketItem,entry
  if(!license)return {}
  return {text,files:texts,license,...(item.trust?.publisher?{publisher:item.trust.publisher}:{})}
 }
-async function localSource(record:SkillInstallationRecord,ports:Ports):Promise<Pick<ShareSkillSource,'text'|'files'|'license'|'publisher'>>{
+async function localSource(record:SkillInstallationRecord,ports:Ports):Promise<Pick<ShareSkillSource,'text'|'files'|'license'|'publisher'|'modelDependencies'>>{
  const source=record.source
  if(source.kind!=='industry-local')throw unavailable()
  const load=await ports.loads.get(source.loadId),mapped=load.items.find(item=>item.instanceId===source.itemInstanceId)
@@ -49,23 +50,36 @@ async function localSource(record:SkillInstallationRecord,ports:Ports):Promise<P
  const root=content.manifestPath.includes('/')?content.manifestPath.slice(0,content.manifestPath.lastIndexOf('/')+1):'',entry=root+resource.source.path,folder=entry.includes('/')?entry.slice(0,entry.lastIndexOf('/')+1):''
  const original=content.files.filter(file=>file.path.startsWith(folder))
  const preview=await ports.skills.preview({kind:'industry',loadId:source.loadId,itemInstanceId:source.itemInstanceId})
- return staticSource(record,item,entry,original,preview)
+ return {...await staticSource(record,item,entry,original,preview),...industryResourceModelDependencies('skill',resource.modelDependencies)}
 }
 /** 分享按员工绑定的原生名读取本人安装来源；只返回许可允许的静态内容。 */
 export async function resolveTemplateShareSkills(names:readonly string[],ports:Ports,selection?:ShareSkillSelection):Promise<ShareSkillSource[]>{
  if(selection&&names.length!==1)throw unavailable()
  const listed=await ports.skills.list()
  return Promise.all(names.map(async(name):Promise<ShareSkillSource>=>{
-  const record=selection?listed.items.find(row=>row.id===selection.installationId):listed.items.find(row=>row.native.name===name&&row.state==='installed')
+  const candidates=listed.items.filter(row=>row.native.name===name&&row.state==='installed')
+  let record=selection?listed.items.find(row=>row.id===selection.installationId):undefined
+  if(!selection){
+   if(ports.skills.observe){
+    const observed=await Promise.all(candidates.map(async row=>({row,value:await ports.skills.observe!(row.id)})))
+    const available=observed.filter(({row,value})=>value.installationId===row.id&&value.state==='available'&&value.current?.name===name&&value.current.bodyHash===row.native.bodyHash)
+    if(available.length>1||candidates.length&&!available.length)throw unavailable()
+    record=available[0]?.row
+   }else{if(candidates.length>1)throw unavailable();record=candidates[0]}
+  }
   if(selection&&(!record||record.native.name!==name||record.state!=='installed'))throw unavailable()
   if(!record)return {name}
   const base:ShareSkillSource={name,title:record.native.name,resourceId:record.source.resourceId,version:record.source.resourceVersion}
-  if(record.source.kind==='industry-public')return {...base,publicId:record.source.sourceResourceId,version:record.source.sourceResourceVersion}
+  if(record.source.kind==='industry-public'){
+   const source=record.source,load=await ports.loads.get(source.loadId),resource=load.items.find(row=>row.instanceId===source.itemInstanceId)
+   if(load.id!==source.loadId||load.ownerId!==record.ownerId||load.contentId!==source.contentId||load.contentHash!==source.contentHash||resource?.kind!=='skill'||resource.localId!==source.resourceId||resource.version!==source.resourceVersion)throw unavailable()
+   return {...base,publicId:source.sourceResourceId,version:source.sourceResourceVersion,...industryResourceModelDependencies('skill',resource.modelDependencies)}
+  }
   if(record.source.kind==='industry-local')return {...base,...await localSource(record,ports)}
   if(record.source.kind!=='atomic')throw unavailable()
   const item=await ports.contents.hydrate({kind:'skill',contentStorage:{contentId:record.source.contentId,createdAt:record.createdAt,loaded:true}} as MarketItem),content=item.atomicSkill
   if(item.contentStorage?.contentId!==record.source.contentId||!content||content.hash!==record.source.contentHash||content.id!==record.source.resourceId||content.version!==record.source.resourceVersion)throw unavailable()
   const preview=await ports.skills.preview({kind:'atomic',contentId:record.source.contentId})
-  return {...base,...await staticSource(record,item,content.entryPath,content.files,preview)}
+  return {...base,...await staticSource(record,item,content.entryPath,content.files,preview),...industryResourceModelDependencies('skill',content.modelDependencies)}
  }))
 }

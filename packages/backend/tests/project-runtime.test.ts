@@ -8,6 +8,32 @@ import {initializeProjects,ProjectService} from '../src/work/projects.ts'
 import {initializeProjectContext,ProjectContextService,registerProjectMemoryAvailability} from '../src/work/project-context.ts'
 import {initializeProjectRuntime,ProjectRuntimeService} from '../src/work/project-runtime.ts'
 import {initializeProjectPersonalMemory,ProjectPersonalMemoryService} from '../src/work/project-personal-memory.ts'
+test('真实PG：已派发上下文凭据不被后续准备或辅助请求失败降级',{timeout:60000},async t=>{
+ const container=await new PostgreSqlContainer('postgres:17-alpine').start(),pool=new Pool({connectionString:container.getConnectionUri()})
+ t.after(async()=>{await pool.end();await container.stop()})
+ await initializeBusinessSpaces(pool);await initializeProjects(pool);await initializeProjectContext(pool);await initializeProjectRuntime(pool)
+ const owner=randomUUID(),identity={id:randomUUID,now:()=>new Date().toISOString()},projects=new ProjectService(pool,identity)
+ const project=await projects.create(owner,{requestId:randomUUID(),fields:{scope:'general',title:'派发审计',goal:'保留实际使用来源',dueDate:null,state:'planning',links:[],references:[]}})
+ const runtime=new ProjectRuntimeService(pool,identity,{inspect:async(_owner,sessionId)=>({sessionId,title:'核对',scope:'general',submitted:false,running:false,kind:'ordinary'})})
+ t.after(()=>runtime.dispose())
+ await runtime.bind(owner,{requestId:randomUUID(),sessionId:'audit-session',projectId:project.id,expectedVersion:0,memoryMode:'off'})
+ const prepared=await runtime.prepare(owner,{sessionId:'audit-session',messageId:'audit-message',query:'核对来源'});assert.ok(prepared)
+ const used=(stage:'prepared'|'dispatched'|'failed',letter:string)=>runtime.recordUsed(owner,{manifestId:prepared.manifestId,generation:prepared.binding.generation,promptHash:letter.repeat(64),stage})
+ const read=async()=>(await pool.query('select stage,prompt_hash from teloa_project_context_uses where id=$1',[prepared.manifestId])).rows[0]
+ await used('failed','a')
+ assert.equal((await runtime.uses(owner,{projectId:project.id,sessionId:'audit-session'})).rows.length,0,'未派发的失败不能冒充使用')
+ assert.equal(await runtime.messageSnapshot(owner,'audit-session','audit-message'),null)
+ await used('prepared','b');await used('dispatched','c')
+ // 同一轮的下一步或输入框建议复用来源清单，准备/取消不能抹掉已发生的派发。
+ await used('prepared','d');await used('failed','e')
+ assert.deepEqual(await read(),{stage:'dispatched',prompt_hash:'c'.repeat(64)})
+ assert.equal((await runtime.uses(owner,{projectId:project.id,sessionId:'audit-session'})).rows.length,1)
+ assert.equal((await runtime.messageSnapshot(owner,'audit-session','audit-message'))?.projectId,project.id)
+ await Promise.all([used('prepared','f'),used('dispatched','1'),used('failed','2')])
+ assert.deepEqual(await read(),{stage:'dispatched',prompt_hash:'1'.repeat(64)},'保留最近实际派发的摘要，不保留未发送请求的摘要')
+ await assert.rejects(runtime.recordUsed('other-owner',{manifestId:prepared.manifestId,generation:prepared.binding.generation,promptHash:'3'.repeat(64),stage:'dispatched'}))
+ assert.deepEqual(await read(),{stage:'dispatched',prompt_hash:'1'.repeat(64)})
+})
 test('真实PG：普通会话归属、关闭可选记忆、撤回换代和实际发送清单',{timeout:60000},async t=>{
  const container=await new PostgreSqlContainer('postgres:17-alpine').start()
  const pool=new Pool({connectionString:container.getConnectionUri()});t.after(async()=>{await pool.end();await container.stop()})
@@ -27,7 +53,7 @@ test('真实PG：普通会话归属、关闭可选记忆、撤回换代和实际
  await runtime.recordUsed(owner,{manifestId:prepared.manifestId,promptHash:'a'.repeat(64),generation:prepared.binding.generation,stage:'dispatched'})
  assert.equal((await runtime.uses(owner,{projectId:project.id})).rows.length,1)
  submitted=true
- await assert.rejects(runtime.bind(owner,{requestId:randomUUID(),sessionId:'ordinary-one',projectId:project.id,expectedVersion:binding.version,memoryMode:'enabled'}),/新建会话/)
+ await assert.rejects(runtime.bind(owner,{requestId:randomUUID(),sessionId:'ordinary-one',projectId:project.id,expectedVersion:binding.version-1,memoryMode:'enabled'}),{code:'teloa/version-conflict'})
  const source=(await context.get(owner,{projectId:project.id})).entries.find(e=>e.kind==='rule')!
  await context.mutate(owner,{requestId:randomUUID(),projectId:project.id,expectedVersion:2,change:{kind:'withdraw-entry',entryId:source.id}})
  assert.throws(()=>runtime.assertPreparedCurrentSync(owner,prepared))
@@ -38,7 +64,7 @@ test('真实PG：普通会话归属、关闭可选记忆、撤回换代和实际
  await assert.rejects(runtime.bind(owner,{requestId:randomUUID(),sessionId:'ordinary-one',projectId:null,expectedVersion:binding.version,memoryMode:'off'}),/运行/)
  running=false
  await runtime.bind(owner,{requestId:randomUUID(),sessionId:'ordinary-one',projectId:null,expectedVersion:binding.version,memoryMode:'off'})
- await assert.rejects(runtime.prepare(owner,{sessionId:'ordinary-one',messageId:'message-vague',query:'继续'}),/重新说明/)
+ await assert.rejects(runtime.prepare(owner,{sessionId:'ordinary-one',messageId:'message-vague',query:'继续'}),{code:'teloa/invalid-input',details:{reason:'detached-project-goal-required'}})
  const detached=await runtime.prepare(owner,{sessionId:'ordinary-one',messageId:'message-3',query:'请开始新的独立核对任务'})
  assert.ok(detached);assert.equal(detached.binding.projectId,null);assert.equal(detached.reset,true);assert.match(detached.text,/Long-term memory is off/);assert.doesNotMatch(detached.text,/只做Mac/)
  await assert.rejects(runtime.settings('other',{projectId:project.id}))
@@ -58,6 +84,10 @@ test('真实PG：迟到派生工作冻结原受理项目与模式、必读预算
  await runtime.recordUsed(owner,{manifestId:root.manifestId,generation:root.binding.generation,promptHash:'c'.repeat(64)})
  await runtime.bind(owner,{requestId:randomUUID(),sessionId:'parent',projectId:b.id,expectedVersion:bind.version,memoryMode:'off'})
  const child=await runtime.prepare(owner,{sessionId:'child',messageId:'child-input',query:'执行原冻结工作'});assert.ok(child);assert.equal(child.binding.projectId,a.id);assert.equal(child.binding.memoryMode,'off');assert.match(child.text,/真实冻结工作目标/);assert.equal(optionalReads,0)
+ const citationRows=JSON.parse(child.text.slice(child.text.lastIndexOf('\n')+1)) as Array<{source:{kind:string;id:string};citationPath?:string}>
+ const taskGoal=citationRows.find(row=>row.source.id==='task:child'),requiredResource=citationRows.find(row=>row.source.kind==='resource'&&row.source.id===resourceId)
+ assert.ok(taskGoal);assert.ok(requiredResource);assert.equal(taskGoal.citationPath,undefined,'非项目UUID的派生工作目标不生成无法读取的项目链接');assert.equal(requiredResource.citationPath,undefined,'本轮不扩大资料来源读取种类')
+ assert.ok(citationRows.every(row=>row.citationPath===undefined),'派生task不在现有来源读口支持的会话类型内');assert.match(child.text,/Cite source titles as plain text; no links/);assert.ok(child.text.length<=1200,'新增指引仍遵守既有输入预算')
  readable=false;const use=(await runtime.uses(owner,{projectId:a.id})).rows[0]!;assert.equal(use.sources.find(s=>s.kind==='resource')!.title,'已失效来源')
  readable=true;large=true;await assert.rejects(runtime.prepare(owner,{sessionId:'child',messageId:'oversized',query:'执行原冻结工作'}),/超过当前输入预算/)
  const before=(await pool.query('select count(*)::int n from teloa_project_context_uses')).rows[0].n

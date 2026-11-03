@@ -36,14 +36,31 @@ test('公共原生运行图只写私有副本，复用精确摘要；真实进�
  assert.equal(typeof api.prepareNativeRuntime,'function','需要公共真实运行图准备入口')
  const require=createRequire(createRequire(import.meta.url).resolve('@deepseek-ai/dsh/package.json')),original=require.resolve('@deepseek-ai/dsh-session'),before=await readFile(original)
  const plan=await api.prepareNativeRuntime({programRoot,runtimeRoot:root})
- assert.equal(plan.packages.length,19);assert.ok(plan.compatibilityAPIs['@deepseek-ai/dsh-client-connection'].includes('HostConnectionService'));assert.ok(plan.compatibilityAPIs['@deepseek-ai/dsh-tools'].includes('ToolRuntime.usePtcRuntime'));assert.ok(plan.compatibilityAPIs['@deepseek-ai/dsh-experimental-agent-team'].includes('TeamService.sendMessage.rootInputAdmission'));assert.ok(plan.compatibilityAPIs['@deepseek-ai/dsh-client-ui-conversation'].includes('conversation.session.header.title'));assert.ok(plan.compatibilityAPIs['@deepseek-ai/dsh-client-ui-agent-preset'].includes('agent-preset.section.grouping'));assert.ok(plan.compatibilityAPIs['@deepseek-ai/dsh-goal-round-driver'].includes('installGoalInputAdmission'));assert.ok(plan.compatibilityAPIs['@deepseek-ai/dsh-tool-jobs'].includes('JobCompletionAdmission'));assert.ok(plan.compatibilityAPIs['@deepseek-ai/dsh-experimental-auto-review'].includes('autoReviewRequestOwner'));assert.ok(plan.compatibilityAPIs['@deepseek-ai/dsh-mcp-client'].includes('ToolDefinition.isConcurrencySafe'))
+ assert.equal(plan.packages.length,24);assert.ok(plan.compatibilityAPIs['@deepseek-ai/dsh-client-connection'].includes('HostConnectionService'));assert.ok(plan.compatibilityAPIs['@deepseek-ai/dsh-mcp-resources'].includes('mcpResources.scopeToolAdvertisement'));assert.ok(plan.compatibilityAPIs['@deepseek-ai/dsh-experimental-tool-agent-team'].includes('team.identity.taskScopedRouting'));assert.ok(plan.compatibilityAPIs['@deepseek-ai/dsh-client-ui-workspace'].includes('uiWorkspace.ordinaryBlankReuse'));assert.ok(plan.compatibilityAPIs['@deepseek-ai/dsh-tools'].includes('ToolRuntime.usePtcRuntime'));assert.ok(plan.compatibilityAPIs['@deepseek-ai/dsh-experimental-agent-team'].includes('TeamService.sendMessage.rootInputAdmission'));assert.ok(plan.compatibilityAPIs['@deepseek-ai/dsh-client-ui-conversation'].includes('conversation.session.header.title'));assert.ok(plan.compatibilityAPIs['@deepseek-ai/dsh-client-ui-agent-preset'].includes('agent-preset.section.grouping'));assert.ok(plan.compatibilityAPIs['@deepseek-ai/dsh-goal-round-driver'].includes('installGoalInputAdmission'));assert.ok(plan.compatibilityAPIs['@deepseek-ai/dsh-tool-jobs'].includes('JobCompletionAdmission'));assert.ok(plan.compatibilityAPIs['@deepseek-ai/dsh-experimental-auto-review'].includes('autoReviewRequestOwner'));assert.ok(plan.compatibilityAPIs['@deepseek-ai/dsh-mcp-client'].includes('ToolDefinition.isConcurrencySafe'))
+ const {createHash}=await import('node:crypto')
+ for(const [name,apis] of [
+  ['@deepseek-ai/dsh-experimental-browser-use-runtime',['BrowserMcpConfig.chromiumSandbox','BrowserMcpLaunchConfig.chromiumSandbox']],
+  ['@deepseek-ai/dsh-experimental-browser-use-playwright-mcp',['chromiumSandboxVersion','apply.chromiumSandbox']],
+ ]){
+  const managed=plan.packages.find(row=>row.name===name);assert.ok(managed,'可选浏览器包仍须由正常私有运行图准备')
+  const basename=name.slice('@deepseek-ai/'.length)+'-0.2.1-rc.2-chromium-sandbox',manifest=JSON.parse(await readFile(join(programRoot,'packages/harness-dsh/compat',basename+'.json'),'utf8'))
+  assert.deepEqual(manifest.api,apis);assert.deepEqual(plan.compatibilityAPIs[name],manifest.api)
+  for(const file of manifest.files){
+   assert.equal(createHash('sha256').update(await readFile(join(managed.source,file.path))).digest('hex'),file.beforeSha256,'官方原件必须保持 preimage')
+   assert.equal(createHash('sha256').update(await readFile(join(managed.root,file.path))).digest('hex'),file.afterSha256,'只有本次私有副本应用兼容补丁')
+  }
+ }
  assert.deepEqual(await api.prepareNativeRuntime({programRoot,runtimeRoot:root}),plan)
  assert.deepEqual(await readFile(original),before)
  const script=join(root,'probe.mjs')
- await writeFile(script,`import {createRequire} from 'node:module';import{pathToFileURL}from'node:url';const api=await import(${JSON.stringify(new URL('../scripts/runtime/native-runtime.mjs',import.meta.url).href)});const plan=await api.prepareNativeRuntime(${JSON.stringify({programRoot,runtimeRoot:root})});api.installNativeRuntime(plan);await api.prepareNativeRuntime(${JSON.stringify({programRoot,runtimeRoot:root})});const require=createRequire(${JSON.stringify(join(programRoot,'package.json'))}),dsh=createRequire(require.resolve('@deepseek-ai/dsh/package.json'));const session=await import(pathToFileURL(dsh.resolve('@deepseek-ai/dsh-session')).href),other=await import(pathToFileURL(createRequire(${JSON.stringify(join(programRoot,'packages/harness-dsh/package.json'))}).resolve('@deepseek-ai/dsh-session')).href);if(session.SessionStore!==other.SessionStore||typeof session.SessionStore.prototype.installAppendAdmission!=='function')throw Error('真实解析图分裂或缺补口');console.log('managed-native-graph');`)
+ await writeFile(script,`import {createRequire} from 'node:module';import{pathToFileURL}from'node:url';const api=await import(${JSON.stringify(new URL('../scripts/runtime/native-runtime.mjs',import.meta.url).href)});const plan=await api.prepareNativeRuntime(${JSON.stringify({programRoot,runtimeRoot:root})});api.installNativeRuntime(plan);await api.prepareNativeRuntime(${JSON.stringify({programRoot,runtimeRoot:root})});const require=createRequire(${JSON.stringify(join(programRoot,'package.json'))}),dsh=createRequire(require.resolve('@deepseek-ai/dsh/package.json'));const session=await import(pathToFileURL(dsh.resolve('@deepseek-ai/dsh-session')).href),other=await import(pathToFileURL(createRequire(${JSON.stringify(join(programRoot,'packages/harness-dsh/package.json'))}).resolve('@deepseek-ai/dsh-session')).href);if(session.SessionStore!==other.SessionStore||typeof session.SessionStore.prototype.installAppendAdmission!=='function')throw Error('真实解析图分裂或缺补口');const resources=plan.packages.find(row=>row.name==='@deepseek-ai/dsh-mcp-resources');if(dsh.resolve('@deepseek-ai/dsh-mcp-resources')!==resources.root+'/lib/index.js')throw Error('MCP资源提示未解析到受管provider');console.log('managed-native-graph');`)
  const result=spawnSync(process.execPath,[script],{encoding:'utf8',timeout:30000});assert.equal(result.status,0,result.stderr);assert.match(result.stdout,/managed-native-graph/)
- const session=plan.packages.find(row=>row.name==='@deepseek-ai/dsh-session');await writeFile(join(session.root,'lib/index.js'),'tampered')
- await assert.rejects(api.prepareNativeRuntime({programRoot,runtimeRoot:root}),/摘要|变化/);assert.deepEqual(await readFile(original),before)
+ for(const name of ['@deepseek-ai/dsh-session','@deepseek-ai/dsh-mcp-resources']){
+  const managed=plan.packages.find(row=>row.name===name),path=join(managed.root,'lib/index.js'),content=await readFile(path)
+  try{await writeFile(path,'tampered');await assert.rejects(api.prepareNativeRuntime({programRoot,runtimeRoot:root}),/摘要|变化/,name)}
+  finally{await writeFile(path,content)}
+ }
+ assert.deepEqual(await readFile(original),before)
 })
 
 test('私有运行图保留包内嵌套依赖的精确来源，嵌套受管包仍解析其自身补丁副本',async t=>{
@@ -68,6 +85,27 @@ test('私有运行图保留包内嵌套依赖的精确来源，嵌套受管包�
  await writeFile(script,`import assert from 'node:assert/strict';import{pathToFileURL}from'node:url';const api=await import(${JSON.stringify(new URL('../scripts/runtime/native-runtime.mjs',import.meta.url).href)}),plan=await api.prepareNativeRuntime(${JSON.stringify({programRoot:fixture,runtimeRoot})});api.installNativeRuntime(plan);const subagent=plan.packages.find(row=>row.name==='@deepseek-ai/dsh-subagent'),tools=plan.packages.find(row=>row.name==='@deepseek-ai/dsh-tools'),probe=await import(pathToFileURL(subagent.root+'/lib/nested-peer-probe.mjs').href);assert.equal(probe.value,'nested-official-peer');assert.equal(probe.version,${JSON.stringify(zodVersion)});assert.ok(probe.peer.startsWith(pathToFileURL(${JSON.stringify(join(nested,'zod'))}+'/').href),probe.peer);assert.equal(probe.tools,pathToFileURL(tools.root+'/lib/index.js').href);console.log('exact-nested-peer-and-managed-package');`)
  const result=spawnSync(process.execPath,[script],{encoding:'utf8',timeout:30000})
  assert.equal(result.status,0,result.stderr);assert.match(result.stdout,/exact-nested-peer-and-managed-package/)
+})
+
+test('发行允许清单实际复制 MCP 资源提示补丁及摘要，不夹带未声明兼容文件',async t=>{
+ const root=await realpath(await mkdtemp(join(tmpdir(),'teloa-resource-release-files-')));t.after(()=>rm(root,{recursive:true,force:true}))
+ const fixture=join(root,'program'),source=join(fixture,'packages/harness-dsh'),stage=join(root,'stage')
+ await mkdir(join(source,'lib'),{recursive:true});await mkdir(join(source,'src'));await mkdir(join(source,'compat'));await mkdir(join(fixture,'scripts/runtime'),{recursive:true})
+ await writeFile(join(source,'package.json'),JSON.stringify({name:'@teloa/harness-dsh',exports:'./src/index.ts'}))
+ await writeFile(join(source,'tsconfig.json'),JSON.stringify({compilerOptions:{rootDir:'src',outDir:'lib',module:'ESNext',moduleResolution:'bundler'},include:['src']}))
+ await writeFile(join(source,'src/index.ts'),'export {}\n')
+ await writeFile(join(source,'lib/index.js'),'export {}\n')
+ await cp(join(programRoot,'scripts/runtime/native-runtime.mjs'),join(fixture,'scripts/runtime/native-runtime.mjs'))
+ const {nativeRuntimeCompatibilityFiles}=await import('../scripts/runtime/native-runtime.mjs')
+ for(const file of nativeRuntimeCompatibilityFiles)await cp(join(programRoot,'packages/harness-dsh/compat',file),join(source,'compat',file))
+ await writeFile(join(source,'compat/unlisted.txt'),'not a release input')
+ const {prepareReleasePackage}=await import('../scripts/release/package-files.mjs')
+ await prepareReleasePackage({root:fixture,stage,directory:'harness-dsh',version:'0.0.0-test'})
+ for(const extension of ['patch','json']){
+  const name='dsh-mcp-resources-0.2.1-rc.2-tool-visibility.'+extension
+  assert.deepEqual(await readFile(join(stage,'packages/harness-dsh/compat',name)),await readFile(join(programRoot,'packages/harness-dsh/compat',name)))
+ }
+ await assert.rejects(readFile(join(stage,'packages/harness-dsh/compat/unlisted.txt')),{code:'ENOENT'})
 })
 
 test('公共源码启动真实官方 profile 的最终配置包含受管 input/session/subagent/Goal 与浏览器载体',async t=>{

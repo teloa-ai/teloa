@@ -12,9 +12,9 @@ export type BusinessTaskSourceUpdatePorts={
  report:(code:string)=>void
 }
 const deterministic=(error:unknown)=>error instanceof WorkError&&['teloa/forbidden','teloa/invalid-input','teloa/conflict','teloa/version-conflict','teloa/storage-corrupt'].includes(error.code)
-/** 只有原生已受理（或受理后结束）的 Run 才算续办送达；withdrawn / configuration_failed 没有受理证明，保守记 needs-user 并保留原 Task/Run，不自动重建。 */
+/** 只有原生已受理（或受理后结束）的 Run 才算续办送达；撤回、配置失败及未知处置保守记 needs-user，保留原 Task/Run，不自动重建。 */
 const accepted=(state:string)=>['accepted','active','ended'].includes(state)
-const notAccepted=(state:string)=>['withdrawn','configuration_failed'].includes(state)
+const notAccepted=(state:string)=>['withdrawn','configuration_failed','submission_unknown'].includes(state)
 
 /**
  * 同一业务对象后续版本的续办驱动：只读取账本、调用既有一键准备/启动端口并回填，不拥有模型循环、不新建任务。
@@ -38,7 +38,7 @@ export async function drainBusinessTaskSourceUpdates(owner:string,ports:Business
    const state=run.state==='prepared'?(await ports.start(owner,runId,signal)).state:accepted(run.state)||notAccepted(run.state)?run.state:(await ports.reconcile(owner,runId,signal)).state
    // accepted 只表示原生受理；运行是否成功、成果是否达标仍由既有交付复核与本人审批判断，账本不代表质量通过。
    if(accepted(state))await ports.updates.settle(owner,{id:item.id,state:'accepted',runId,reason:null})
-   else if(notAccepted(state))await ports.updates.settle(owner,{id:item.id,state:'needs-user',runId,reason:'teloa/run-not-accepted'})
+   else if(notAccepted(state))await ports.updates.settle(owner,{id:item.id,state:'needs-user',runId,reason:state==='submission_unknown'?'teloa/submission-unknown':'teloa/run-not-accepted'})
    else await ports.updates.settle(owner,{id:item.id,state:'continued',runId,reason:'teloa/execution-pending'})
   }catch(error){
    const code=error instanceof WorkError?error.code:'teloa/dependency-unavailable'

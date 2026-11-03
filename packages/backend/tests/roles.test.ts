@@ -8,8 +8,14 @@ import { PostgreSqlContainer,type StartedPostgreSqlContainer } from '@testcontai
 import { RoleService,initializeRoles } from '../src/work/roles.ts'
 import {initializeCollaboration} from '../src/work/collaboration.ts'
 import {initializeGroupAgentGrants} from '../src/work/group-agent-grants.ts'
-import {initializeTasks} from '../src/work/tasks.ts'
-import {initializeTaskRuns} from '../src/work/task-runs.ts'
+import {initializeTasks,TaskService} from '../src/work/tasks.ts'
+import {initializeTaskRuns,TaskRunService} from '../src/work/task-runs.ts'
+import {initializeRoleLifecycle,RoleLifecycleService} from '../src/work/role-lifecycle.ts'
+import {initializeObjectConversations,ObjectConversationService} from '../src/work/object-conversations.ts'
+import {initializeHandoffs,HandoffService} from '../src/work/handoffs.ts'
+import {initializeWorkControl,WorkControlService} from '../src/work/work-control.ts'
+import {initializeWorkBudgets,WorkBudgetService} from '../src/work/work-budget.ts'
+import {initializeWorkRetries,WorkRetryService} from '../src/work/work-retries.ts'
 import {initializePlans} from '../src/work/plans.ts'
 import {initializePlanOccurrences} from '../src/work/plan-occurrences.ts'
 import {initializeResources} from '../src/capabilities/schema.ts'
@@ -24,6 +30,8 @@ before(async()=>{
  pool=new Pool({connectionString:container.getConnectionUri()});await initializeRoles(pool);await initializeCollaboration(pool);await initializeGroupAgentGrants(pool)
  await initializeTasks(pool);await initializeTaskRuns(pool);await initializePlans(pool);await initializePlanOccurrences(pool)
  await initializeResources(pool)
+ await initializeRoleLifecycle(pool);await initializeObjectConversations(pool);await initializeHandoffs(pool)
+ await initializeWorkControl(pool);await initializeWorkBudgets(pool);await initializeWorkRetries(pool)
 })
 after(async()=>{await pool?.end();await container?.stop()})
 const responsibility={triggers:['收到需要核对的线索'],autonomousActions:['整理证据并给出建议'],confirmationPoints:['采取外部动作前交回本人'],escalationRules:['证据冲突时说明阻塞'],deliveryChecks:['结论包含来源和置信度']}
@@ -138,9 +146,9 @@ async function assignedTask(owner:string,roleId:string,state='ready'){
  return id
 }
 function lightEdit(roleId:string){return {roleId,expectedVersion:1,expectedProfile:{name:configuredFields.name},fields:{...configuredFields,name:'新名字',duty:'新简介'}}}
-async function rejectBusyEdit(service:RoleService,owner:string,roleId:string){
- await assert.rejects(service.edit(owner,lightEdit(roleId)),error=>{assert.equal((error as {code:string}).code,'teloa/conflict');assert.deepEqual((error as {details:unknown}).details,{reason:'role-work-outstanding'});assert.match((error as Error).message,/完成或取消/);return true})
- assert.equal((await service.get(owner,roleId))!.version,1)
+async function rejectBusyEdit(service:RoleService,owner:string,roleId:string,expectedVersion=1){
+ await assert.rejects(service.edit(owner,{...lightEdit(roleId),expectedVersion}),error=>{assert.equal((error as {code:string}).code,'teloa/conflict');assert.deepEqual((error as {details:unknown}).details,{reason:'role-work-outstanding'});assert.match((error as Error).message,/完成或取消/);return true})
+ assert.equal((await service.get(owner,roleId))!.version,expectedVersion)
  assert.equal((await pool.query('select count(*)::int n from teloa_role_edits where role_id=$1',[roleId])).rows[0].n,0)
 }
 test('轻量编辑拒绝未完成任务，保留员工版本和任务；任务取消后可保存',async()=>{
@@ -150,6 +158,77 @@ test('轻量编辑拒绝未完成任务，保留员工版本和任务；任务�
   assert.equal((await pool.query('select state,assignee_role_version from teloa_tasks where id=$1',[taskId])).rows[0].state,state)
   await pool.query("update teloa_tasks set state='cancelled' where id=$1",[taskId])
   assert.equal((await service.edit(owner,lightEdit(role.id))).state,'active')
+ }
+})
+async function workRows(owner:string){
+ const result:Record<string,string[]>={}
+ for(const table of ['teloa_tasks','teloa_task_runs','teloa_work_retries','teloa_work_retry_claims','teloa_work_retry_receipts','teloa_work_budget_reservations','teloa_task_run_runtime_links','teloa_task_run_subagents']){
+  result[table]=(await pool.query("select encode(sha256(convert_to(to_jsonb(t)::text,'UTF8')),'hex') as sha256 from "+table+' t where owner_id=$1 order by sha256',[owner])).rows.map(row=>row.sha256 as string)
+ }
+ return result
+}
+test('暂停员工与暂停任务允许保存新版本，旧快照和unknown完整保留且新执行必须显式交接',async t=>{
+ const {owner,service}=fixture(),identity={id:randomUUID,now:()=>new Date().toISOString()},definition={...configuredFields,skills:[],knowledge:[]}
+ const role=await service.create(owner,{requestId:randomUUID(),fields:definition}),tasks=new TaskService(pool,identity),lifecycle=new RoleLifecycleService(pool,identity)
+ const task=await tasks.create(owner,{requestId:randomUUID(),fields:{title:'原恢复工作',goal:'只核对原来源并等待审批',scope:'SOC'},assignee:{roleId:role.id,expectedVersion:role.version}})
+ const sessionId=randomUUID(),conversationId=randomUUID(),inspect=async()=>({id:conversationId,sessionId,ownerId:owner,status:'ready'})
+ await new ObjectConversationService(pool,inspect,identity.now).change(owner,{requestId:randomUUID(),kind:'task',objectId:task.id,expectedObjectVersion:task.version,sessionId,expectedLinkVersion:0,action:'link'})
+ const runs=new TaskRunService(pool,identity,inspect),command={requestId:randomUUID(),taskId:task.id,expectedTaskVersion:task.version,roleId:role.id,expectedRoleVersion:role.version,sessionId,expectedLinkVersion:1},run=await runs.prepare(owner,command)
+ await runs.claim(owner,{runId:run.id})
+ const budgets=new WorkBudgetService(pool,identity),controls=new WorkControlService(pool,identity),lineage=run.lineage!,operationId='model:'+randomUUID()
+ const retries=new WorkRetryService(pool,identity,{controls,authorizeAttempt:async(db,actor,input)=>{
+  const reservation=await budgets.reserveInTransaction(db,actor,{budgetAccountId:lineage.budgetAccountId,controlGeneration:input.controlGeneration,modelRequestId:input.modelRequestId,kind:'retry',tokens:1,rounds:0})
+  return budgets.lease(actor,reservation)
+ }})
+ await retries.register(owner,{runId:run.id,operationId})
+ const attempt=await retries.claim(owner,{operationId,requestId:randomUUID(),expectedGeneration:lineage.controlGeneration})
+ await retries.record(owner,{operationId,attempt:attempt.attempt,receiptId:'unknown:'+randomUUID(),outcome:'unknown',reason:'合成服务测试：上游结果待核对，不实际请求模型'})
+ await runs.record(owner,{runId:run.id,sessionId,nativeRequestId:run.nativeRequestId,evidence:{state:'ended',turn:0,messageSeq:1,endSeq:2,reason:'aborted'}})
+ const paused=await lifecycle.change(owner,{roleId:role.id,expectedVersion:role.version,action:'pause',reason:'核对后保存下一版职责'}),originalTask=(await tasks.list(owner,{}))[0]!,before=await workRows(owner)
+ assert.equal(originalTask.state,'paused')
+ const input={roleId:role.id,expectedVersion:paused.role.version,fields:{...definition,executionScope:'仅新note请求逐次审批；原来源只读'}},edited=await service.edit(owner,input)
+ assert.equal(edited.id,role.id);assert.equal(edited.state,'paused');assert.equal(edited.version,paused.role.version+1)
+ assert.deepEqual(await service.edit(owner,input),edited,'编辑重试只返回同一版本回执')
+ assert.deepEqual(await workRows(owner),before,'保存新职责不能改写旧Task、Run、unknown、预算或原输入')
+ assert.equal((await pool.query('select count(*)::int n from teloa_role_edits where role_id=$1',[role.id])).rows[0].n,1)
+ const resumed=await lifecycle.change(owner,{roleId:role.id,expectedVersion:edited.version,action:'resume',reason:'恢复后由本人显式交接原任务'})
+ const nextCommand={...command,requestId:randomUUID(),expectedTaskVersion:originalTask.version,expectedRoleVersion:resumed.role.version}
+ await assert.rejects(runs.prepare(owner,nextCommand),error=>{assert.equal((error as {code:string}).code,'teloa/version-conflict');assert.match((error as Error).message,/重新交接/);return true})
+ assert.deepEqual(await workRows(owner),before,'未交接时不能新建Run或升级原Task授权')
+ const handoff=await new HandoffService(pool,identity).change(owner,{requestId:randomUUID(),taskId:task.id,expectedTaskVersion:originalTask.version,target:{kind:'role',roleId:role.id,expectedRoleVersion:resumed.role.version},note:'确认同一员工当前版本接续原目标'})
+ const prepared=await runs.prepare(owner,{...nextCommand,expectedTaskVersion:handoff.task.version})
+ assert.equal(prepared.state,'prepared');assert.equal(prepared.roleVersion,resumed.role.version);assert.equal(JSON.parse(prepared.inputText).task.goal,task.goal)
+ assert.equal((await runs.get(owner,{runId:run.id})).inputText,run.inputText)
+ const after=await workRows(owner)
+ for(const table of Object.keys(before).filter(table=>table!=='teloa_tasks'&&table!=='teloa_task_runs'))assert.deepEqual(after[table],before[table])
+ assert.ok(after.teloa_task_runs!.includes(before.teloa_task_runs![0]!),'交接及新prepare后仍保留旧Run完整行')
+ assert.equal((await retries.read(owner,{operationId})).state,'unknown')
+ t.diagnostic(JSON.stringify({protectedBeforeEdit:before,afterEditExact:true,oldRunAfterHandoffExact:true,modelCalls:0}))
+})
+test('暂停员工仍拒绝其它未完成Task状态，不因同岗另有暂停Task放行',async()=>{
+ for(const state of ['ready','running','waiting','blocked']){
+  const {owner,service}=fixture(),role=await service.create(owner,{requestId:randomUUID(),fields:configuredFields})
+  await assignedTask(owner,role.id,'paused');await assignedTask(owner,role.id,state)
+  const paused=await new RoleLifecycleService(pool,{id:randomUUID,now:()=>new Date().toISOString()}).change(owner,{roleId:role.id,expectedVersion:role.version,action:'pause',reason:'检查未收口工作'})
+  const before=await workRows(owner);await rejectBusyEdit(service,owner,role.id,paused.role.version);assert.deepEqual(await workRows(owner),before)
+ }
+})
+test('暂停员工与暂停Task仍拒绝活动、未提交或无终态证据的Run，不写编辑回执',async()=>{
+ for(const state of ['prepared','submitting','accepted','active','ended']){
+  const {owner,service}=fixture(),role=await service.create(owner,{requestId:randomUUID(),fields:configuredFields}),taskId=await assignedTask(owner,role.id,'paused')
+  const runId=await insertRoleRun(pool,owner,role.id,taskId,state)
+  if(state==='ended')await pool.query('update teloa_task_runs set evidence=null where id=$1',[runId])
+  const paused=await new RoleLifecycleService(pool,{id:randomUUID,now:()=>new Date().toISOString()}).change(owner,{roleId:role.id,expectedVersion:role.version,action:'pause',reason:'检查旧Run收口'})
+  const before=await workRows(owner);await rejectBusyEdit(service,owner,role.id,paused.role.version);assert.deepEqual(await workRows(owner),before)
+ }
+})
+test('暂停员工与暂停Task仍拒绝未收口的子工作及运行资源，不写编辑回执',async()=>{
+ for(const pending of ['child','runtime']){
+  const {owner,service}=fixture(),role=await service.create(owner,{requestId:randomUUID(),fields:configuredFields}),taskId=await assignedTask(owner,role.id,'paused'),runId=await insertRoleRun(pool,owner,role.id,taskId,'ended')
+  if(pending==='child')await pool.query("insert into teloa_task_run_subagents(owner_id,run_id,reservation_id,state,created_at) values($1,$2,$3,'reserved',now())",[owner,runId,randomUUID()])
+  else await pool.query("insert into teloa_task_run_runtime_links(owner_id,run_id,kind,native_id,session_id,payload) values($1,$2,'browser','runtime:pending',$3,$4)",[owner,runId,randomUUID(),JSON.stringify({runtimeId:'runtime',requestId:randomUUID(),dispatchId:'pending',status:'dirty'})])
+  const paused=await new RoleLifecycleService(pool,{id:randomUUID,now:()=>new Date().toISOString()}).change(owner,{roleId:role.id,expectedVersion:role.version,action:'pause',reason:'等待子工作与资源收口'})
+  const before=await workRows(owner);await rejectBusyEdit(service,owner,role.id,paused.role.version);assert.deepEqual(await workRows(owner),before)
  }
 })
 test('任务已结束但Run未收口仍拒绝轻量编辑，不自动停止Run',async()=>{

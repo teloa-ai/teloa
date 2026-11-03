@@ -1,3 +1,4 @@
+import {verifiedAcceptedInboxError} from './task-run-inbox-error.ts'
 import {isDeepStrictEqual} from 'node:util'
 import {WorkError,taskInput} from '@teloa/contract'
 import type {TaskRun} from '@teloa/backend'
@@ -22,6 +23,14 @@ export async function assertSafeTaskRunRetry(run:TaskRun,ports:TaskRunPorts,sign
  if(run.state!=='ended'||run.evidence?.state!=='ended'||run.evidence.reason!=='error'||run.stopRequestedAt!==null||run.flowId!==undefined||run.groupContext!==undefined||!Array.isArray(registrations.subagents)||!Array.isArray(registrations.webAccess)||registrations.subagents.length||registrations.webAccess.length)throw denied()
  if(!ports.backgroundState||!ports.subagentState||!ports.flowState||!ports.stopState||!ports.goalObservation)throw denied()
  const events=await ports.events(run)
+ if(run.evidence.inputAnchor){
+  const proof=verifiedAcceptedInboxError(run,events)
+  if(!isDeepStrictEqual(proof,run.evidence))throw denied()
+  const [background,children,flow,host,goal]=await Promise.all([ports.backgroundState(run),ports.subagentState(run,signal),ports.flowState(run),ports.stopState(run),ports.goalObservation(run,events)])
+  if(background.outstanding!==false||typeof background.interrupted!=='boolean'||background.cancelled===true||children!=='none'||flow!=='none'||host.running!==false||goal!==undefined||!ports.retryOwnerOnlyBackground||!await ports.retryOwnerOnlyBackground(run,signal))throw denied()
+  signal.throwIfAborted();if(!isDeepStrictEqual(events,await ports.events(run))||!await ports.retryOwnerOnlyBackground(run,signal))throw denied()
+  return
+ }
  const timeline=observeTaskRunTimeline(events,run.nativeRequestId),observed=timeline.observation
  if(timeline.turn!==run.evidence.turn||observed.state!=='ended'||observed.reason!=='error'||!isDeepStrictEqual(observed,run.evidence))throw denied()
  const harmless=new Set<string>(['permission/preset','sandbox/mode','approval/policy','agent/inbox/spliced','turn/start','step/start','system/message','user/message','request/header','request/context','assistant/attempt','step/end','turn/end'])

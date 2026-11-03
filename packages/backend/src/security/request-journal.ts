@@ -1,5 +1,6 @@
 import type {Pool,PoolClient} from 'pg'
 import {WorkError,isRecord} from '@teloa/contract'
+import {observeDatabaseClientErrors} from '../database-client-errors.ts'
 
 export type SecurityIdentity={id:()=>string;now:()=>string}
 export type SecurityRequestCommand='propose'|'submit'|'decide'|'withdraw-submission'|'withdraw-approval'|'acknowledge-failure'|'execute'|'observe'
@@ -20,8 +21,22 @@ export class SecurityRequestJournal{
  constructor(pool:Pool){this.pool=pool}
  async transaction<T>(work:(db:PoolClient)=>Promise<T>):Promise<T>{
   const db=await this.pool.connect()
-  try{await db.query('begin');const result=await work(db);await db.query('commit');return result}
-  catch(error){await db.query('rollback');throw error}finally{db.release()}
+  const connection=observeDatabaseClientErrors(db)
+  let discard=false
+  try{
+   await db.query('begin')
+   const result=await work(db)
+   if(connection.error)throw connection.error
+   await db.query('commit')
+   if(connection.error)throw connection.error
+   return result
+  }catch(error){
+   // 断连后的 rollback 也可能失败；保留最初失败，不把未知提交结果伪装成成功。
+   try{await db.query('rollback')}catch{discard=true}
+   throw error
+  }finally{
+   try{db.release(discard||!!connection.error)}finally{connection.close()}
+  }
  }
  /** true 表示同请求已提交，调用方必须严格读取专用结果绑定。 */
  async reserve(db:PoolClient,ownerId:string,requestId:string,command:SecurityRequestCommand,spec:Record<string,unknown>,createdAt:string):Promise<boolean>{
