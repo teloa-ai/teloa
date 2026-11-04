@@ -51,7 +51,7 @@ export function isWebToolRule(rule:TaskToolArgumentRule):boolean{
  */
 export function selectedRoleToolGrantRules(rules:readonly TaskToolArgumentRule[],selected:ReadonlySet<string>):TaskToolArgumentRule[]{
  return rules.flatMap(rule=>{
-  if(isWorkspaceFileRule(rule))return selected.has(roleToolGrantSelectionKey(rule))?[{name:rule.name,allowed:[],workspaceFiles:'default-workspace' as const}]:[]
+  if(isWorkspaceFileRule(rule))return selected.has(roleToolGrantSelectionKey(rule))?[{name:rule.name,allowed:[],workspaceFiles:'default-workspace' as const,...(rule.workspacePaths?{workspacePaths:rule.workspacePaths}:{})}]:[]
   if(rule.anyArguments===true)return selected.has(roleToolGrantSelectionKey(rule))?[{name:rule.name,allowed:[],anyArguments:true}]:[]
   const allowed=rule.allowed.filter(args=>selected.has(roleToolGrantSelectionKey(rule,args)))
   return allowed.length?[{name:rule.name,allowed}]:[]

@@ -233,3 +233,9 @@ test('技能代发候选列出岗位技能与行业职责技能（标来源）�
   {skill:'brief',origins:['https://api.brief.test','https://api.brief.test.cn'],source:'industry'},
  ],'同名技能以岗位来源为准，只列一次')
 })
+
+test('本人可通过正式文件候选缩小按操作路径，不能将代码或任意第三方执行混入细范围',()=>{
+ const read={name:'read',allowed:[],workspaceFiles:'default-workspace' as const,workspacePaths:{files:['input.csv'],directories:[]}},write={name:'write',allowed:[],workspaceFiles:'default-workspace' as const,workspacePaths:{files:['output.md'],directories:[]}}
+ assert.doesNotThrow(()=>validateReferenceToolRules([read,write],[{name:'read',allowed:[],workspaceFiles:'default-workspace'},{name:'write',allowed:[],workspaceFiles:'default-workspace'}]))
+ for(const name of ['run_code','workflow','subagent_task','subagent_codex','mcp__custom__execute'])assert.throws(()=>validateReferenceToolRules([read,{name,allowed:[],anyArguments:true}],taskRunToolRules([])),/限定文件路径/)
+})

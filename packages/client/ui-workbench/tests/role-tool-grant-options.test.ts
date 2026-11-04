@@ -80,3 +80,9 @@ test('什么候选都没有时仍提示没有可授权的资料；本栏有自�
  assert.ok(!box.includes(translateMessage('en','roleGrant.noKnowledge'))&&!box.includes('see the sections below'),box)
  assert.match(box,/<label class="grantOption">/)
 })
+
+
+test('原权限入口按需展开独立文件和目录范围，限制未填完时仍可编辑',()=>{
+ const rule={name:'read',allowed:[],workspaceFiles:'default-workspace'},html=renderToStaticMarkup(createElement(RoleToolGrantOptions as never,{candidates:{roleVersion:3,rules:[rule]},names:{},selected:['read\u0000{}'],toggle:()=>{},disabled:false,locale:'zh-CN',filePaths:{read:{restricted:true,files:'',directories:''}},changePaths:()=>{},t:(key:string)=>translateMessage('zh-CN',key as never)}))
+ assert.match(html,/<details>/);assert.equal((html.match(/<textarea/g)??[]).length,2);assert.doesNotMatch(html,/<textarea[^>]*disabled/);assert.match(html,/读取与写入/);assert.match(html,/符号链接/)
+})

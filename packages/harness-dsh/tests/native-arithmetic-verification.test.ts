@@ -168,3 +168,36 @@ test('收尾前撤销原许可，算术纠正不能另获新授权或继续派�
  await send(f,'revoke-before-verification')
  assert.equal(f.adapter.requests.length,1);assert.equal(notices(f).length,0);assert.equal(completed(f),false)
 })
+
+
+test('真实标量回执支持Markdown分步推导，但不借相同数字证明无关算式',()=>{
+ const input='核对12.50×4+9.20×3−5.00，并报告实际计算回执。'
+ const receipt={name:'bash',arguments:{command:'python3 -c "print(12.50*4+9.20*3-5.00)"'},text:'72.6\n'}
+ const steps='结果：**72.60**\n- 12.50 × 4 = 50.00\n- 9.20 × 3 = 27.60\n- 50.00 + 27.60 − 5.00 = 72.60'
+ assert.equal(assessArithmetic(input,steps,[receipt]),'verified')
+ assert.equal(assessArithmetic(input,steps,[]),'missing')
+ assert.equal(assessArithmetic(input,steps,[{...receipt,text:'72.61'}]),'missing')
+ assert.equal(assessArithmetic(input,steps.replace('50.00 +','500.00 +'),[receipt]),'contradiction')
+ assert.equal(assessArithmetic(input,'1+49=50；50+27.6-5=72.6',[receipt]),'missing')
+ assert.equal(assessArithmetic(input,'72.6+0=72.6',[receipt]),'missing')
+ assert.equal(assessArithmetic(input,'12.5*4=50；50+27.6-5=72.6',[receipt]),'verified')
+ assert.equal(assessArithmetic(input,'12.5*4=50；9.2*3=27.6；77.6-5=72.6',[receipt]),'verified')
+ for(const marker of ['- ','* ','+ ','1. ','2) '])assert.equal(assessArithmetic(input,marker+'12.5*4=50',[receipt]),'verified')
+ const negative={name:'calculator',arguments:{expression:'-2*(3+4)'},text:'-14'}
+ assert.equal(assessArithmetic(question,'-2*(3+4)=-14',[negative]),'verified')
+ assert.equal(assessArithmetic(question,'- -2*(3+4)=-14',[negative]),'verified')
+ assert.equal(assessArithmetic(question,'-2*(3+4)=14',[negative]),'contradiction')
+ assert.equal(assessArithmetic(question,'结果为-2*(3+4)=-14',[negative]),'verified')
+ assert.equal(assessArithmetic(question,'`-2*(3+4)=14`\n```\n-2*(3+4)=14\n```',[]),'none')
+})
+
+
+test('真实原生工具回执可完成列表中的同源中间推导，无额外纠正请求',{timeout:15000},async t=>{
+ const f=await nativeHotCausalityFixture(t);let executions=0
+ f.ctx.tools.register(defineTool({name:'python',description:'本地纯算术回执',parameters:{code:{type:'string',required:true}},output:{schema:{type:'string'},render:(_args,value)=>[{type:'text',text:value}]},execute:async args=>{
+  assert.equal(args.code,'print((7+5)*3-4)');executions++;return String((7+5)*3-4)
+ }}))
+ f.adapter.scripts.push(call('python','actual-scalar',{code:'print((7+5)*3-4)'}),answer('结果32。\n- 7+5=12\n- 12*3=36\n- 36-4=32'))
+ await send(f,'folded-scalar',f.agent,'请计算(7+5)*3-4，报告实际回执。')
+ assert.equal(executions,1);assert.equal(notices(f).length,0);assert.ok(completed(f));assert.equal(f.adapter.requests.length,2)
+})

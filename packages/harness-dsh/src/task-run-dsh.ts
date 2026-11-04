@@ -242,11 +242,11 @@ export function runDateLine(now=new Date()):string{
  * 小结对最终工具面使用白名单，覆盖预设在 Agent 自身层或稍后注册的工具；同时撤下不可用的委派说明。
  */
 const teamPolicySection='team:policy'
-/** 交付已有文件复用工作目录 read；真正范围与当前 Run 仍由文件守卫核对，不作为自授权工具。 */
+/** 输入交付复用 read；细范围 write 仅可交付同 Run 成功且字节未变的输出，实际回执由文件守卫核对。 */
 function runToolNames(allowedTools:readonly string[],applicable:RunToolApplicability):Set<string>{
  const keep=catalogRunToolNames(allowedTools,applicable)
  keep.delete('present')
- if(!applicable.text&&!applicable.digest&&allowedTools.includes('read'))keep.add('present')
+ if(!applicable.text&&!applicable.digest&&(allowedTools.includes('read')||applicable.scopedFiles&&allowedTools.includes('write')))keep.add('present')
  return keep
 }
 export function restrictRunTools(agent:Pick<Agent,'ctx'>,allowedTools:readonly string[],applicable:RunToolApplicability):()=>void{
@@ -258,7 +258,7 @@ export function restrictRunTools(agent:Pick<Agent,'ctx'>,allowedTools:readonly s
  const dispose=()=>{try{release?.()}finally{try{lift?.()}finally{try{denyTextTools?.()}finally{restorePresentation?.()}}}}
  try{
   // 单调守卫位于原生扩展审批之后、工具体派发之前；局部/后注册工具与PTC传输也不能绕过。
-  if(applicable.text)denyTextTools=agent.ctx.tools.guard(exec=>keep.has(exec.name)?undefined:keep.size?'本次工作只允许提出本人分身的私有记忆候选。':'本次工作仅获准处理固定文本资料，不能执行任何工具。')
+  if(applicable.scopedFiles)denyTextTools=agent.ctx.tools.guard(exec=>keep.has(exec.name)||exec.name===deliveryReviewToolName&&ownsDeliveryReviewToolDefinition(agent)?undefined:'此工具不能遵守本次细文件范围。');else if(applicable.text)denyTextTools=agent.ctx.tools.guard(exec=>keep.has(exec.name)?undefined:keep.size?'本次工作只允许提出本人分身的私有记忆候选。':'本次工作仅获准处理固定文本资料，不能执行任何工具。')
   const visible=agent.ctx.tools.schemas(agent).map(schema=>schema.name)
   lift=agent.ctx.tools.restrict({allow:visible.filter(name=>name!=='run_code'&&!scoped.has(name)&&keep.has(name))})
   release=agent.ctx.on('system-prompt/assemble',async(_assembly,context,next)=>{
@@ -270,9 +270,9 @@ export function restrictRunTools(agent:Pick<Agent,'ctx'>,allowedTools:readonly s
     contexts:result.contexts.filter(context=>context.name!=='tool:subagent:depth'),
    }
    // 父本地及迟注册工具不受 restrict 的继承过滤约束，最终目录与说明再按同一 Run 白名单收窄。
-   const finalKeep=new Set(keep);finalKeep.add('run_code')
+   const finalKeep=new Set(keep);if(!applicable.scopedFiles)finalKeep.add('run_code')
    if(context.scope===agent&&ownsDeliveryReviewToolDefinition(agent))finalKeep.add(deliveryReviewToolName)
-   const filtered=filterRunToolAssembly(result,finalKeep)
+   const filtered=filterRunToolAssembly(result,finalKeep,applicable.fileRules)
    if(!filtered.tools.some(tool=>tool.name==='run_code')||!filtered.sections.some(section=>section.name==='tools:sdk'))return filtered
    // PTC 的 schema 是 transport；真正能力列在官方 SDK section 中，必须同步投影，不能只删 wire schema。
    const scope=context.scope??agent,runtime=agent.ctx.get('ptcRuntime')
@@ -639,7 +639,7 @@ export function dshTaskRunPorts(ctx:Context,owner:string,inspect:(sessionId:stri
      const tools=runToolNames(run.allowedTools,runToolApplicability(run,digest,noTools))
      tools.delete('run_code')
      const textOnly=noTools||isTextOnlyTaskRun(run)&&!(run.contextMode===runContextMode&&run.knowledge?.length)
-     if(!digest&&!textOnly&&agent.ctx.tools.schemas(agent).some(tool=>tool.name==='run_code'))tools.add('run_code')
+     if(!digest&&!textOnly&&!runToolApplicability(run,digest,noTools).scopedFiles&&agent.ctx.tools.schemas(agent).some(tool=>tool.name==='run_code'))tools.add('run_code')
      return [...tools]
     })())
     const readExecution=(run.executor?.kind==='owner'||requiresGroupDeliveryReview)&&runtimeLinks&&nativeInput?.readReviewState?async(reviewSignal:AbortSignal):Promise<DeliveryReviewExecutionSnapshot>=>{

@@ -15,7 +15,7 @@ import type {TaskRunOrchestrationAccess} from './task-run-orchestration.ts'
 import {delegationToolAllowed,delegationTools,teamDelegationTools,externalEgressToolAllowed,externalEgressTools,mcpResourceToolAllowed,mcpResourceTools,orchestrationToolAllowed,orchestrationTools,subagentTaskToolName,type WebGatePolicy} from './role-tool-grants.ts'
 import {WorkError,webAccessHost,webHostBlocked,type WebAccessKind} from '@teloa/contract'
 import {skillHttpGrantedSkills,skillHttpToolName} from './skill-http-tool.ts'
-import {workspaceFileToolNames,isWorkspaceFileRule} from '@teloa/contract'
+import {workspaceFileToolNames,isWorkspaceFileRule,hasWorkspacePaths,workspacePathsUnsafeTool} from '@teloa/contract'
 import type {TaskRunWorkspaceFileAccess} from './workspace-file-access.ts'
 import type {GoalObservationContext} from '@teloa/contract'
 import type {SessionEvent} from '@deepseek-ai/dsh-session'
@@ -132,6 +132,7 @@ export function registerTaskToolGuard(ctx:Context,readPolicy:TaskToolPolicyReade
    policySessionId=lineage.root.id
    authorizationStage='read-policy'
    policy=await readPolicy(policySessionId,exec.signal)
+   if(hasWorkspacePaths(policy?.argumentRules)&&workspacePathsUnsafeTool(exec.name))return {kind:'deny',reason:'此工具不能遵守本次细文件范围，已停止执行。'}
    if(policy?.textOnly&&!(lineage.depth===0&&readAnalysisSelfAuthorizedTools(policy.selfAuthorizedTools).includes(exec.name))){textExecutions.add(exec);return {kind:'deny',reason:'本次工作仅获准处理固定文本资料，不能执行任何工具。'}}
    authorizationStage='cleanup'
    cleanup=await browserCleanup?.consume(exec,policy)??false
@@ -183,7 +184,7 @@ export function registerTaskToolGuard(ctx:Context,readPolicy:TaskToolPolicyReade
   // present 只声明当前 Run 已获准读取的已有文件，不授予额外读取或外发能力。
   // 进入受限 FS 检查并在 tools/execute 再核对；不能借工具名授权或自授权提前放行。
   if(policy!==null&&exec.name==='present'){
-   if(!workspaceFiles||!policy.allowedTools.includes('read')||!policy.argumentRules?.some(rule=>rule.name==='read'&&isWorkspaceFileRule(rule)))return {kind:'deny',reason:'文件交付需要当前任务的工作目录读取授权。'}
+   if(!workspaceFiles||!policy.argumentRules?.some(rule=>isWorkspaceFileRule(rule)&&(rule.name==='read'&&policy.allowedTools.includes('read')||hasWorkspacePaths(policy.argumentRules)&&rule.name==='write'&&policy.allowedTools.includes('write'))))return {kind:'deny',reason:'文件交付需要当前任务的工作目录读取授权。'}
    const issue=await workspaceFiles.check(exec,lineage.root,policy)
    return issue===undefined?next():{kind:'deny',reason:issue}
   }
