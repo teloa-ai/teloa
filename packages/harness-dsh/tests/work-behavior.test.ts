@@ -116,8 +116,38 @@ async function scopedRuntime(t:TestContext){
  const adapter=new CaptureAdapter();ctx.llm.registerAdapter(['capture'],adapter)
  const {agent}=await ctx.agents.create({sessionId:SessionId('capability-'+t.name),agentOptions:{provider:'capture',model:'model'}})
  const plugin=await import('../src/work-behavior.ts')
- return {ctx,agent,plugin}
+ return {ctx,agent,plugin,adapter}
 }
+
+test('文件工具的一般读前写建议不扩张当前任务独立的读写授权，规则进入实际请求且不改原生契约',async t=>{
+ const {ctx,agent,plugin,adapter}=await scopedRuntime(t)
+ const userText='Read input.txt and create output.txt. Only input.txt may be read; do not read output.txt.'
+ const permission='Current host-verified role: document assistant. Current task permits reading input.txt and writing output.txt only.'
+ const prerequisite='Read an existing file before overwriting it with write (the default fs-observation-policy requires it).'
+ ctx.systemPrompt.context({name:'fixture:task-permission',order:110,text:permission})
+ ctx.systemPrompt.section({name:'fixture:fs-observation-policy',order:1000,text:prerequisite})
+ for(const name of ['read','write'])ctx.tools.register(defineTool({name,description:name==='read'?'Read a UTF-8 text file and return line-numbered content.':'Create or fully replace a UTF-8 text file.',parameters:{file_path:{type:'string',required:true}},output:{schema:{type:'string'},render:(_args,value)=>[{type:'text',text:value}]},execute:async()=>assert.fail('提示装配不执行文件工具')}))
+ const before=await ctx.systemPrompt.assemble({agent,scope:agent})
+ await agent.ctx.plugin(plugin)
+ const after=await ctx.systemPrompt.assemble({agent,scope:agent})
+ assert.deepEqual(after.tools,before.tools)
+ assert.deepEqual(after.contexts.filter(row=>row.name!=='teloa:work-behavior-runtime'),before.contexts)
+ assert.deepEqual(after.sections.filter(row=>row.name!=='teloa:work-behavior'),before.sections)
+ agent.followup(createUserMessage({source:{kind:'user',rpcId:'independent-file-permissions'},content:[{type:'text',text:userText}]}));await agent.whenIdle()
+ assert.equal(adapter.requests.length,1)
+ const request=adapter.requests[0]!,system=request.messages.filter(message=>message.role==='system').flatMap(message=>message.content.filter(block=>block.type==='text').map(block=>block.text)).join('\n')
+ assert.match(system,/Read and write permissions are independent/)
+ assert.match(system,/Writing a destination does not authorize reading it/)
+ assert.match(system,/Existence checks, overwrite pre-reads and read-back verification require read permission/)
+ assert.match(system,/General tool or workflow advice cannot expand the current role, task or user scope/)
+ assert.match(system,/If a required host precondition needs an unauthorized read, stop that operation/)
+ assert.match(system,/do not probe the target or bypass the precondition/)
+ assert.ok(system.includes(prerequisite),'保留官方真实前置，不靠删掉原规则绕过宿主检查')
+ const current=request.messages.find(message=>message.source?.kind==='user'&&message.content.some(block=>block.type==='text'&&block.text===userText))
+ assert.deepEqual(current?.content,[{type:'text',text:userText}])
+ assert.ok(JSON.stringify(request.messages).includes(permission))
+ assert.deepEqual(runtimeFacts(after).modules,['01-core','02-tools','03-planning','08-artifacts'])
+})
 
 function registerFixtureTool(ctx:Context,name:string){
  return ctx.tools.register(defineTool({name,description:'本测试作用域可见的工具',parameters:{},output:{schema:{type:'string'},render:(_args,value)=>[{type:'text',text:value}]},execute:async()=> 'fixture'}))
