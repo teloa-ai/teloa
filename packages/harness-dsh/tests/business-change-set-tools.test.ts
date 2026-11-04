@@ -158,8 +158,10 @@ test('过期草稿的正式工具展示标明历史基线，原 JSON 与业务�
   state=nextState;const expected=document(),json=JSON.stringify(expected)
   const result=await ctx.tools.execute({name:'teloa_business_change_read',arguments:{changeSetId:id},callId:ToolCallId(randomUUID()),agent,signal:new AbortController().signal})
   assert.ok(!result.isError,JSON.stringify(result));assert.equal(result.value,json,'PTC 子调用仍取得原 JSON value，不能替换来源、字段或摘要')
-  assert.deepEqual(result.content[0],{type:'text',text:json},'原 JSON 首块逐字保留')
-  if(state==='stale'){assert.equal(result.content.length,2);const notice=result.content[1];assert.ok(notice?.type==='text');assert.match(notice.text,/固定历史基线/);assert.match(notice.text,/不能证明当前字段/)}else assert.equal(result.content.length,1,'未过期或已采用回执不冒称过期')
+  if(state==='stale'){
+   assert.equal(result.content.length,2);const notice=result.content[0],history=result.content[1];assert.ok(notice?.type==='text');assert.match(notice.text,/^当前记录未经核验/);assert.match(notice.text,/下列仅历史草稿/);assert.match(notice.text,/不能证明当前字段/);assert.ok(history?.type==='text')
+   const rendered=JSON.parse(history.text);assert.deepEqual(Object.keys(rendered).sort(),['currentRecordVerified','historicalDraft']);assert.equal(rendered.currentRecordVerified,false);assert.deepEqual(rendered.historicalDraft,expected,'历史草稿完整保留来源、版本、字段、id 与 digest');assert.equal(JSON.stringify(rendered.historicalDraft),json,'wrapper 内仍是原 canonical JSON，未把旧 quality=complete 改造成当前值证明')
+  }else assert.deepEqual(result.content,[{type:'text',text:json}],'未过期或已采用展示逐字不变')
   const calls:{endpoint:string;input:unknown}[]=[]
   const api=createBusinessWorkResultsApi(async(endpoint,input)=>{calls.push({endpoint,input});return expected})
   assert.deepEqual(await api.getChangeSet(id),expected,'正式卡片经 business-changes/get 解码，不拼接原生工具展示块')

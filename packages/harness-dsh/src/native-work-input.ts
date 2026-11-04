@@ -7,14 +7,15 @@ import {WorkError} from '@teloa/contract'
 import {createNativeInputGuard,nativeInputIdentity} from './native-input-access.ts'
 import {createNativeWorkCausality,type NativeJobCompletion} from './native-work-causality.ts'
 import {isNativeResourceCleanupScope} from './native-resource-cleanup.ts'
-import type {NativeInputCheckpoint,NativeProgressCheckpoint,NativeInputRestore,NativeInputRestoreInput} from './native-input-checkpoint.ts'
+import type {NativeCheckpointSnapshot,NativeInputRoot,NativeInputCheckpoint,NativeProgressCheckpoint,NativeInputRestore,NativeInputRestoreInput} from './native-input-checkpoint.ts'
 import {projectRuntimeInputHooks} from './project-runtime-context.ts'
+import {ownsDeliveryReviewInput} from './task-delivery-review.ts'
 
 export type NativeInputProducer=Extract<WorkAccessRequest,{kind:'native-input'}>['producer']
 // identity 由拥有实际发布点的 producer 构造。它只绑定上下文，不凭此标记授予许可。
 export type NativeInputContext=Readonly<{producer:NativeInputProducer;identity:string}>
 /** 宿主实际工作归属的附加准入；不向模型或浏览器公开。 */
-export type ResidentInputAdmission={acquire:(input:{sessionId:string;producer:NativeInputProducer;sourceKind?:string})=>Promise<WorkAccessLease|null>;restore?:(input:NativeInputRestoreInput,base:NativeInputRestore)=>ReturnType<NativeInputRestore>}
+export type ResidentInputAdmission={acquire:(input:{sessionId:string;producer:NativeInputProducer;sourceKind?:string})=>Promise<WorkAccessLease|null>;continuation?:(agent:Agent,message:UserMessage,ticketId:string)=>Promise<{snapshot:NativeCheckpointSnapshot;roots:readonly NativeInputRoot[];lease:WorkAccessLease}>;restore?:(input:NativeInputRestoreInput,base:NativeInputRestore)=>ReturnType<NativeInputRestore>;nativeCheckpoint?:NativeInputCheckpoint;nativeProgress?:NativeProgressCheckpoint}
 type SubagentInput=Readonly<{kind:'initial'|'live'|'resume';agent:Agent;sender:Agent;message:UserMessage;signal?:AbortSignal}>
 type SubagentCompletion=Readonly<{agent:Agent;message:UserMessage;childId:string}>
 const producers=new Set<NativeInputProducer>(['prompt','queue','subagent','schedule','goal','task-run'])
@@ -63,14 +64,22 @@ export function createNativeWorkInput(ctx:Context,access:WorkAccess=workAccess,c
   if(typeof provider.acquire!=='function')throw denied()
   const lease=await provider.acquire({sessionId,producer,...(sourceKind===undefined?{}:{sourceKind})});if(lease!==null&&typeof lease?.assertCurrent!=='function')throw denied();return lease
  }
- const controlledRestore:NativeInputRestore|undefined=restore?async input=>{
+ // 默认base只投影数据根，不授予执行权；固定宿主仍必须用持久恢复票据逐根许可。
+ const baseRestore:NativeInputRestore|undefined=restore??(requireResident?input=>{
+  const roots=input.messages.map(message=>{const rpcId=Reflect.get(message.source,'rpcId'),identity=nativeInputIdentity(message,typeof rpcId==='string'?rpcId:undefined);return Object.freeze({sessionId:input.sessionId,messageId:identity.messageId,nativeRequestId:identity.nativeRequestId??null,payloadSha256:identity.payloadSha256})})
+  return Object.freeze({roots:Object.freeze(roots),assertCurrent:()=>{input.signal.throwIfAborted();return undefined}})
+ }:undefined)
+ const controlledRestore:NativeInputRestore|undefined=baseRestore?async input=>{
   const provider=resident();if(requireResident&&!provider?.restore)throw denied()
   const project=await projectRuntimeInputHooks(ctx)?.restore?.(input)
-  const proof=await(provider?.restore?provider.restore(input,restore):restore(input))
+  const proof=await(provider?.restore?provider.restore(input,baseRestore):baseRestore(input))
   if(!project)return proof
   return Object.freeze({...proof,assertCurrent(){proof.assertCurrent();project.assertCurrent()}})
  }:undefined
- const causality=createNativeWorkCausality(ctx,(agent,message,lease,submit)=>publish(prepare(agent,message,submit),lease,submit),checkpoint,progress,controlledRestore,sessionId=>access.authorizeSessionCapabilities(sessionId,'restore'))
+ // 固定宿主在同一私有检查点保存账本；额外部署检查器仍先执行，不以公开观察事件补写受理事实。
+ const durableCheckpoint:NativeInputCheckpoint|undefined=requireResident?async input=>{await checkpoint?.(input);await resident()?.nativeCheckpoint?.(input)}:checkpoint
+ const durableProgress:NativeProgressCheckpoint|undefined=requireResident?async input=>{await progress?.(input);await resident()?.nativeProgress?.(input)}:progress
+ const causality=createNativeWorkCausality(ctx,(agent,message,lease,submit)=>publish(prepare(agent,message,submit),lease,submit),durableCheckpoint,durableProgress,controlledRestore,sessionId=>access.authorizeSessionCapabilities(sessionId,'restore'))
  const withNewInput=async(agent:Agent,message:UserMessage,context:NativeInputContext,submit:()=>void,signal?:AbortSignal,additionalLease?:WorkAccessLease):Promise<void>=>{
   if(isNativeResourceCleanupScope())throw denied()
   let producer:NativeInputProducer,contextIdentity:string
@@ -87,10 +96,26 @@ export function createNativeWorkInput(ctx:Context,access:WorkAccess=workAccess,c
   const roleLease=await residentLease(agent.id,producer,prepared.sourceKind)
   const projectLease=await projectRuntimeInputHooks(ctx)?.acquire(agent,message,signal)
   const lease=await access.authorize(request)
-  publish(prepared,combineWorkAccessLeases([capabilities,lease,...extra?[extra]:[],...roleLease?[roleLease]:[],...projectLease?[projectLease]:[]]),submit,(producer==='prompt'||producer==='queue')&&roleLease===null)
+  const publishInput=prepared.sourceKind==='plugin:teloa.delivery-review'?()=>{if(producer!=='task-run'||!ownsDeliveryReviewInput(agent,message))throw denied();causality.publishActiveContinuation(agent,message,submit)}:submit
+  publish(prepared,combineWorkAccessLeases([capabilities,lease,...extra?[extra]:[],...roleLease?[roleLease]:[],...projectLease?[projectLease]:[]]),publishInput,(producer==='prompt'||producer==='queue')&&roleLease===null)
  }
  return Object.freeze({
   withNewInput,
+  async withRunContinuation(agent:Agent,message:UserMessage,ticketId:string,signal:AbortSignal):Promise<void>{
+   const provider=resident();if(!provider?.continuation)throw denied()
+   const proof=await provider.continuation(agent,message,ticketId)
+   signal.throwIfAborted();proof.lease.assertCurrent()
+   await withNewInput(agent,message,{producer:'task-run',identity:'native-continuation:'+ticketId},()=>causality.publishPersistedContinuation(agent,message,proof,()=>agent.followup(message)),signal,proof.lease)
+  },
+  /** 唤醒方法自身不授予许可；SDK以所属writer重新核验原Inbox与部署恢复票据。 */
+  async wakePending(agent:Agent,signal?:AbortSignal):Promise<boolean>{
+   if(ctx.agents.get(agent.id)!==agent)throw denied()
+   const loop=ctx.get('agentLoop'),wake=loop&&Reflect.get(loop,'wakePending')
+   if(typeof wake!=='function')throw denied()
+   const result:unknown=await Reflect.apply(wake,loop,[agent,signal])
+   if(typeof result!=='boolean')throw denied()
+   return result
+  },
   /** 仅原空闲会话的短事务收口；最终append闸冻结所有事件，维护期间不消耗/丢弃晚到输入。 */
   withQuiescentSession<T>(agent:Agent,work:(signal:AbortSignal)=>Promise<T>):Promise<T>{
    const session=agent.session

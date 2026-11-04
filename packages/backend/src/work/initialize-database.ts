@@ -5,6 +5,7 @@ import {initializeTaskRunSubmissions} from './task-run-submission.ts'
 import {initializeEmployeeIntegrations} from './employee-integrations.ts'
 import {initializeEmployeeApiWork} from './employee-api-work.ts'
 import {initializeWorkControl} from './work-control.ts'
+import {initializeNativeSessionContinuations} from './native-session-continuations.ts'
 import {initializeWorkRecovery} from './work-recovery.ts'
 import {initializeWorkBudgets} from './work-budget.ts'
 import {initializeConversationBudgetSettings} from './conversation-budget-settings.ts'
@@ -196,6 +197,7 @@ export async function initializeTeloaDatabase(pool:Pool,options:{businessSqlSecr
  await initializeTaskRuns(pool)
  await initializeTaskRunGoals(pool)
  await initializeWorkControl(pool)
+ await initializeNativeSessionContinuations(pool)
  await initializeWorkRecovery(pool)
  await initializeWorkBudgets(pool)
  await initializeConversationBudgetSettings(pool)

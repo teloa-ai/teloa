@@ -364,6 +364,25 @@ private async readVerified(db:PoolClient,owner:string,row:Record<string,unknown>
   try{await db.query('begin');const lease=await this.executionAdmissionInTransaction(db,owner,runId);lease.assertCurrent();await db.query('commit');return lease
   }catch(e){await db.query('rollback');throw e}finally{db.release()}
  }
+ /** 私有原生续作事务：只把尚未交付、复核未闭合的同Run接回执行，不调用start、不新建Run。原终态保留在持久票据中。 */
+ async reopenNativeContinuationInTransaction(db:PoolClient,owner:string,runId:string,ticketId:string):Promise<TaskRun>{
+  actor(owner);if(!uuid(runId)||!uuid(ticketId))throw new WorkError('teloa/invalid-input','续作身份不正确。')
+  const row=(await db.query('select c.record,h.generation from teloa_native_session_continuations c join teloa_work_control_hosts h on h.owner_id=c.owner_id where c.owner_id=$1 and c.id=$2 and c.run_id=$3 for share of h',[owner,ticketId,runId])).rows[0],r=row?.record,c=r?.checkpoint
+  if(!r||r.mode!=='automatic'||r.hostGeneration!==row.generation||c?.runId!==runId||c.ownerId!==owner||c.hostGeneration>=r.hostGeneration)throw new WorkError('teloa/forbidden','没有当前宿主原Run续作票据。')
+  const stored=(await db.query('select * from teloa_task_runs where owner_id=$1 and id=$2 for update',[owner,runId])).rows[0],run=await this.readVerified(db,owner,stored)
+  if(run.sessionId!==c.sessionId||run.nativeRequestId!==c.requestId||run.stopRequestedAt!==null)throw new WorkError('teloa/conflict','原执行身份或停止状态已变化。')
+  if(['submitting','accepted','active'].includes(run.state))return run
+  if(run.state!=='ended'||run.evidence?.state!=='ended'||run.evidence.reason!=='completed'||!c.review||Reflect.get(JSON.parse(c.review.json),'phase')!=='rewrite'||!positive(stored.task_state_version))throw new WorkError('teloa/conflict','原执行没有待完成的交付复核。')
+  await this.executionScopeInTransaction(db,owner,{runId,mode:'completion'})
+  const task=(await db.query('select * from teloa_tasks where owner_id=$1 and id=$2 for update',[owner,run.taskId])).rows[0]
+  if(!task||task.state!=='waiting'||task.version!==stored.task_state_version+1)throw new WorkError('teloa/version-conflict','原任务已被后续操作改变。')
+  const prior={...r,automaticAdmission:{...r.automaticAdmission,priorEvidence:run.evidence}}
+  await db.query('update teloa_native_session_continuations set record=$3 where owner_id=$1 and id=$2',[owner,ticketId,JSON.stringify(prior)])
+  await db.query("update teloa_tasks set state='running',version=version+1,updated_at=$3 where owner_id=$1 and id=$2",[owner,run.taskId,this.identity.now()])
+  const evidence={state:'active',turn:run.evidence.turn,messageSeq:run.evidence.messageSeq}
+  const changed=(await db.query("update teloa_task_runs set state='active',evidence=$3,task_state_version=$4,owner_result_pending=false where owner_id=$1 and id=$2 returning *",[owner,run.id,JSON.stringify(evidence),task.version+1])).rows[0]
+  return this.readVerified(db,owner,changed)
+ }
  async executionAdmissionInTransaction(db:PoolClient,owner:string,runId:string):Promise<WorkAccessLease>{
    actor(owner);if(!uuid(runId))throw new WorkError('teloa/invalid-input','执行身份不正确。')
    const capturedStop=stopEpoch(owner,runId)

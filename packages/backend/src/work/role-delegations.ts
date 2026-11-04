@@ -12,7 +12,7 @@ import {readStoredRoleMemoryView} from './role-memory-views.ts'
 import {readActiveAttachment} from './group-attachments.ts'
 import {runEvidence} from './task-run-evidence.ts'
 import {readStoredTaskRun,type TaskRun} from './task-runs.ts'
-import {readTaskRunOwnerSettlement} from './task-run-runtime-links.ts'
+import {readTaskRunOwnerSettlement,retiredNativeContinuationRuntimes} from './task-run-runtime-links.ts'
 import {readStoredRunPlanReport} from './task-run-plan-context.ts'
 import {readStoredGroupMessage} from './group-message-presentation.ts'
 import {readTrustedGroupMessageRunSource} from './group-routing-outbox.ts'
@@ -115,7 +115,8 @@ export async function roleWorkOutstanding(db:PoolClient,owner:string,roleId:stri
   if(!['completed','compensated'].includes(flow.state))return true
   try{readTaskRunFlow({flowId:flow.flow_id,runId:flow.run_id,definitionVersion:flow.definition_version,state:flow.state,steps:flow.steps,createdAt:flow.created_at.toISOString(),updatedAt:flow.updated_at.toISOString()})}catch{return true}
  }
- const links=(await db.query('select run_id,native_id,session_id,kind,payload,owner_settlement from teloa_task_run_runtime_links where owner_id=$1 and run_id=any($2::uuid[])'+share,[owner,ids])).rows
+ const retired=await retiredNativeContinuationRuntimes(db,owner,ids)
+ const links=(await db.query('select run_id,native_id,session_id,kind,payload,owner_settlement from teloa_task_run_runtime_links where owner_id=$1 and run_id=any($2::uuid[])'+share,[owner,ids])).rows.filter(link=>!(link.kind==='job'&&retired.has(JSON.stringify([link.run_id,link.payload?.runtimeId]))&&(link.payload?.record==='owner'||link.payload?.record==='job'&&['completed','failed','killed'].includes(link.payload.status))))
  for(const link of links){
   const payload=link.payload
   if(!payload||typeof payload!=='object'||Array.isArray(payload)||typeof payload.runtimeId!=='string'&&link.kind!=='team'||!roleWorkUuid(payload.requestId))return true

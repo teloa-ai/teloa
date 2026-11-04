@@ -208,6 +208,9 @@ export class WorkControlService{
   return client?acquire(client):roleWorkTransaction(this.pool,acquire)
  }
  private async acquireLineage(db:PoolClient,owner:string,lineage:WorkLineage,expectedGeneration?:number):Promise<{control:WorkControl;lease:WorkAccessLease}>{
+   // 宿主栅栏先于控制/预算锁：旧host最后一次模型领取要么完整提交在撤防之前，要么被新epoch拒绝。
+   const hostGeneration=this.ports.hostGeneration?.()
+   if(hostGeneration!==undefined){const host=(await db.query('select generation from teloa_work_control_hosts where owner_id=$1 for share',[owner])).rows[0];if(host?.generation!==hostGeneration)throw forbidden()}
    const ids=[lineage.definitionControlId,lineage.roundControlId].filter((v):v is string=>v!==null).sort(),controls:WorkControl[]=[]
    for(const id of ids){await db.query('select id from teloa_work_controls where owner_id=$1 and id=$2 for share',[owner,id]);const c=await this.read(db,owner,id);if(c.state!=='active')throw forbidden();controls.push(c)}
    const control=controls.find(c=>c.id===lineage.roundControlId)!

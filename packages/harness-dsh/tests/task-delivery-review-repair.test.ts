@@ -1,11 +1,14 @@
 import test,{type TestContext} from 'node:test'
 import assert from 'node:assert/strict'
 import type {StreamChunk} from '@deepseek-ai/dsh-llm'
+import {createUserMessage} from '@deepseek-ai/dsh-llm'
+import {nativeRunContinuationKey} from '../src/task-run-team-records.ts'
 import type {SessionEvent} from '@deepseek-ai/dsh-session'
 import {defineTool} from '@deepseek-ai/dsh-tools'
 import {createReviewSourceCatalog,deliveryRepairProtocol,deliveryReviewProtocol,deliveryReviewSource,deliveryReviewToolName,deliveryRoundData,draftSha256,leaseTaskDeliveryReview,splitReviewUnits,type DeliveryReviewTrace,type ReviewMaterial,type ReviewRound} from '../src/task-delivery-review.ts'
 import {readTaskRunGroupResult} from '../src/task-run-group-result.ts'
 import {registerTaskToolGuard} from '../src/task-tool-guard.ts'
+import {readDeliveryReviewCheckpoint} from '../src/task-delivery-review.ts'
 import {loopWorkFixture} from './fixtures/native-loop-work-admission.ts'
 
 type Reply=readonly StreamChunk[]
@@ -34,15 +37,16 @@ const clone=(events:readonly SessionEvent[])=>JSON.parse(JSON.stringify(events))
 const delivered=(events:readonly SessionEvent[])=>events.filter((event):event is Extract<SessionEvent,{type:'user/message'}>=>event.type==='user/message'&&event.surfaceOp==='append'&&event.data.source.kind===deliveryReviewSource&&Reflect.get(event.data.source,'summary')==='复核后交付')
 
 /** 原版官方 Loop/ToolRuntime，只替换模型流；每个场景固定输入队列，实际额外调用会使测试失败。 */
-async function runtime(t:TestContext,scripts:Reply[],investigation=false){
- const f=await loopWorkFixture(t,true),traces:DeliveryReviewTrace[]=[]
+async function runtime(t:TestContext,scripts:Reply[],investigation=false,patched=false){
+ const f=await loopWorkFixture(t,!patched),traces:DeliveryReviewTrace[]=[]
  f.adapter.scripts.push(...scripts)
  let probes=0
  const allowedTools=investigation?['investigation_probe']:[]
  if(investigation)f.ctx.tools.register(defineTool({name:'investigation_probe',description:'本机合成调查取证',parameters:{},output:{schema:{type:'string'},render:(_args,value)=>[{type:'text',text:value}]},execute:async()=>{probes++;return '原资料不建立独立付款凭据。'}}))
- registerTaskToolGuard(f.ctx,async()=>({allowedTools,nativeRequestId:'loop-input'}))
+ const nativeContinuations=new Set<string>()
+ registerTaskToolGuard(f.ctx,async()=>({allowedTools,nativeRequestId:'loop-input'}),[],undefined,undefined,undefined,patched?{authorizeMember:async()=>false,continuations:async()=>nativeContinuations}:undefined)
  leaseTaskDeliveryReview(f.agent,{runId:'repair-run',requestId:'loop-input',material,trace:entry=>{traces.push(entry)},publish:async message=>{f.agent.inject(message)},...(investigation?{requireReview:true,readExecution:async()=>({runId:'repair-run',sessionId:f.agent.id,requestId:'loop-input',allowedTools,continuationMessageIds:new Set<string>(),runtimeLinks:[],jobs:[],pendingJobCompletion:false,pendingInput:false,children:'none' as const,flow:'none' as const})}:{})})
- return {...f,traces,probes:()=>probes}
+ return {...f,traces,nativeContinuations,probes:()=>probes}
 }
 const result=(events:readonly SessionEvent[])=>readTaskRunGroupResult(events,'loop-input',undefined,undefined,{requireReview:true,runId:'repair-run'})
 const successScripts=(first=false)=>{
@@ -69,6 +73,34 @@ test('真实Loop：R1漏检后R2有据拒绝，同Run唯一R3修正与R4独立�
   assert.equal(f.events.filter(event=>event.type==='turn/start').length,1)
   assert.ok(f.adapter.requests.slice(1).every(request=>request.tools?.length===1&&request.tools[0]!.name===deliveryReviewToolName),'修订不扩大岗位工具许可')
   assert.equal(f.events.filter(event=>event.type==='user/message'&&event.data.source.kind==='user').length,1,'不以新增用户指令触发修复')
+ })
+})
+
+test('持久复核冷状态接原Run：各轮成功回执先折叠，R4已受理零额外模型，冷热同文',{timeout:20000},async t=>{
+ for(const cut of [1,2,3,4])await t.test('R'+cut,async sub=>{
+  const f=await runtime(sub,successScripts(),false,true)
+  let saved:ReturnType<typeof readDeliveryReviewCheckpoint>=null
+  f.agent.ctx.on('session/event',(session,event)=>{
+   if(session!==f.agent.session||event.type!=='step/end'||saved)return
+   const c=readDeliveryReviewCheckpoint(f.agent);if(!c)return
+   const state=JSON.parse(c.json)
+   if(state.current.round!==cut||!state.submission)return
+   saved=structuredClone(c);f.agent.cancel({kind:'disposed'})
+  })
+  await f.send();assert.ok(saved);const oldPrefix=[...f.events],before=f.adapter.requests.length
+  assert.deepEqual(ends(f.events),['aborted'])
+  leaseTaskDeliveryReview(f.agent,{runId:'repair-run',requestId:'loop-input',material,restore:saved,trace:entry=>f.traces.push(entry),publish:async message=>{f.agent.inject(message)}})
+  const id='resume-r'+cut,message=createUserMessage({source:{kind:'plugin:teloa.session-continuation',continuationId:id,form:'notice',summary:'继续原执行'},content:[{type:'text',text:'继续原工作'}]})
+  f.nativeContinuations.add(nativeRunContinuationKey(id))
+  f.agent.followup(message);await f.agent.whenIdle()
+  assert.deepEqual(f.events.slice(0,oldPrefix.length),oldPrefix)
+  assert.equal(f.adapter.requests.length,5,'草稿及原四轮调用总额不重置 '+JSON.stringify({ends:ends(f.events),traces:f.traces.slice(-4),errors:f.events.filter(e=>e.type==='tool/result'&&e.data.message.isError)}))
+  if(cut===4)assert.equal(f.adapter.requests.length,before,'已成功R4只做宿主正式交付')
+  const trusted=new Set([nativeRunContinuationKey(id)])
+  assert.equal(readTaskRunGroupResult(f.events,'loop-input',trusted,undefined,{requireReview:true,runId:'repair-run'}),fixed,JSON.stringify({ends:ends(f.events),traces:f.traces.slice(-4),delivered:delivered(f.events).length}))
+  assert.equal(readTaskRunGroupResult(clone(f.events),'loop-input',trusted,undefined,{requireReview:true,runId:'repair-run'}),fixed)
+  assert.equal(readTaskRunGroupResult(f.events,'loop-input',undefined,undefined,{requireReview:true,runId:'repair-run'}),undefined,'source标记没有持久受理票据时不能跨轮')
+  assert.equal(delivered(f.events).length,1)
  })
 })
 
@@ -133,6 +165,23 @@ test('真实Loop：长稿四轮各四单元加一次纠参，完整17步复核�
  assert.equal(result(f.events),repaired)
  assert.equal(result(clone(f.events)),repaired)
  assert.equal(delivered(f.events).length,1)
+})
+
+test('私有复核检查点保留原轮次、真实步数与整次纠参名额，读取本身不多调用模型',async t=>{
+ const scripts=successScripts();scripts.splice(1,0,call({phase:'revise',issues:''}))
+ const f=await runtime(t,scripts),states:{current:{round:number};corrected:boolean;reviewStepsUsed:number;requestId:string;phase:string}[]=[]
+ f.agent.ctx.on('llm/stream',async function*(_request,next){
+  const snapshot=readDeliveryReviewCheckpoint(f.agent)
+  if(snapshot){assert.equal(snapshot.sha256,draftSha256(snapshot.json));states.push(JSON.parse(snapshot.json))}
+  yield* next()
+ })
+ await f.send()
+ assert.equal(f.adapter.requests.length,6);assert.equal(result(f.events),fixed)
+ assert.deepEqual(states.map(state=>state.current.round),[1,1,2,3,4])
+ assert.deepEqual(states.map(state=>state.corrected),[false,true,true,true,true])
+ assert.deepEqual(states.map(state=>state.reviewStepsUsed),[1,2,3,4,5])
+ assert.ok(states.every(state=>state.requestId==='loop-input'&&state.phase==='rewrite'))
+ assert.equal(readDeliveryReviewCheckpoint(f.agent),null,'正式轮次结束后不把旧复核租约带入追问')
 })
 
 test('真实Loop：长调查超十步后完成四轮复核，正式报告冷读仅核复核步数',async t=>{

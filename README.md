@@ -280,7 +280,7 @@ Community 0.2.4 · 32 views · Actual interfaces with example data. Click an ima
 
 Bring your own model service and API key. Model usage is billed by your provider; the Community software license does not include inference credits.
 
-**0.2.11** is the stable release target for this source. Publication is pending: use the installation commands below only after the exact GitHub artifact or npm version is available. The latest published stable release remains [0.2.10](https://github.com/teloa-ai/teloa/releases/tag/v0.2.10); the earlier [0.2.11-rc.4 GitHub prerelease](https://github.com/teloa-ai/teloa/releases/tag/v0.2.11-rc.4) remains a historical testing release. The SDK remains compatible at `@teloa/sdk@0.2.4`. Availability on [npm](https://www.npmjs.com/package/@teloa/cli?activeTab=versions) and [Docker Hub](https://hub.docker.com/r/teloa/teloa) must be checked separately.
+This source and its CLI use version **0.2.11**. The examples below apply to the corresponding published artifacts. Check available versions separately on [GitHub Releases](https://github.com/teloa-ai/teloa/releases), [npm](https://www.npmjs.com/package/@teloa/cli?activeTab=versions) and [Docker Hub](https://hub.docker.com/r/teloa/teloa). The SDK remains compatible at `@teloa/sdk@0.2.4`.
 
 ### What changes in this release
 
@@ -304,7 +304,7 @@ This overview covers the release’s capabilities and improvements; not all of t
 
 ### Native installation from the GitHub Release
 
-The following commands target stable 0.2.11 and require that version to be published first.
+The following commands install the corresponding published 0.2.11 artifact; confirm its availability on GitHub Releases before running them.
 
 Use **Node.js 24.x from 24.22.1 onward** or **22.x from 22.23.4 onward**, **npm 11.x from 11.12.1 onward**, and a running local Docker engine for the dedicated PostgreSQL database. Install the exact version into a new command directory; no global installation or source build is required.
 

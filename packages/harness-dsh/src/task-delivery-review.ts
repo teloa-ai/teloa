@@ -1,4 +1,4 @@
-import {hasTaskRunApprovalContextReceipt} from './task-run-approval-context.ts'
+import {hasTaskRunApprovalContextReceipt,readTaskRunApprovalContextReceipts,restoreTaskRunApprovalContextReceipts} from './task-run-approval-context.ts'
 import {createHash} from 'node:crypto'
 import {isDeepStrictEqual} from 'node:util'
 import type {Agent} from '@deepseek-ai/dsh-agent'
@@ -422,6 +422,8 @@ export type DeliveryReviewLease=Readonly<{
  runId:string
  /** 本次运行固定的原生请求 id；只有它所在的轮次可以复核。 */
  requestId:string
+ /** 仅同Run持久续作票据在核验完整前缀后提供。 */
+ restore?:DeliveryReviewCheckpoint
  /** 当前群交付必须通过复核；不能把不支持的证据分支降为未经复核的成功正文。 */
  requireReview?:true
  /** 宿主核原受理根和真实后台结清状态；不提供时保留原纯文本准入。 */
@@ -470,14 +472,17 @@ const reviewRejectionHints:Readonly<Record<string,string>>={
 const reviewReminderText=(phase:ReviewPhase)=>'交付复核（宿主固定步骤）：上一步没有通过真实工具调用提交本单元回执；正文说明或 JSON 代码块不构成回执。本单元的复核要求、待复核正文与依据保持不变。现在只调用一次 '+deliveryReviewToolName
  +(phase==='revise'?' 提交 phase:"revise" 回执，没有需改问题时 issues 写 []':' 提交 phase:"verify" 验收回执，按实际核对填写全部验收项')+'；不输出说明文字，不调用其他工具。本次复核仅此一次补交机会，再次缺交即如实收为错误。'
 
+type ReviewTurns=number|ReadonlySet<number>|undefined
+const ownsReviewTurn=(turns:ReviewTurns,turn:number)=>typeof turns==='number'?turns===turn:turns?.has(turn)===true
+
 /** v1/v2历史按其明确协议读取，均须完整两轮验收；活动v2解析器不接受v1的quote参数。无protocol旧历史仍走原规则。 */
-function acceptedReviewDelivery(source:object,text:string,events:readonly SessionEvent[],turn:number|undefined):boolean{
+function acceptedReviewDelivery(source:object,text:string,events:readonly SessionEvent[],turn:ReviewTurns):boolean{
  const protocol=Reflect.get(source,'protocol')
  const toolEvidence=Reflect.get(source,'toolEvidence') as ReviewToolEvidence|undefined
  const draft=events.find(event=>event.type==='assistant/message'&&event.data.message.id===Reflect.get(source,'draftMessageId'))
  if((protocol===deliveryReviewProtocol||protocol===deliveryRepairProtocol)&&toolEvidence===undefined&&draft&&events.some(event=>event.seq<draft.seq&&toolEvent(event.type)))return false
  if(toolEvidence!==undefined){
-  if(!plainRecord(toolEvidence)||!plainRecord(toolEvidence.execution)||(protocol!==deliveryReviewProtocol&&protocol!==deliveryRepairProtocol)||toolEvidence.execution.runId!==Reflect.get(source,'runId')||toolEvidence.draftMessageId!==Reflect.get(source,'draftMessageId')||toolEvidence.turn!==turn||!replayReviewToolEvidence(events,toolEvidence))return false
+  if(!plainRecord(toolEvidence)||!plainRecord(toolEvidence.execution)||(protocol!==deliveryReviewProtocol&&protocol!==deliveryRepairProtocol)||toolEvidence.execution.runId!==Reflect.get(source,'runId')||toolEvidence.draftMessageId!==Reflect.get(source,'draftMessageId')||!ownsReviewTurn(turn,toolEvidence.turn)||!replayReviewToolEvidence(events,toolEvidence))return false
   const data=events.filter((event):event is Extract<SessionEvent,{type:'user/message'}>=>event.type==='user/message'&&event.data.source.kind===deliveryReviewSource&&Reflect.get(event.data.source,'summary')==='待校正草稿'&&typeof event.surfaceOp==='object'&&event.surfaceOp.startSeq===toolEvidence.draftSeq&&event.surfaceOp.endSeq===toolEvidence.draftSeq)
   if(data.length!==1||!isDeepStrictEqual(Reflect.get(data[0]!.data.source,'toolEvidence'),toolEvidence))return false
  }
@@ -508,10 +513,10 @@ function acceptedReviewDelivery(source:object,text:string,events:readonly Sessio
 }
 
 /** v4不把旧AI意见变为事实：重算两次实际改稿，并逐字核对中间数据、拒绝回执和最终全部依赖。 */
-function acceptedRepairDelivery(source:object,text:string,events:readonly SessionEvent[],turn:number|undefined):boolean{
+function acceptedRepairDelivery(source:object,text:string,events:readonly SessionEvent[],turn:ReviewTurns):boolean{
  const raw=Reflect.get(source,'rounds'),catalogSha=Reflect.get(source,'sourceCatalogSha256')
- const draft=events.find(event=>event.type==='assistant/message'&&event.data.turn===turn&&event.data.message.id===Reflect.get(source,'draftMessageId'))
- if(turn===undefined||!draft||events.filter(event=>event.type==='step/start'&&event.data.turn===turn&&event.seq>draft.seq).length>maxReviewModelSteps||Reflect.get(source,'phase')!=='verify'||Reflect.get(source,'verdict')!=='accepted'||Reflect.get(source,'deliverySha256')!==draftSha256(text)||typeof catalogSha!=='string'||!/^[a-f0-9]{64}$/.test(catalogSha)||!Array.isArray(raw)||raw.length!==4||raw.some(round=>!plainRecord(round)))return false
+ const draft=events.find(event=>event.type==='assistant/message'&&ownsReviewTurn(turn,event.data.turn)&&event.data.message.id===Reflect.get(source,'draftMessageId'))
+ if(turn===undefined||!draft||events.filter(event=>event.type==='step/start'&&ownsReviewTurn(turn,event.data.turn)&&event.seq>draft.seq).length>maxReviewModelSteps||Reflect.get(source,'phase')!=='verify'||Reflect.get(source,'verdict')!=='accepted'||Reflect.get(source,'deliverySha256')!==draftSha256(text)||typeof catalogSha!=='string'||!/^[a-f0-9]{64}$/.test(catalogSha)||!Array.isArray(raw)||raw.length!==4||raw.some(round=>!plainRecord(round)))return false
  const rounds=raw as Record<string,unknown>[],[r1,r2,r3,r4]=rounds as [Record<string,unknown>,Record<string,unknown>,Record<string,unknown>,Record<string,unknown>]
  for(const [index,round]of rounds.entries()){
   const revise=index%2===0,protocol=index<2?deliveryReviewProtocol:deliveryRepairProtocol
@@ -549,7 +554,7 @@ function acceptedRepairDelivery(source:object,text:string,events:readonly Sessio
   if('reason'in read||(unit.verdict==='accepted'&&unit.findings.length))return false
  }
  if(!findings.length||!replayVerificationRound(source,middle.text,r1,r2,events,turn,true,firstRequirements.map(row=>row.issueId),{requirements:firstRequirements,blockMaps:[firstMap]}))return false
- const lastR2=(r2.units as Record<string,unknown>[]).at(-1)!,rejected=events.find(event=>event.type==='tool/result'&&event.data.turn===turn&&event.data.message.toolCallId===lastR2.callId)
+ const lastR2=(r2.units as Record<string,unknown>[]).at(-1)!,rejected=events.find(event=>event.type==='tool/result'&&ownsReviewTurn(turn,event.data.turn)&&event.data.message.toolCallId===lastR2.callId)
  if(!rejected)return false
  const final=replayRevisionMap(source,text,r3,events,turn,{text:middle.text,seq:rejected.seq})
  const requirements=repairReviewRequirements(firstIssues,firstMap,findings,lastIssues,lastMap)
@@ -560,7 +565,7 @@ function acceptedRepairDelivery(source:object,text:string,events:readonly Sessio
  }
  // 三次真实数据替换均须位于对应两轮之间；旧append保留，不接受篡改过的R2意见或只核新改字的R4。
  const dataBetween=(content:string,after:SessionSeq,round:Record<string,unknown>)=>{
-  const first=(round.units as Record<string,unknown>[])[0]!,assistant=events.find(event=>event.type==='assistant/message'&&event.data.turn===turn&&event.data.message.id===first.planMessageId)
+  const first=(round.units as Record<string,unknown>[])[0]!,assistant=events.find(event=>event.type==='assistant/message'&&ownsReviewTurn(turn,event.data.turn)&&event.data.message.id===first.planMessageId)
   if(!assistant)return false
   const data=events.filter(event=>event.type==='user/message'&&event.seq>after&&event.seq<assistant.seq&&event.data.source.kind===deliveryReviewSource&&Reflect.get(event.data.source,'summary')==='待校正草稿')
   return data.length===1&&data[0]!.type==='user/message'&&Reflect.get(data[0]!.data.source,'runId')===Reflect.get(source,'runId')&&Reflect.get(data[0]!.data.source,'draftMessageId')===Reflect.get(source,'draftMessageId')&&isDeepStrictEqual(data[0]!.data.content,[{type:'text',text:content}])
@@ -575,7 +580,7 @@ function acceptedRepairDelivery(source:object,text:string,events:readonly Sessio
  * 宿主校验并应用后追加的「复核后交付」；已保存的整篇改写旧会话只认改写输入之后、以 stop 完整结束的本轮助手消息。
  * 未完成时没有可交付正文。未经复核的轮次返回 undefined，按原规则取结果。
  */
-export function deliveryReviewResult(events:readonly SessionEvent[],turn:number|undefined):{text:string|undefined}|undefined{
+export function deliveryReviewResult(events:readonly SessionEvent[],turn:number|undefined,ownedTurns?:ReadonlySet<number>):{text:string|undefined}|undefined{
  let reviewed=false,plan:number|undefined,rewrite:number|undefined,applied:string|undefined
  for(const event of events){
   // 已发布但未进入的复核输入只留在持久的收件箱事件里；它同样说明本轮草稿未经完整复核。
@@ -586,7 +591,7 @@ export function deliveryReviewResult(events:readonly SessionEvent[],turn:number|
   if(summary===planSummary)plan=event.seq
   else if(summary===appliedSummary&&plan!==undefined&&event.seq>plan){
    const text=event.data.content.flatMap(part=>part.type==='text'?[part.text]:[]).join('\n')
-   applied=Reflect.get(event.data.source,'protocol')===undefined||acceptedReviewDelivery(event.data.source,text,events.filter(prior=>prior.seq<event.seq),turn)?text:undefined
+   applied=Reflect.get(event.data.source,'protocol')===undefined||acceptedReviewDelivery(event.data.source,text,events.filter(prior=>prior.seq<event.seq),ownedTurns??turn)?text:undefined
   }
   // 已保存的单步或整篇改写轮次使用旧摘要；升级后仍只接受其完整正文，不能回退旧草稿。
   else if(summary===rewriteSummary||summary===legacyRewriteSummary)rewrite=event.seq
@@ -685,9 +690,9 @@ function reviewArgumentDetails(definition:ToolDefinition,args:unknown):string[]{
 }
 
 /** v3冷读从原生冻结草稿及各单元成功工具回执重算，不用元数据中的hash/映射标签代替真实编辑。旧协议沿原读取路径。 */
-function replayRevisionMap(source:object,text:string|undefined,round:Record<string,unknown>,events:readonly SessionEvent[],turn:number|undefined,baseline?:Readonly<{text:string;seq:SessionSeq}>):{text:string;seq:SessionSeq}|undefined{
+function replayRevisionMap(source:object,text:string|undefined,round:Record<string,unknown>,events:readonly SessionEvent[],turn:ReviewTurns,baseline?:Readonly<{text:string;seq:SessionSeq}>):{text:string;seq:SessionSeq}|undefined{
  if(turn===undefined||!Array.isArray(round.units))return undefined
- const drafts=events.filter((event):event is Extract<SessionEvent,{type:'assistant/message'}>=>event.type==='assistant/message'&&event.data.turn===turn&&event.data.message.id===Reflect.get(source,'draftMessageId'))
+ const drafts=events.filter((event):event is Extract<SessionEvent,{type:'assistant/message'}>=>event.type==='assistant/message'&&ownsReviewTurn(turn,event.data.turn)&&event.data.message.id===Reflect.get(source,'draftMessageId'))
  if(!baseline&&drafts.length!==1)return undefined
  const found=baseline??completeText(drafts[0]!)
  if('skip'in found||draftSha256(found.text)!==round.inputSha256||(!baseline&&round.inputSha256!==Reflect.get(source,'draftSha256')))return undefined
@@ -699,14 +704,14 @@ function replayRevisionMap(source:object,text:string|undefined,round:Record<stri
  for(const [index,unit]of round.units.entries()){
   const range=units[index]!
   if(!plainRecord(unit)||unit.start!==range.start||unit.end!==range.end||!isDeepStrictEqual(unit.criteria??[],range.criteria??[])||typeof unit.callId!=='string'||!Array.isArray(unit.issues))return undefined
-  const calls=events.filter((event):event is Extract<SessionEvent,{type:'tool/call'}>=>event.type==='tool/call'&&event.data.turn===turn&&event.data.callId===unit.callId)
+  const calls=events.filter((event):event is Extract<SessionEvent,{type:'tool/call'}>=>event.type==='tool/call'&&ownsReviewTurn(turn,event.data.turn)&&event.data.callId===unit.callId)
   if(calls.length!==1||calls[0]!.data.name!==deliveryReviewToolName)return undefined
-  const call=calls[0]!,step=readSubmissionStep(events,turn,call.data.step,unit.callId)
+  const call=calls[0]!,step=readSubmissionStep(events,call.data.turn,call.data.step,unit.callId)
   if('skip'in step||step.messageId!==unit.planMessageId||step.assistantSeq<=previous||step.callSeq<=step.assistantSeq||step.seq<=step.callSeq)return undefined
   if(range.criteria){
    const prompts=events.filter((event):event is Extract<SessionEvent,{type:'user/message'}>=>event.type==='user/message'&&event.seq>previous&&event.seq<step.assistantSeq&&event.data.source.kind===deliveryReviewSource&&Reflect.get(event.data.source,'summary')===planSummary)
-   const prompt=prompts[0],part=prompt?.data.content[0]
-   if(prompts.length!==1||!prompt||Reflect.get(prompt.data.source,'form')!=='notice'||Reflect.get(prompt.data.source,'runId')!==Reflect.get(source,'runId')||Reflect.get(prompt.data.source,'draftMessageId')!==Reflect.get(source,'draftMessageId')||prompt.data.content.length!==1||part?.type!=='text')return undefined
+   const prompt=prompts.at(-1),part=prompt?.data.content[0]
+   if(!prompts.length||prompts.some(p=>!isDeepStrictEqual(p.data.content,prompt?.data.content)||!isDeepStrictEqual(p.data.source,prompt?.data.source))||!prompt||Reflect.get(prompt.data.source,'form')!=='notice'||Reflect.get(prompt.data.source,'runId')!==Reflect.get(source,'runId')||Reflect.get(prompt.data.source,'draftMessageId')!==Reflect.get(source,'draftMessageId')||prompt.data.content.length!==1||part?.type!=='text')return undefined
    const suffix=reviewUnitText({index,total:units.length,blockCount:blocks.length,tag:reviewBlockTag(draft),criteria:range.criteria,blocks:blocks.map((block,index)=>({id:index+1,text:draft.slice(block.start,block.end)}))},'revise')
    const current=Reflect.get(source,'toolEvidence')?[toolReviewText('revise'),toolReviewText('revise',true)]:[deliveryReviewText,deliveryReviewBasis+legacyDeliveryPlanContract]
    // 加入本人要求优先与过程说明边界之前冻结的提示同样按原文接受；只移除这两段已知文案，其余字节仍须逐字一致。
@@ -779,15 +784,15 @@ function recordedRevisionArguments(raw:unknown,count:number):unknown{
 }
 
 /** v3的验收同样只认当前整稿全部单元及原生成功回执；不应用编辑，不以accepted元数据代替实际verify。 */
-function replayVerificationRound(source:object,text:string,revision:Record<string,unknown>,round:Record<string,unknown>,events:readonly SessionEvent[],turn:number|undefined,rejected=false,issueIds:readonly string[]=[],projection?:Readonly<{requirements:readonly ReviewDependency[];blockMaps:readonly ReviewBlockMap[]}>):boolean{
+function replayVerificationRound(source:object,text:string,revision:Record<string,unknown>,round:Record<string,unknown>,events:readonly SessionEvent[],turn:ReviewTurns,rejected=false,issueIds:readonly string[]=[],projection?:Readonly<{requirements:readonly ReviewDependency[];blockMaps:readonly ReviewBlockMap[]}>):boolean{
  if(turn===undefined||!Array.isArray(revision.units)||!Array.isArray(round.units))return false
  const units=splitReviewUnits(text)
  if(!round.units.length||round.units.length>units.length||(!rejected&&round.units.length!==units.length))return false
  const lastRevision=revision.units.at(-1)
  if(!plainRecord(lastRevision))return false
- const prior=events.find(event=>event.type==='tool/result'&&event.data.turn===turn&&event.data.message.toolCallId===lastRevision.callId)
+ const prior=events.find(event=>event.type==='tool/result'&&ownsReviewTurn(turn,event.data.turn)&&event.data.message.toolCallId===lastRevision.callId)
  if(!prior)return false
- const first=round.units[0],assistant=plainRecord(first)?events.find(event=>event.type==='assistant/message'&&event.data.turn===turn&&event.data.message.id===first.planMessageId):undefined
+ const first=round.units[0],assistant=plainRecord(first)?events.find(event=>event.type==='assistant/message'&&ownsReviewTurn(turn,event.data.turn)&&event.data.message.id===first.planMessageId):undefined
  if(!assistant)return false
  const data=events.filter((event):event is Extract<SessionEvent,{type:'user/message'}>=>event.type==='user/message'&&event.seq>prior.seq&&event.seq<assistant.seq&&event.data.source.kind===deliveryReviewSource&&Reflect.get(event.data.source,'summary')==='待校正草稿')
  if(round.verificationProjection!==undefined){
@@ -797,9 +802,9 @@ function replayVerificationRound(source:object,text:string,revision:Record<strin
  for(const [index,unit]of round.units.entries()){
   const range=units[index]!
   if(!plainRecord(unit)||unit.start!==range.start||unit.end!==range.end||typeof unit.callId!=='string')return false
-  const calls=events.filter((event):event is Extract<SessionEvent,{type:'tool/call'}>=>event.type==='tool/call'&&event.data.turn===turn&&event.data.callId===unit.callId)
+  const calls=events.filter((event):event is Extract<SessionEvent,{type:'tool/call'}>=>event.type==='tool/call'&&ownsReviewTurn(turn,event.data.turn)&&event.data.callId===unit.callId)
   if(calls.length!==1||calls[0]!.data.name!==deliveryReviewToolName)return false
-  const call=calls[0]!,step=readSubmissionStep(events,turn,call.data.step,unit.callId)
+  const call=calls[0]!,step=readSubmissionStep(events,call.data.turn,call.data.step,unit.callId)
   if('skip'in step||step.messageId!==unit.planMessageId||step.assistantSeq<=previous||step.callSeq<=step.assistantSeq||step.seq<=step.callSeq)return false
   const message=events.find(event=>event.seq===step.assistantSeq)
   if(message?.type!=='assistant/message')return false
@@ -820,8 +825,15 @@ function replayVerificationRound(source:object,text:string,revision:Record<strin
 }
 
 /** 存活复核租约的提交闸：每个 agent 至多一份；只由租约登记与释放（释放只删自己那一份）。 */
-type ReviewSubmissionGate=Readonly<{definition:ToolDefinition;accepting:()=>boolean;reviewing:()=>boolean}>
+export type DeliveryReviewCheckpoint=Readonly<{schema:'teloa.delivery-review-checkpoint/v1';json:string;sha256:string}>
+type ReviewSubmissionGate=Readonly<{definition:ToolDefinition;accepting:()=>boolean;reviewing:()=>boolean;input:(message:UserMessage)=>boolean;checkpoint:()=>DeliveryReviewCheckpoint}>
 const reviewSubmissionGates=new WeakMap<object,ReviewSubmissionGate>()
+export function ownsDeliveryReviewInput(agent:Pick<Agent,'ctx'>,message:UserMessage):boolean{const gate=reviewSubmissionGates.get(agent);return !!gate&&gate.reviewing()&&agent.ctx.tools.get(deliveryReviewToolName,agent)===gate.definition&&gate.input(message)}
+/** 只复制存活租约的私有状态供持久检查点使用；不授予复核执行、日志改写或续作许可。 */
+export function readDeliveryReviewCheckpoint(agent:Pick<Agent,'ctx'|'session'>):DeliveryReviewCheckpoint|null{
+ const gate=reviewSubmissionGates.get(agent)
+ return gate&&gate.reviewing()&&agent.ctx.tools.get(deliveryReviewToolName,agent)===gate.definition?gate.checkpoint():null
+}
 /** 只查询本 agent 的存活复核阶段；不授予工具执行或历史替换许可。 */
 export function isDeliveryReviewInProgress(agent:Pick<Agent,'ctx'|'session'>):boolean{
  const gate=reviewSubmissionGates.get(agent)
@@ -880,6 +892,17 @@ export function leaseTaskDeliveryReview(agent:Pick<Agent,'ctx'|'session'>,lease:
  // 只记录本工具严格 schema 或工具体语义校验抛出的真实错误身份，不按错误文案猜测，也不改写非法参数或原生结果。
  // corrected：整租约唯一一次纠正名额，由 schema 纠参、语义校验纠正与漏交补交共享。reviewBase：复核开始前本轮已用的起草步数。
  let schemaFailure:string|undefined,bodyFailure:string|undefined,corrected=false,reviewBase=0
+ let resuming=lease.restore!==undefined,resumedSteps=0
+ if(lease.restore){
+  const checkpoint=lease.restore
+  if(checkpoint.schema!=='teloa.delivery-review-checkpoint/v1'||draftSha256(checkpoint.json)!==checkpoint.sha256)throw new WorkError('teloa/conflict','复核恢复检查点摘要不匹配。')
+  const state=JSON.parse(checkpoint.json)
+  if(state.runId!==lease.runId||state.requestId!==lease.requestId||state.phase!=='rewrite'||!state.current||!state.pending||!Number.isSafeInteger(state.reviewStepsUsed)||state.reviewStepsUsed<0||state.reviewStepsUsed>maxReviewModelSteps||state.material?.goal!==('skip'in material?undefined:material.goal)||state.material?.catalog?.sha256!==createReviewSourceCatalog(state.material.catalog.sources).sha256)throw new WorkError('teloa/conflict','原复核身份、依据或步骤预算不可核对。')
+  ;({material,decided,phase,draftMessageId,pending,entered,current,draftSeq,draftText,dataSeq,dataMessage,blockMap,firstMap,firstIssues,repairFindings,reviewTurn,submission,rejected,schemaFailure,bodyFailure,corrected,reviewBase}=state)
+  rounds.push(...state.rounds);planSeqs.push(...state.planSeqs);revisionIssues.push(...state.revisionIssues);roundSteps=state.roundSteps
+  if(state.approvalReceipts?.length)restoreTaskRunApprovalContextReceipts(agent,{id:lease.runId,sessionId:String(agent.session.id),nativeRequestId:lease.requestId},state.approvalReceipts)
+  resumedSteps=state.reviewStepsUsed
+ }
  const releases:Array<()=>void>=[]
  let restoreReviewPresentation:(()=>void)|undefined
  const restorePresentation=()=>{const dispose=restoreReviewPresentation;restoreReviewPresentation=undefined;dispose?.()}
@@ -996,7 +1019,11 @@ export function leaseTaskDeliveryReview(agent:Pick<Agent,'ctx'|'session'>,lease:
   const registered=agent.ctx.tools.get(deliveryReviewToolName,agent)
   if(!registered)throw new WorkError('teloa/unavailable','交付复核回执未能登记。')
   submitTool=registered
-  const gate:ReviewSubmissionGate={definition:registered,accepting,reviewing}
+  const gate:ReviewSubmissionGate={definition:registered,accepting,reviewing,input:message=>pending!==undefined&&isDeepStrictEqual(message,pending.reminder??pending.message),checkpoint:()=>{
+   const reviewStepsUsed=readSessionEvents(agent.session).filter(event=>event.type==='step/start'&&event.data.turn===reviewTurn).length-reviewBase
+   const json=JSON.stringify({runId:lease.runId,requestId:lease.requestId,material,decided,phase,draftMessageId,pending,entered,current,draftSeq,draftText,dataSeq,dataMessage,roundSteps,rounds,planSeqs,revisionIssues,blockMap,firstMap,firstIssues,repairFindings,reviewTurn,submission,rejected,schemaFailure,bodyFailure,corrected,reviewBase,reviewStepsUsed,approvalReceipts:readTaskRunApprovalContextReceipts(agent)})
+   return Object.freeze({schema:'teloa.delivery-review-checkpoint/v1',json,sha256:draftSha256(json)})
+  }}
   reviewSubmissionGates.set(agent,gate)
   releases.push(()=>{if(reviewSubmissionGates.get(agent)===gate)reviewSubmissionGates.delete(agent)})
  }
@@ -1111,6 +1138,28 @@ export function leaseTaskDeliveryReview(agent:Pick<Agent,'ctx'|'session'>,lease:
   // 官方单调守卫：其他 agent、非本单元、已提交或已被拒后的回执一律拒绝；守卫只能拒绝，不能被后续监听放行。
   releases.push(agent.ctx.tools.guard(exec=>exec.name===deliveryReviewToolName&&(exec.agent!==agent||!accepting())?'复核计划只在本复核单元内提交一次。':undefined))
   releases.push(agent.ctx.on('agent/pre-step',async(payload,next)=>{
+   if(resuming){
+    payload.signal.throwIfAborted();resuming=false
+    const previousTurn=reviewTurn!
+    // 先折叠原真实成功回执；R4已提交时直接写正式交付，不再派模型。
+    if(submission!==undefined)await advanceReview({turn:previousTurn,signal:payload.signal})
+    else{
+     if(rejected!==undefined||schemaFailure!==undefined||bodyFailure!==undefined){
+      const failure=bodyFailure??schemaFailure
+      if(corrected||entered===undefined||failure===undefined)fail('review-recovery-rejected','原复核纠正名额已用尽，请核对原结果。')
+      const step=readSubmissionStep(readSessionEvents(agent.session),previousTurn,entered!,failure,true)
+      if('skip'in step)fail('review-recovery-receipt','原失败回执不可核对。')
+      else roundSteps.push({...step,turn:previousTurn,step:entered!,prompt:pending!.reminder??pending!.message,failed:true})
+      corrected=true;schemaFailure=undefined;bodyFailure=undefined;rejected=undefined
+     }
+     const original=pending!.reminder??pending!.message
+     pending={message:createUserMessage({source:original.source,content:original.content}),unit:pending!.unit,...entered===undefined&&pending!.replace?{replace:pending!.replace}:{}}
+     entered=undefined
+     await lease.publish(pending.message,payload.signal)
+    }
+    reviewTurn=payload.turn;reviewBase=-resumedSteps
+    return {kind:'enter' as const,messages:[]}
+   }
    if(phase==='idle'&&payload.messages.some(message=>message.source.kind==='user'&&Reflect.get(message.source,'rpcId')===lease.requestId))reviewTurn=payload.turn
    if(!('skip'in material)&&phase!=='done'&&payload.turn===reviewTurn){
     const steps=readSessionEvents(agent.session).filter(event=>event.type==='step/start'&&event.data.turn===payload.turn).length
@@ -1149,7 +1198,7 @@ export function leaseTaskDeliveryReview(agent:Pick<Agent,'ctx'|'session'>,lease:
   // 复核沿用本次运行的固定模型与思考档位；不因厂商或收尾预算静默降低推理能力。
   // 判定过的轮次以原生 turn/end 收尾（完成、错误或取消都会写入），此后不再影响该会话。
   releases.push(agent.ctx.on('session/event',(session,event)=>{if(decided&&session===agent.session&&event.type==='turn/end')release()}))
-  releases.push(agent.ctx.on('agent/turn-stopping',async({turn,signal})=>{
+  const advanceReview=async({turn,signal}:{turn:number;signal:AbortSignal})=>{
    if(phase==='done')return
    if(phase==='idle'){
     if(decided)return
@@ -1276,7 +1325,9 @@ export function leaseTaskDeliveryReview(agent:Pick<Agent,'ctx'|'session'>,lease:
    agent.session.append('user/message',createUserMessage({source:{kind:deliveryReviewSource,form:'notice',summary:appliedSummary,runId:lease.runId,draftMessageId,planMessageId:step.messageId,draftSha256:draftSha256(draftText),deliverySha256:draftSha256(output),edits,rounds:[...rounds],protocol:protocol(),phase:'verify',verdict:'accepted',sourceCatalogSha256,checks,...!('skip'in material)&&material.toolEvidence?{toolEvidence:material.toolEvidence}:{}},content:[{type:'text',text:output}]}),{surfaceOp:'append',sourceEventSeqs:[draftSeq!,...planSeqs]})
    lease.trace({runId:lease.runId,state:'delivered',phase:'rewrite',round,draftMessageId,edits,outputSha256:draftSha256(output),...metadata(),verdict:'accepted'})
    phase='done';pending=undefined;restorePresentation()
-  }))
+  }
+  releases.push(agent.ctx.on('agent/turn-stopping',advanceReview))
+  if(lease.restore)ensureSubmitTool()
  }catch(error){release();throw error}
  return release
 }

@@ -12,7 +12,7 @@ import type {JobId,JobRegistry,JobView} from '@deepseek-ai/dsh-jobs'
 import {WorkError} from '@teloa/contract'
 import {assertNativeInputAcceptanceCurrent,nativeInputIdentity,type NativeInputAcceptance,type NativeInputIdentity} from './native-input-access.ts'
 import {admitNativeResourceCleanup,enterNativeResourceCleanup,isNativeResourceCleanupScope} from './native-resource-cleanup.ts'
-import type {NativeInputCheckpoint,NativeInputCheckpointInput,NativeInputRoot,NativeProgressCheckpoint,NativeProgressCheckpointInput,NativeInputRestore} from './native-input-checkpoint.ts'
+import type {NativeCheckpointSnapshot,NativeInputCheckpoint,NativeInputCheckpointInput,NativeInputRoot,NativeProgressCheckpoint,NativeProgressCheckpointInput,NativeInputRestore} from './native-input-checkpoint.ts'
 import {nativeInputRecoveryCandidate,nativePendingInputOccurrence} from './native-input-recovery-candidate.ts'
 import {readSessionEvents} from './session-events.ts'
 import {projectRuntimeInputHooks} from './project-runtime-context.ts'
@@ -42,7 +42,7 @@ type LoopRequest=
 type ToolRequest=
  |Readonly<{kind:'create';input:ToolExecutionInput;exec:ToolRunContext}>
  |Readonly<{kind:'body'|'body-end';exec:ToolRunContext}>
-type RestoreRequest=Readonly<{sessionId:string;header:Readonly<SessionHeader>;events:readonly SessionEvent[];inheritedEventCount:number;signal:AbortSignal}>
+type RestoreRequest=Readonly<{sessionId:string;header:Readonly<SessionHeader>;events:readonly SessionEvent[];inheritedEventCount:number;signal:AbortSignal;liveAgent?:Agent}>
 type PublishContinuation=(agent:Agent,message:UserMessage,lease:WorkAccessLease,publish:()=>void)=>void
 export type NativeJobCompletion=Readonly<{agent:Agent;message:UserMessage;job:JobView}>
 export type NativeAuxiliaryModelInput=Readonly<{
@@ -144,6 +144,17 @@ export function createNativeWorkCausality(ctx:Context,publishContinuation:Publis
   if(event.type!=='agent/inbox/spliced'||event.data.inserted.length!==1)throw denied()
   return messageRoot(receipt.session.id,event.data.inserted[0]!)
  }))
+ const persistedCauses=(agent:Agent,roots:readonly NativeInputRoot[],assertion:()=>void):readonly InputCause[]=>{
+  if(!roots.length||new Set(roots.map(root=>root.messageId)).size!==roots.length)throw denied()
+  const session=agent.session,events=readSessionEvents(session)
+  return Object.freeze(roots.map(root=>{
+   const accepted=events.filter(event=>event.type==='agent/inbox/spliced'&&event.data.target==='next-turn'&&event.data.inserted.length===1&&event.data.inserted[0]!.id===root.messageId)
+   const event=accepted[0]
+   if(root.sessionId!==session.id||accepted.length!==1||!event||event.type!=='agent/inbox/spliced'||!session.isOwnSeq(event.seq)||canonical(messageRoot(session.id,event.data.inserted[0]!))!==canonical(root))throw denied()
+   const assertCurrent=()=>{assertion();if(closed||ctx.agents.get(agent.id)!==agent||agent.session!==session||canonical(readSessionEvents(session)[event.seq])!==canonical(event))throw denied()}
+   assertCurrent();return Object.freeze({session,event,assertCurrent})
+  }))
+ }
  // 公开创建通知只核验已经由官方私有恢复发布点绑定的因果，不消费恢复证明。
  ctx.on('agent/created',({agent,signal})=>{
   signal?.throwIfAborted()
@@ -391,6 +402,7 @@ export function createNativeWorkCausality(ctx:Context,publishContinuation:Publis
      const currentIdentity=currentLoop===undefined?undefined:Reflect.get(currentLoop,'runtime') as unknown
      request.signal.throwIfAborted()
      if(closed||!loopReady||currentIdentity!==loopIdentity)throw denied()
+     if(request.liveAgent&&(ctx.agents.get(request.sessionId as Agent['id'])!==request.liveAgent||sessions().get(request.sessionId as Agent['id'])!==request.liveAgent.session))throw denied()
     }
     assertOwner()
     // 空闲日志可读，但本证明不能授权任何新输入。派生 next-step 必须另有持久因果协议。
@@ -413,6 +425,7 @@ export function createNativeWorkCausality(ctx:Context,publishContinuation:Publis
     if(!lease||!Object.isFrozen(lease))throw denied()
     const assertion:unknown=Object.getOwnPropertyDescriptor(lease,'assertCurrent')?.value,granted:unknown=Object.getOwnPropertyDescriptor(lease,'roots')?.value
     if(typeof assertion!=='function'||!Array.isArray(granted)||!Object.isFrozen(granted)||granted.some(root=>!root||!Object.isFrozen(root))||granted.length!==roots.length||new Set(granted.map(canonical)).size!==roots.length||canonical(granted.map(canonical).sort())!==canonical(roots.map(canonical).sort()))throw denied()
+    if(lease.inheritedRoots!==undefined&&(!Array.isArray(lease.inheritedRoots)||!Object.isFrozen(lease.inheritedRoots)||lease.inheritedRoots.some(root=>!Object.isFrozen(root))||messages.length!==1||messages[0]!.source.kind!=='plugin:teloa.session-continuation'))throw denied()
     let bound:Agent|undefined,published=false
     const assertCurrent=()=>{
      assertOwner();signal.throwIfAborted()
@@ -426,8 +439,10 @@ export function createNativeWorkCausality(ctx:Context,publishContinuation:Publis
     const proof={publish(agent:Agent,publishSignal?:AbortSignal){
      assertCurrent();publishSignal?.throwIfAborted()
      if(published||ctx.agents.get(agent.id)!==agent||sessions().get(agent.id)!==agent.session||agent.id!==request.sessionId||canonical(agent.session.header)!==canonical(request.header)||agent.session.inheritedEventCount!==request.inheritedEventCount)throw denied()
-     const actual=readSessionEvents(agent.session),suffix=actual.slice(request.events.length),closers=interruptedTurnClosers(request.events)
+     if(request.liveAgent&&agent!==request.liveAgent)throw denied()
+     const actual=readSessionEvents(agent.session),suffix=actual.slice(request.events.length),closers=request.liveAgent?[]:interruptedTurnClosers(request.events)
      if(canonical(actual.slice(0,request.events.length))!==canonical(request.events)||suffix.length<closers.length||suffix.length>closers.length+1)throw denied()
+     if(request.liveAgent&&suffix.length)throw denied()
      if(canonical(suffix.slice(0,closers.length))!==canonical(closers))throw denied()
      if(suffix.length>closers.length&&(suffix.at(-1)?.type!=='session/end-seed'||canonical(suffix.at(-1)?.data)!=='{}'))throw denied()
      const actualMessages=agent.inbox.nextTurn
@@ -438,8 +453,16 @@ export function createNativeWorkCausality(ctx:Context,publishContinuation:Publis
       const message=actualMessages[index]!,event=readSessionEvents(agent.session).find(event=>event.seq===events[index]!.seq)
       if(!event||canonical(event)!==canonical(events[index]))throw denied()
       const receipt:InputCause=Object.freeze({session:agent.session,event,assertCurrent})
-      const input={receipt,roots:[receipt]},commit=prepareRemember(message,input)
-      projectRuntimeInputHooks(ctx)?.accepted(agent,message)
+      const input={receipt,roots:lease.inheritedRoots?persistedCauses(agent,lease.inheritedRoots,assertCurrent):[receipt]},previous=acceptedInputs.get(agent.session)?.get(message.id)
+      // 同一实际writer的显式恢复只重绑原队列对象和精确原受理事件；旧许可失效不能要求再次投递。
+      let commit:()=>void
+      if(request.liveAgent&&previous){
+       if(pending.get(message)!==previous||previous.receipt.session!==agent.session||canonical(previous.receipt.event)!==canonical(event))throw denied()
+       commit=()=>{pending.set(message,input);acceptedInputs.get(agent.session)!.set(message.id,input)}
+      }else{
+       commit=prepareRemember(message,input)
+       if(!request.liveAgent)projectRuntimeInputHooks(ctx)?.accepted(agent,message)
+      }
       commits.push(commit);ids.add(message.id)
      }
      assertCurrent();publishSignal?.throwIfAborted()
@@ -450,7 +473,7 @@ export function createNativeWorkCausality(ctx:Context,publishContinuation:Publis
     recovering.set(request.sessionId,proof)
     request.signal.addEventListener('abort',()=>{if(recovering.get(request.sessionId)===proof)recovering.delete(request.sessionId)},{once:true})
     // 官方 Loop 在真实恢复完成并释放临时 owner 后唤醒原 Inbox；不新增 steer 输入。
-    return Object.freeze({assertCurrent,wakePending:true})
+    return Object.freeze({assertCurrent,...!request.liveAgent&&lease.deferWake===true?{}:{wakePending:true}})
    })
    install(loop,'requireWorkAdmission','installWorkAdmission',loopPolicy);loopReady=true
   }
@@ -520,6 +543,25 @@ export function createNativeWorkCausality(ctx:Context,publishContinuation:Publis
  installed.add(ctx)
  const assertReady=():void=>{if(closed||!loopReady)throw denied()}
  return Object.freeze({
+  publishActiveContinuation(agent:Agent,message:UserMessage,submit:()=>void):void{
+   const turn=turns.get(agent);if(!turn||!turn.roots.size)throw denied();current(turn)
+   const previous=contextPublication,publication:ContextPublication={session:turn.session,identity:nativeInputIdentity(message),roots:[...turn.roots],accepted:false}
+   contextPublication=publication
+   try{submit();if(!publication.accepted)throw denied()}finally{contextPublication=previous}
+  },
+  /** 只有宿主持久票据口可调用；精确原受理根绑定新真实Inbox回执，历史事件不重放。 */
+  publishPersistedContinuation(agent:Agent,message:UserMessage,proof:{snapshot:NativeCheckpointSnapshot;roots:readonly NativeInputRoot[];lease:WorkAccessLease},submit:()=>void):void{
+   proof.lease.assertCurrent()
+   const actual=readSessionEvents(agent.session),saved=proof.snapshot
+   if(saved.header.id!==agent.id||saved.inheritedEventCount!==0||canonical(actual.slice(0,saved.events.length))!==canonical(saved.events))throw denied()
+   const suffix=actual.slice(saved.events.length),closers=interruptedTurnClosers(saved.events)
+   const endSeed=suffix.at(-1),expected=endSeed?.type==='session/end-seed'&&canonical(endSeed.data)==='{}'?[...closers,endSeed]:closers
+   if(suffix.length&&canonical(suffix)!==canonical(expected))throw denied()
+   const roots=persistedCauses(agent,proof.roots,()=>proof.lease.assertCurrent()),previous=contextPublication
+   const publication:ContextPublication={session:agent.session,identity:nativeInputIdentity(message),roots,accepted:false}
+   contextPublication=publication
+   try{submit();if(!publication.accepted)throw denied()}finally{contextPublication=previous}
+  },
   assertReady,
   /** 仅投影当前真实受理根，不能凭类型、摘要、复制的 Agent 或冷日志重建继承证明。 */
   readReviewState(agent:Agent,requestId:string,admittedGroupAppendRequestIds:ReadonlySet<string>=new Set()):Readonly<{continuationMessageIds:readonly string[];pendingJobCompletion:boolean;pendingInput:boolean}>{

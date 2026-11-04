@@ -515,7 +515,7 @@ export function dshTaskRunPorts(ctx:Context,owner:string,inspect:(sessionId:stri
   const observed=previous.evidence.inputAnchor?verifiedAcceptedInboxError(previous,events):observeTaskRun(events,previous.nativeRequestId,proof?.team,proof?.goal)
   if(!isDeepStrictEqual(observed,previous.evidence)||events.slice(previous.evidence.endSeq+1).some(event=>event.type==='turn/start'||event.type==='user/message'||event.type==='agent/inbox/spliced'&&event.data.inserted.length>0))throw new WorkError('teloa/conflict','原执行终态或后续输入已变化，不能接续会话。')
  }
- const checkAgent=async(run:Parameters<TaskRunPorts['check']>[0],signal:AbortSignal,target?:TaskExecutionScope,resolved?:Agent)=>{
+ const checkAgent=async(run:Parameters<TaskRunPorts['check']>[0],signal:AbortSignal,target?:TaskExecutionScope,resolved?:Agent,resuming=false)=>{
   if(target)validateTarget(run,target)
   const special=run.id?await ports.sourceFollowup?.(run as TaskRun):null,unknown=special?.state==='submission_unknown',errorRecovery=(run as TaskRun).sourceFollowup?.kind==='error-recovery'&&!!special&&(special.state==='ended'&&special.evidence?.state==='ended'&&special.evidence.reason==='error'||sourceFollowupUnpublishedProof(special)!==undefined)
   const stoppedContinuation=(run as TaskRun).sourceFollowup?.kind==='stopped-continuation'&&!!special&&sourceFollowupStoppedProof(special)!==undefined
@@ -539,6 +539,7 @@ export function dshTaskRunPorts(ctx:Context,owner:string,inspect:(sessionId:stri
    const current=await reloadSkills({sessionId:run.sessionId,skills:run.skills},signal)
    if(JSON.stringify(current)!==JSON.stringify(run.skills))throw new WorkError('teloa/version-conflict','员工技能已变化，请重新核对执行准备。')
   }
+  if(resuming){if(agent.status!=='idle')throw new WorkError('teloa/conflict','原会话仍在运行，不能重复续作。');return agent}
   const previous=special??run.previousRun??(run.id?await ports.sourceContinuation?.(run as TaskRun):undefined)??undefined
   const events=readSessionEvents(agent.session),proof=previous?{...(unknown?{unknown:true as const}:{}),...(errorRecovery?{errorRecovery:true as const}:{}),...(stoppedContinuation?{stoppedContinuation:true as const}:{}),previous,team:await ports.continuations?.(previous,events),goal:await ports.goalObservation?.(previous,events)}:undefined
   signal.throwIfAborted();assertReady(agent,proof)
@@ -567,45 +568,7 @@ export function dshTaskRunPorts(ctx:Context,owner:string,inspect:(sessionId:stri
   }else continuing.delete(agent)
   return agent
  }
- const ports:DshTaskRunPorts={
-  ...goal,
-  openInteraction:async(input,signal)=>{
-   const run=Object.freeze(structuredClone(input))
-   signal.throwIfAborted()
-   if(run.state!=='ended'||run.evidence?.state!=='ended'||run.evidence.reason!=='completed'||run.stopRequestedAt!==null)throw new WorkError('teloa/conflict','原运行尚未完成收口。')
-   const evidence=run.evidence
-   const agent=ctx.agents.get(brandString<SessionId>(run.sessionId))
-   if(!agent||agent.session.id!==run.sessionId)throw new WorkError('teloa/session-unavailable','独立交互会话尚未就绪。')
-   await serialize('interaction:'+run.sessionId,async()=>{
-    if(retired.get(agent)===run.id)return
-    if(agent.status!=='idle'||agent.inbox.nextTurn.length||agent.inbox.nextStep.length)throw new WorkError('teloa/conflict','原会话仍有待收口的工作。')
-    const events=readSessionEvents(agent.session).slice(0,evidence.endSeq+1)
-    if(!isDeepStrictEqual(observeTaskRun(events,run.nativeRequestId,await ports.continuations?.(run,events),await ports.goalObservation?.(run,events)),run.evidence))throw new WorkError('teloa/conflict','原运行的固定结束证据尚未核实。')
-    await background?.prepareContinuation(run)
-    signal.throwIfAborted()
-    const lease=runLeases.get(agent),approval=approvalLeases.get(agent)
-    if(lease&&lease.runId!==run.id||approval&&approval.runId!==run.id)throw new WorkError('teloa/conflict','原会话已装配其他执行。')
-    // 退役旧任务指令、审批与固定模型；已受理的工具白名单仍由独立交互策略与原工具租约共同收窄。
-    lease?.dispose();approval?.dispose();ensureModels.release(agent,run.id)
-    continuing.delete(agent);retired.set(agent,run.id)
-   })
-  },
-  inspectSourceFollowup:(run,signal)=>inspectSourceFollowup(ctx,run,signal,async events=>{const observed=observeTaskRun(events,run.nativeRequestId,await ports.continuations?.(run,events),await ports.goalObservation?.(run,events));if(!isDeepStrictEqual(run.evidence?.state==='ended'&&run.evidence.inputAnchor?verifiedAcceptedInboxError(run,events):observed,run.evidence))throw new WorkError('teloa/conflict','原执行终态已变化，不能重核成果。')}),
-  resolvePreset,
-  prepareSession,
-  ensureModels:(agent,run)=>{ensureApprovalContext(agent,run);ensureModels(agent,run)},
-  prepareModels:(runtime,signal)=>resolveTaskModelPolicy(ctx,runtime,signal),
-  checkPermissionMode:async(permissionMode,signal)=>{signal.throwIfAborted();taskRunPermissionPreset(ctx,permissionMode)},
-  checkModel:async(model,signal)=>{await resolveRequestedTaskModelPolicy(ctx,model,signal)},
-  check:async(run,signal,target)=>{
-   const agent=await checkAgent(run,signal,target)
-   if(run.modelPolicy&&run.id){
-    try{await ensureModels(agent,{id:run.id,sessionId:run.sessionId,modelPolicy:run.modelPolicy})?.routing.resolve(signal)}catch{signal.throwIfAborted();throw new TaskRunPresetError('teloa/preset-unavailable','model-resolve','任务模型暂不可用，请核对模型配置后重试。')}
-   }
-  },
-  ...(loadKnowledge?{loadKnowledge}:{}),
-  loadSkills,
-  send:async(input,signal,inputTarget)=>{
+ const dispatchRun=async(input:TaskRun,signal:AbortSignal,inputTarget?:TaskExecutionScope,resumption?:Parameters<NonNullable<TaskRunPorts['continueNative']>>[2])=>{
    if(!inputTarget)throw new WorkError('teloa/conflict','执行发送缺少可信任务关联。')
    // 服务端 Run 快照在第一次 await 前复制，等待许可不能移植请求或任务关联身份。
    const run=Object.freeze(structuredClone(input)),target=Object.freeze(structuredClone(inputTarget))
@@ -624,9 +587,9 @@ export function dshTaskRunPorts(ctx:Context,owner:string,inspect:(sessionId:stri
     signal.throwIfAborted()
     const session=agent.session
     if(nativeInput&&(agent.id!==run.sessionId||session.id!==run.sessionId||ctx.agents.get(agent.id)!==agent||store.get(agent.id)!==session))throw new WorkError('teloa/forbidden','执行会话与固定请求身份不一致。')
-    if(accepted(agent,run.nativeRequestId))return
+    if(!resumption&&accepted(agent,run.nativeRequestId))return
     // 收窄与发送都用核对过的那一个 agent，不再另解析一次。
-    phase='check';await checkAgent(run,signal,target,agent)
+    phase='check';await checkAgent(run,signal,target,agent,resumption!==undefined)
     await ensureRunSkills?.(run,signal)
     signal.throwIfAborted()
     // 小结身份只认宿主接入的可信端口（与小结工具的闸同一真源）；判不出或没接端口按「不是」收起，取消照常上抛。
@@ -688,6 +651,7 @@ export function dshTaskRunPorts(ctx:Context,owner:string,inspect:(sessionId:stri
     }:undefined
     const leaseReview=(material:ReviewMaterial|{skip:'no-material'}|undefined)=>agent.ctx&&material?leaseTaskDeliveryReview(agent,{runId:run.id,requestId:run.nativeRequestId,
      material,
+     ...(resumption?.review?{restore:resumption.review}:{}),
      ...requiresGroupDeliveryReview&&!('skip'in material)?{requireReview:true as const}:{},
      ...(readExecution?{readExecution}:{}),
      publish:async(message,reviewSignal)=>{if(nativeInput)await nativeInput.withNewInput(agent,message,context,()=>{agent.inject(message)},reviewSignal);else agent.inject(message)},
@@ -767,9 +731,10 @@ export function dshTaskRunPorts(ctx:Context,owner:string,inspect:(sessionId:stri
       signal.throwIfAborted()
      }
      // 手工群任务没有 ownerRequest 链；正式版本化续办仍是后端已核实并冻结的本人追加，不能只保留在 JSON 中。
-     const material=agent.ctx&&(run.skills?.length||run.executor?.kind==='owner'||conversationSource||run.groupContext?.ownerRequest||run.groupContext&&snapshot?.groupContinuation!==undefined)?taskRunReviewMaterial(run,inputText,conversationSource):undefined
+     const material=agent.ctx&&(resumption?.review||run.skills?.length||run.executor?.kind==='owner'||conversationSource||run.groupContext?.ownerRequest||run.groupContext&&snapshot?.groupContinuation!==undefined)?taskRunReviewMaterial(run,inputText,conversationSource):undefined
      const goalPart=taskRunGoalPart(run,material)
-     releaseReview=run.skills?.length||run.executor?.kind==='owner'?leaseReview(material):undefined
+     releaseReview=resumption?.review||run.skills?.length||run.executor?.kind==='owner'?leaseReview(material):undefined
+     if(resumption){await routing?.resolve(signal);enterPublication();handedOff=true;await resumption.publish(agent);return}
      const contextParts:PromptTextPart[]=[...hintParts,dateLine,...goalPart?[{type:'text' as const,text:sourcePresentationNotice},goalPart]:[]]
      const textOnly:PromptTextPart[]=[{type:'text',text:inputText},...contextParts]
      phase='model';modelStage='model-routing-resolve';await routing?.resolve(signal)
@@ -808,7 +773,7 @@ export function dshTaskRunPorts(ctx:Context,owner:string,inspect:(sessionId:stri
     finally{const retiredId=retired.get(agent);if(retiredId!==undefined&&retiredId===run.id)runLease.dispose()}
    }
    const dispatch=async()=>{
-    const attempt=await ports.submissions?.begin(run)
+    const attempt=resumption?undefined:await ports.submissions?.begin(run)
     try{await operation();closed=true;if(attempt)await ports.submissions!.finish(attempt,'accepted')}
     catch(error){
      closed=true
@@ -821,7 +786,47 @@ export function dshTaskRunPorts(ctx:Context,owner:string,inspect:(sessionId:stri
    }
    if(run.modelPolicy)await serialize(JSON.stringify([run.sessionId,run.nativeRequestId]),dispatch)
    else await dispatch()
+ }
+ const ports:DshTaskRunPorts={
+  ...goal,
+  openInteraction:async(input,signal)=>{
+   const run=Object.freeze(structuredClone(input))
+   signal.throwIfAborted()
+   if(run.state!=='ended'||run.evidence?.state!=='ended'||run.evidence.reason!=='completed'||run.stopRequestedAt!==null)throw new WorkError('teloa/conflict','原运行尚未完成收口。')
+   const evidence=run.evidence
+   const agent=ctx.agents.get(brandString<SessionId>(run.sessionId))
+   if(!agent||agent.session.id!==run.sessionId)throw new WorkError('teloa/session-unavailable','独立交互会话尚未就绪。')
+   await serialize('interaction:'+run.sessionId,async()=>{
+    if(retired.get(agent)===run.id)return
+    if(agent.status!=='idle'||agent.inbox.nextTurn.length||agent.inbox.nextStep.length)throw new WorkError('teloa/conflict','原会话仍有待收口的工作。')
+    const events=readSessionEvents(agent.session).slice(0,evidence.endSeq+1)
+    if(!isDeepStrictEqual(observeTaskRun(events,run.nativeRequestId,await ports.continuations?.(run,events),await ports.goalObservation?.(run,events)),run.evidence))throw new WorkError('teloa/conflict','原运行的固定结束证据尚未核实。')
+    await background?.prepareContinuation(run)
+    signal.throwIfAborted()
+    const lease=runLeases.get(agent),approval=approvalLeases.get(agent)
+    if(lease&&lease.runId!==run.id||approval&&approval.runId!==run.id)throw new WorkError('teloa/conflict','原会话已装配其他执行。')
+    // 退役旧任务指令、审批与固定模型；已受理的工具白名单仍由独立交互策略与原工具租约共同收窄。
+    lease?.dispose();approval?.dispose();ensureModels.release(agent,run.id)
+    continuing.delete(agent);retired.set(agent,run.id)
+   })
   },
+  inspectSourceFollowup:(run,signal)=>inspectSourceFollowup(ctx,run,signal,async events=>{const observed=observeTaskRun(events,run.nativeRequestId,await ports.continuations?.(run,events),await ports.goalObservation?.(run,events));if(!isDeepStrictEqual(run.evidence?.state==='ended'&&run.evidence.inputAnchor?verifiedAcceptedInboxError(run,events):observed,run.evidence))throw new WorkError('teloa/conflict','原执行终态已变化，不能重核成果。')}),
+  resolvePreset,
+  prepareSession,
+  ensureModels:(agent,run)=>{ensureApprovalContext(agent,run);ensureModels(agent,run)},
+  prepareModels:(runtime,signal)=>resolveTaskModelPolicy(ctx,runtime,signal),
+  checkPermissionMode:async(permissionMode,signal)=>{signal.throwIfAborted();taskRunPermissionPreset(ctx,permissionMode)},
+  checkModel:async(model,signal)=>{await resolveRequestedTaskModelPolicy(ctx,model,signal)},
+  check:async(run,signal,target)=>{
+   const agent=await checkAgent(run,signal,target)
+   if(run.modelPolicy&&run.id){
+    try{await ensureModels(agent,{id:run.id,sessionId:run.sessionId,modelPolicy:run.modelPolicy})?.routing.resolve(signal)}catch{signal.throwIfAborted();throw new TaskRunPresetError('teloa/preset-unavailable','model-resolve','任务模型暂不可用，请核对模型配置后重试。')}
+   }
+  },
+  ...(loadKnowledge?{loadKnowledge}:{}),
+  loadSkills,
+  send:dispatchRun,
+  continueNative:(run,target,resumption,signal)=>dispatchRun(run,signal,target,resumption),
   stop:async(run,signal)=>{
    signal.throwIfAborted()
    const agent=await resolve(run)

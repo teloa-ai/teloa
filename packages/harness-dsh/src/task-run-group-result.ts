@@ -16,14 +16,15 @@ function truncated(event:Extract<SessionEvent,{type:'assistant/message'}>):boole
  * 不读取工具事件、流式片段或下一轮内容，避免宿主把未经确认的内容写入群。
  */
 export function readTaskRunGroupResult(events:readonly SessionEvent[],requestId:string,teamMessages?:ReadonlySet<string>,goal?:GoalObservationContext,options?:{requireReview:true;runId:string}):string|undefined{
- const {observation:observed,turn}=observeTaskRunTimeline(events,requestId,teamMessages,undefined,goal)
+ const ownedTurns=new Set<number>(),nativeResume=[...teamMessages??[]].some(key=>key.startsWith('["native-continuation",'))
+ const {observation:observed,turn}=observeTaskRunTimeline(events,requestId,teamMessages,event=>{if('turn'in event.data&&typeof event.data.turn==='number')ownedTurns.add(event.data.turn)},goal)
  if(observed.state!=='ended'||observed.reason!=='completed')return undefined
  const window=events.filter(event=>event.seq>observed.messageSeq&&event.seq<observed.endSeq)
  // 经交付复核的轮次：草稿与编辑计划是中间稿，只取宿主应用后的复核交付（旧整篇改写会话取完整改写，见 task-delivery-review.ts）。
  // 工具证据冷读还须看见本请求的真实受理根；仅补同一原始轮起点，不纳入相邻请求。
  const reviewStart=window.some(event=>event.type==='user/message'&&event.data.source.kind===deliveryReviewSource&&Reflect.get(event.data.source,'toolEvidence')!==undefined)
   ?[...events].reverse().find(event=>event.type==='turn/start'&&event.seq<observed.messageSeq)?.seq:undefined
- const reviewed=deliveryReviewResult(reviewStart===undefined?window:events.filter(event=>event.seq>=reviewStart&&event.seq<observed.endSeq),turn)
+ const reviewed=deliveryReviewResult(reviewStart===undefined?window:events.filter(event=>event.seq>=reviewStart&&event.seq<observed.endSeq),turn,nativeResume?ownedTurns:undefined)
  if(options?.requireReview){
   // 新 owner 成果只认本 Run 的正式两轮通过回执；旧正文与无协议历史仍可读，但不能隐式新定版。
   const inputs=window.filter((event):event is Extract<SessionEvent,{type:'user/message'}>=>event.type==='user/message'&&event.surfaceOp==='append'&&event.data.source.kind===deliveryReviewSource)

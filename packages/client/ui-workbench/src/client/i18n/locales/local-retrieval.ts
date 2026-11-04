@@ -26,7 +26,7 @@ export const LOCAL_RETRIEVAL_MESSAGE_ROWS = [
  ["retrieval.trial.excerpt", "命中片段：{title}", "命中片段：{title}", "Matched excerpt: {title}"],
  ["retrieval.trial.pending", "查看未就绪资料（{count}）", "查看未就緒資料（{count}）", "View pending materials ({count})"],
  ['retrieval.trial.title','语义试搜与命中片段','語義試搜與命中片段','Semantic search and matched excerpts'],
- ['retrieval.trial.boundary','仅试搜本人已加入检索且有权读取的资料。结果展示索引分块的原文片段和来源；目录搜索仍按名称筛选。','僅試搜本人已加入檢索且有權讀取的資料。結果顯示索引分塊的原文片段和來源；目錄搜尋仍按名稱篩選。','Search only indexed material you can read. Results show original chunk excerpts and sources. Directory search still filters names.'],
+ ['retrieval.trial.boundary','目录搜索按名称筛选。资料页语义试搜可覆盖本人有权读取的全部已加入资料，未就绪的索引另行标明；聊天检索还受当前业务、员工或本次任务范围约束，因此覆盖数量可能不同。结果展示命中原文片段与来源。','目錄搜尋按名稱篩選。資料頁語義試搜可涵蓋本人有權讀取的所有已加入資料，未就緒的索引會另行標示；對話檢索另受目前業務、員工或本次任務範圍限制，因此涵蓋數量可能不同。結果顯示命中原文片段與來源。','Directory search filters names. The semantic search trial covers enrolled materials you can read and lists indexes that are not ready. Chat searches are further limited by the current business, employee or task scope, so coverage counts can differ. Results show matched original excerpts and sources.'],
  ['retrieval.trial.query','试搜内容','試搜內容','Search query'],
  ['retrieval.trial.search','开始试搜','開始試搜','Search'],
  ['retrieval.trial.searching','正在试搜…','正在試搜…','Searching…'],

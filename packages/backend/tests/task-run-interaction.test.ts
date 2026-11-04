@@ -1,7 +1,8 @@
 import test,{before,after} from 'node:test'
 import assert from 'node:assert/strict'
-import {randomUUID} from 'node:crypto'
-import {homedir} from 'node:os'
+import {randomUUID,createHash} from 'node:crypto'
+import {mkdtemp,rm} from 'node:fs/promises'
+import {homedir,tmpdir} from 'node:os'
 import {join} from 'node:path'
 import {PostgreSqlContainer,type StartedPostgreSqlContainer} from '@testcontainers/postgresql'
 import {Pool} from './postgres-test-lifecycle.ts'
@@ -22,7 +23,12 @@ import {initializeSecurityRequests} from '../src/security/request-journal.ts'
 import {initializeSecurityActions} from '../src/security/actions.ts'
 import {initializeSecurityApprovals} from '../src/security/approvals.ts'
 import {initializeSecurityActionExecutions} from '../src/security/action-executions.ts'
+import {NativeSessionContinuationJournal,initializeNativeSessionContinuations,type NativeSessionCheckpoint} from '../src/work/native-session-continuations.ts'
 import {initializeWorkControl} from '../src/work/work-control.ts'
+import {initializeConversationWork} from '../src/work/conversation-work.ts'
+import {FileConversationRepository} from '../src/work/conversations.ts'
+import {createNativeSessionManualContinuation} from '../../harness-dsh/src/native-session-manual-continuation.ts'
+import {nativeHotCausalityFixture,textAnswer} from '../../harness-dsh/tests/fixtures/native-hot-causality.ts'
 import {loopWorkFixture,loopText} from '../../harness-dsh/tests/fixtures/native-loop-work-admission.ts'
 import {observeTaskRun} from '../../harness-dsh/src/task-run-observation.ts'
 import {readSessionEvents} from '../../harness-dsh/src/session-events.ts'
@@ -39,7 +45,9 @@ before(async()=>{
  container=await new PostgreSqlContainer('postgres:17-alpine').start();pool=new Pool({connectionString:container.getConnectionUri(),max:1})
  await initializeRoles(pool);await initializeTasks(pool);await initializeObjectConversations(pool);await initializeTaskRuns(pool);await initializeRoleToolGrants(pool);await initializeTaskTransitions(pool);await initializeArtifactSnapshots(pool);await initializeArtifacts(pool);await initializeTaskCompletions(pool)
  await initializeBusinessData(pool);await initializeBusinessTasks(pool);await initializeSecurityRequests(pool);await initializeSecurityActions(pool);await initializeSecurityApprovals(pool);await initializeSecurityActionExecutions(pool)
+ await initializeNativeSessionContinuations(pool)
  await initializeWorkControl(pool)
+ await initializeConversationWork(pool)
  await initializeTaskRunGoals(pool)
 },{timeout:120_000})
 after(async()=>{await pool?.end();await container?.stop()})
@@ -120,4 +128,69 @@ test('单连接真实Task结项与原SDK日志共同开放追问，后续轮次�
  assert.deepEqual((await pool.query('select * from teloa_task_completions where owner_id=$1 and task_id=$2',[f.owner,f.task.id])).rows,completion)
  assert.equal((await pool.query('select version from teloa_tasks where id=$1',[f.task.id])).rows[0].version,task.version)
  assert.equal(native.adapter.requests.length,2)
+})
+
+test('续作账本事务拒绝后不留票据；同前缀幂等且只固定精确Inbox回执',async()=>{
+ const journal=new NativeSessionContinuationJournal(pool,identity),owner=randomUUID(),sessionId=randomUUID(),requestId=randomUUID(),runId=randomUUID()
+ const c:NativeSessionCheckpoint={ownerId:owner,sessionId,runtimeId:randomUUID(),hostGeneration:1,runId,scopeRunId:runId,requestId,phase:'model',logCut:4,logSha256:'a'.repeat(64),roots:[{sessionId,messageId:randomUUID(),nativeRequestId:requestId,payloadSha256:'b'.repeat(64)}],model:{provider:'fixture',model:'fixed-model'},review:null}
+ await pool.query('insert into teloa_work_control_hosts(owner_id,generation) values($1,1)',[owner])
+ await journal.save(c,()=>{})
+ await pool.query('update teloa_work_control_hosts set generation=2 where owner_id=$1',[owner])
+ await assert.rejects(journal.save({...c,logCut:5},()=>{}),{code:'teloa/conflict'})
+ await assert.rejects(journal.prepare(c,2,'automatic',async()=>{throw Error('当前授权已失效')}),/当前授权已失效/)
+ assert.deepEqual(await journal.records(owner,sessionId),[])
+ const authorize=async()=>({assertCurrent(){}}),first=await journal.prepare(c,2,'automatic',authorize),again=await journal.prepare(c,2,'automatic',authorize)
+ assert.equal(first.record.id,again.record.id);assert.equal(first.record.state,'prepared')
+ const event={type:'agent/inbox/spliced',seq:5,data:{target:'next-turn',start:0,inserted:[first.record.message]}}
+ await assert.rejects(journal.accept(owner,first.record.id,5,{...event,data:{...event.data,inserted:[{...first.record.message,id:randomUUID()}]}},()=>{},2),{code:'teloa/conflict'})
+ const accepted=await journal.accept(owner,first.record.id,5,event,()=>{},2)
+ assert.equal(accepted.state,'accepted');assert.equal(accepted.acceptedSeq,5)
+ assert.deepEqual(await journal.accept(owner,first.record.id,5,event,()=>{},2),accepted)
+ assert.equal((await journal.records(owner,sessionId)).length,1)
+ await assert.rejects(journal.prepare({...c,logSha256:'c'.repeat(64)},2,'automatic',authorize),{code:'teloa/conflict'})
+ await assert.rejects(journal.save({...c,model:{...c.model!,rawCredential:'forbidden'} as never},()=>{}),{code:'teloa/conflict'})
+})
+
+test('真实PG票据与原writer贯通：历史读取不执行，显式恢复过期原根且重试不重复消息',{timeout:20_000},async t=>{
+ const owner=randomUUID(),runtimeId=randomUUID(),root=await mkdtemp(join(tmpdir(),'teloa-manual-ledger-'))
+ t.after(()=>rm(root,{recursive:true,force:true}))
+ const journal=new NativeSessionContinuationJournal(pool,identity)
+ await pool.query('insert into teloa_work_control_hosts(owner_id,generation) values($1,1)',[owner])
+ let manual:ReturnType<typeof createNativeSessionManualContinuation>|undefined,allowClaim=false
+ const f=await nativeHotCausalityFixture(t,{persistenceRoot:join(root,'history'),restore:input=>{if(!manual)throw Error('尚未初始化');return manual.restore(input)},checkpoint:async input=>{
+  await manual?.checkpoint(input)
+  await journal.save({ownerId:owner,sessionId:input.agent.id,runtimeId,hostGeneration:1,runId:null,scopeRunId:null,requestId:'manual-original-input',phase:'claimed',logCut:input.snapshot.events.length-1,logSha256:createHash('sha256').update(JSON.stringify(input.snapshot.events)).digest('hex'),roots:input.roots,model:null,review:null,background:{runtimeId,unsettledJobIds:[]}},input.assertCurrent)
+  if(!allowClaim)throw Error('原持久确认后的响应丢失')
+ }})
+ const sessionId=String(f.agent.id),repository=new FileConversationRepository(join(root,'conversations.json'))
+ await repository.write([{id:'manual-original',ownerId:owner,sessionId,requestedSessionId:sessionId,title:'本人原工作',scopeIds:['general'],version:1,status:'ready',createdAt:identity.now()}])
+ await pool.query('insert into teloa_conversation_work_contexts(owner_id,session_id,scope_id,version,locked) values($1,$2,\'general\',1,true)',[owner,sessionId])
+ f.ctx.provide('sessionController',{resolveAgent:async(id:string)=>{assert.equal(id,sessionId);return {agent:f.agent}}} as never)
+ const snapshot=async()=>{
+  await f.ctx.sessions.flush(f.agent.session)
+  const reader=await f.ctx.sessionPersistence.open(f.agent.id,'read')
+  try{return {header:reader.header,events:(await reader.read()).events,inheritedEventCount:Number(reader.inheritedEventCount)}}finally{await reader.close()}
+ }
+ manual=createNativeSessionManualContinuation(f.ctx,{owner,journal,nativeInput:f.work,generation:()=>1,assertCurrent(){},snapshot,
+  inbox:value=>f.ctx.sessionProjections.stateOf(f.sessionPackage.Session.create(f.agent.id,value.events,value.header,f.sessionPackage.SessionLogOffset(value.inheritedEventCount)),'inbox'),
+  binding:async(_c,db)=>{const rows=(await repository.read()).filter(row=>row.ownerId===owner&&row.sessionId===sessionId&&row.status==='ready');assert.equal(rows.length,1);const context=(await(db??pool).query('select * from teloa_conversation_work_contexts where owner_id=$1 and session_id=$2',[owner,sessionId])).rows;return JSON.stringify([rows,context])},
+  authorize:()=>f.access.authorize({kind:'capability',capability:'general-agent',ownerId:owner,sessionId,objectId:null,operation:'resume'}),
+ })
+ const original=await f.send('manual-original-input');await f.agent.whenIdle()
+ const prefix=await snapshot(),read=await manual.inspect(sessionId)
+ assert.equal(read.available,true);assert.deepEqual(await journal.records(owner,sessionId),[]);assert.equal(f.adapter.requests.length,0)
+ await assert.rejects(f.work.wakePending(f.agent),{code:'teloa/conflict'})
+ assert.deepEqual(await snapshot(),prefix,'没有本人操作的原地唤醒不能改历史或执行')
+ f.rights.generation++;allowClaim=true;f.adapter.scripts.push(textAnswer)
+ await manual.resume(sessionId,read.prefixSha256!,new AbortController().signal);await f.agent.whenIdle()
+ assert.equal(f.adapter.requests.length,1)
+ const records=await journal.records(owner,sessionId);assert.equal(records.length,1);assert.equal(records[0]!.input,'pending');assert.equal(records[0]!.state,'accepted')
+ const after=await snapshot()
+ assert.deepEqual(after.events.slice(0,prefix.events.length),prefix.events)
+ assert.equal(after.events.filter(event=>event.type==='user/message'&&event.data.id===original.id).length,1)
+ assert.equal(after.events.filter(event=>event.type==='agent/inbox/spliced'&&event.data.inserted.some(message=>message.id===original.id)).length,1)
+ await manual.resume(sessionId,read.prefixSha256!,new AbortController().signal);await f.agent.whenIdle()
+ assert.equal(f.adapter.requests.length,1);assert.equal((await journal.records(owner,sessionId)).length,1)
+ assert.equal((await manual.inspect(sessionId)).available,false)
+ manual.close()
 })

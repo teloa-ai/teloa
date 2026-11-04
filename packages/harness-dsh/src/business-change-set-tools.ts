@@ -20,10 +20,14 @@ const names=businessChangeSetToolNames
 const requestId=(owner:string,source:unknown)=>{const h=createHash('sha256').update(JSON.stringify(['teloa.business-change/v1',owner,source])).digest('hex');return `${h.slice(0,8)}-${h.slice(8,12)}-5${h.slice(13,16)}-a${h.slice(17,20)}-${h.slice(20,32)}`}
 /** 展示资格与固定 JSON 分开；保留历史快照和摘要，不把过期预览升级为当前记录证明。 */
 function renderBusinessChangeSet(_args:unknown,value:string){
- const content=[{type:'text' as const,text:value}],draft:unknown=JSON.parse(value)
- if(draft!==null&&typeof draft==='object'&&'schema' in draft&&draft.schema==='teloa.business-change-set/v1'&&'state' in draft&&draft.state==='stale')content.push({type:'text',text:'草稿已过期：preview.targets 和 preview.operations.before 是准备时的固定历史基线；其中字段、版本与 quality 只描述当时快照，不能证明当前字段或当前值。本次未采用；保留原固定来源与版本，不把旧预览当作当前记录状态。'})
- return content
+ const draft:unknown=JSON.parse(value)
+ if(draft!==null&&typeof draft==='object'&&'schema' in draft&&draft.schema==='teloa.business-change-set/v1'&&'state' in draft&&draft.state==='stale')return [
+  {type:'text' as const,text:'当前记录未经核验，下列仅历史草稿。preview.targets 和 preview.operations.before 是准备时的固定历史基线；其中字段、版本与 quality 只描述当时快照，不能证明当前字段或当前值。本次未采用。'},
+  {type:'text' as const,text:JSON.stringify({currentRecordVerified:false,historicalDraft:draft})},
+ ]
+ return [{type:'text' as const,text:value}]
 }
+
 /** 官方 ToolRuntime 管理批准；只有它随后调用 execute 时才构造后台授权回调。 */
 export function registerBusinessChangeSetTools(ctx:Context,ports:BusinessChangeSetToolsPorts){
  type Current={scope:string;title:string;actor:{ownerId:string;scopeIds:string[]};fingerprint:string;task?:GroupTaskBusinessGrant}

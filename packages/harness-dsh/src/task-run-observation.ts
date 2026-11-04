@@ -1,7 +1,8 @@
 import type {SessionEvent} from '@deepseek-ai/dsh-session/types'
+import type {UserMessage} from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/dsh-tool-jobs'
 import {WorkError} from '@teloa/contract'
-import {taskRunTeamMessageKey} from './task-run-team-records.ts'
+import {taskRunTeamMessageKey,nativeRunContinuationKey} from './task-run-team-records.ts'
 import type {GoalObservationContext} from '@teloa/contract'
 import {nativeInputIdentity} from './native-input-access.ts'
 export {isTaskRunReconcileEndReason} from '@teloa/contract'
@@ -27,11 +28,18 @@ export function observeTaskRunTimeline(events:readonly SessionEvent[],requestId:
  if(!requestId.trim())throw new WorkError('teloa/invalid-input','执行请求身份不能为空。')
  let open:number|undefined,owned=false,foreign=false,lastOwnedTurn:number|undefined
  let result:TaskRunObservation={state:'unobserved'}
+ const nextTurn:UserMessage[]=[]
  const corrupt=():never=>{throw new WorkError('teloa/storage-corrupt','执行日志不完整或请求重复，请核对原生会话。')}
  for(let index=0;index<events.length;index++){
   const event=events[index]!
   if(event.seq!==index)corrupt()
-  if(event.type==='turn/start'){
+  if(event.type==='agent/inbox/spliced'&&event.data.target==='next-turn'){
+   const {start,inserted,removedCount=0,outcome}=event.data,removed=nextTurn.splice(start,removedCount,...inserted),source=removed.length===1?removed[0]!.source:undefined
+   // 零模型宿主折叠仍有真实Inbox领取；SDK不为零步骤伪造user/message。
+   if(removedCount>0&&outcome!=='canceled'&&source?.kind==='plugin:teloa.session-continuation'&&teamMessages.has(nativeRunContinuationKey(source.continuationId))&&!foreign&&open!==undefined&&result.state!=='unobserved'){
+    result={state:'active',turn:result.turn,messageSeq:result.messageSeq};owned=true;lastOwnedTurn=open
+   }
+  }else if(event.type==='turn/start'){
    if(open!==undefined||!Number.isSafeInteger(event.data.turn)||event.data.turn<0)corrupt()
    open=event.data.turn;owned=false
   }else if(event.type==='turn/end'){
@@ -49,7 +57,8 @@ export function observeTaskRunTimeline(events:readonly SessionEvent[],requestId:
     result={state:'active',turn:open!,messageSeq:event.seq};owned=true;lastOwnedTurn=open
    }else if(result.state!=='unobserved'){
     const goalOwned=ownsGoalMessage(events,event,goal)
-    if((source.kind==='tool-jobs'||teamMessages.has(taskRunTeamMessageKey(event)??'')||goalOwned)&&!foreign&&open!==undefined&&(result.state==='active'||result.reason==='completed'||goalOwned)){
+    const nativeOwned=source.kind==='plugin:teloa.session-continuation'&&teamMessages.has(nativeRunContinuationKey(source.continuationId))
+    if((source.kind==='tool-jobs'||teamMessages.has(taskRunTeamMessageKey(event)??'')||goalOwned)&&!foreign&&open!==undefined&&(result.state==='active'||result.reason==='completed'||goalOwned||nativeOwned)){
      result={state:'active',turn:result.turn,messageSeq:result.messageSeq};owned=true;lastOwnedTurn=open
     }else if(source.kind==='user'||source.kind==='goal'||!owned){
      foreign=true

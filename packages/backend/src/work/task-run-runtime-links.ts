@@ -21,6 +21,17 @@ type ExternalRecord={provider:ExternalHarnessProvider;runtimeId:string;requestId
 export type ExternalHarnessReservation=Omit<ExternalRecord,'activationId'|'status'>&{runId:string;maxPerRun:number}
 export type TaskRunRuntimeLink={runId:string;nativeId:string;sessionId:string}&({kind:'job';payload:JobOwner|JobRecord}|{kind:'team';payload:TeamRecord}|{kind:'browser';payload:BrowserRecord}|{kind:'external';payload:ExternalRecord})
 export type TaskRunRuntimeLinks={list:(input:{runId:string;kind?:TaskRunRuntimeLink['kind']})=>Promise<readonly TaskRunRuntimeLink[]>;put:(input:TaskRunRuntimeLink)=>Promise<void>}
+/** 实际新writer受理后才退役旧运行期视图；原owner/job登记仍留库作审计，不把未结工作当成功。 */
+export async function retiredNativeContinuationRuntimes(db:Pick<Pool,'query'>,owner:string,runIds:readonly string[]):Promise<ReadonlySet<string>>{
+ if(!(await db.query("select to_regclass('teloa_native_session_continuations') as relation")).rows[0]?.relation)return new Set()
+ const rows=(await db.query(`select c.run_id,c.record from teloa_native_session_continuations c join teloa_task_runs r on r.id=c.run_id and r.owner_id=c.owner_id where c.owner_id=$1 and c.run_id=any($2::uuid[]) and c.record->>'mode'='automatic' and c.record->>'state'='accepted' and c.record->'checkpoint'->>'requestId'=r.native_request_id::text and c.record->'checkpoint'->>'sessionId'=r.session_id`,[owner,runIds])).rows
+ const result=new Set<string>()
+ for(const row of rows){const c=row.record.checkpoint,b=c?.background;if(c?.runId===row.run_id&&b?.runtimeId===c.runtimeId&&Array.isArray(b.unsettledJobIds)&&b.unsettledJobIds.length===0&&Number.isSafeInteger(row.record.acceptedSeq)&&typeof row.record.acceptedEventSha256==='string'){
+  result.add(JSON.stringify([row.run_id,c.runtimeId]))
+  for(const previous of row.record.previousAdmissions??[])if(uuid(previous.admission?.runtimeId)&&previous.hostGeneration<row.record.hostGeneration)result.add(JSON.stringify([row.run_id,previous.admission.runtimeId]))
+ }}
+ return result
+}
 const uuid=(value:unknown):value is string=>typeof value==='string'&&/^[a-f0-9]{8}-[a-f0-9]{4}-[1-5][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i.test(value)
 const text=(value:unknown):value is string=>typeof value==='string'&&value.trim().length>0&&value.length<=512&&!/[\u0000-\u001f]/.test(value)
 const invalid=()=>new WorkError('teloa/invalid-input','原生执行关联格式不正确。')
@@ -185,6 +196,7 @@ export class TaskRunRuntimeLinkService{
   if(!uuid(row.runId)||(row.kind!==undefined&&row.kind!=='job'&&row.kind!=='team'&&row.kind!=='browser'&&row.kind!=='external'))throw invalid()
   const run=await db.query('select 1 from teloa_task_runs where owner_id=$1 and id=$2',[owner,row.runId])
   if(!run.rowCount)throw new WorkError('teloa/forbidden','执行不属于本人。')
-  return (await db.query('select * from teloa_task_run_runtime_links where owner_id=$1 and run_id=$2 and ($3::text is null or kind=$3) order by kind,native_id',[owner,row.runId,row.kind??null])).rows.map(stored)
+  const rows=(await db.query('select * from teloa_task_run_runtime_links where owner_id=$1 and run_id=$2 and ($3::text is null or kind=$3) order by kind,native_id',[owner,row.runId,row.kind??null])).rows.map(stored),retired=await retiredNativeContinuationRuntimes(db,owner,[row.runId])
+  return rows.filter(link=>!(link.kind==='job'&&retired.has(JSON.stringify([link.runId,link.payload.runtimeId]))&&(link.payload.record==='owner'||['completed','failed','killed'].includes(link.payload.status))))
  }
 }

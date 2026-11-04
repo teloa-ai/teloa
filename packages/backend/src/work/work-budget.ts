@@ -23,6 +23,9 @@ type ReserveInput={budgetAccountId:string;controlGeneration:number;modelRequestI
 type SettleInput={reservationId:string;modelRequestId:string;provider?:string|null;providerRequestId:string|null;tokens:number|null;moneyMinorUnits:number|null;currency:string|null;receiptId:string}
 import {type AcceptedInboxFailureEvidence} from './task-run-evidence.ts'
 export type RunBudgetTerminal={schema:'teloa.work-budget-terminal/v1';runId:string;sessionId:string;nativeRequestId:string;turn:number;messageSeq:number;endSeq:number;turnEndSeq:number;terminalKind:'turn/end'|'session/end-seed';endedAt:string;inputAnchor?:AcceptedInboxFailureEvidence['inputAnchor']}
+/** 仅由恢复协调器持有的内部事务票据；逐模型请求与旧原生宿主的关联由 Journal 验证器证明。 */
+export type PreviousHostBudgetRetirement={runId:string;taskId:string;sessionId:string;nativeRequestId:string;oldRuntimeId:string;oldHostGeneration:number;hostGeneration:number;controlGeneration:number;modelRequestIds:readonly string[];endedAt:string}
+export type PreviousHostBudgetAuthority=(db:PoolClient,owner:string,input:Readonly<PreviousHostBudgetRetirement>)=>Promise<WorkAccessLease>
 function reservation(row:Record<string,any>):BudgetReservation{
  if(!uuid(row.id)||!identity(row.owner_id)||!uuid(row.budget_account_id)||!identity(row.model_request_id)||!integer(row.control_generation)||row.control_generation<1||!integer(row.reserved_tokens)||!integer(row.reserved_rounds)||!['goal','team','routing','memory','retry'].includes(row.kind)||!['reserved','settled','unknown','released'].includes(row.state))throw new WorkError('teloa/storage-corrupt','工作额度回执损坏。')
  return {id:row.id,ownerId:row.owner_id,budgetAccountId:row.budget_account_id,controlGeneration:row.control_generation,modelRequestId:row.model_request_id,providerRequestId:row.provider_request_id,kind:row.kind,reservedTokens:row.reserved_tokens,reservedRounds:row.reserved_rounds,state:row.state}
@@ -48,8 +51,8 @@ export async function initializeWorkBudgets(pool:Pool):Promise<void>{await pool.
  create table if not exists teloa_owner_routing_budget_accounts(owner_id text primary key,budget_account_id uuid not null,foreign key(owner_id,budget_account_id) references teloa_work_budget_accounts(owner_id,id));
 `)}
 export class WorkBudgetService{
- readonly pool:Pool;readonly clock:{id:()=>string;now:()=>string};readonly authority:OwnerWorkAuthority|undefined
- constructor(pool:Pool,clock:{id:()=>string;now:()=>string},authority?:OwnerWorkAuthority){this.pool=pool;this.clock=clock;this.authority=authority;if(!epochs.has(pool))epochs.set(pool,new Map());if(!reservationStates.has(pool))reservationStates.set(pool,new Map())}
+ readonly pool:Pool;readonly clock:{id:()=>string;now:()=>string};readonly authority:OwnerWorkAuthority|undefined;private readonly previousHostAuthority:PreviousHostBudgetAuthority|undefined
+ constructor(pool:Pool,clock:{id:()=>string;now:()=>string},authority?:OwnerWorkAuthority,previousHostAuthority?:PreviousHostBudgetAuthority){this.pool=pool;this.clock=clock;this.authority=authority;this.previousHostAuthority=previousHostAuthority;if(!epochs.has(pool))epochs.set(pool,new Map());if(!reservationStates.has(pool))reservationStates.set(pool,new Map())}
  private epoch(owner:string,id:string){return epochs.get(this.pool)!.get(owner+'\0'+id)??0}
  private invalidate(owner:string,id:string){epochs.get(this.pool)!.set(owner+'\0'+id,this.epoch(owner,id)+1)}
  private remember(r:BudgetReservation,invalidate=false){const states=reservationStates.get(this.pool)!,key=r.ownerId+'\0'+r.id,prior=states.get(key);states.set(key,{state:r.state,epoch:(prior?.epoch??0)+(invalidate?1:0)});return r}
@@ -173,8 +176,39 @@ export class WorkBudgetService{
   return Object.freeze({assertCurrent:()=>{const current=states.get(key);if(this.epoch(owner,r.budgetAccountId)!==epoch||this.epoch(owner,'owner')!==ownerEpoch||!current||current.epoch!==reservationEpoch||!['reserved','unknown'].includes(current.state))throw exhausted()}})
  }
  async read(owner:string,input:unknown){const a=taskInput(input,['budgetAccountId']);if(!uuid(a.budgetAccountId))throw invalid();const db=await this.pool.connect();try{await db.query('begin');const {row,policy}=await this.lock(db,owner,a.budgetAccountId),s=await this.stats(db,owner,a.budgetAccountId);await db.query('commit');return {budgetAccountId:a.budgetAccountId,version:row.version,policy,usedTokens:s.tokens,usedRounds:s.rounds,concurrent:s.concurrent,usedElapsedMs:s.elapsed,moneyMinorUnits:null}}catch(e){await db.query('rollback');throw e}finally{db.release()}}
- async markDispatched(owner:string,input:unknown){const a=taskInput(input,['reservationId']);if(!uuid(a.reservationId))throw invalid();const result=await this.pool.query("update teloa_work_budget_reservations set state='unknown' where owner_id=$1 and id=$2 and state='reserved' returning *",[owner,a.reservationId]);if(!result.rows[0])throw new WorkError('teloa/conflict','本次请求未持有可派发的额度。');return this.remember(reservation(result.rows[0]))}
+ async markDispatched(owner:string,input:unknown){
+  const a=taskInput(input,['reservationId','hostGeneration']);if(!uuid(a.reservationId)||a.hostGeneration!==undefined&&(!integer(a.hostGeneration)||a.hostGeneration<1))throw invalid()
+  const db=await this.pool.connect()
+  try{await db.query('begin')
+   if(a.hostGeneration!==undefined){const host=(await db.query('select generation from teloa_work_control_hosts where owner_id=$1 for share',[owner])).rows[0];if(host?.generation!==a.hostGeneration)throw denied()}
+   const result=await db.query("update teloa_work_budget_reservations set state='unknown' where owner_id=$1 and id=$2 and state='reserved' and elapsed_terminal is null returning *",[owner,a.reservationId])
+   if(!result.rows[0])throw new WorkError('teloa/conflict','本次请求未持有可派发的额度。')
+   await db.query('commit');return this.remember(reservation(result.rows[0]))
+  }catch(error){await db.query('rollback');throw error}finally{db.release()}
+ }
  async releaseUnaccepted(owner:string,input:unknown){const a=taskInput(input,['reservationId']);if(!uuid(a.reservationId))throw invalid();const rows=await this.pool.query("update teloa_work_budget_reservations set state='released',settled_at=$3 where owner_id=$1 and id=$2 and state in ('reserved','released') returning *",[owner,a.reservationId,this.clock.now()]);if(!rows.rows[0])throw new WorkError('teloa/conflict','请求已可能消耗额度，须核对真实回执，不能释放。');return this.remember(reservation(rows.rows[0]),true)}
+ /** 不注册 RPC。调用方负责同一事务提交；没有可信 Journal 验证器时不可使用。 */
+ async retirePreviousHostRequestsInTransaction(db:PoolClient,owner:string,input:PreviousHostBudgetRetirement):Promise<{closed:number}>{
+  const a=structuredClone(input)
+  if(!identity(owner)||!uuid(a.runId)||!uuid(a.taskId)||!identity(a.sessionId)||!uuid(a.nativeRequestId)||!uuid(a.oldRuntimeId)||![a.oldHostGeneration,a.hostGeneration,a.controlGeneration].every(n=>Number.isSafeInteger(n)&&n>0)||a.hostGeneration<=a.oldHostGeneration||!Array.isArray(a.modelRequestIds)||!a.modelRequestIds.length||a.modelRequestIds.length>1024||a.modelRequestIds.some(id=>!identity(id))||new Set(a.modelRequestIds).size!==a.modelRequestIds.length||!Number.isFinite(Date.parse(a.endedAt))||new Date(a.endedAt).toISOString()!==a.endedAt||a.endedAt>this.clock.now())throw invalid()
+  if(!this.previousHostAuthority)throw denied()
+  const proof=Object.freeze({...a,modelRequestIds:Object.freeze([...a.modelRequestIds])}),lease=await this.previousHostAuthority(db,owner,proof)
+  lease.assertCurrent()
+  await db.query('select pg_advisory_xact_lock(hashtextextended($1,0))',['teloa/work-budget/'+owner])
+  const host=(await db.query('select generation from teloa_work_control_hosts where owner_id=$1 for share',[owner])).rows[0]
+  const run=(await db.query('select r.*,l.budget_account_id from teloa_task_runs r join teloa_task_work_lineage l on l.owner_id=r.owner_id and l.task_id=r.task_id where r.owner_id=$1 and r.id=$2 for share of r,l',[owner,a.runId])).rows[0]
+  if(host?.generation!==a.hostGeneration||!run||run.task_id!==a.taskId||run.session_id!==a.sessionId||run.native_request_id!==a.nativeRequestId||!(run.created_at instanceof Date)||a.endedAt<run.created_at.toISOString())throw denied()
+  const rows=(await db.query(`select b.* from teloa_work_budget_reservations b where b.owner_id=$1 and b.budget_account_id=$2 and b.control_generation=$3 and b.model_request_id=any($4::text[]) and exists(select 1 from teloa_work_retry_claims c join teloa_work_retries r on r.owner_id=c.owner_id and r.operation_id=c.operation_id where c.owner_id=b.owner_id and c.model_request_id=b.model_request_id and r.run_id=$5 and r.budget_account_id=b.budget_account_id) for update`,[owner,run.budget_account_id,a.controlGeneration,a.modelRequestIds,a.runId])).rows
+  if(rows.length!==a.modelRequestIds.length||rows.some(row=>!(row.created_at instanceof Date)||row.created_at.toISOString()>a.endedAt&&row.state!=='reserved'&&row.elapsed_terminal?.schema!=='teloa.previous-host-budget-terminal/v1'))throw denied()
+  const terminal={schema:'teloa.previous-host-budget-terminal/v1',...proof}
+  for(const row of rows)if(row.elapsed_terminal?.schema==='teloa.previous-host-budget-terminal/v1'&&!isDeepStrictEqual(row.elapsed_terminal,terminal))throw denied()
+  lease.assertCurrent()
+  const saved=await db.query(`update teloa_work_budget_reservations set state='unknown',elapsed_ended_at=greatest(created_at,least(coalesce(elapsed_ended_at,$3),$3)),elapsed_terminal=$4 where owner_id=$1 and id=any($2::uuid[]) and state in ('reserved','unknown') and elapsed_terminal is null returning *`,[owner,rows.map(row=>row.id),a.endedAt,JSON.stringify(terminal)])
+  for(const row of saved.rows)this.remember(reservation(row),true)
+  // 正式终态可能已封过时钟；同一旧host票据仍须撤销尚留在本进程的旧reservation许可。
+  const changed=new Set(saved.rows.map(row=>row.id));for(const row of rows)if(!changed.has(row.id))this.remember(reservation(row),true)
+  lease.assertCurrent();return {closed:saved.rowCount??0}
+ }
  /** 宿主核对原生日志后的内部结算口，不注册本人/模型 RPC；结束耗时与未知用量分别保留。 */
  async recordRunTerminal(owner:string,input:RunBudgetTerminal):Promise<{closed:number}>{
   const a=taskInput(input,['schema','runId','sessionId','nativeRequestId','turn','messageSeq','endSeq','turnEndSeq','terminalKind','endedAt','inputAnchor'])

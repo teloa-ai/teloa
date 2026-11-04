@@ -70,6 +70,8 @@ function completedTextRun(run:TaskRun,events:readonly SessionEvent[],observed:Ta
 }
 
 export type TaskRunPorts={
+ /** 仅私有恢复协调器重装同一Run的执行租约；不调用start/send原输入。 */
+ continueNative?:(run:TaskRun,target:TaskExecutionScope,resumption:{review?:import('./task-delivery-review.ts').DeliveryReviewCheckpoint;publish:(agent:import('@deepseek-ai/dsh-agent').Agent)=>Promise<void>},signal:AbortSignal)=>Promise<void>
  interaction?:(sessionId:string,signal:AbortSignal)=>Promise<{sessionId:string;available:boolean}>
  openInteraction?:(run:TaskRun,signal:AbortSignal)=>Promise<void>
  /** 持久提交协议：只有宿主在关闭原生发布回调后签收的未发布记录才可恢复。 */

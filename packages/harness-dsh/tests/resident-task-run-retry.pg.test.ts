@@ -11,7 +11,7 @@ import {initializeTeloaDatabase,ResourceService,RoleService,TaskService,Conversa
 import {createPublicReferenceCatalog} from '../../mcp-reference/src/local.ts'
 import {setupRoleWork,identity} from '../../backend/tests/role-work-test-fixture.ts'
 import {testRoleResponsibility} from '../../backend/tests/role-test-fixture.ts'
-import {installNativeSessions,installNativeHostServices,installNativeSessionController,ControlledPromptModel,publishNativeFixtureInput} from './fixtures/native-host-services.ts'
+import {installNativeSessions,installNativeHostServices,installNativeSessionController,ControlledPromptModel} from './fixtures/native-host-services.ts'
 import {createResidentWorkRuntime} from '../src/resident-work-runtime.ts'
 import {requireNativeInputProvider} from '../src/native-input-provider.ts'
 import {dshTaskRunPorts} from '../src/task-run-dsh.ts'
@@ -77,8 +77,14 @@ test('真实PG与官方冷Controller：重启收口旧owner失败轮，owner/角
  const missed=await prior.budgets.reserve(owner,{budgetAccountId:prepared.lineage!.budgetAccountId,controlGeneration:1,modelRequestId:'bounded-budget-proof',kind:'retry',tokens:2,rounds:0})
  const immediate=await prior.budgets.reserve(owner,{budgetAccountId:prepared.lineage!.budgetAccountId,controlGeneration:1,modelRequestId:'immediate-budget-proof',kind:'retry',tokens:0,rounds:0})
  await prior.budgets.markDispatched(owner,{reservationId:immediate.id})
+ // 初始执行沿正式 TaskRun producer；普通本人 prompt 不能冒充原任务写手。
+ const publishRunInput=async(ctx:Context,agent:typeof handle.agent,run:typeof claimed.run)=>{
+  const message=createUserMessage({source:{kind:'user',rpcId:run.nativeRequestId},content:[{type:'text',text:run.inputText}]})
+  const context={producer:'task-run' as const,identity:JSON.stringify([owner,run.id,run.taskId,run.taskVersion,run.linkVersion,run.sessionId,run.nativeRequestId])}
+  await requireNativeInputProvider(ctx).input.withNewInput(agent,message,context,()=>{agent.followup(message)})
+ }
  const backgroundRuntimeId=randomUUID(),background=createTaskRunBackground(first,links,undefined,backgroundRuntimeId);await background.start(claimed.run)
- await publishNativeFixtureInput(first,handle.agent,createUserMessage({source:{kind:'user',rpcId:claimed.run.nativeRequestId},content:[{type:'text',text:claimed.run.inputText}]}));await handle.agent.whenIdle()
+ await publishRunInput(first,handle.agent,claimed.run);await handle.agent.whenIdle()
  const before=readSessionEvents(handle.agent.session),evidence=observeTaskRun(before,claimed.run.nativeRequestId)
  assert.ok(evidence.state==='ended'&&evidence.reason==='error');const failed=await runs.record(owner,{runId:prepared.id,sessionId,nativeRequestId:prepared.nativeRequestId,evidence})
  assert.equal((await f.pool.query('select version from teloa_tasks where id=$1',[task.id])).rows[0].version,3);assert.equal(model.calls,1)
@@ -104,7 +110,7 @@ test('真实PG与官方冷Controller：重启收口旧owner失败轮，owner/角
  const currentRuns=new TaskRunService(f.pool,identity,inspect,{allowedTools:['get_goal']})
  const currentPrepared=await currentRuns.prepare(owner,{requestId:randomUUID(),taskId:currentTask.id,expectedTaskVersion:1,roleId:role.id,expectedRoleVersion:3,sessionId:currentSession,expectedLinkVersion:currentLink.version}),currentClaimed=await currentRuns.claim(owner,{runId:currentPrepared.id})
  const currentBackground=createTaskRunBackground(first,links);await currentBackground.start(currentClaimed.run)
- await publishNativeFixtureInput(first,currentHandle.agent,createUserMessage({source:{kind:'user',rpcId:currentClaimed.run.nativeRequestId},content:[{type:'text',text:currentClaimed.run.inputText}]}));await currentHandle.agent.whenIdle()
+ await publishRunInput(first,currentHandle.agent,currentClaimed.run);await currentHandle.agent.whenIdle()
  const currentEvidence=observeTaskRun(readSessionEvents(currentHandle.agent.session),currentClaimed.run.nativeRequestId)
  assert.ok(currentEvidence.state==='ended');const currentEnded=await currentRuns.record(owner,{runId:currentPrepared.id,sessionId:currentSession,nativeRequestId:currentPrepared.nativeRequestId,evidence:currentEvidence})
  await prior.settleRun(owner,currentEnded)

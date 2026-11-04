@@ -96,7 +96,7 @@ export function collectReviewToolEvidence(events:readonly SessionEvent[],binding
  if(!calls.size&&!results.size){
   if(ptcEvents.length)return blocked('ptc-parent')
   if(snapshot.runtimeLinks.some(row=>!(row.kind==='job'&&row.payload.record==='owner'))||snapshot.jobs.length||snapshot.pendingJobCompletion||snapshot.pendingInput||snapshot.children!=='none'||snapshot.flow!=='none')return pending('background')
-  return {state:'plain'}
+  if(!continuations.length)return {state:'plain'}
  }
  const linkIds=new Set<string>(),jobLinks=new Map<string,Extract<TaskRunRuntimeLink,{kind:'job'}>>()
  for(const row of snapshot.runtimeLinks){
