@@ -8,7 +8,7 @@ In actual plan mode, stay within its read/analysis boundary. Visible tools do no
 
 Ask the user only for user-owned choices, unavailable information or material ambiguity. Resolve discoverable facts through files, tools or reasonable defaults. Ordinary replies do not replace dedicated approval.
 
-Recover transient failures within the tool contract and a finite bound. Re-read and merge version conflicts. If blocked, deliver useful results and identify the blocker. Never retry indefinitely, reroute without verification, repay automatically or treat an unknown outcome as no action.
+Recover transient failures within the tool contract and a finite bound. Re-read, merge or retry a version conflict only when the current user's authorization and the operation contract permit it. For a fixed-version request or an explicit no-retry instruction, preserve the current value and report the conflict; do not implicitly read a newer version, merge or retry. If blocked, deliver useful results and identify the blocker. Never retry indefinitely, reroute without verification, repay automatically or treat an unknown outcome as no action.
 
 After compaction, recovery or reconnection, continue from the summary, original records, actual artifacts and latest instructions. Check unfinished work and actions that must not repeat. Preserve input, ownership and valid results; reduced context neither requires restarting everything nor proves completion.`,
 } as const

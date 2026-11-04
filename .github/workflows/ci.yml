@@ -11,7 +11,7 @@ concurrency:
 jobs:
   tests:
     name: ${{ matrix.name }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 45
     strategy:
       fail-fast: false
@@ -49,6 +49,20 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           persist-credentials: false
+      - name: Free unused hosted SDKs for PostgreSQL tests
+        if: runner.environment == 'github-hosted' && runner.os == 'Linux' && matrix.suite != 'bindings'
+        shell: bash
+        run: |
+          # 本次临时 runner 不构建 Android/.NET；保留项目、Node、Python 和 Docker。
+          # 官方镜像安装位置见 actions/runner-images 的 install-android-sdk.sh 与 install-dotnetcore-sdk.sh。
+          df -B1 --output=avail,target "$GITHUB_WORKSPACE" "$RUNNER_TEMP" /tmp
+          for path in /usr/local/lib/android /usr/share/dotnet; do
+            if [[ -e "$path" || -L "$path" ]]; then
+              [[ -d "$path" && ! -L "$path" && "$(readlink -f -- "$path")" == "$path" ]] || exit 1
+              sudo rm -rf -- "$path"
+            fi
+          done
+          df -B1 --output=avail,target "$GITHUB_WORKSPACE" "$RUNNER_TEMP" /tmp
       - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1
         with:
           version: 11.7.0
@@ -73,6 +87,12 @@ jobs:
       - name: Install locked Playwright WebKit and Firefox
         if: matrix.suite == 'bindings'
         run: |
+          # Keep Ubuntu signatures and suites; avoid the slow hosted Azure apt mirror.
+          for source in /etc/apt/apt-mirrors.txt /etc/apt/sources.list /etc/apt/sources.list.d/*.list /etc/apt/sources.list.d/*.sources; do
+            if [ -f "$source" ]; then
+              sudo sed -i 's|://azure.archive.ubuntu.com/ubuntu|://archive.ubuntu.com/ubuntu|g' "$source"
+            fi
+          done
           node --input-type=module <<'JS'
           import {readdirSync} from 'node:fs'
           import {createRequire} from 'node:module'

@@ -14,7 +14,7 @@ import type {VoiceSpeech} from '../src/voice-service.ts'
 
 /** 正式浏览器媒体/宿主/Controller/NativeInput/Loop；仅替代语音供应商、模型及本人目录端口。 */
 async function mediaHost(t:TestContext){
- const f=await nativeProviderFixture(t,{maintenance:false}),owner=randomUUID(),model=new HotAdapter()
+ const f=await nativeProviderFixture(t,{maintenance:false,persistence:true}),owner=randomUUID(),model=new HotAdapter()
  f.ctx.llm.registerAdapter(['test'],model)
  await f.ctx.plugin(TeloaNativeInput);await installNativeSessionController(f.ctx,{nativeOpen:false})
  const counts={transcribe:0,speak:0},controls:{asr?:ReturnType<typeof hotGate>;tts?:ReturnType<typeof hotGate>;silence?:boolean}={}

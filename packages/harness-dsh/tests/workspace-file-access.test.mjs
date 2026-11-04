@@ -375,3 +375,86 @@ test('J13 revision：官方工具体开始后目录别名改指外部，真正�
  assert.equal(outsideStats,0,'不只在工具返回后阻止事件，官方 body 的实际 FS 也必须受限')
  assert.equal(result.isError,true,JSON.stringify(result));assert.equal(f.presented.length,0)
 })
+
+test('限定路径在真实官方工具循环中分离输入读取、输出写入与成功回执交付，不把写权变成读权',async t=>{
+ const {ctx,adapter}=await createRuntime(t),home=await mkdtemp(join(tmpdir(),'teloa-scoped-paths-')),cwd=join(home,'work');t.after(()=>rm(home,{recursive:true,force:true}));await mkdir(cwd);await writeFile(join(cwd,'input.csv'),'amount\n3\n')
+ await ctx.plugin(await official('dsh-tool-fs'),{});await ctx.plugin(await official('dsh-tool-present'),{maxFiles:8});ctx.provide('agentPresets',{serviceFor:()=>undefined})
+ const agent=(await ctx.agents.create({sessionId:'scoped-path-run',meta:{cwd},agentOptions:{provider:'native-auto-review-test',model:'scripted'}})).agent
+ const rules=[{name:'read',allowed:[],workspaceFiles:'default-workspace',workspacePaths:{files:['input.csv'],directories:[]}},{name:'write',allowed:[],workspaceFiles:'default-workspace',workspacePaths:{files:['output.md'],directories:[]}}],policy={nativeRequestId:'scoped-path-request',allowedTools:['read','write'],argumentRules:rules}
+ registerTaskToolGuard(ctx,async()=>policy,[],undefined,undefined,undefined,undefined,undefined,undefined,createTaskRunWorkspaceFileAccess(ctx,cwd,async()=>policy,()=>false))
+ const {restrictRunTools}=await import('../src/task-run-dsh.ts'),{runToolApplicability}=await import('../src/task-run-tool-catalog.ts');const lift=restrictRunTools(agent,policy.allowedTools,runToolApplicability({inputText:'{}',argumentRules:rules},false));t.after(lift)
+ const response=(name,id,args)=>[{type:'block-start',index:0,blockType:'tool-call'},{type:'tool-call-delta',index:0,id:ToolCallId(id),name,argumentsDelta:JSON.stringify(args)},{type:'block-end',index:0,block:{type:'tool-call',id:ToolCallId(id),name,arguments:JSON.stringify(args)}},{type:'finish',reason:{kind:'tool-calls'}}]
+ adapter.script.push(response('read','input',{file_path:'input.csv'}),response('read','before-write',{file_path:'output.md'}),response('write','output',{file_path:'output.md',content:'# result\n'}),response('read','after-write',{file_path:'output.md'}),response('present','deliver',{files:[{path:'output.md'}]}),[{type:'block-start',index:0,blockType:'text'},{type:'text-delta',index:0,text:'done'},{type:'block-end',index:0,block:{type:'text',text:'done'}},{type:'finish',reason:{kind:'stop'}}])
+ agent.followup(createUserMessage({source:{kind:'user',rpcId:'scoped-path-request'},content:[{type:'text',text:'read input and deliver output'}]}));await agent.whenIdle()
+ const events=agent.session.snapshotEvents(),results=new Map(events.filter(e=>e.type==='tool/result').map(e=>[e.data.message.toolCallId,e.data.message]))
+ assert.equal(results.get('input')?.isError,false);assert.equal(results.get('before-write')?.isError,true);assert.equal(results.get('output')?.isError,false);assert.equal(results.get('after-write')?.isError,true);assert.equal(results.get('deliver')?.isError,false,JSON.stringify(results.get('deliver')))
+ assert.equal(await readFile(join(cwd,'output.md'),'utf8'),'# result\n');assert(events.some(e=>e.type==='deliverables/presented'))
+ assert.deepEqual(adapter.requests[0].tools.find(tool=>tool.name==='read').parameters.properties.file_path.enum,['input.csv']);assert.deepEqual(adapter.requests[0].tools.find(tool=>tool.name==='write').parameters.properties.file_path.enum,['output.md']);assert(!adapter.requests[0].tools.some(tool=>tool.name==='run_code'))
+ assert.equal(events.filter(e=>e.type==='tool/call').length,5,'拒绝的两次读取尝试仍保留为原生事件')
+})
+
+test('细文件策略拒绝目录内符号链接和目录前缀混淆，支持未存在目录的写入',async t=>{
+ const f=await fixture(t);await mkdir(join(f.cwd,'in'));await writeFile(join(f.cwd,'in/input.txt'),'inside');await symlink(join(f.cwd,'in/input.txt'),join(f.cwd,'alias.txt'))
+ const {workspacePathAllowed}=await import('@teloa/contract'),rule={name:'read',allowed:[],workspaceFiles:'default-workspace',workspacePaths:{files:['alias.txt'],directories:['in']}}
+ const scoped=await createScopedWorkspaceFileSystem(f.ctx.fs,{cwd:f.cwd,rejectSymlinks:true,authorize:async(name,_signal,path)=>{if(path!==undefined&&name==='read'&&!workspacePathAllowed(rule,path))throw Error('path denied')},protectedPath:()=>false})
+ await assert.rejects(scoped.resolve('alias.txt',{cwd:f.cwd}),/符号链接/)
+ await mkdir(join(f.cwd,'in-other'));await writeFile(join(f.cwd,'in-other/file.txt'),'outside policy')
+ const target=await scoped.resolve('in-other/file.txt',{cwd:f.cwd});await assert.rejects(scoped.readText(target),/path denied/)
+ const created=await scoped.resolve('in/new/created.txt',{cwd:f.cwd});await scoped.writeText(created,'new',undefined,undefined,{mode:'workspace-write',workspaceRoot:f.cwd});assert.equal(await readFile(join(f.cwd,'in/new/created.txt'),'utf8'),'new')
+})
+
+test('细范围edit取三项授权交集，unscoped_exec即使伪造进运行清单也在执行体前拒绝',async t=>{
+ const f=await fixture(t);await f.ctx.plugin(await official('dsh-tool-fs'),{});f.ctx.provide('agentPresets',{serviceFor:()=>undefined})
+ for(const name of ['both.txt','read.txt','write.txt'])await writeFile(join(f.cwd,name),'old')
+ const agent=(await f.ctx.agents.create({sessionId:'scoped-edit',meta:{cwd:f.cwd},agentOptions:{provider:'native-auto-review-test',model:'scripted'}})).agent
+ agent.session.append('turn/start',{turn:1});agent.session.append('user/message',createUserMessage({source:{kind:'user',rpcId:'edit-request'},content:[]}),{surfaceOp:'append'})
+ const rules=['read','write','edit'].map((name,i)=>({name,allowed:[],workspaceFiles:'default-workspace',workspacePaths:{files:[['both.txt','read.txt'],['both.txt','write.txt'],['both.txt','read.txt','write.txt']][i],directories:[]}})),policy={nativeRequestId:'edit-request',allowedTools:['read','write','edit','unscoped_exec'],argumentRules:[...rules,{name:'unscoped_exec',allowed:[],anyArguments:true}]}
+ let codeBodies=0;const {defineTool}=await official('dsh-tools');f.ctx.tools.register(defineTool({name:'unscoped_exec',description:'forbidden execution probe',parameters:{},output:{schema:{type:'string'},render:(_a,v)=>[{type:'text',text:v}]},execute:()=>{codeBodies++;return'not allowed'}}))
+ registerTaskToolGuard(f.ctx,async()=>policy,[],undefined,undefined,undefined,undefined,undefined,undefined,createTaskRunWorkspaceFileAccess(f.ctx,f.cwd,async()=>policy,()=>false));let seq=0;const call=(name,args)=>f.ctx.tools.execute({agent,name,arguments:args,callId:ToolCallId('scoped-edit-'+ ++seq),signal:AbortSignal.timeout(5000)})
+ assert.equal((await call('read',{file_path:'both.txt'})).isError,false);assert.equal((await call('edit',{file_path:'both.txt',old_string:'old',new_string:'new'})).isError,false)
+ for(const name of ['read.txt','write.txt'])assert.equal((await call('edit',{file_path:name,old_string:'old',new_string:'new'})).isError,true)
+ assert.equal((await call('unscoped_exec',{})).isError,true);assert.equal(codeBodies,0);assert.equal(await readFile(join(f.cwd,'read.txt'),'utf8'),'old');assert.equal(await readFile(join(f.cwd,'write.txt'),'utf8'),'old')
+})
+
+test('受控present拒绝无本轮成功写回执与写后变化的成果，真实读取授权未扩大',async t=>{
+ const {ctx,adapter}=await createRuntime(t),home=await mkdtemp(join(tmpdir(),'teloa-output-receipt-')),cwd=join(home,'work');t.after(()=>rm(home,{recursive:true,force:true}));await mkdir(cwd);await writeFile(join(cwd,'output.md'),'unowned')
+ await ctx.plugin(await official('dsh-tool-fs'),{});await ctx.plugin(await official('dsh-tool-present'),{maxFiles:8});ctx.provide('agentPresets',{serviceFor:()=>undefined})
+ const agent=(await ctx.agents.create({sessionId:'scoped-delivery',meta:{cwd},agentOptions:{provider:'native-auto-review-test',model:'scripted'}})).agent
+ const rules=[{name:'write',allowed:[],workspaceFiles:'default-workspace',workspacePaths:{files:['output.md'],directories:[]}}],policy={nativeRequestId:'delivery-request',allowedTools:['write'],argumentRules:rules}
+ const {restrictRunTools}=await import('../src/task-run-dsh.ts'),{runToolApplicability}=await import('../src/task-run-tool-catalog.ts');t.after(restrictRunTools(agent,policy.allowedTools,runToolApplicability({inputText:'{}',argumentRules:rules},false)))
+ registerTaskToolGuard(ctx,async()=>policy,[],undefined,undefined,undefined,undefined,undefined,undefined,createTaskRunWorkspaceFileAccess(ctx,cwd,async()=>policy,()=>false))
+ const response=(name,id,args)=>[{type:'block-start',index:0,blockType:'tool-call'},{type:'tool-call-delta',index:0,id:ToolCallId(id),name,argumentsDelta:JSON.stringify(args)},{type:'block-end',index:0,block:{type:'tool-call',id:ToolCallId(id),name,arguments:JSON.stringify(args)}},{type:'finish',reason:{kind:'tool-calls'}}]
+ adapter.script.push(response('present','unowned',{files:[{path:'output.md'}]}),response('write','owned',{file_path:'output.md',content:'owned-output'}),response('present','verified-output',{files:[{path:'output.md'}]}),(async function*(){await writeFile(join(cwd,'output.md'),'changed-after-write');yield*response('present','changed',{files:[{path:'output.md'}]})})(),[{type:'finish',reason:{kind:'stop'}}])
+ agent.followup(createUserMessage({source:{kind:'user',rpcId:'delivery-request'},content:[{type:'text',text:'write and present controlled output'}]}));await agent.whenIdle()
+ const events=agent.session.snapshotEvents(),results=new Map(events.filter(e=>e.type==='tool/result').map(e=>[e.data.message.toolCallId,e.data.message]));assert.equal(results.get('unowned')?.isError,true);assert.equal(results.get('owned')?.isError,false,JSON.stringify(results.get('owned')));assert.equal(results.get('verified-output')?.isError,false);assert.equal(results.get('changed')?.isError,true);assert.equal(events.filter(e=>e.type==='deliverables/presented').length,1);assert(adapter.requests[0].tools.some(tool=>tool.name==='present'),'write-only受控交付在首SDK已可见')
+})
+
+test('旧请求成功写入不能成为当前Run的write-only成果交付回执',async t=>{
+ const {ctx,adapter}=await createRuntime(t),home=await mkdtemp(join(tmpdir(),'teloa-old-write-receipt-')),cwd=join(home,'work');t.after(()=>rm(home,{recursive:true,force:true}));await mkdir(cwd)
+ await ctx.plugin(await official('dsh-tool-fs'),{});await ctx.plugin(await official('dsh-tool-present'),{maxFiles:8});ctx.provide('agentPresets',{serviceFor:()=>undefined})
+ const agent=(await ctx.agents.create({sessionId:'old-write-run',meta:{cwd},agentOptions:{provider:'native-auto-review-test',model:'scripted'}})).agent
+ const response=(name,id,args)=>[{type:'block-start',index:0,blockType:'tool-call'},{type:'tool-call-delta',index:0,id:ToolCallId(id),name,argumentsDelta:JSON.stringify(args)},{type:'block-end',index:0,block:{type:'tool-call',id:ToolCallId(id),name,arguments:JSON.stringify(args)}},{type:'finish',reason:{kind:'tool-calls'}}],done=[{type:'finish',reason:{kind:'stop'}}]
+ adapter.script.push(response('write','old-write',{file_path:'output.md',content:'old output'}),done)
+ agent.followup(createUserMessage({source:{kind:'user',rpcId:'old-request'},content:[{type:'text',text:'old task'}]}));await agent.whenIdle()
+ assert.equal(await readFile(join(cwd,'output.md'),'utf8'),'old output')
+ const policy={nativeRequestId:'new-request',allowedTools:['write'],argumentRules:[{name:'write',allowed:[],workspaceFiles:'default-workspace',workspacePaths:{files:['output.md'],directories:[]}}]}
+ registerTaskToolGuard(ctx,async()=>policy,[],undefined,undefined,undefined,undefined,undefined,undefined,createTaskRunWorkspaceFileAccess(ctx,cwd,async()=>policy,()=>false))
+ adapter.script.push(response('present','new-delivery',{files:[{path:'output.md'}]}),done)
+ agent.followup(createUserMessage({source:{kind:'user',rpcId:'new-request'},content:[{type:'text',text:'new task'}]}));await agent.whenIdle()
+ const result=agent.session.snapshotEvents().find(event=>event.type==='tool/result'&&event.data.message.toolCallId==='new-delivery')
+ assert.equal(result?.data.message.isError,true);assert(!agent.session.snapshotEvents().some(event=>event.type==='deliverables/presented'))
+})
+
+
+test('原Run成功write-only回执不能越过当前角色收窄后的读写路径',async t=>{
+ const {ctx,adapter}=await createRuntime(t),home=await mkdtemp(join(tmpdir(),'teloa-output-receipt-')),cwd=join(home,'work');t.after(()=>rm(home,{recursive:true,force:true}));await mkdir(cwd);await writeFile(join(cwd,'output.md'),'unowned')
+ await ctx.plugin(await official('dsh-tool-fs'),{});await ctx.plugin(await official('dsh-tool-present'),{maxFiles:8});ctx.provide('agentPresets',{serviceFor:()=>undefined})
+ const agent=(await ctx.agents.create({sessionId:'scoped-delivery',meta:{cwd},agentOptions:{provider:'native-auto-review-test',model:'scripted'}})).agent
+ const rules=[{name:'write',allowed:[],workspaceFiles:'default-workspace',workspacePaths:{files:['output.md'],directories:[]}}],policy={nativeRequestId:'delivery-request',allowedTools:['write'],argumentRules:rules,currentArgumentRules:rules}
+ const {restrictRunTools}=await import('../src/task-run-dsh.ts'),{runToolApplicability}=await import('../src/task-run-tool-catalog.ts');t.after(restrictRunTools(agent,policy.allowedTools,runToolApplicability({inputText:'{}',argumentRules:rules,currentArgumentRules:rules},false)))
+ registerTaskToolGuard(ctx,async()=>policy,[],undefined,undefined,undefined,undefined,undefined,undefined,createTaskRunWorkspaceFileAccess(ctx,cwd,async()=>policy,()=>false))
+ const response=(name,id,args)=>[{type:'block-start',index:0,blockType:'tool-call'},{type:'tool-call-delta',index:0,id:ToolCallId(id),name,argumentsDelta:JSON.stringify(args)},{type:'block-end',index:0,block:{type:'tool-call',id:ToolCallId(id),name,arguments:JSON.stringify(args)}},{type:'finish',reason:{kind:'tool-calls'}}]
+ adapter.script.push(response('write','owned',{file_path:'output.md',content:'owned-output'}),response('present','before-narrow',{files:[{path:'output.md'}]}),(async function*(){policy.currentArgumentRules=[{name:'write',allowed:[],workspaceFiles:'default-workspace',workspacePaths:{files:['other.md'],directories:[]}}];yield*response('present','write-narrowed',{files:[{path:'output.md'}]})})(),(async function*(){policy.allowedTools=['read','write'];policy.argumentRules=[...rules,{name:'read',allowed:[],workspaceFiles:'default-workspace',workspacePaths:{files:['output.md'],directories:[]}}];policy.currentArgumentRules=['read','write'].map(name=>({name,allowed:[],workspaceFiles:'default-workspace',workspacePaths:{files:['other.md'],directories:[]}}));yield*response('present','read-narrowed',{files:[{path:'output.md'}]})})(),[{type:'finish',reason:{kind:'stop'}}])
+ agent.followup(createUserMessage({source:{kind:'user',rpcId:'delivery-request'},content:[{type:'text',text:'write and present controlled output'}]}));await agent.whenIdle()
+ const events=agent.session.snapshotEvents(),results=new Map(events.filter(e=>e.type==='tool/result').map(e=>[e.data.message.toolCallId,e.data.message]));assert.equal(results.get('owned')?.isError,false);assert.equal(results.get('before-narrow')?.isError,false);assert.equal(results.get('write-narrowed')?.isError,true);assert.equal(results.get('read-narrowed')?.isError,true);assert.equal(events.filter(e=>e.type==='deliverables/presented').length,1)
+})

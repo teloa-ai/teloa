@@ -1,4 +1,5 @@
 import test from 'node:test'
+import {join} from 'node:path'
 import assert from 'node:assert/strict'
 import {defineTool} from '@deepseek-ai/dsh-tools'
 import {ToolCallId,createUserMessage,type StreamChunk} from '@deepseek-ai/dsh-llm'
@@ -43,7 +44,9 @@ test('普通员工仅获 run_code 授权时仍能看到并执行计算，不退�
 })
 
 for(const preset of ['ptc','ptc-persistent','ptc-python'])test(preset+' 的小结临时使用两个原生工具；执行、同预设隔离与释放不改变岗位配置',{timeout:30000},async t=>{
- const f=await nativePtcToolPath(t,{delegation:true}),agent=await f.create(preset),other=await f.create(preset)
+ const f=await nativePtcToolPath(t,{delegation:true})
+ await f.ctx.plugin(f.graph.persistencePackage,{root:join(f.root,'sessions'),compression:'none'})
+ const agent=await f.create(preset),other=await f.create(preset)
  const owner='local:teloa-owner',roleId='22222222-2222-4222-8222-222222222222',runId='33333333-3333-4333-8333-333333333333'
  const nativeRequestId='88888888-8888-4888-8888-888888888888'
  const identity={runId,taskId:'44444444-4444-4444-8444-444444444444',planId:'55555555-5555-4555-8555-555555555555',roleId,roleVersion:2,day:'2026-10-25'}

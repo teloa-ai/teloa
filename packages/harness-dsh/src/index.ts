@@ -1,5 +1,9 @@
 import {employeeReferenceAliases,registerEmployeeReferenceAliases,narrowEmployeeReferenceRules} from './employee-reference-aliases.ts'
 import {resolveEmployeeKnowledgeReferences} from '@teloa/backend'
+import {TaskRunInteractionService} from '@teloa/backend'
+import {taskRunInteractionRequest} from './task-run-interaction.ts'
+import {assertTaskRunCompletedProof} from './task-run-completed-proof.ts'
+import type {Agent} from '@deepseek-ai/dsh-agent'
 import {createEmployeeKnowledgeHandler,employeeKnowledgeEndpoints} from './employee-knowledge.ts'
 import {registerEmployeeKnowledgeTools} from './employee-knowledge-tools.ts'
 import {resolveConversationEmployeeMention,bindEmployeeMentionDispatch,assertEmployeeMentionExistingTarget,type RunRoleMemory} from '@teloa/backend'
@@ -866,7 +870,8 @@ async function applyHost(ctx:Context,projectRoot:string):Promise<void> {
   let projectRuntimeHost:ReturnType<typeof createProjectRuntimeHost>|undefined
   let projectVerified:ReturnType<typeof createProjectMemoryVerifiedAdapter>|undefined
   let settleOwnerArtifact:((actor:string,run:import('@teloa/backend').TaskRun)=>Promise<void>)|undefined
-  const runService=async()=>new TaskRunService((await resources.database()).pool,{id:randomUUID,now:()=>new Date().toISOString()},(actor,id)=>service.bySession(actor,id),{ownerPlans,allowedTools:[],onSettled:async(actor,run)=>{
+  let readCompletedInteraction:Parameters<TaskRunService['enableCompletedInteractions']>[0]|undefined
+  const runService=async()=>{const api=new TaskRunService((await resources.database()).pool,{id:randomUUID,now:()=>new Date().toISOString()},(actor,id)=>service.bySession(actor,id),{ownerPlans,allowedTools:[],onSettled:async(actor,run)=>{
     try{if(!residentWork)throw new WorkError('teloa/unavailable','受控工作服务尚未就绪。');await residentWork.settleRun(actor,run);if(projectRuntimeHost&&projectVerified){const source=await projectVerified.forRun(run);if(source)await projectRuntimeHost.ingest(source)}}catch(error){ctx.logger.warn('Teloa 工作交付待核对：%s',error instanceof WorkError?error.code:'teloa/unavailable')}
     try{await settleOwnerArtifact?.(actor,run)}catch(error){ctx.logger.warn('Teloa 本人成果待核对：%s',error instanceof WorkError?error.code:'teloa/unavailable')}
     try{
@@ -889,7 +894,7 @@ async function applyHost(ctx:Context,projectRoot:string):Promise<void> {
       if(JSON.stringify(current)!==JSON.stringify(run.knowledge))throw new WorkError('teloa/version-conflict','执行资料已变化，请重新准备。')
       validateReferenceToolRules(run.argumentRules??[],taskRunToolRules([...referenceToolRules([...current,...(await employeeReferenceAliases(context.db,context.owner,context.role.id,current)).map(alias=>({sourceId:alias.id,sourceVersion:alias.version}))]),...await industryMcpToolRules(context.db,context.owner,context.role.id),...getManagedMcpToolRules().filter((rule:{name:string})=>!isNativeToolName(rule.name)),...webToolRules(true),...(ctx.agents.get(brandString<SessionId>(run.sessionId))?nativeToolRules(ctx,ctx.agents.get(brandString<SessionId>(run.sessionId))):await nativePresetToolRules(ctx,run.agentPresetId)),...await workspaceFileToolRules(ctx,ctx.agents.get(brandString<SessionId>(run.sessionId)))]))
     },
-  }})
+  }});if(readCompletedInteraction)api.enableCompletedInteractions(readCompletedInteraction);return api}
   // 默认关闭的发送摘要审计：既有可信Run和当前受理根共同确定身份，不按会话最近一行猜测。
   await ctx.effect(()=>installModelSendAudit(ctx,trusted,{resolve:async(sessionId,binding)=>{
     if(binding.ownerId!==owner)return null
@@ -928,7 +933,14 @@ async function applyHost(ctx:Context,projectRoot:string):Promise<void> {
   })
   // 回执经只读启动快照读取，只属于本进程首次装配的宿主；同一进程内的再次装配按普通重启处理。
   const plannedRestartId=await takePlannedRestartReceipt(trusted)
+  let taskRunInteractions:TaskRunInteractionService|undefined
+  const interactiveAgents=new WeakSet<Agent>()
+  let openTaskInteraction:NonNullable<import('./task-run-driver.ts').TaskRunPorts['openInteraction']>|undefined
+  const independentRequest=(agent:Agent,run:Parameters<typeof taskRunInteractionRequest>[1])=>taskRunInteractionRequest(readSessionEvents(agent.session),run,requestId=>{try{requireNativeInputProvider(ctx).input.readReviewState(agent,requestId);return true}catch{return false}})
   const resident=await createResidentWorkRuntime(ctx,{business:businessEventSource,businessOrigin:businessEventOrigin,owner,pool:database.pool,identity:workIdentity,nativeInput:requireNativeInputProvider(ctx).input,ownerAuthority:ownerWorkAuthority,runs:runService,resources:database.service,dailyLogs:roleDailyLogService,ordinaryConversations:service,
+   completedInteraction:async sessionId=>(await taskRunInteractions?.read(owner,sessionId))??null,
+   manualInteractionAccepted:sessionId=>{const agent=ctx.agents.get(brandString<SessionId>(sessionId));if(agent)interactiveAgents.add(agent)},
+   interactiveAdmission:async(sessionId,continuation)=>{const interaction=await taskRunInteractions?.read(owner,sessionId);if(!interaction)throw new WorkError('teloa/conflict','原任务尚未开放独立交互。');const agent=ctx.agents.get(brandString<SessionId>(sessionId));if(continuation&&(!agent||!interactiveAgents.has(agent)))throw new WorkError('teloa/forbidden','后台通知没有本宿主的独立交互来源。');if(!continuation){if(!openTaskInteraction)throw new WorkError('teloa/unavailable','独立交互服务正在准备。');await openTaskInteraction(interaction.run,AbortSignal.timeout(15000))}interaction.lease.assertCurrent();if(!agent||ctx.agents.get(agent.id)!==agent)throw new WorkError('teloa/session-unavailable','独立交互会话已变化。');interactiveAgents.add(agent);return interaction.lease},
    // 只有本人 teloa upgrade 启动的宿主带此回执；校验失败按普通重启处理。
    ...(plannedRestartId?{plannedRestartId}:{}),
    executionScope:(db,actor,runId,mode)=>runService().then(api=>api.executionScopeInTransaction(db,actor,{runId,mode})),
@@ -965,7 +977,7 @@ async function applyHost(ctx:Context,projectRoot:string):Promise<void> {
   ctx.provide('teloaResidentInputAdmission',resident)
   ctx.provide('teloaTaskRunGoal',resident.goal)
   resources.beforeDatabaseClose(resident.close)
-  resources.beforeDatabaseClose(installResidentModelBudget(ctx,{owner,pool:database.pool,identity:workIdentity,runs:runService,controls:resident.controls,budgets:resident.budgets,resolveRun:resident.resolveRun,resolveRouting:resident.resolveRouting,nativeInput:requireNativeInputProvider(ctx).input,report:code=>ctx.logger.warn('Teloa 模型请求待核对：%s',code)}))
+  resources.beforeDatabaseClose(installResidentModelBudget(ctx,{owner,pool:database.pool,identity:workIdentity,runs:runService,controls:resident.controls,budgets:resident.budgets,resolveRun:async sessionId=>{const run=await resident.resolveRun(sessionId);if(run?.state==='ended'&&taskRunInteractions){const agent=ctx.agents.get(brandString<SessionId>(sessionId));if(agent&&independentRequest(agent,run))return null}return run},resolveRouting:resident.resolveRouting,nativeInput:requireNativeInputProvider(ctx).input,report:code=>ctx.logger.warn('Teloa 模型请求待核对：%s',code)}))
   const workEventProducers=trustedWorkEventProducers(resident.events)
   const groupRoutingPersistence={recordRunMessage:resident.outbox.recordRunMessage.bind(resident.outbox),recordWake:async(db:Parameters<typeof resident.outbox.recordWake>[0],actor:string,input:{groupId:string;messageId:string})=>{await resident.outbox.recordWake(db,actor,input);await workEventProducers.groupMessage(db,input.groupId,input.messageId)}}
   const subagentDelegation={
@@ -1078,7 +1090,7 @@ async function applyHost(ctx:Context,projectRoot:string):Promise<void> {
       await new TaskRunWebAccessService((await resources.database()).pool,{now:()=>new Date().toISOString()}).append(owner,run.id,entry)
       return 'written'
     },
-  },taskTeam,taskBrowser.cleanup,taskOrchestration,taskWorkspaceFiles,resident.goal.observationForSession,async(sessionId,nativeRequestId)=>{const run=await resident.resolveRun(sessionId);return !!run&&run.sessionId===sessionId&&run.nativeRequestId===nativeRequestId&&run.roleId!==null&&run.executor?.kind!=='owner'})
+  },{...taskTeam,continuations:async(root,requestId,events,allowedTools)=>{const run=await resident.resolveRun(String(root.id));return new Set([...(await taskTeam.continuations(root,requestId,events,allowedTools)),...run&&run.nativeRequestId===requestId?await resident.nativeContinuations(run,events):[]])}},taskBrowser.cleanup,taskOrchestration,taskWorkspaceFiles,resident.goal.observationForSession,async(sessionId,nativeRequestId)=>{const run=await resident.resolveRun(sessionId);return !!run&&run.sessionId===sessionId&&run.nativeRequestId===nativeRequestId&&run.roleId!==null&&run.executor?.kind!=='owner'})
   resources.beforeDatabaseClose(registerTaskReferenceReader(ctx,async(sessionId,args,signal)=>{
     const runtime=await resources.database()
     return readTaskRunReference({pool:runtime.pool,runs:await runService(),read:(db,run,target,references,readSignal)=>{
@@ -1297,7 +1309,7 @@ async function applyHost(ctx:Context,projectRoot:string):Promise<void> {
    return run.roleSnapshot?run.roleSnapshot.kind==='employee':(await new RoleService(database.pool,workIdentity).get(owner,run.roleId))?.kind==='employee'
   }
   runPorts.stableStart=availabilitySync.stable
-  runPorts.continuations=(run,events)=>taskTeam.runContinuations(run,events)
+  runPorts.continuations=async(run,events)=>new Set([...(await taskTeam.runContinuations(run,events)??[]),...await resident.nativeContinuations(run,events)])
   const backgroundState=runPorts.backgroundState
   runPorts.backgroundState=async run=>{
    // get 的 Run 不附子级投影；例外须补读全量登记，不能把仅 outstanding 为空当作从未派发。
@@ -1397,6 +1409,24 @@ async function applyHost(ctx:Context,projectRoot:string):Promise<void> {
   })
   resources.beforeDatabaseClose(startPlanScheduler({recover:async()=>{},tick:(now,signal)=>runtimeAdmission.run(()=>habitTick(now,signal)),report:(_phase,code)=>ctx.logger.warn('Teloa 分身观察待恢复：%s',code)}))
   const planScheduleHandler=createPlanScheduleHandler(owner,{isAvailable:()=>true,overview:planRuntime.readPorts.overview,getStatus:planRuntime.readPorts.status,executionHistory:planRuntime.readPorts.executionHistory,skipHistory:planRuntime.readPorts.skipHistory})
+  taskRunInteractions=new TaskRunInteractionService(await runService(),async(run,db)=>{
+   const events=await runPorts.events(run),links=await new TaskRunRuntimeLinkService(database.pool).listInTransaction(db,owner,{runId:run.id}),appends=await readGroupRunAppendIds(db,owner,run.sessionId),goal=await resident.goals.readInTransaction(db,owner,{runId:run.id})
+   assertTaskRunCompletedProof(run,events,links,appends,goal)
+  })
+  const interactionService=taskRunInteractions
+  openTaskInteraction=async(run,signal)=>{if(!runPorts.openInteraction)throw new WorkError('teloa/unavailable','原任务运行配置尚不能安全退役。');await runPorts.openInteraction(run,signal)}
+  const stopInteractionPrompt=ctx.on('system-prompt/assemble',async(_assembly,context,next)=>{
+   const result=await next(),agent=(context.agent??context.scope) as Agent|undefined
+   if(!agent||!interactiveAgents.has(agent)||ctx.agents.get(agent.id)!==agent)return result
+   const policy=await readTaskToolPolicy(agent.id,context.signal??AbortSignal.timeout(15000))
+   if(!policy?.interactive)return result
+   const name='teloa/task-run-interaction'
+   if(result.contexts.some(item=>item.name===name))throw new WorkError('teloa/conflict','独立追问的上下文已被占用。')
+   return {...result,contexts:[...result.contexts,{name,text:'This is an independently authorized follow-up after the original task and its delivery closed. Earlier task instructions and tool receipts are history, not a new mandate. Answer the current user message; do not restart the old run, repeat completed operations, replay uncertain external effects, revise its fixed report, or treat the old task as unfinished. Tools remain bounded by both the original scope and current authorization.'}]}
+  })
+  resources.beforeDatabaseClose(()=>{stopInteractionPrompt()})
+  runPorts.interaction=async(sessionId,signal)=>{signal.throwIfAborted();try{const interaction=await interactionService.read(owner,sessionId);signal.throwIfAborted();return {sessionId,available:interaction!==null}}catch(error){signal.throwIfAborted();if(error instanceof WorkError&&['teloa/conflict','teloa/forbidden','teloa/version-conflict','teloa/session-unavailable'].includes(error.code))return {sessionId,available:false};throw error}}
+  readCompletedInteraction=async(actor,sessionId,db)=>{const interaction=await interactionService.read(actor,sessionId,db);if(!interaction)return null;const agent=ctx.agents.get(brandString<SessionId>(sessionId)),requestId=agent?independentRequest(agent,interaction.run):undefined;return {...interaction,...(requestId?{requestId}:{})}}
   const taskRunDeliveryReader=createTaskRunDeliveryReader({digest:(actor,run)=>roleDailyLogService().then(service=>service.deliveryCheck(actor,run.id)),receipt:(actor,run)=>new ArtifactService(database.pool,workIdentity,async(who,expected,db)=>({source:await taskArtifactSource(db,who,expected.id,true),sessionIds:await taskArtifactSessions(db,who,expected.id,true)})).ownerRunReceipt(actor,run),events:run=>runPorts.events(run),...(runPorts.continuations?{continuations:runPorts.continuations}:{}),...(runPorts.goalObservation?{goalObservation:runPorts.goalObservation}:{})})
   const taskRunHandler=createTaskRunHandler(owner,runService,runPorts,loadTaskKnowledge,{admitRun:(db,actor,lineage)=>resident.budgets.admitRunStartInTransaction(db,actor,lineage.budgetAccountId),beforeCreate:sessionId=>resident.invalidateOrdinaryRestore(sessionId),conversations:service,links:guardedObjectConversations(new ObjectConversationService(database.pool,(actor,id)=>service.snapshotBySession(actor,id),()=>new Date().toISOString(),readRunDirectory))},{listMany:(actor,runIds)=>new TaskRunSubagentService(database.pool,{now:()=>new Date().toISOString()}).listMany(actor,runIds),recover:(actor,input)=>new TaskRunSubagentService(database.pool,{now:()=>new Date().toISOString()}).recover(actor,input)},{estimate:async sessionId=>{
    try{
@@ -3019,7 +3049,10 @@ async function applyHost(ctx:Context,projectRoot:string):Promise<void> {
        if(peer!==connection.browserPeer)throw new WorkError('teloa/forbidden','代拟稿采用与发送仅供本人浏览器连接使用。')
        signal.throwIfAborted();return {ok:true,value:await twinDraftHandler(endpoint,payload)}
       }
-      if((residentOwnerEndpoints as readonly string[]).includes(endpoint))return {ok:true,value:await resident.ownerRpc(endpoint,payload,signal)}
+      if((residentOwnerEndpoints as readonly string[]).includes(endpoint)){
+       if(endpoint.startsWith('session-continuations/')&&peer!==connection.browserPeer)throw new WorkError('teloa/forbidden','原会话恢复只供本人浏览器入口使用。')
+       return {ok:true,value:await resident.ownerRpc(endpoint,payload,signal)}
+      }
       if((confirmedPlanEndpoints as readonly string[]).includes(endpoint))return {ok:true,value:await confirmedPlanHandler(endpoint,payload)}
       if((confirmedPlanDraftEndpoints as readonly string[]).includes(endpoint))return {ok:true,value:await confirmedPlanDraftHandler(endpoint,payload,signal)}
       if((confirmedTaskRunFlowEndpoints as readonly string[]).includes(endpoint))return {ok:true,value:await confirmedTaskRunFlowHandler(endpoint,payload,signal)}

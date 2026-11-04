@@ -273,7 +273,7 @@ test('负责人生产装配：真实RPC、原生审批、单连接池和任务�
  assert.doesNotMatch(JSON.stringify(runGate),/storage-unavailable|资源数据库暂不可用/,'非空工具策略复核不能耗尽 max=1 连接池')
  await call('task-runs/reconcile',{runId:toolRun.members[0]!.run!.id})
  const endedEvents=readSessionEvents(toolAgent.session)
- await assert.rejects(()=>userTurn(toolAgent.id),error=>!!error&&typeof error==='object'&&Reflect.get(error,'code')==='teloa/version-conflict','已结束 Run 不能接受新的本人指令')
+ await assert.rejects(()=>userTurn(toolAgent.id),error=>!!error&&typeof error==='object'&&Reflect.get(error,'code')==='teloa/conflict','未完成交付收口的已结束 Run 不能接受新的本人指令')
  assert.deepEqual(readSessionEvents(toolAgent.session),endedEvents,'拒绝过期输入不能追加原会话日志')
  assert.equal(model.calls,3,'两项任务加一次拒绝工具后的原轮次续答，不因过期输入重发模型')
 

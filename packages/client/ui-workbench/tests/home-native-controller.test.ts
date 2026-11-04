@@ -230,6 +230,55 @@ test('read旧版本不能解除未知写入，精确内容和版本对上才恢�
  await reader.read('s');assert.equal(writer.pending(),undefined)
 })
 
+test('新会话先只读核对旧未决设置，版本前进后解除残留且不带入旧业务',async()=>{
+ const storage=memory(),writer=createHomeContextApi(async()=>{throw Error('lost')},storage,()=> 'original')
+ await assert.rejects(writer.set({sessionId:'old',scopeId:'SOC',roleId:null,expectedVersion:1}))
+ const calls:any[]=[],reader=createHomeContextApi(async(endpoint,payload:any)=>{calls.push([endpoint,payload]);return payload.sessionId==='old'?{sessionId:'old',scopeId:'other',roleId:null,version:3,locked:false}:null},storage)
+ assert.equal(await reader.read('new'),null)
+ assert.equal(reader.pending(),undefined)
+ assert.deepEqual(calls,[['work-context/read',{sessionId:'old'}],['work-context/read',{sessionId:'new'}]])
+})
+
+test('未知旧设置保留原身份，显式续办只提交原参数，不给新会话绑定旧回执',async()=>{
+ const storage=memory(),original={sessionId:'old',scopeId:'SOC',roleId:null,expectedVersion:1},writer=createHomeContextApi(async()=>{throw Error('lost')},storage,()=> 'original')
+ await assert.rejects(writer.set(original))
+ const calls:any[]=[],reader=createHomeContextApi(async(endpoint,payload:any)=>{calls.push([endpoint,payload]);if(endpoint==='work-context/set')return {...original,version:2,locked:false};if(payload.sessionId==='old')throw Error('offline');return {sessionId:'new',scopeId:'general',roleId:null,version:1,locked:false}},storage)
+ assert.equal((await reader.read('new'))?.scopeId,'general')
+ assert.equal(reader.pending()?.requestId,'original')
+ await reader.retry()
+ assert.deepEqual(calls.at(-1),['work-context/set',{...original,requestId:'original'}])
+ assert.equal(reader.pending(),undefined)
+})
+
+test('本标签页写入未结束时，读到前进版本仍保留原请求',async()=>{
+ const storage=memory(),gate=deferred(),original={sessionId:'old',scopeId:'SOC',roleId:null,expectedVersion:1}
+ const api=createHomeContextApi(async endpoint=>{if(endpoint==='work-context/set')await gate.promise;return {...original,version:2,locked:false}},storage,()=> 'original')
+ const writing=api.set(original)
+ await api.read('old');await api.reconcilePending()
+ assert.equal(api.pending()?.requestId,'original')
+ gate.resolve();await writing
+ assert.equal(api.pending(),undefined)
+})
+
+test('跨标签页迟到的只读核对不能清除新请求，参数也参与请求身份',async()=>{
+ const storage=memory(),old={sessionId:'old',scopeId:'SOC',roleId:null,expectedVersion:1,requestId:'original'},next={...old,sessionId:'new',scopeId:'general'},gate=deferred()
+ storage.setItem('teloa.home-work-context/v1',JSON.stringify(old))
+ const api=createHomeContextApi(async()=>{await gate.promise;return {sessionId:'old',scopeId:'SOC',roleId:null,version:2,locked:false}},storage)
+ const reading=api.reconcilePending()
+ storage.setItem('teloa.home-work-context/v1',JSON.stringify(next));gate.resolve();await reading
+ assert.deepEqual(api.pending(),next)
+})
+
+test('未绑定明确拒绝解除旧请求，网络未知仍保留原记录',async()=>{
+ for(const code of ['teloa/not-bound','teloa/forbidden','teloa/version-conflict',undefined]){
+  const storage=memory(),request={sessionId:'old',scopeId:'SOC',roleId:null,expectedVersion:1,requestId:'original'}
+  storage.setItem('teloa.home-work-context/v1',JSON.stringify(request))
+  const api=createHomeContextApi(async()=>{throw Object.assign(Error('unavailable'),{code})},storage)
+  await api.reconcilePending()
+  assert.deepEqual(api.pending(),code?undefined:request)
+ }
+})
+
 
 test('真实已发送回执退役待用会话，过时blank与迟到回执不能复用旧会话或清新草稿',async()=>{
  let ids=0

@@ -1,5 +1,5 @@
 import {taskReferenceReadTool} from '@teloa/backend'
-import {WorkError,taskInput,taskToolArgumentsAllowed,readTaskToolArgumentRules,isWorkspaceFileRule,workspaceFileToolNames,type TaskToolArgumentRule,type ResourceContext} from '@teloa/contract'
+import {WorkError,taskInput,taskToolArgumentsAllowed,readTaskToolArgumentRules,isWorkspaceFileRule,workspaceFileToolNames,hasWorkspacePaths,workspacePathsUnsafeTool,type TaskToolArgumentRule,type ResourceContext} from '@teloa/contract'
 import type {RoleToolGrantService} from '@teloa/backend'
 import {isNativeToolName,nativeGrantToolNames} from './native-tool-access.ts'
 import {businessResultToolNames} from './business-result-tools.ts'
@@ -120,6 +120,7 @@ export function referenceToolRules(contents:readonly Pick<ResourceContext['conte
 export function validateReferenceToolRules(rules:TaskToolArgumentRule[],available:TaskToolArgumentRule[]){
  // 静态工具仍只来自固定集；行业 MCP 的完整工具名则必须逐次来自服务端刚读取的 active binding。
  // 不把 `mcp__*` 作为通配符，避免一次连接把同一服务器的未声明工具也带进执行面。
+ if(hasWorkspacePaths(rules)&&rules.some(rule=>workspacePathsUnsafeTool(rule.name)))throw new WorkError('teloa/forbidden','限定文件路径时不能同时授权代码、委派或未适配此范围的工具。')
  const candidates=new Map(available.map(rule=>[rule.name,rule]))
  for(const rule of readTaskToolArgumentRules(rules)){
   if(rule.name===referenceReadTool&&(rule.anyArguments===true||!rule.allowed.length||rule.allowed.some(args=>typeof args.id!=='string'||!isPublicReferenceSourceId(args.id))))throw new WorkError('teloa/forbidden','公共参考资料工具仅支持已授权的明确公共来源版本；私有资料请使用运行正文或资料检索。')

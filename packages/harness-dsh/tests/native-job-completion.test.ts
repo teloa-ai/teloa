@@ -7,6 +7,10 @@ import {nativeHotCausalityFixture,textAnswer,toolAnswer} from './fixtures/native
 import {patchedNativePackage} from './fixtures/native-patched-package.ts'
 import type {NativeJobCompletion} from '../src/native-work-causality.ts'
 import {WorkError} from '@teloa/contract'
+import {taskRunInteractionRequest} from '../src/task-run-interaction.ts'
+import {observeTaskRun} from '../src/task-run-observation.ts'
+import {readTaskRunGroupResult} from '../src/task-run-group-result.ts'
+import {registerTaskToolGuard} from '../src/task-tool-guard.ts'
 
 type Fixture=Awaited<ReturnType<typeof nativeHotCausalityFixture>>
 type Admission=(candidate:NativeJobCompletion,dispatch:()=>void)=>Promise<void>
@@ -16,6 +20,38 @@ async function installJobTools(t:Parameters<typeof nativeHotCausalityFixture>[0]
 }
 
 async function until(check:()=>boolean,label:string){const deadline=Date.now()+2000;while(!check()){assert.ok(Date.now()<deadline,label);await new Promise(resolve=>setTimeout(resolve,5))}}
+test('独立追问后台通知沿真实本人根继续，旧报告固定且不能只凭通知标记取授权',{timeout:10000},async t=>{
+ const f=await nativeHotCausalityFixture(t)
+ f.adapter.scripts.push(textAnswer);await f.send('original-task');await f.agent.whenIdle()
+ const evidence=observeTaskRun(f.events(),'original-task');assert.ok(evidence.state==='ended')
+ const run={state:'ended' as const,evidence,stopRequestedAt:null,nativeRequestId:'original-task'}
+ const admissions:{producer:string;sourceKind?:string}[]=[],backgroundRequests:string[]=[]
+ f.ctx.provide('teloaResidentInputAdmission',{acquire:async(input:{sessionId:string;producer:string;sourceKind?:string})=>{admissions.push(input);if(input.producer!=='prompt'&&!(input.producer==='task-run'&&input.sourceKind==='tool-jobs'))throw new WorkError('teloa/forbidden','没有独立交互续作来源');return {assertCurrent(){}}}})
+ const current=()=>taskRunInteractionRequest(f.events(),run,id=>{try{f.work.readReviewState(f.agent,id);return true}catch{return false}})
+ registerTaskToolGuard(f.ctx,async()=>({allowedTools:['hot_result'],nativeRequestId:current()??'not-authorized'}))
+ await f.ctx.plugin(LocalJobRegistry,{});await installJobTools(t,f)
+ let settle!:(value:JobOutcome)=>void,id!:JobId
+ t.after(()=>settle?.({status:'killed'}))
+ f.setToolAction(async()=>{id=f.ctx.jobs.start({kind:'bash',label:'本人追问的后台工作',owner:f.agent.id,run:()=>({done:new Promise<JobOutcome>(resolve=>{settle=resolve}),cancel:()=>settle({status:'killed'})})})})
+ f.ctx.on('agent/pre-step',async(payload,next)=>{
+  if(payload.messages.some(message=>message.source.kind==='tool-jobs')){
+   assert.equal(taskRunInteractionRequest(f.events(),run),undefined,'仅通知标记与历史本人消息不足以授权')
+   const request=current();assert.equal(request,'independent-followup');backgroundRequests.push(request!)
+  }
+  return next()
+ })
+ f.adapter.scripts.push(toolAnswer,textAnswer,textAnswer)
+ await f.send('independent-followup');await f.agent.whenIdle();assert.equal(f.adapter.requests.length,3)
+ settle({status:'completed',result:'追问工作已完成'})
+ await until(()=>f.events().some(event=>event.type==='user/message'&&event.data.source.kind==='tool-jobs'),'真实完成通知未到达')
+ await f.agent.whenIdle()
+ assert.equal(f.ctx.jobs.get(id,f.agent.id).status,'completed');assert.equal(f.adapter.requests.length,4)
+ assert.deepEqual(backgroundRequests,['independent-followup'])
+ assert.ok(admissions.some(input=>input.producer==='task-run'&&input.sourceKind==='tool-jobs'))
+ assert.equal(readTaskRunGroupResult(f.events().slice(0,evidence.endSeq+1),'original-task'),'done')
+ assert.deepEqual(observeTaskRun(f.events().slice(0,evidence.endSeq+1),'original-task'),evidence)
+})
+
 for(const mode of ['completion','expired','revoked','foreign','foreign-owner','late-revoked','root-ended','cancel-wait','revoke-then-cancel'] as const)test('真实 JobTools 完成通知只承接实际工具启动的原受理根：'+mode,{timeout:10000},async t=>{
  const f=await nativeHotCausalityFixture(t)
  await f.ctx.plugin(LocalJobRegistry,{})

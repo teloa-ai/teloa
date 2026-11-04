@@ -48,3 +48,15 @@ test('参考资料目录按固定server参数解释，未知有限参数不能�
  const rules=[catalog,templates,unknown,malformed,foreign],eligible=selectableRoleToolGrantRules(rules)
  assert.deepEqual(eligible,[catalog,templates]);assert.deepEqual(selectedRoleToolGrantRules(eligible,new Set(rules.flatMap(rule=>rule.allowed.map(args=>roleToolGrantSelectionKey(rule,args))))),[catalog,templates])
 })
+
+test('本人文件范围经权限选择、恢复日志与正式授权API保持读写分别的固定路径',async()=>{
+ const rules=[{name:'read',allowed:[],workspaceFiles:'default-workspace' as const,workspacePaths:{files:['input.csv'],directories:[]}},{name:'write',allowed:[],workspaceFiles:'default-workspace' as const,workspacePaths:{files:['output.md'],directories:[]}}]
+ const selected=selectedRoleToolGrantRules(rules,new Set(rules.map(rule=>roleToolGrantSelectionKey(rule))))
+ assert.deepEqual(selected,rules)
+ let stored:string|null=null,seen:unknown
+ const api=createRoleToolGrantApi(async(endpoint,payload)=>{assert.equal(endpoint,'role-tools/change');seen=payload;throw Error('lost response')},{read:()=>stored,write:value=>{stored=value},clear:()=>{stored=null}})
+ await assert.rejects(api.change({roleId,expectedRoleVersion:2,action:'save',rules:selected}))
+ assert.deepEqual(api.pending()?.rules,rules);assert.deepEqual(JSON.parse(stored!).request.rules,rules)
+ const resumed=createRoleToolGrantApi(async(_endpoint,payload)=>{assert.deepEqual(payload,seen);return{roleId,roleVersion:3,state:'active',rules,createdAt:'2026-11-04T00:00:00Z'}},{read:()=>stored,write:value=>{stored=value},clear:()=>{stored=null}})
+ await resumed.recover();assert.equal(stored,null)
+})

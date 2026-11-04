@@ -8,7 +8,7 @@ import {Context} from '@deepseek-ai/cordis'
 import {SessionProjectionRegistry} from '@deepseek-ai/dsh-session-projection'
 import {SystemPrompt} from '@deepseek-ai/dsh-system-prompt'
 import {SessionId,SessionSeq,SessionLogOffset,type SessionEvent} from '@deepseek-ai/dsh-session'
-import {createUserMessage,LlmAdapter,type GenerateOptions,type StreamChunk} from '@deepseek-ai/dsh-llm'
+import {createSystemMessage,createUserMessage,LlmAdapter,type GenerateOptions,type StreamChunk} from '@deepseek-ai/dsh-llm'
 import {initializeTeloaDatabase,ResourceService,RoleService,TaskService,ConversationWorkService,TaskRunService,ObjectConversationService,TaskRunRuntimeLinkService,TaskRunSubagentService} from '@teloa/backend'
 import {setupRoleWork,identity} from '../../backend/tests/role-work-test-fixture.ts'
 import {testRoleResponsibility} from '../../backend/tests/role-test-fixture.ts'
@@ -57,7 +57,8 @@ test('真实 PG/JSONL 与 Loop：恢复未领取的 Team relay，只认本人原
  const initial=createUserMessage({source:{kind:'user',rpcId:run.nativeRequestId},content:[{type:'text',text:run.inputText}]})
  const message=createUserMessage({source:{kind:'agent-message',form:'relay',senderSessionId:childId},content:[{type:'text',text:'Team message from helper:'},{type:'text',text:'PERSISTED_TEAM_RELAY'}]})
  const row=(type:string,data:unknown,seq:number,surfaceOp?:string)=>({type,data,seq:SessionSeq(seq),time:seq+1,...surfaceOp?{surfaceOp}:{}}) as SessionEvent
- const events=[row('turn/start',{turn:1},0),row('user/message',initial,1,'append'),row('turn/end',{turn:1,reason:{kind:'completed'}},2),row('team/member',{version:2,teamId:sessionId,member:{id:childId,name:'helper',description:'复核',provider:'spawn',context:'fresh',phase:'active'}},3),row('agent/inbox/spliced',{target:'next-turn',start:0,removedCount:0,inserted:[message]},4)]
+ // 恢复前缀也必须是正式 v4 生命周期：首个 surface 是系统头，且位于真实 turn/step 内。
+ const events=[row('turn/start',{turn:1},0),row('step/start',{turn:1,step:1},1),row('system/message',{turn:1,step:1,message:createSystemMessage('合成恢复测试的系统规则')},2,'append'),row('user/message',initial,3,'append'),row('step/end',{turn:1,step:1},4),row('turn/end',{turn:1,reason:{kind:'completed'}},5),row('team/member',{version:2,teamId:sessionId,member:{id:childId,name:'helper',description:'复核',provider:'spawn',context:'fresh',phase:'active'}},6),row('agent/inbox/spliced',{target:'next-turn',start:0,removedCount:0,inserted:[message]},7)]
  const header={...graph.sessionPackage.Session.create(sessionId).header,delegationDepth:0}
  for(const [meta,history] of [[header,events],[{...graph.sessionPackage.Session.create(childId).header,parentSession:sessionId,delegationDepth:1},[]]] as const){
   const writer=await ctx.sessionPersistence.create(meta,{inheritedEventCount:SessionLogOffset(0)});await writer.append(history);await writer.flush();await writer.close()
@@ -91,7 +92,7 @@ test('真实 PG/JSONL 与 Loop：恢复未领取的 Team relay，只认本人原
  const request={requestId:randomUUID(),controlId:control.id,expectedVersion:control.version,candidateRunIds:[run.id]}
  await resident.ownerRpc('work-recovery/resume',request,new AbortController().signal)
  await ctx.agents.get(sessionId)!.whenIdle()
- assert.equal(modelCalls,1);assert.equal(restores,1)
+ assert.equal(modelCalls,1,JSON.stringify(ctx.agents.get(sessionId)!.session.snapshotEvents().filter(event=>event.type==='turn/end')));assert.equal(restores,1)
  await resident.ownerRpc('work-recovery/resume',request,new AbortController().signal)
  assert.equal(restores,1);assert.equal(modelCalls,1)
 })

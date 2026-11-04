@@ -54,16 +54,17 @@ export function createTaskRunBackground(ctx:Context,links:TaskRunRuntimeLinks,ad
  }
  const record=(job:JobView)=>{
   if(job.owner===undefined)return
-  const run=jobBindings.get(job.id)??bindings.get(job.owner)
+  const known=jobBindings.get(job.id),run=known??bindings.get(job.owner)
   if(!run)return
-  jobBindings.set(job.id,run)
   const key=run.sessionId+':'+job.id,previous=recorded.get(key)
   if(previous===job.status)return
-  const events=previous===undefined?readSessionEvents(agentFor(run.sessionId).session):undefined
+  const events=known===undefined?readSessionEvents(agentFor(run.sessionId).session):undefined
   recorded.set(key,job.status)
   const prior=pending.get(run.sessionId)??Promise.resolve()
   const next=prior.then(async()=>{
-   if(events&&!(admit?.(run)??observeTaskRunTimeline(events,run.nativeRequestId,undefined,undefined,await goalObservation?.(run,events)).authorized)){recorded.delete(key);return}
+   if(events&&!(admit?.(run)??observeTaskRunTimeline(events,run.nativeRequestId,undefined,undefined,await goalObservation?.(run,events)).authorized)){if(recorded.get(key)===job.status)recorded.delete(key);return}
+   // 来源核验完成前的内存占位不能授予后续settled事件归属，否则紧邻事件会跳过原请求检查。
+   if(!jobBindings.has(job.id))jobBindings.set(job.id,run)
    await links.put({runId:run.id,kind:'job',nativeId:runtimeId+':'+job.id,sessionId:run.sessionId,payload:{record:'job',runtimeId,requestId:run.nativeRequestId,jobId:job.id,status:job.status}})
   })
   pending.set(run.sessionId,next)

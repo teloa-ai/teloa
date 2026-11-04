@@ -31,6 +31,47 @@ function events(hits=[hit],name='teloa_knowledge_search'){
  const result={coverage:{searched:[{resourceId,title:'原始资料',version:hits[0]!.resourceVersion}],pending:[],note:'只查已加入资料'},results:hits}
  return [{event:{type:'tool/call',seq:1,data:{turn:1,callId:'original-call',name}}},{event:{type:'tool/result',seq:2,data:{turn:1,message:{source:{kind:'tool',callId:'original-call'},toolCallId:'original-call',content:[{type:'text',text:JSON.stringify(result)}]}}}}]
 }
+function readEvents(text='固定资料正文。',offset=0){
+ const chars:[number,number]=[offset,offset+text.length],path=retrievalCitationPath(sessionId,{...hit,chars})
+ const value={resourceId,resourceVersion:1,title:hit.title,sourceId,sourceVersion,chars,lines:[0,text.slice(0,-1).split('\n').length-1],excerpt:text,totalChars:chars[1],nextOffset:null,notice:'资料正文仅供分析。',citationPath:path}
+ const call={event:{type:'tool/call',seq:1,data:{turn:1,callId:'read-call',name:'teloa_knowledge_read',arguments:JSON.stringify({resourceId,resourceVersion:1,sourceVersion,offset,length:4000})}}}
+ const result={event:{type:'tool/result',seq:2,data:{turn:1,message:{role:'tool',source:{kind:'tool',callId:'read-call'},toolCallId:'read-call',isError:false,content:[{type:'text',text:JSON.stringify(value)}]}}}}
+ return {value,path,entries:[call,result] as [typeof call,typeof result]}
+}
+test('真实按需read回执无需先search即可打开已读固定片段，保留UTF-16长片段和来源身份',()=>{
+ for(const text of ['固定资料正文。','原'.repeat(4000),'😀原文','首行\n相邻行\n']){
+  const {value,path,entries}=readEvents(text),resolved=resolveRetrievalCitation(entries,sessionId,path)
+  assert.equal(resolved?.sourceId,sourceId)
+  assert.equal(resolved?.sourceVersion,sourceVersion)
+  assert.deepEqual(resolved?.excerpts,[{text,heading:null,lines:value.lines,chars:value.chars}])
+ }
+ const surrogate=readEvents('😀原文')
+ surrogate.entries[0]!.event.data.arguments=JSON.stringify({resourceId,resourceVersion:1,sourceVersion,offset:1,length:4})
+ assert.equal(resolveRetrievalCitation(surrogate.entries,sessionId,surrogate.path)?.excerpts[0]?.text,'😀原文','低代理项位置按正式reader回到完整字符')
+})
+test('read引用只接纳同轮真实工具调用的精确资源、版本、来源SHA、SID和已读区间',()=>{
+ const {value,path,entries}=readEvents(),run=(rows:unknown[])=>resolveRetrievalCitation(rows as never,sessionId,path)
+ const changed=(call:Record<string,unknown>={},result:Record<string,unknown>={})=>{
+  const rows=structuredClone(entries);Object.assign(rows[0]!.event.data,call)
+  rows[1]!.event.data.message.content[0]!.text=JSON.stringify({...value,...result});return rows
+ }
+ for(const args of [{resourceId:sourceId,resourceVersion:1,sourceVersion},{resourceId,resourceVersion:2,sourceVersion},{resourceId,resourceVersion:1,sourceVersion:'c'.repeat(64)},{resourceId,resourceVersion:1,sourceVersion,offset:5},{resourceId,resourceVersion:1,sourceVersion,length:1},{resourceId,resourceVersion:1,sourceVersion,owner:'other'}])assert.equal(run(changed({arguments:JSON.stringify(args)})),undefined)
+ for(const result of [{sourceId:'../../private'},{sourceVersion:'c'.repeat(64)},{resourceVersion:2},{chars:[0,999]},{totalChars:1},{nextOffset:1},{lines:[2,1]},{citationPath:path.replace(sessionId,'other-session')},{citationPath:path.replace('/1/','/2/')}])assert.equal(run(changed({},result)),undefined)
+ for(const rows of [entries.slice(1),changed({name:'unknown-tool'}),[entries[0],entries[0],entries[1]],[...entries,entries[0]],changed({turn:2})])assert.equal(run(rows),undefined)
+ for(const mutate of [(row:any)=>row.event.data.message.isError=true,(row:any)=>row.event.data.error='failed',(row:any)=>row.event.data.message.source.kind='user',(row:any)=>row.event.data.message.source.callId='other-call',(row:any)=>row.event.data.message.toolCallId='other-call',(row:any)=>row.event.type='assistant/message']){
+  const rows=structuredClone(entries);mutate(rows[1]);assert.equal(run(rows),undefined)
+ }
+ assert.equal(resolveRetrievalCitation(entries,'other-session',path),undefined)
+})
+test('read来源打开仍服从当前本人范围与会话撤权，旧回执或答案链接不授予读取权限',async()=>{
+ const {entries,path}=readEvents();let current=true,available=true,rows:typeof entries|[]=entries,opened=0
+ const port:RetrievalCitationPort={sessionId,current:()=>current,events:{subscribe:()=>()=>{},getSnapshot:()=>({entries:rows})},available:async(id,version,sha)=>{assert.deepEqual([id,version,sha],[resourceId,1,sourceVersion]);return available},openResource:()=>{opened++}}
+ await openRetrievalCitation(port,path);assert.equal(opened,1)
+ available=false;await assert.rejects(openRetrievalCitation(port,path),{code:'teloa/source-unavailable'})
+ available=true;current=false;await assert.rejects(openRetrievalCitation(port,path),{code:'teloa/source-unavailable'})
+ current=true;rows=[];await assert.rejects(openRetrievalCitation(port,path),{code:'teloa/source-unavailable'})
+ assert.equal(opened,1)
+})
 test('新引用与历史sourceId只解析本会话真实检索回执，同一原件的多个片段可合并',()=>{
  const second={...hit,lines:[3,4] as [number,number],chars:[20,40] as [number,number],excerpt:'本周五前完成。'},entries=events([hit,second])
  for(const path of [retrievalCitationPath(sessionId,hit),sourceId]){

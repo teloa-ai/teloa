@@ -30,7 +30,8 @@ import {retainNativeInputs} from './native-input-retention.js'
 import {createDraftAttachmentStore} from './draft-attachment-store.js'
 import {DraftAttachmentReview} from './DraftAttachmentReview.js'
 import {persistNativeDraftAttachments,createDraftAttachmentReviews} from './native-draft-attachments.js'
-import {createFailedTurnContinuation} from './failed-turn-continuation.js'
+import {createSessionContinuation} from './session-continuation.js'
+import {SessionContinuationButton} from './SessionContinuationButton.js'
 import {draftContinuityCopy} from './draft-continuity-copy.js'
 import {createBusinessBuilderApi} from './business-builder-api.js'
 import {createBusinessResponsibilityApi} from './business-responsibility-api.js'
@@ -485,6 +486,7 @@ export async function apply(ctx: Context): Promise<void> {
     ensure:ensureConversation,
     selectBinding:sessionId=>readTaskRunSelectedBinding(taskRunChat,sessionId,()=>ensureConversation(sessionId)),
     readRunSession:sessionId=>readNativeSessionForOpening(requireWorkContext().sessions,sessionId),
+    readRunInteraction:async sessionId=>{const value=await call('task-runs/interaction',{sessionId});if(!value||typeof value!=='object'||!('sessionId'in value)||value.sessionId!==sessionId||!('available'in value)||typeof value.available!=='boolean')throw Error('任务续聊状态无法核对。');return value.available},
     isNativeChild:sessionId=>isNativeChildSession(requireWorkContext().sessions,brandString<SessionId>(sessionId)),
     homeSkills:async signal=>{const value=await call('capabilities/home-skills',{},signal);if(!isSkillCatalog(value))throw Error('首页技能目录格式不正确。');return value},
     catalog:async(sessionId)=>{
@@ -881,31 +883,21 @@ export async function apply(ctx: Context): Promise<void> {
     // 本轮因工作额度停止时按原因与范围本地化说明下一步，不显示服务端原文与内部 code；其他本轮失败仍交给原生 renderer。
     const LocalizedBudgetTurnError=(props:ComponentProps<typeof BudgetTurnErrorView>)=>createElement(I18nProvider,{runtime:requireI18n()},createElement(BudgetTurnErrorView,props))
     const LocalizedPromptRejection=(props:ComponentProps<typeof PromptRejectionToast>)=>createElement(I18nProvider,{runtime:requireI18n()},createElement(PromptRejectionToast,props))
+    const LocalizedSessionContinuation=(props:ComponentProps<typeof SessionContinuationButton>)=>createElement(I18nProvider,{runtime:requireI18n()},createElement(SessionContinuationButton,props))
+    child.slots.inject('conversation.input.right',()=>child.slots.register({name:'conversation.input.right',id:'teloa-session-continuation',order:50,inject:sessionId=>{
+      const binding=child.sessions.binding(sessionId),monitor=homeSubmissionMonitor(sessionId)
+      let previousOwner:string|null|undefined,identity={}
+      const port=createSessionContinuation({sessionId,
+        facts:()=>{const session=binding?.session.getSnapshot(),selected=work.getSnapshot(),owner=businessBuilder.getSnapshot().namespace;if(owner!==previousOwner){previousOwner=owner;identity={}}return {identity,current:!!binding&&child.sessions.binding(sessionId)===binding&&mainSession.getSnapshot()===sessionId&&selected.sessionId===sessionId&&!!owner,ready:connection.state.getSnapshot()==='connected'&&selected.status==='ready'&&!session?.removed&&!session?.subagent,running:session?.running??false,pending:!!session?.pendingSubmissions.length||monitor.getSnapshot(),blocked:!!child.conversation.blocks.storeFor(sessionId).getSnapshot()}},
+        subscribe:listener=>{const off=[binding?.session.subscribe(listener),binding?.eventSource.subscribe(listener),mainSession.subscribe(listener),work.subscribe(listener),businessBuilder.subscribe(listener),connection.state.subscribe(listener),monitor.subscribe(listener),child.conversation.blocks.storeFor(sessionId).subscribe(listener)];return()=>{for(const stop of off)stop?.()}},
+        inspect:async()=>{const value=await call('session-continuations/inspect',{sessionId});if(!value||typeof value!=='object'||!('sessionId'in value)||!('available'in value))throw Error('原会话恢复状态不可用');return value as {sessionId:string;available:boolean;prefixSha256?:string}},
+        resume:async prefixSha256=>{const value=await call('session-continuations/resume',{sessionId,prefixSha256});if(!value||typeof value!=='object'||!('sessionId'in value)||value.sessionId!==sessionId||!('accepted'in value)||value.accepted!==true)throw Error('原会话恢复尚未确认');return value},
+      })
+      return {port}
+    }},LocalizedSessionContinuation))
     child.slots.inject('conversation.input.rejection',()=>child.slots.register({name:'conversation.input.rejection'},LocalizedPromptRejection))
     child.slots.inject('conversation.chat.node',()=>child.slots.register({name:'conversation.chat.node',key:'turn-error',priority:-100,locale:'chat',inject:sessionId=>{
-      const binding=child.sessions.binding(sessionId),input=binding?child.conversation.input.for(binding.ctx):undefined,monitor=homeSubmissionMonitor(sessionId)
-      const continuation=binding&&input?createFailedTurnContinuation({
-        read:()=>{
-          const session=binding.session.getSnapshot(),draft=input.state.getSnapshot(),selection=work.getSnapshot(),identity=businessBuilder.getSnapshot()
-          return {owner:identity.namespace,binding,current:mainSession.getSnapshot()===sessionId&&child.sessions.binding(sessionId)===binding&&selection.sessionId===sessionId,ready:connection.state.getSnapshot()==='connected'&&session.openState==='open'&&!session.removed&&!session.subagent&&selection.status==='ready'&&selection.conversation?.purpose!=='task-run',blocked:!!child.conversation.blocks.storeFor(sessionId).getSnapshot(),running:session.running,pending:session.pendingSubmissions.length>0||session.awaitingFirstTurn||draft.queue.length>0,unknown:monitor.getSnapshot(),editable:draft.phase==='plain'&&!draft.claim,empty:!draft.draft&&!draft.attachmentIds.length&&!draft.occurrences.length,entries:binding.eventSource.getSnapshot().entries}
-        },
-        subscribe:listener=>{const off=[binding.session.subscribe(listener),binding.eventSource.subscribe(listener),input.state.subscribe(listener),monitor.subscribe(listener),mainSession.subscribe(listener),work.subscribe(listener),businessBuilder.subscribe(listener),connection.state.subscribe(listener),child.sessions.list.subscribe(listener),child.conversation.blocks.storeFor(sessionId).subscribe(listener),homeContextApi.subscribe(listener)];return()=>{for(const stop of off)stop()}},
-        eligible:async()=>{
-          if(!await isHomeAssistantContext(sessionId))return
-          const context=await homeContextApi.read(sessionId)
-          // 正常服务已将已提交会话的归属锁定；两次 fresh read 仍须保持原 owner/scope/role/version。
-          if(context&&!context.locked)return
-          return JSON.stringify([businessBuilder.getSnapshot().namespace,sessionId,context])
-        },send:text=>{
-          const current=input.state.getSnapshot()
-          if(current.phase!=='plain'||current.claim||current.draft||current.attachmentIds.length||current.occurrences.length)throw Error('当前草稿已变化，未重试。')
-          input.setDraft(text)
-          const restored=input.state.getSnapshot()
-          if(restored.draft!==text||restored.phase!=='plain'||restored.claim||restored.attachmentIds.length)throw Error('原文未能准确恢复，请在原输入框核对。')
-          input.submit('queue','click')
-        },
-      }):undefined
-      return {...(continuation?{continuation}:{}),renderer:{subscribe:(listener:()=>void)=>child.slots.subscribe('conversation.chat.node',listener),getSnapshot:()=>child.slots.entries('conversation.chat.node'),isLive:(entry:import('@deepseek-ai/dsh-client-ui-slots').StoredEntry)=>child.slots.entries('conversation.chat.node').includes(entry)}}
+      return {renderer:{subscribe:(listener:()=>void)=>child.slots.subscribe('conversation.chat.node',listener),getSnapshot:()=>child.slots.entries('conversation.chat.node'),isLive:(entry:import('@deepseek-ai/dsh-client-ui-slots').StoredEntry)=>child.slots.entries('conversation.chat.node').includes(entry)}}
     }},LocalizedBudgetTurnError))
     child.slots.inject('conversation.chat.turnTail',()=>child.slots.register({
       name:'conversation.chat.turnTail',id:'teloa-produced-files',order:-100,

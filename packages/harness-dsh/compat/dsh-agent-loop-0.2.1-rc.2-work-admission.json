@@ -7,15 +7,15 @@
     {
       "path": "lib/index.js",
       "beforeSha256": "cf57e3ecd487ac5c2553455aaa5cef2c6fb41e6bd61be5aa455675d1d7193033",
-      "afterSha256": "9947e6edecc0769203832e72737231dee42ddf3551e745fe45e003a93b06438e"
+      "afterSha256": "ea8ee83280123ce7b99fc477e01017ab0ed527d1b23c399e355850d63b1f0b1b"
     },
     {
       "path": "lib/types/index.d.ts",
       "beforeSha256": "906f202b859b11f7b0a399d8c4921c47384dd6177c990d59b8a93026a9875e8e",
-      "afterSha256": "e9e7564fffc1980a772039a3dc01457f045b7657cdf3bab15d8308efb13f96a1"
+      "afterSha256": "41c6e541a5c3d7714ab75de0074fd396be83252ea9cb2a170508f4ffb8c2cdb3"
     }
   ],
-  "patchSha256": "df1de694f6f68e40473343dc2e8350aa23e68ea9499b745f9111f2a4a00ea188",
+  "patchSha256": "c1fe257b2aff626c076398124a7379fe66b1b8e7c6814cef1d77538fa35b270d",
   "api": [
     "AgentLoop.requireWorkAdmission",
     "AgentLoop.installWorkAdmission",
@@ -38,7 +38,9 @@
     "AgentLoopProgressCheckpoint",
     "AgentLoopRestoreAdmissionLease.wakePending",
     "AgentLoopWorkAdmissionInput.restore-publish",
-    "inboxProjectionDefinition"
+    "inboxProjectionDefinition",
+    "AgentLoop.wakePending",
+    "AgentLoopRestoreAdmissionInput.liveAgent"
   ],
   "scope": {
     "admission": "Exact driver-owned turn/claim/step/request/planned tool input/context and cleanup phases, module-private dispatch through actual Agent constructor binding",
@@ -62,6 +64,8 @@
     "inputShutdown": "An enabled durable input checkpoint retains unclaimed Inbox during owner/factory disposal. Explicit user cancellation and unguarded Free retain their original semantics.",
     "restoreWake": "Optional frozen lease own data wakePending:true requests the existing driver only after final restore admission, publication and temporary owner release; absent preserves idle and original latched-wake semantics. Invalid getter or values fail before restore writes.",
     "restoreBinding": "Module-private restore-publish descriptor after actual Session/Agent enter and before either public creation notification; deployment binds verified cold roots once here. Public events cannot invoke this descriptor or consume the proof.",
-    "inboxProjection": "The root package exports the original standard Inbox projection object already registered by AgentLoop; maintenance can register and cold-fold it without Agent, Loop, model, tool or work-admission construction. No duplicate fold, mutation command or execution authority is introduced."
+    "inboxProjection": "The root package exports the original standard Inbox projection object already registered by AgentLoop; maintenance can register and cold-fold it without Agent, Loop, model, tool or work-admission construction. No duplicate fold, mutation command or execution authority is introduced.",
+    "liveRestore": "Explicit wakePending on the exact published idle Agent enters official maintenance, flushes and rereads the retained owned writer, privately re-admits the unchanged complete Inbox, and wakes that driver without appending input. Missing policy, cancellation, changed prefix or ownership rejects. Public events grant no authority.",
+    "hostFold": "An admitted pre-step returning no messages may continue to a real pending next-step input without inventing step/model events; an empty queue keeps the original completion behavior."
   }
 }

@@ -69,20 +69,60 @@ export function projectTurnAliasCitations(entries:ConversationPlanEvents['entrie
  return [...found.values()]
 }
 const identity=(hit:RetrievalSearchHit)=>JSON.stringify([hit.resourceId,hit.resourceVersion,hit.sourceId,hit.sourceVersion])
+/** 按需 read 与 search 共用来源导航，但 read 的 4,000 UTF-16 字符限额不是检索摘录的字节限额。 */
+function readKnowledgeHit(value:unknown,input:unknown,sessionId:string):RetrievalSearchHit|undefined{
+ try{
+  const args=typeof input==='string'?JSON.parse(input):input
+  if(!isRecord(args)||Object.keys(args).some(key=>!['resourceId','resourceVersion','sourceVersion','offset','length'].includes(key))||!isRecord(value))return
+  const keys=['resourceId','resourceVersion','title','sourceId','sourceVersion','chars','lines','excerpt','totalChars','nextOffset','notice','citationPath']
+  if(Object.keys(value).some(key=>!keys.includes(key))||keys.some(key=>!Object.hasOwn(value,key)))return
+  const offset=args.offset??0,length=args.length??2000
+  if(!Number.isSafeInteger(offset)||(offset as number)<0||!Number.isSafeInteger(length)||(length as number)<1||(length as number)>4000)return
+  if(typeof value.citationPath!=='string')return
+  const citation=readRetrievalCitationPath(value.citationPath)
+  if(!citation||citation.sessionId!==sessionId||citation.resourceId!==args.resourceId||citation.resourceVersion!==args.resourceVersion||citation.sourceVersion!==args.sourceVersion)return
+  if(value.resourceId!==citation.resourceId||value.resourceVersion!==citation.resourceVersion||value.sourceVersion!==citation.sourceVersion)return
+  if(typeof value.title!=='string'||!value.title.trim()||value.title.length>200||typeof value.sourceId!=='string'||!/^[a-zA-Z0-9_-]{1,128}$/.test(value.sourceId))return
+  if(!Array.isArray(value.chars)||value.chars.length!==2||value.chars.some((n,i)=>n!==citation.chars[i])||typeof value.excerpt!=='string'||!value.excerpt.trim())return
+  const [start,end]=citation.chars,text=value.excerpt,total=value.totalChars
+  if(!Number.isSafeInteger(total)||(total as number)<end||text.length!==end-start||typeof value.notice!=='string')return
+  if(start!==offset&&!(start===(offset as number)-1&&/^[\uD800-\uDBFF][\uDC00-\uDFFF]/.test(text)))return
+  const limit=Math.min(total as number,start+(length as number))
+  if(end!==limit&&end!==limit-1&&!(length===1&&end===start+2))return
+  if(value.nextOffset!==(end<(total as number)?end:null))return
+  if(!Array.isArray(value.lines)||value.lines.length!==2||!value.lines.every(n=>Number.isSafeInteger(n)&&n>=0)||value.lines[1]<value.lines[0])return
+  if(value.lines[1]-value.lines[0]!==text.slice(0,Math.max(0,text.length-1)).split('\n').length-1)return
+  return {resourceId:citation.resourceId,resourceVersion:citation.resourceVersion,sourceVersion:citation.sourceVersion,sourceId:value.sourceId,title:value.title,chars:citation.chars,lines:[value.lines[0],value.lines[1]],excerpt:text,heading:null,score:0,citationPath:value.citationPath}
+ }catch{return}
+}
 function trustedHits(entries:ConversationPlanEvents['entries'],sessionId:string):RetrievalSearchHit[]{
  const calls=new Map<string,number>(),hits:RetrievalSearchHit[]=[]
+ const reads=new Map<string,{turn:number;input:unknown}>(),seen=new Set<string>(),ambiguous=new Set<string>(),readHits:{callId:string;hit:RetrievalSearchHit}[]=[]
  for(const {event} of entries){
   const data=event.data;if(!isRecord(data)||!Number.isSafeInteger(data.turn))continue
+  if(event.type==='tool/call'&&typeof data.callId==='string'){
+   if(seen.has(data.callId))ambiguous.add(data.callId)
+   seen.add(data.callId)
+   if(data.name==='teloa_knowledge_read')reads.set(data.callId,{turn:data.turn as number,input:data.arguments})
+  }
   if(event.type==='tool/call'&&data.name==='teloa_knowledge_search'&&typeof data.callId==='string')calls.set(data.callId,data.turn as number)
   if(event.type!=='tool/result'||data.error||!isRecord(data.message))continue
   const message=data.message
-  if(message.isError||typeof message.toolCallId!=='string'||calls.get(message.toolCallId)!==data.turn||!isRecord(message.source)||message.source.kind!=='tool'||message.source.callId!==message.toolCallId||!Array.isArray(message.content))continue
+  if(message.isError||typeof message.toolCallId!=='string'||!isRecord(message.source)||message.source.kind!=='tool'||message.source.callId!==message.toolCallId||!Array.isArray(message.content))continue
+  const read=reads.get(message.toolCallId),trustedRead=read&&read.turn===data.turn&&!ambiguous.has(message.toolCallId)&&message.role==='tool'
+  if(!trustedRead&&calls.get(message.toolCallId)!==data.turn)continue
   try{
-   const value=readRetrievalSearchResult(JSON.parse(message.content.filter(isRecord).filter(item=>item.type==='text').map(item=>item.text).join('\n')))
+   const parsed=JSON.parse(message.content.filter(isRecord).filter(item=>item.type==='text').map(item=>item.text).join('\n'))
+   if(trustedRead){
+    const hit=readKnowledgeHit(parsed,read.input,sessionId);if(hit)readHits.push({callId:message.toolCallId,hit})
+    continue
+   }
+   if(calls.get(message.toolCallId)!==data.turn)continue
+   const value=readRetrievalSearchResult(parsed)
    for(const hit of value.results)if(hit.citationPath===undefined||readRetrievalCitationPath(hit.citationPath)?.sessionId===sessionId)hits.push(hit)
   }catch{/* 原回执损坏、调用不匹配或会话不一致不能产生来源入口。 */}
  }
- return hits
+ return [...hits,...readHits.filter(row=>!ambiguous.has(row.callId)).map(row=>row.hit)]
 }
 /** 旧 sourceId 只在本会话真实工具回执中唯一映射到固定原件；相同原件的多个片段保留。 */
 export function resolveRetrievalCitation(entries:ConversationPlanEvents['entries'],sessionId:string,path:string):RetrievalCitation|undefined{

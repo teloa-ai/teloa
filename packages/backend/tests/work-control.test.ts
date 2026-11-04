@@ -33,6 +33,7 @@ test('已结项来源只能沿真实持久谱系取得后继控制许可，外�
   const api=await loadRoleWorkModule('work-control');await api.initializeWorkControl(f.pool)
   const {owner,role,taskId}=await roleFixture(f.pool,'employee'),runId=await insertRoleRun(f.pool,owner,role.id,taskId,'ended'),db=await f.pool.connect();let lineage
   try{await db.query('begin');lineage=await new WorkLineageService(f.pool,identity).bindTask(db,owner,{taskId,source:{kind:'owner-task',taskId}});await db.query('commit')}finally{db.release()}
+  await f.pool.query('insert into teloa_work_control_hosts(owner_id,generation) values($1,1)',[owner])
   const service=new api.WorkControlService(f.pool,identity,{hostGeneration:()=>1,ownerAuthority:{authorize:async()=>({assertCurrent(){}})}})
   assert.equal(typeof service.acquireForLineage,'function','需要固定持久来源控制口，不放宽已结项 Run')
   await assert.rejects(service.acquireForRun(owner,{runId,mode:'new-input'}),{code:'teloa/forbidden'})
@@ -53,6 +54,7 @@ test('整项控制先封旧许可，真实孩子未结清/外部未知时保留�
   const db=await f.pool.connect();let lineage
   try{await db.query('begin');lineage=await new WorkLineageService(f.pool,identity).bindTask(db,owner,{taskId,source:{kind:'owner-task',taskId}});await db.query('commit')}finally{db.release()}
   let settled=false,unknown=['external:unknown'],host=1
+  await f.pool.query('insert into teloa_work_control_hosts(owner_id,generation) values($1,1)',[owner])
   const service=new api.WorkControlService(f.pool,identity,{hostGeneration:()=>host,ownerAuthority:{authorize:async()=>({assertCurrent(){}})},inspectRun:async()=>({settled,unknownOperationIds:unknown})})
   const current=await service.get(owner,{controlId:lineage.roundControlId}),permit=await service.acquireForRun(owner,{runId,expectedGeneration:1,mode:'new-input'})
   permit.lease.assertCurrent()

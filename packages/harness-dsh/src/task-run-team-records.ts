@@ -17,11 +17,13 @@ export function pendingLegacyTeamMessages(events:readonly SessionEvent[]):readon
 /** 消息正文不参与授权；身份全来自官方 producer 的结构化 source。 */
 /** 群追加原生请求身份在续接集合中的键。 */
 export const groupRunAppendKey=(rpcId:string)=>JSON.stringify(['group-append',rpcId])
+export const nativeRunContinuationKey=(id:string)=>JSON.stringify(['native-continuation',id])
 export function taskRunTeamMessageKey(event:SessionEvent):string|undefined{
  if(event.type!=='user/message'||event.surfaceOp!=='append')return undefined
  return teamInputKey(event.data)
 }
 function teamInputKey(message:UserMessage):string|undefined{
+ if(message.source.kind==='plugin:teloa.session-continuation')return nativeRunContinuationKey(message.source.continuationId)
  if(message.source.kind==='subagent-settled')return JSON.stringify(['subagent-settled',message.source.senderSessionId])
  if(message.source.kind==='agent-message'&&message.source.form==='relay')return JSON.stringify(['agent-message',message.source.senderSessionId,message.id])
  // 本人在原群对活动 Run 的追加：只有宿主持久登记过同一 rpcId 的回执，才会出现在续接集合里（见 group-run-append.ts）。

@@ -83,6 +83,13 @@ export function taskRunHasPendingApproval(events:readonly SessionEvent[],run:Run
 
 type MaterializedReceipt={key:string;seq:SessionEvent['seq'];id:string;turn:number;step:number;promptSeq:SessionEvent['seq'];promptId:string;headerSeq:SessionEvent['seq'];stepStartSeq:SessionEvent['seq'];event:SessionEvent;header:SessionEvent;prompt:SessionEvent;stepStart:SessionEvent}
 type Slot={key?:string;read?:()=>string;release?:()=>void;receipts?:Map<number,MaterializedReceipt>;session?:Agent['session']}
+export function readTaskRunApprovalContextReceipts(agent:Pick<Agent,'session'|'ctx'>):readonly MaterializedReceipt[]{const slot=slots.get(agent);return slot?.session===agent.session?structuredClone([...slot.receipts?.values()??[]]):[]}
+/** 仅同Run私有持久检查点恢复；调用方已验完整旧writer前缀，不能由历史读取或source标记调用。 */
+export function restoreTaskRunApprovalContextReceipts(agent:Pick<Agent,'session'|'ctx'>,run:RunIdentity,values:readonly MaterializedReceipt[]):void{
+ const slot=slots.get(agent),key=JSON.stringify([run.id,run.sessionId,run.nativeRequestId]),events=readSessionEvents(agent.session)
+ if(!slot?.receipts||slot.key!==key||slot.session!==agent.session)throw new WorkError('teloa/conflict','原复核审批物化租约不存在。')
+ for(const r of values){if(r.key!==key||!isDeepStrictEqual(events[r.seq],r.event)||!isDeepStrictEqual(events[r.headerSeq],r.header)||!isDeepStrictEqual(events[r.promptSeq],r.prompt)||!isDeepStrictEqual(events[r.stepStartSeq],r.stepStart))throw new WorkError('teloa/conflict','原复核审批物化回执与完整日志不符。');slot.receipts.set(r.seq,structuredClone(r))}
+}
 /** 只读本进程真实签发且进入冻结 LOOP 请求的精确回执；日志自述不能重建信任。 */
 export function hasTaskRunApprovalContextReceipt(agent:Pick<Agent,'session'|'ctx'>,run:RunIdentity,event:SessionEvent,step:{turn:number;step:number;prompt:{id:string}},promptSeq:SessionEvent['seq']):boolean{
  const slot=slots.get(agent),key=JSON.stringify([run.id,run.sessionId,run.nativeRequestId]),receipt=slot?.receipts?.get(event.seq)
@@ -103,12 +110,14 @@ export function leaseTaskRunApprovalContext(agent:Agent,run:RunIdentity,readBoun
  }
  if(slot.key){if(slot.key!==key)throw new WorkError('teloa/conflict','会话已装配其他运行的审批事实。');return slot.release!}
  const current=slot,receipts=new Map<number,MaterializedReceipt>()
- let requestWindow:{turn:number;step:number}|undefined,issued:({turn:number;step:number;after:number;text:string})|undefined
+ let requestWindow:{turn:number;step:number}|undefined,issued:({turn:number;step:number;after:number;text:string;sections?:{name:string;text:string}[]})|undefined
  let boundary:Boundary={},boundaryFailed=false
- const off=readBoundary?agent.ctx.on('system-prompt/assemble',async(_assembly,context,next)=>{
-  if(context.agent===agent){try{boundary=await readBoundary(readSessionEvents(session));boundaryFailed=false}catch{boundaryFailed=true}}
-  return next()
- }):undefined
+ const off=agent.ctx.on('system-prompt/assemble',async(_assembly,context,next)=>{
+  if(context.agent===agent&&readBoundary){try{boundary=await readBoundary(readSessionEvents(session));boundaryFailed=false}catch{boundaryFailed=true}}
+  const result=await next()
+  if(context.agent===agent&&issued&&requestWindow&&issued.turn===requestWindow.turn&&issued.step===requestWindow.step)issued.sections=result.contexts.filter(c=>c.text.trim()).map(c=>({name:c.name,text:c.text}))
+  return result
+ })
  const readFacts=()=>{
   try{
    const facts=taskRunApprovalFacts(readSessionEvents(session),run,{id:String(session.id),seq:session.seq,isOwnSeq:seq=>session.isOwnSeq(seq)},boundary)
@@ -135,11 +144,14 @@ export function leaseTaskRunApprovalContext(agent:Agent,run:RunIdentity,readBoun
    if(candidates.length===1&&lastStep?.type==='step/start'&&lastStep.data.turn===issuance.turn&&lastStep.data.step===issuance.step){
     const event=candidates[0]!
     if(event.type==='user/message'){
-     const usage=taskRunToolUsageContextReceipt(agent,run),sections=[{name:taskRunApprovalContextName,text:issuance.text},...usage?[usage]:[]]
+     const usage=taskRunToolUsageContextReceipt(agent,run),owned=[{name:taskRunApprovalContextName,text:issuance.text},...usage?[usage]:[]]
+     const actualSections=Reflect.get(event.data.source,'sections')
+     if(!Array.isArray(actualSections)||actualSections.some(s=>!s||typeof s.name!=='string'||typeof s.text!=='string'||Object.keys(s).sort().join(',')!=='name,text')||new Set(actualSections.map(s=>s.name)).size!==actualSections.length){yield* next();return}
+     const sections=issuance.sections??actualSections as {name:string;text:string}[]
      const expectedSource={kind:'runtime-context',form:'snapshot',sections},expectedContent=[{type:'text',text:'Current runtime context. This snapshot supersedes earlier runtime-context snapshots.\n\n'+sections.map(section=>section.text).join('\n\n')}]
      const before=fresh.filter(row=>row.seq<event.seq),prompts=before.filter(row=>row.type==='user/message'),prompt=prompts[0],header=fresh.find(row=>row.seq>event.seq&&row.type==='request/header')
-     // 只接纳本次唯一提示、审批事实及同 Run 租约签出的工具计数；其它 runtime 资料仍使隔离失败。
-     if(event.surfaceOp==='append'&&event.sourceEventSeqs===undefined&&session.isOwnSeq(event.seq)&&prompts.length===1&&prompt?.type==='user/message'&&before.every(row=>row.type==='system/message'||row===prompt)&&header?.type==='request/header'&&isDeepStrictEqual(event.data.source,expectedSource)&&isDeepStrictEqual(event.data.content,expectedContent)&&request.messages.filter(message=>message.id===event.data.id&&isDeepStrictEqual(message,event.data)).length===1&&request.messages.some(message=>message.id===prompt.data.id&&isDeepStrictEqual(message,prompt.data))){
+     // 全部section须逐字来自本次实际assemble和冻结模型请求，审批与计数仍核同Run签发；额外claim/手写surface不能签票。
+     if(owned.every(section=>sections.filter(actual=>isDeepStrictEqual(actual,section)).length===1)&&event.surfaceOp==='append'&&event.sourceEventSeqs===undefined&&session.isOwnSeq(event.seq)&&prompts.length===1&&prompt?.type==='user/message'&&before.every(row=>row.type==='system/message'||row===prompt)&&header?.type==='request/header'&&isDeepStrictEqual(event.data.source,expectedSource)&&isDeepStrictEqual(event.data.content,expectedContent)&&request.messages.filter(message=>message.id===event.data.id&&isDeepStrictEqual(message,event.data)).length===1&&request.messages.some(message=>message.id===prompt.data.id&&isDeepStrictEqual(message,prompt.data))){
       receipts.set(event.seq,{key,seq:event.seq,id:event.data.id,turn:issuance.turn,step:issuance.step,promptSeq:prompt.seq,promptId:prompt.data.id,headerSeq:header.seq,stepStartSeq:lastStep.seq,event:structuredClone(event),header:structuredClone(header),prompt:structuredClone(prompt),stepStart:structuredClone(lastStep)})
      }
     }

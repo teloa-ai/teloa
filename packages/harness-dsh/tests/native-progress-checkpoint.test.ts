@@ -10,6 +10,27 @@ import {loopWorkFixture} from './fixtures/native-loop-work-admission.ts'
 
 const options={timeout:10000}
 
+test('固定宿主检查点与部署检查器共享真实私有writer顺序，不增模型调用',options,async t=>{
+ const order:string[]=[],f=await fixture(t,
+  async input=>{input.assertCurrent();order.push('deployment:'+input.phase)},
+  async()=>{order.push('deployment:input')},true,
+  {acquire:async()=>null,nativeCheckpoint:async input=>{input.assertCurrent();order.push('host:input')},nativeProgress:async input=>{input.assertCurrent();order.push('host:'+input.phase)}},
+ )
+ f.adapter.scripts.push(textAnswer);await f.send('resident-private-checkpoint');await f.agent.whenIdle()
+ assert.deepEqual(order,['deployment:input','host:input',...['claimed','model','step-end','turn-end'].flatMap(phase=>['deployment:'+phase,'host:'+phase])])
+ assert.equal(f.adapter.requests.length,1);assert.equal(f.counters.tools,0)
+})
+
+test('固定宿主模型前检查点拒绝，真实受理和错误终态保留且零模型派发',options,async t=>{
+ const phases:string[]=[],f=await fixture(t,undefined,async()=>{},true,{acquire:async()=>null,nativeCheckpoint:async input=>{input.assertCurrent()},nativeProgress:async input=>{input.assertCurrent();phases.push(input.phase);if(input.phase==='model')throw Error('私有账本未提交')}})
+ f.adapter.scripts.push(textAnswer);const message=await f.send('resident-checkpoint-rejected');await f.agent.whenIdle()
+ assert.equal(f.adapter.requests.length,0);assert.equal(f.counters.tools,0)
+ assert.ok(phases.includes('turn-end'))
+ assert.ok(f.events().some(event=>event.type==='user/message'&&event.data.id===message.id))
+ assert.deepEqual(f.events().filter(event=>event.type==='turn/end').map(event=>event.data.reason.kind),['error'])
+ assert.deepEqual(f.agent.inbox.nextTurn,[])
+})
+
 test('本人取消后的真实turn-end仍用所属writer持久收尾，不能漏掉终态释放证据',options,async t=>{
  const seen:NativeProgressCheckpointInput[]=[],gate=hotGate();t.after(gate.release)
  const f=await fixture(t,async input=>{input.assertCurrent();seen.push(input)})
@@ -24,9 +45,9 @@ test('本人取消后的真实turn-end仍用所属writer持久收尾，不能漏
  assert.deepEqual(terminal.roots.map(root=>root.messageId),[message.id])
  assert.ok((await f.cold()).events.some(event=>event.type==='turn/end'&&event.seq===last!.seq))
 })
-async function fixture(t:TestContext,progress?:NativeProgressCheckpoint,checkpoint:()=>Promise<void>=async()=>{},durable=true){
+async function fixture(t:TestContext,progress?:NativeProgressCheckpoint,checkpoint:()=>Promise<void>=async()=>{},durable=true,resident?:import('../src/native-work-input.ts').ResidentInputAdmission){
  const root=await realpath(await mkdtemp(join(tmpdir(),'teloa-progress-checkpoint-')));t.after(()=>rm(root,{recursive:true,force:true}))
- const f=await nativeHotCausalityFixture(t,{persistenceRoot:root,...progress===undefined?{}:{progress},...durable?{checkpoint}:{}})
+ const f=await nativeHotCausalityFixture(t,{persistenceRoot:root,...progress===undefined?{}:{progress},...durable?{checkpoint}:{},...(resident?{resident}:{})})
  return {...f,root,async cold(){
   const cold=await nativeProviderKernel(t)
   await cold.ctx.plugin(cold.persistencePackage,{root,compression:'none'})

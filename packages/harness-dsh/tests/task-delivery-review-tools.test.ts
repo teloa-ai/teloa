@@ -125,7 +125,7 @@ for(const [provider,name]of [['codex','subagent_codex'],['claude-code','subagent
  const scripts=[call(name,'external-call',{prompt:'仅整理本轮合成资料',description:'本机SDK确定性子执行'}),text(draft),revise(),verify()]
  f.adapter.stream=async function*(options:GenerateOptions){f.adapter.requests.push(options);const script=scripts.shift();assert.ok(script,'不增加模型请求');yield* script}
  const traces:DeliveryReviewTrace[]=[],catalog=createReviewSourceCatalog([{id:'goal',kind:'goal',title:'原目标',text:goal,origin:{field:'workRequest',pointer:'/sourceText'}}])
- const release=leaseTaskDeliveryReview(f.parent,{runId,requestId:rpc,material:{goal,inputs:{knowledge:0,group:false,context:false},methods:[],catalog},readExecution:async()=>{const state=f.work.readReviewState(f.parent,rpc);return {runId,sessionId:f.parent.id,requestId:rpc,allowedTools:[name],continuationMessageIds:new Set(state.continuationMessageIds),runtimeLinks:[...rows.values()],jobs:[],pendingJobCompletion:state.pendingJobCompletion,pendingInput:state.pendingInput,children:'none',flow:'none'}},publish:async(message,signal)=>f.work.withNewInput(f.parent,message,{producer:'prompt',identity:message.id},()=>f.parent.inject(message),signal),trace:entry=>traces.push(entry)})
+ const release=leaseTaskDeliveryReview(f.parent,{runId,requestId:rpc,material:{goal,inputs:{knowledge:0,group:false,context:false},methods:[],catalog},readExecution:async()=>{const state=f.work.readReviewState(f.parent,rpc);return {runId,sessionId:f.parent.id,requestId:rpc,allowedTools:[name],continuationMessageIds:new Set(state.continuationMessageIds),runtimeLinks:[...rows.values()],jobs:[],pendingJobCompletion:state.pendingJobCompletion,pendingInput:state.pendingInput,children:'none',flow:'none'}},publish:async(message,signal)=>f.work.withNewInput(f.parent,message,{producer:'task-run',identity:message.id},()=>f.parent.inject(message),signal),trace:entry=>traces.push(entry)})
  t.after(release)
  await f.send(rpc,goal)
  assert.equal(f.adapter.requests.length,4,JSON.stringify({traces,events:f.events().map(event=>({type:event.type,...event.type==='user/message'?{source:event.data.source}:{}}))}))
@@ -145,7 +145,7 @@ for(const proof of ['accepted-root','missing-root-proof']as const)test('真实Jo
   const state=jobSnapshot(f,rpc,'job-run')
   return {...state,continuationMessageIds:proof==='accepted-root'?state.continuationMessageIds:new Set()}
  }
- const release=leaseTaskDeliveryReview(f.agent,{runId:'job-run',requestId:rpc,material:{goal,inputs:{knowledge:0,group:false,context:false},methods:[],catalog},readExecution,publish:async(message,signal)=>f.work.withNewInput(f.agent,message,{producer:'prompt',identity:message.id},()=>f.agent.inject(message),signal),trace:entry=>traces.push(entry)})
+ const release=leaseTaskDeliveryReview(f.agent,{runId:'job-run',requestId:rpc,material:{goal,inputs:{knowledge:0,group:false,context:false},methods:[],catalog},readExecution,publish:async(message,signal)=>f.work.withNewInput(f.agent,message,{producer:'task-run',identity:message.id},()=>f.agent.inject(message),signal),trace:entry=>traces.push(entry)})
  t.after(release)
  await f.send(rpc);await f.agent.whenIdle()
  assert.ok(id);assert.equal(f.ctx.jobs.get(id,f.agent.id).status,'running')
@@ -186,7 +186,7 @@ test('两个真实Job的可信完成通知可在原同一turn批量入步，重�
  })
  const traces:DeliveryReviewTrace[]=[],catalog=createReviewSourceCatalog([{id:'goal',kind:'goal',title:'原目标',text:goal,origin:{field:'workRequest',pointer:'/sourceText'}}])
  let snapshot:DeliveryReviewExecutionSnapshot|undefined
- const release=leaseTaskDeliveryReview(f.agent,{runId,requestId:rpc,material:{goal,inputs:{knowledge:0,group:false,context:false},methods:[],catalog},readExecution:async()=>snapshot=jobSnapshot(f,rpc,runId),publish:async(message,signal)=>f.work.withNewInput(f.agent,message,{producer:'prompt',identity:message.id},()=>f.agent.inject(message),signal),trace:entry=>traces.push(entry)})
+ const release=leaseTaskDeliveryReview(f.agent,{runId,requestId:rpc,material:{goal,inputs:{knowledge:0,group:false,context:false},methods:[],catalog},readExecution:async()=>snapshot=jobSnapshot(f,rpc,runId),publish:async(message,signal)=>f.work.withNewInput(f.agent,message,{producer:'task-run',identity:message.id},()=>f.agent.inject(message),signal),trace:entry=>traces.push(entry)})
  t.after(release)
  await f.send(rpc);await f.agent.whenIdle()
  assert.equal(f.adapter.requests.length,6,JSON.stringify(traces));assert.ok(snapshot)

@@ -32,7 +32,7 @@ async function fixture(overrides:Partial<BusinessRecordToolsPorts>={},origin?:'s
  assert.equal(typeof module.registerBusinessRecordTools,'function')
  const ctx=new Context();await ctx.plugin(LlmRuntime);await ctx.plugin(SystemPrompt);await ctx.plugin(ToolRuntime);await ctx.plugin(SessionStore);await ctx.plugin(SessionProjectionRegistry);await ctx.plugin(AgentRegistry);await ctx.plugin(AgentLoop,{agents:[]})
  const {agent}=await ctx.agents.create({sessionId:SessionId('records-'+randomUUID()),...(origin?{meta:{origin,delegationDepth:1}}:{}),agentOptions:{provider:'test',model:'test'}})
- const turn=()=>{agent.session.append('turn/start',{turn:0} as never);agent.session.append('user/message',createUserMessage({source:{kind:'user'},content:[{type:'image',attachment:{id:'unread-image'}} as never,{type:'file',attachment:{id:'unread-file'}} as never,{type:'text',text:'按附件更新记录'}]}),{surfaceOp:'append'})};turn()
+ const turn=(text='按附件更新记录')=>{agent.session.append('turn/start',{turn:0} as never);agent.session.append('user/message',createUserMessage({source:{kind:'user'},content:[{type:'image',attachment:{id:'unread-image'}} as never,{type:'file',attachment:{id:'unread-file'}} as never,{type:'text',text}]}),{surfaceOp:'append'})};turn()
  const definition:BusinessObjectTypeDefinition={format:'teloa.business-object-type/v1',id:'customer',domain:'sales',version:'1.0.0',title:'客户',sourceId:'local',unit:'位',lead:'客户登记',fields:[{name:'name',label:'姓名',from:'姓名',type:'text',required:true},{name:'stage',label:'阶段',from:'阶段',type:'enum',required:false,values:['待联系','已联系']},{name:'note',label:'备注',from:'备注',type:'text',required:false}]}
  const bundle:BusinessDefinitionBundle={origin:{kind:'local-configuration',configurationVersion:1,configurationHash:hash},scope:'sales',domain:'sales',objectTypes:[{definition,source:{loadId:'local',scope:'sales',localId:'customer',version:'1.0.0',contentHash:hash,fileHash:hash,definitionHash:hash,origin:'local'}}],views:[],actions:[],mappings:[],widgets:[],dashboards:[],sources:new Map([['local',{connected:true}]])}
  const existing:BusinessObjectSnapshot={scope:'sales',type:'customer',id:'one',version:1,snapshotHash:hash,title:'旧客户',source:'本地记录',observedAt:stamp,receivedAt:stamp,quality:'complete',summary:'完整记录',fields:[{label:'姓名',value:'旧姓名'},{label:'阶段',value:'待联系'},{label:'备注',value:'必须保留'}]}
@@ -411,4 +411,15 @@ test('多选最大32个目标仍完整确认，确认摘要超128KiB先拒绝且
  const result=await f.call(write,{operations:[create]});assert.equal(result.isError,false,JSON.stringify(result))
  const summary=JSON.parse(f.approvals[0]!.split('：').at(-1)!);assert.equal(summary.operations[0].fields[0].relations.value.length,32)
  assert.deepEqual(summary.operations[0].fields[0].relations.value.map((row:any)=>row.id),ids)
+})
+
+test('原生版本冲突回包不指令重读重提；后续本人明确新指令仍可正常批准当前版本',async t=>{
+ const f=await fixture();t.after(()=>f.ctx.fiber.dispose());f.existing.version=2
+ const operation={operation:'edit',type:'customer',id:'one',expectedVersion:1,fields:[{name:'name',value:'新姓名'},{name:'stage',value:'已联系'},{name:'note',value:''}]}
+ const denied=await f.call(write,{operations:[operation]});assert.equal(denied.isError,true)
+ const text=denied.content.filter(block=>block.type==='text').map(block=>block.text).join('\n')
+ assert.match(text,/版本已变化.*本次未执行/);assert.doesNotMatch(text,/请.*重新|再提交/)
+ assert.equal(f.approvals.length,0);assert.equal(f.requests.length,0)
+ f.turn('依据已核实的版本2更新该记录；本条允许按当前版本准备并请求批准。');const allowed=await f.call(write,{operations:[{...operation,expectedVersion:2}]})
+ assert.equal(allowed.isError,false,JSON.stringify(allowed));assert.equal(f.approvals.length,1);assert.equal(f.requests.length,1)
 })

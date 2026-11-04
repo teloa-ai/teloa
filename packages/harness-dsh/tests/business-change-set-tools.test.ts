@@ -22,6 +22,8 @@ test('准备工具不审批也不采用；真实 ToolRuntime 只在具体批准�
  let adopted=0,prepared=0,approve=true,unavailable=false,cancel:AbortController|undefined;const approvals:string[]=[]
  const ports={owner:'owner',conversation:async (sessionId:string)=>({ownerId:'owner',sessionId,status:'ready'}),readTaskPolicy:async()=>null,isRoleConversation:async()=>false,isTaskConversation:async()=>false,binding:async()=>undefined,context:async (sessionId:string)=>({sessionId,scopeId:'sales',roleId:null,version:1,locked:false}),scopes:async()=>[{scope:'sales',title:'销售'}],changes:{prepare:async()=>{prepared++;return draft},get:async()=>draft,awaiting:async()=>{draft.state='awaiting-approval';return draft},apply:async(_actor:unknown,_input:unknown,authorize:(db:PoolClient,origin:BusinessChangeSetOrigin)=>Promise<string>)=>{await authorize({} as PoolClient,{sessionId:agent.session.id,messageId:'instruction',seq:1,fingerprint:'test-context'});adopted++;draft.state='applied';return draft}}}
  module.registerBusinessChangeSetTools(ctx,ports as unknown as BusinessChangeSetToolsPorts)
+ const applySchema=(await ctx.systemPrompt.assemble({agent,scope:agent})).tools.find(tool=>tool.name==='teloa_business_change_apply');assert.ok(applySchema)
+ assert.match(applySchema.description,/是否重读、准备或重试由本人原指令与当前授权决定/);assert.doesNotMatch(applySchema.description,/过期时重新准备/)
  ctx.provide('approval',{request:async (request:{reason:string})=>{approvals.push(request.reason);if(unavailable)throw Error('审批服务暂时不可用');if(cancel){cancel.abort();return 'rejected'}return approve?'allowed-once':'rejected'}})
  const call=async(name:string,args:Record<string,unknown>,controller=new AbortController())=>ctx.tools.execute({name,arguments:args,callId:ToolCallId(randomUUID()),agent,signal:controller.signal})
  assert.equal((await call('teloa_business_change_prepare',{operations:[{operation:'create',type:'customer',title:'客户甲',summary:'',fields:[]}]})).isError,false)
@@ -139,4 +141,31 @@ test('原生prepare公开日期与长度协议，失败给出可修正原因且�
  assert.equal(prepared,0);assert.equal(approvals,0)
  const corrected=await call('2026-10-28T15:11:38.000Z','保留必要事实的正文')
  assert.equal(corrected.isError,false,JSON.stringify(corrected));assert.equal(prepared,1);assert.equal(approvals,0)
+})
+
+test('过期草稿的正式工具展示标明历史基线，原 JSON 与业务卡片读取契约保持不变',async t=>{
+ const {createBusinessWorkResultsApi}=await import('../../client/ui-workbench/src/client/business-work-results-api.ts')
+ const ctx=new Context();for(const plugin of [LlmRuntime,SystemPrompt,ToolRuntime,SessionStore,SessionProjectionRegistry,AgentRegistry])await ctx.plugin(plugin);await ctx.plugin(AgentLoop,{agents:[]});t.after(()=>ctx.fiber.dispose())
+ const {agent}=await ctx.agents.create({sessionId:SessionId('historical-preview-'+randomUUID()),agentOptions:{provider:'test',model:'test'}})
+ agent.session.append('turn/start',{turn:0} as never);agent.session.append('user/message',createUserMessage({source:{kind:'user'},content:[{type:'text',text:'核对原修改草稿'}]}),{surfaceOp:'append'})
+ const id=randomUUID(),requestId=randomUUID(),now=new Date().toISOString(),before={scope:'sales',type:'customer',id:randomUUID(),version:1,snapshotHash:'a'.repeat(64),title:'合成记录',source:'合成固定来源',observedAt:now,receivedAt:now,quality:'complete' as const,summary:'准备时的固定记录',fields:[{label:'阶段',value:'待处理'}]}
+ let state:import('@teloa/contract').BusinessChangeSet['state']='stale',writes=0
+ const document=():import('@teloa/contract').BusinessChangeSet=>({schema:'teloa.business-change-set/v1',id,scope:'sales',revision:1,digest:'b'.repeat(64),state,sessionId:agent.session.id,batch:{scope:'sales',requestId,operations:[{operation:'edit',type:'customer',id:before.id,expectedVersion:1,fields:[{name:'stage',value:'已处理'}]}]},preview:{fingerprint:'c'.repeat(64),definitions:[{type:'customer',schemaFingerprint:'d'.repeat(64)}],targets:[before],operations:[{operation:'edit',type:'customer',title:before.title,before,fields:[{name:'stage',value:'已处理'}]}]},createdAt:now,updatedAt:now,...state==='applied'?{receipt:{scope:'sales',requestId,items:[{...before,version:2,fields:[{label:'阶段',value:'已处理'}]}]}}:{}})
+ const ports:BusinessChangeSetToolsPorts={owner:'owner',conversation:async sessionId=>({ownerId:'owner',sessionId,status:'ready'}),readTaskPolicy:async()=>null,isRoleConversation:async()=>false,isTaskConversation:async()=>false,binding:async()=>undefined,context:async sessionId=>({sessionId,scopeId:'sales',roleId:null,version:1,locked:false}),scopes:async()=>[{scope:'sales',title:'销售'}],changes:{prepare:async()=>{throw Error('只读测试不得准备')},get:async()=>document(),apply:async()=>{writes++;throw Error('只读测试不得采用')}}}
+ module.registerBusinessChangeSetTools(ctx,ports)
+ const definition=ctx.tools.schemas(agent).find(tool=>tool.name==='teloa_business_change_read')!
+ for(const nextState of ['stale','draft','applied'] as const){
+  state=nextState;const expected=document(),json=JSON.stringify(expected)
+  const result=await ctx.tools.execute({name:'teloa_business_change_read',arguments:{changeSetId:id},callId:ToolCallId(randomUUID()),agent,signal:new AbortController().signal})
+  assert.ok(!result.isError,JSON.stringify(result));assert.equal(result.value,json,'PTC 子调用仍取得原 JSON value，不能替换来源、字段或摘要')
+  if(state==='stale'){
+   assert.equal(result.content.length,2);const notice=result.content[0],history=result.content[1];assert.ok(notice?.type==='text');assert.match(notice.text,/^当前记录未经核验/);assert.match(notice.text,/下列仅历史草稿/);assert.match(notice.text,/不能证明当前字段/);assert.ok(history?.type==='text')
+   const rendered=JSON.parse(history.text);assert.deepEqual(Object.keys(rendered).sort(),['currentRecordVerified','historicalDraft']);assert.equal(rendered.currentRecordVerified,false);assert.deepEqual(rendered.historicalDraft,expected,'历史草稿完整保留来源、版本、字段、id 与 digest');assert.equal(JSON.stringify(rendered.historicalDraft),json,'wrapper 内仍是原 canonical JSON，未把旧 quality=complete 改造成当前值证明')
+  }else assert.deepEqual(result.content,[{type:'text',text:json}],'未过期或已采用展示逐字不变')
+  const calls:{endpoint:string;input:unknown}[]=[]
+  const api=createBusinessWorkResultsApi(async(endpoint,input)=>{calls.push({endpoint,input});return expected})
+  assert.deepEqual(await api.getChangeSet(id),expected,'正式卡片经 business-changes/get 解码，不拼接原生工具展示块')
+  assert.deepEqual(calls,[{endpoint:'business-changes/get',input:{changeSetId:id}}]);assert.equal(writes,0)
+ }
+ assert.match(definition.description,/固定历史基线/)
 })

@@ -15,6 +15,7 @@ import {SystemPrompt} from '@deepseek-ai/dsh-system-prompt'
 import {ToolRuntime} from '@deepseek-ai/dsh-tools'
 import {createReviewSourceCatalog,deliveryReviewToolName,leaseTaskDeliveryReview} from '../src/task-delivery-review.ts'
 import {readSessionEvents} from '../src/session-events.ts'
+import {readEndedTaskRunSession} from '../src/task-run-cold-session.ts'
 
 test('正式Run列表附带只读交付检查，不执行核对或发布',async()=>{
  const run={id:'run',taskId:'task',state:'ended'} as unknown as TaskRun,calls:string[]=[]
@@ -32,6 +33,19 @@ const native:SessionEvent[]=[
  {type:'turn/end',seq:SessionSeq(3),time:3,data:{turn:0,reason:{kind:'completed'}}},
 ]
 const run={id:'run',taskId:'task',sessionId:'owner-session',nativeRequestId:'rpc',executor:{kind:'owner',grantId:'grant',grantVersion:1},state:'ended',evidence:observeTaskRun(native,'rpc'),stopRequestedAt:null} as TaskRun
+
+test('已完成报告冷读固定原结束位置，后续追问在途仍保留完整原前缀',async()=>{
+ const events:SessionEvent[]=[...native,{type:'turn/start',seq:SessionSeq(4),time:4,data:{turn:1}},{type:'user/message',seq:SessionSeq(5),time:5,surfaceOp:'append',data:createUserMessage({source:{kind:'user',rpcId:'followup'},content:[{type:'text',text:'后续追问，不属于原报告'}]})}]
+ const snapshot={events,meta:{id:run.sessionId,version:4,createdAt:0,isSeeded:false,delegationDepth:0},inheritedEventCount:0},goals:SessionEvent[][]=[]
+ const ctx={sessionController:{inspect:async()=>snapshot},sessionProjections:{stateOf:()=>({'next-turn':[],'next-step':[]})}} as unknown as Context
+ const result=await readEndedTaskRunSession(ctx,run,async prefix=>{goals.push([...prefix]);return undefined})
+ const projected=readSessionEvents(result.session)
+ assert.deepEqual(projected.slice(0,native.length),native)
+ assert.ok(projected.slice(native.length).every(event=>event.type==='session/end-seed'&&Object.keys(event.data).length===0))
+ assert.deepEqual(goals,[native])
+ assert.equal(snapshot.events.length,6,'只读投影不裁掉实际后续会话')
+ await assert.rejects(readEndedTaskRunSession(ctx,{...run,evidence:{state:'ended',turn:0,messageSeq:1,endSeq:2,reason:'completed'}}),{code:'teloa/session-unavailable'})
+})
 
 test('精确已存回执优先，不读冷日志，不把保存等同本人认可',async()=>{
  const reader=createTaskRunDeliveryReader({receipt:async(owner,current)=>{assert.equal(owner,'owner');assert.equal(current,run);return true},events:async()=>assert.fail('原回执已证明保存，不读日志')})

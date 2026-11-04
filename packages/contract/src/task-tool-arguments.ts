@@ -9,8 +9,41 @@
  */
 export const workspaceFileToolNames=['read','write','edit'] as const
 /** 目录身份由宿主和根会话核对；客户端只能回传服务端给出的默认工作目录范围。 */
-export type TaskToolArgumentRule={name:string;allowed:Record<string,string|number|boolean|null>[];anyArguments?:true;workspaceFiles?:'default-workspace';externalHarness?:'owner-general';workspaceRoot?:string}
+export type WorkspacePaths={files:string[];directories:string[]}
+export type TaskToolArgumentRule={name:string;allowed:Record<string,string|number|boolean|null>[];anyArguments?:true;workspaceFiles?:'default-workspace';workspacePaths?:WorkspacePaths;externalHarness?:'owner-general';workspaceRoot?:string}
+/** 相对于可信工作目录的规范路径；目录授权包含其后代，不接受通配符、父级或敏感目录。 */
+export function readWorkspacePaths(value:unknown):WorkspacePaths{
+ if(!value||typeof value!=='object'||Array.isArray(value)||Object.keys(value).some(k=>!['files','directories'].includes(k)))throw Error('文件范围不正确。')
+ const row=value as Record<string,unknown>,list=(v:unknown)=>{if(!Array.isArray(v)||v.length>128||!v.every(p=>typeof p==='string'&&p.length>0&&p.length<=1024&&!/[\\\x00-\x1f\x7f:*?]/.test(p)&&!p.startsWith('/')&&p.split('/').every(part=>!!part&&!['.','..','.git','.runtime'].includes(part.toLowerCase())))||new Set(v).size!==v.length)throw Error('请使用工作目录内的相对文件或目录路径。');return [...v as string[]].sort()}
+ const files=list(row.files),directories=list(row.directories);if(files.length+directories.length===0||files.length+directories.length>128)throw Error('请至少指定一项文件或目录。');return {files,directories}
+}
+export function workspacePathAllowed(rule:TaskToolArgumentRule,path:string):boolean{
+ if(!isWorkspaceFileRule(rule))return false
+ if(!rule.workspacePaths)return true
+ try{readWorkspacePaths({files:[path],directories:[]})}catch{return false}
+ return rule.workspacePaths.files.includes(path)||rule.workspacePaths.directories.some(dir=>path===dir||path.startsWith(dir+'/'))
+}
+/** 同一冻结策略的模型参数投影；这不是实际 I/O 授权的替代。 */
+export function workspacePathSchema(rules:readonly TaskToolArgumentRule[],name:string):{enum?:string[];pattern?:string;allOf?:{pattern:string}[];description:string}|undefined{
+ if(!hasWorkspacePaths(rules)||!['read','write','edit','present'].includes(name))return
+ const operations=name==='edit'?['edit','read','write']:name==='present'?['read','write']:[name]
+ const selected=operations.map(op=>rules.find(rule=>rule.name===op&&isWorkspaceFileRule(rule)))
+ if(name!=='present'&&selected.some(rule=>!rule))return {enum:[],description:'No path is authorized for this operation.'}
+ if(name==='present'&&selected.some(rule=>rule&&!rule.workspacePaths))return {description:'Only authorized readable files or unchanged outputs successfully written by this same Run may be presented. Writing does not grant model read access.'}
+ const scopes=selected.flatMap(rule=>rule?.workspacePaths?[rule.workspacePaths]:[])
+ if(!scopes.length)return
+ const escape=(s:string)=>s.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')
+ const pattern=(scope:WorkspacePaths)=>'^(?:'+[...scope.files.map(escape),...scope.directories.map(dir=>escape(dir)+'(?:/[^/]+)*')].join('|')+')$'
+ const finite=scopes.find(scope=>scope.directories.length===0)
+ const paths=name==='present'&&scopes.every(scope=>!scope.directories.length)?[...new Set(scopes.flatMap(scope=>scope.files))]:name!=='present'&&finite?finite.files.filter(path=>selected.every(rule=>!!rule&&workspacePathAllowed(rule,path))):undefined
+ const description='Paths are relative to this Run’s default workspace. '+(name==='present'?'Present only authorized inputs or this Run’s successful unchanged outputs; this grants no additional read access.':'Only the explicitly authorized '+name+' file/directory ranges are allowed. Parent paths and symbolic links are forbidden.')
+ return {...paths?{enum:paths}:name==='present'?{pattern:'(?:'+scopes.map(pattern).join('|')+')'}:{allOf:scopes.map(scope=>({pattern:pattern(scope)}))},description}
+}
+export function hasWorkspacePaths(rules:readonly TaskToolArgumentRule[]|undefined):boolean{return !!rules?.some(rule=>rule.workspacePaths!==undefined)}
+/** 这些入口能够在受限 FS 之外执行代码或委派 I/O；细路径授权不授予它们执行权。 */
+export function workspacePathsUnsafeTool(name:string):boolean{return !['read','write','edit','present','ask_user_question','exit_plan_mode','get_goal','update_goal','teloa_submit_review_plan','teloa_knowledge_search','teloa_knowledge_read','teloa_skill_load','mcp__teloa_reference__read_reference','list_mcp_resources','list_mcp_resource_templates'].includes(name)}
 export function isWorkspaceFileRule(rule:TaskToolArgumentRule):boolean{
+ try{if(rule.workspacePaths!==undefined)readWorkspacePaths(rule.workspacePaths)}catch{return false}
  return rule.workspaceFiles==='default-workspace'&&(workspaceFileToolNames as readonly string[]).includes(rule.name)&&rule.allowed.length===0&&rule.anyArguments===undefined&&rule.externalHarness===undefined&&rule.workspaceRoot===undefined
 }
 /** 仅描述本人外部工具的固定参数面；本人、原生批准和实时目录许可仍由宿主独立核对。 */
@@ -44,17 +77,17 @@ export function readTaskToolArgumentRules(rules:unknown):TaskToolArgumentRule[]{
  if(!Array.isArray(rules)||rules.length>128)throw Error('工具参数授权格式不正确。')
  const names=new Set<string>()
  for(const rule of rules){
-  if(typeof rule!=='object'||rule===null||Object.keys(rule).some(key=>!['name','allowed','anyArguments','workspaceFiles','externalHarness','workspaceRoot'].includes(key))||typeof rule.name!=='string'||!rule.name.trim()||names.has(rule.name)||!Array.isArray(rule.allowed)||rule.allowed.length>128||!rule.allowed.every(fields)||'anyArguments'in rule&&(rule.anyArguments!==true||rule.allowed.length>0)||'workspaceFiles'in rule&&(!isWorkspaceFileRule(rule)||'anyArguments'in rule)||('externalHarness'in rule||'workspaceRoot'in rule)&&!isOwnerExternalHarnessRule(rule))throw Error('工具参数授权格式不正确。')
+  if(typeof rule!=='object'||rule===null||Object.keys(rule).some(key=>!['name','allowed','anyArguments','workspaceFiles','workspacePaths','externalHarness','workspaceRoot'].includes(key))||typeof rule.name!=='string'||!rule.name.trim()||names.has(rule.name)||!Array.isArray(rule.allowed)||rule.allowed.length>128||!rule.allowed.every(fields)||'anyArguments'in rule&&(rule.anyArguments!==true||rule.allowed.length>0)||('workspaceFiles'in rule||'workspacePaths'in rule)&&(!isWorkspaceFileRule(rule)||'anyArguments'in rule)||('externalHarness'in rule||'workspaceRoot'in rule)&&!isOwnerExternalHarnessRule(rule))throw Error('工具参数授权格式不正确。')
   names.add(rule.name)
  }
  // 缺省时不写出 anyArguments：既有调用方用 JSON.stringify 逐字串比规则，多一个 undefined 键都会不一致。
- return rules.map(rule=>({name:rule.name,allowed:rule.allowed.map((args:Record<string,string|number|boolean|null>)=>Object.fromEntries(Object.keys(args).sort().map(key=>[key,args[key]!]))),...(rule.anyArguments===true?{anyArguments:true as const}:{}),...(rule.workspaceFiles==='default-workspace'?{workspaceFiles:'default-workspace' as const}:{}),...(rule.externalHarness==='owner-general'?{externalHarness:'owner-general' as const,workspaceRoot:rule.workspaceRoot!}:{})}))
+ return rules.map(rule=>({name:rule.name,allowed:rule.allowed.map((args:Record<string,string|number|boolean|null>)=>Object.fromEntries(Object.keys(args).sort().map(key=>[key,args[key]!]))),...(rule.anyArguments===true?{anyArguments:true as const}:{}),...(rule.workspaceFiles==='default-workspace'?{workspaceFiles:'default-workspace' as const}:{}),...(rule.workspacePaths===undefined?{}:{workspacePaths:readWorkspacePaths(rule.workspacePaths)}),...(rule.externalHarness==='owner-general'?{externalHarness:'owner-general' as const,workspaceRoot:rule.workspaceRoot!}:{})}))
 }
 export function taskToolArgumentsAllowed(rules:unknown,name:string,args:unknown):boolean{
  let parsed:TaskToolArgumentRule[]
  try{parsed=readTaskToolArgumentRules(rules)}catch{return false}
  const rule=parsed.find(rule=>rule.name===name)
- if(rule&&isWorkspaceFileRule(rule))return workspaceFileArguments(name,args)
+ if(rule&&isWorkspaceFileRule(rule)){if(!workspaceFileArguments(name,args))return false;const path=(args as {file_path:string}).file_path;return /^\/|^[A-Za-z]:[\\/]|^\\\\/.test(path)||workspacePathAllowed(rule,path)}
  if(rule&&isOwnerExternalHarnessRule(rule))return ownerExternalHarnessArguments(rule,args)
  // 任意参数仍要求工具调用的顶层是参数对象；对象内的数组与嵌套 JSON 由工具自身 schema 校验。
  if(rule?.anyArguments===true)return argumentsObject(args)

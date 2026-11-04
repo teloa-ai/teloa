@@ -39,7 +39,7 @@ test('真实原生subagent_task的固定归属和完成正文进入原R1/R2，�
   snapshot=current;return current
  }
  const catalog=createReviewSourceCatalog([{id:'goal',kind:'goal',title:'本人目标',text:goal,origin:{field:'workRequest',pointer:'/sourceText'}}])
- const release=leaseTaskDeliveryReview(f.parent,{runId,requestId,requireReview:true,material:{goal,inputs:{knowledge:0,group:false,context:false},methods:[],catalog},readExecution,publish:async(message,signal)=>f.work.withNewInput(f.parent,message,{producer:'prompt',identity:message.id},()=>f.parent.inject(message),signal),trace:row=>traces.push(row)});t.after(release)
+ const release=leaseTaskDeliveryReview(f.parent,{runId,requestId,requireReview:true,material:{goal,inputs:{knowledge:0,group:false,context:false},methods:[],catalog},readExecution,publish:async(message,signal)=>f.work.withNewInput(f.parent,message,{producer:'task-run',identity:message.id},()=>f.parent.inject(message),signal),trace:row=>traces.push(row)});t.after(release)
  await f.send(requestId,goal)
  assert.equal(f.adapter.requests.filter(request=>request.sessionId===f.parent.id).length,4,JSON.stringify(traces))
  assert.equal(f.adapter.requests.filter(request=>request.sessionId!==f.parent.id).length,1,'只执行原子调用一次')

@@ -18,6 +18,16 @@ export type BusinessChangeSetToolsPorts=BusinessConversationAuthorizationPorts&{
 export const businessChangeSetToolNames=['teloa_business_change_prepare','teloa_business_change_apply','teloa_business_change_read'] as const
 const names=businessChangeSetToolNames
 const requestId=(owner:string,source:unknown)=>{const h=createHash('sha256').update(JSON.stringify(['teloa.business-change/v1',owner,source])).digest('hex');return `${h.slice(0,8)}-${h.slice(8,12)}-5${h.slice(13,16)}-a${h.slice(17,20)}-${h.slice(20,32)}`}
+/** 展示资格与固定 JSON 分开；保留历史快照和摘要，不把过期预览升级为当前记录证明。 */
+function renderBusinessChangeSet(_args:unknown,value:string){
+ const draft:unknown=JSON.parse(value)
+ if(draft!==null&&typeof draft==='object'&&'schema' in draft&&draft.schema==='teloa.business-change-set/v1'&&'state' in draft&&draft.state==='stale')return [
+  {type:'text' as const,text:'当前记录未经核验，下列仅历史草稿。preview.targets 和 preview.operations.before 是准备时的固定历史基线；其中字段、版本与 quality 只描述当时快照，不能证明当前字段或当前值。本次未采用。'},
+  {type:'text' as const,text:JSON.stringify({currentRecordVerified:false,historicalDraft:draft})},
+ ]
+ return [{type:'text' as const,text:value}]
+}
+
 /** 官方 ToolRuntime 管理批准；只有它随后调用 execute 时才构造后台授权回调。 */
 export function registerBusinessChangeSetTools(ctx:Context,ports:BusinessChangeSetToolsPorts){
  type Current={scope:string;title:string;actor:{ownerId:string;scopeIds:string[]};fingerprint:string;task?:GroupTaskBusinessGrant}
@@ -45,10 +55,10 @@ export function registerBusinessChangeSetTools(ctx:Context,ports:BusinessChangeS
  }
  const definitions:readonly {name:typeof names[number];description:string;parameters:ParameterSchemaSpec}[]=[
   {name:names[0],description:'准备当前业务的持久修改草稿，不写正式记录、不请求采用。operations 与本地记录写入同一批次协议，1–50项、128KiB：'+businessRecordBatchProtocol+'。记录类型 id 与字段 name 以业务定义为准（本人会话可先读取真实类型和记录；群工作按本人交办与业务上下文）。可用changeSetId和expectedRevision调整尚未采用的草稿。返回固定id、revision、digest供本人审阅；采用须另用apply工具经原生批准。',parameters:{operations:businessRecordOperationsParameter,changeSetId:{type:'string'},expectedRevision:{type:'integer'}}},
-  {name:names[1],description:'采用本人已审阅的固定业务修改草稿。只接受changeSetId、expectedRevision、expectedDigest；原生批准后原子写入。过期时重新准备，不修改摘要重试。结果未知使用read核对原ID；批准只针对此版本，分析统计不需要此工具。',parameters:{changeSetId:{type:'string',required:true},expectedRevision:{type:'integer',required:true},expectedDigest:{type:'string',required:true}}},
-  {name:names[2],description:'读取当前业务修改草稿及固定采用回执；不重写记录、不制造批准。',parameters:{changeSetId:{type:'string',required:true}}},
+  {name:names[1],description:'采用本人已审阅的固定业务修改草稿。只接受changeSetId、expectedRevision、expectedDigest；原生批准后原子写入。过期时本次不采用；是否重读、准备或重试由本人原指令与当前授权决定，不修改摘要绕过版本校验。结果未知使用read核对原ID；批准只针对此版本，分析统计不需要此工具。',parameters:{changeSetId:{type:'string',required:true},expectedRevision:{type:'integer',required:true},expectedDigest:{type:'string',required:true}}},
+  {name:names[2],description:'读取业务修改草稿及固定采用回执；不重写记录、不制造批准。preview 是准备时的固定历史基线，不是当前记录查询；state=stale 时其中字段不能证明当前值。',parameters:{changeSetId:{type:'string',required:true}}},
  ]
- for(const definition of definitions)ctx.tools.register(defineTool({...definition,output:{schema:{type:'string'} as const,render:(_a:unknown,value:string)=>[{type:'text' as const,text:value}]},execute:async(args,exec)=>{
+ for(const definition of definitions)ctx.tools.register(defineTool({...definition,output:{schema:{type:'string'} as const,render:renderBusinessChangeSet},execute:async(args,exec)=>{
   const prepared=fixed.get(exec),current=await authorize(exec),instruction=instructionOf(exec,current)
   if(!prepared||current.fingerprint!==prepared.current.fingerprint||JSON.stringify(instruction)!==JSON.stringify(prepared.instruction)||JSON.stringify(input(definition.name,args,current,instruction))!==JSON.stringify(prepared.input))throw new WorkError('teloa/forbidden','本人指令或业务授权在审批期间已变化。')
   if(definition.name===names[0]){

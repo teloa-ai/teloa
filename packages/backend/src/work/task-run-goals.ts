@@ -159,11 +159,14 @@ export class TaskRunGoalService{
  /** 宿主已 disarm 并核对完整持久 Inbox 日志不存在此消息后调用；不注册远程/模型口，不撤销已受理证据。 */
  async withdrawUnpublished(owner:string,nativeRequestId:string):Promise<void>{roleWorkOwner(owner);if(!text(nativeRequestId))throw invalid();await this.pool.query("update teloa_task_run_goal_continuations set receipt=jsonb_set(receipt,'{state}','\"withdrawn\"'),updated_at=$3 where owner_id=$1 and native_request_id=$2 and receipt->>'state' in ('reserved','unknown')",[owner,nativeRequestId,this.identity.now()])}
  async read(owner:string,input:unknown):Promise<{binding:GoalRunBinding|null;continuations:GoalContinuationReceipt[]}>{
+  return this.readInTransaction(this.pool,owner,input)
+ }
+ async readInTransaction(db:Pick<Pool,'query'>,owner:string,input:unknown):Promise<{binding:GoalRunBinding|null;continuations:GoalContinuationReceipt[]}>{
   roleWorkOwner(owner);const a=taskInput(input,['runId']);if(!roleWorkUuid(a.runId))throw invalid()
-  const known=(await this.pool.query('select id from teloa_task_runs where owner_id=$1 and id=$2',[owner,a.runId])).rows[0];if(!known)throw forbidden()
-  const row=(await this.pool.query('select binding from teloa_task_run_goals where owner_id=$1 and run_id=$2',[owner,a.runId])).rows[0]
+  const known=(await db.query('select id from teloa_task_runs where owner_id=$1 and id=$2',[owner,a.runId])).rows[0];if(!known)throw forbidden()
+  const row=(await db.query('select binding from teloa_task_run_goals where owner_id=$1 and run_id=$2',[owner,a.runId])).rows[0]
   if(!row)return {binding:null,continuations:[]}
-  const binding=storedBinding(row),rows=(await this.pool.query('select c.receipt,r.binding as revision_binding from teloa_task_run_goal_continuations c join teloa_task_run_goal_revisions r using(owner_id,run_id,goal_id,revision) where c.owner_id=$1 and c.run_id=$2 order by c.revision,c.round',[owner,a.runId])).rows
+  const binding=storedBinding(row),rows=(await db.query('select c.receipt,r.binding as revision_binding from teloa_task_run_goal_continuations c join teloa_task_run_goal_revisions r using(owner_id,run_id,goal_id,revision) where c.owner_id=$1 and c.run_id=$2 order by c.revision,c.round',[owner,a.runId])).rows
   const continuations=rows.map(row=>{const receipt=storedReceipt(row),ref=storedBinding({binding:row.revision_binding}),{round,messageId,nativeRequestId,payloadSha256,acceptedSeq,state,...origin}=receipt;if(!isDeepStrictEqual(origin,ref)||ref.ownerId!==owner||ref.runId!==binding.runId||ref.goalId!==binding.goalId||ref.sessionId!==binding.sessionId||ref.controlId!==binding.controlId||ref.revision>binding.revision)throw corrupt();return receipt})
   return {binding,continuations}
  }

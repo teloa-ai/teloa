@@ -13,8 +13,8 @@ export function installStandaloneResidentAdmission(ctx:Context){
 }
 
 /** 真 Session/Registry/Loop；仅对官方 Controller 未用到的外部 IO 提供 inert ports。 */
-export async function nativeProviderFixture(t:Cleanup,options:{maintenance?:boolean}={}){
- const f=await patchedSessionFixture(t),{ctx}=f
+export async function nativeProviderFixture(t:Cleanup,options:{maintenance?:boolean;persistence?:boolean}={}){
+ const f=await patchedSessionFixture(t,options),{ctx}=f
  installStandaloneResidentAdmission(ctx)
  const maintain=(agent:Agent)=>agent.runMaintenance(signal=>new Promise<void>(done=>{
   signal.addEventListener('abort',()=>done(),{once:true})

@@ -178,3 +178,34 @@ test('模型耗时按滚动24小时窗口计：终身累计超限的旧耗时不
  await assert.rejects(admission,{code:'teloa/budget-exhausted',details:{reason:'elapsed',scope:'work'}},'职责先于本人核对')
  assert.equal((await service.read(f.owner,{budgetAccountId:account})).usedTokens,10*8+1,'token 仍累计，口径不随耗时窗口改变')
 })
+
+test('可信旧宿主票据只退役原Run精确请求，保留未知用量且不影响新宿主',{timeout:60000},async t=>{
+ const env=await setupRoleWork();t.after(env.close)
+ const {WorkBudgetService,initializeWorkBudgets}=await import('../src/work/work-budget.ts'),{initializeWorkRetries}=await import('../src/work/work-retries.ts'),{initializeWorkControl}=await import('../src/work/work-control.ts')
+ await initializeWorkControl(env.pool);await initializeWorkBudgets(env.pool);await initializeWorkRetries(env.pool)
+ const f=await roleFixture(env.pool,'employee'),db=await env.pool.connect();let lineage
+ try{await db.query('begin');lineage=await new WorkLineageService(env.pool,identity).bindTask(db,f.owner,{taskId:f.taskId,source:{kind:'owner-task',taskId:f.taskId}});await db.query('commit')}finally{db.release()}
+ const runId=await insertRoleRun(env.pool,f.owner,f.role.id,f.taskId,'active'),run=(await env.pool.query('select * from teloa_task_runs where id=$1',[runId])).rows[0]
+ const oldIds=['old-unknown','old-reserved'],service=new WorkBudgetService(env.pool,identity,ownerAuthority,async(_db,owner,input)=>{
+  assert.equal(owner,f.owner);assert.deepEqual(input.modelRequestIds,oldIds);return {assertCurrent(){}}
+ })
+ const base={budgetAccountId:lineage.budgetAccountId,controlGeneration:1,kind:'retry' as const,tokens:10,rounds:0},old=[]
+ for(const id of [...oldIds,'new-host']){
+  const r=await service.reserve(f.owner,{...base,modelRequestId:id});old.push(r)
+  const operationId='operation:'+id
+  await env.pool.query("insert into teloa_work_retries(owner_id,operation_id,run_id,budget_account_id,attempts,max_attempts,state,completed,last_reason,created_at,updated_at) values($1,$2,$3,$4,1,3,'unknown',false,'test',$5,$5)",[f.owner,operationId,runId,lineage.budgetAccountId,identity.now()])
+  await env.pool.query("insert into teloa_work_retry_claims(owner_id,request_id,operation_id,attempt,model_request_id,spec) values($1,$2,$3,1,$4,'{}')",[f.owner,randomUUID(),operationId,id])
+ }
+ await service.markDispatched(f.owner,{reservationId:old[0]!.id})
+ await env.pool.query('insert into teloa_work_control_hosts(owner_id,generation) values($1,2) on conflict(owner_id) do update set generation=2',[f.owner])
+ const proof={runId,taskId:f.taskId,sessionId:run.session_id,nativeRequestId:run.native_request_id,oldRuntimeId:randomUUID(),oldHostGeneration:1,hostGeneration:2,controlGeneration:1,modelRequestIds:oldIds,endedAt:identity.now()}
+ const retire=async(input=proof,api=service)=>{const c=await env.pool.connect();try{await c.query('begin');const r=await api.retirePreviousHostRequestsInTransaction(c,f.owner,input);await c.query('commit');return r}catch(e){await c.query('rollback');throw e}finally{c.release()}}
+ await assert.rejects(retire(proof,new WorkBudgetService(env.pool,identity,ownerAuthority)),{code:'teloa/forbidden'})
+ await assert.rejects(retire({...proof,hostGeneration:1}),{code:'teloa/invalid-input'})
+ await assert.rejects(retire({...proof,taskId:randomUUID()}),{code:'teloa/forbidden'})
+ assert.deepEqual(await retire(),{closed:2});assert.deepEqual(await retire(),{closed:0})
+ const rows=(await env.pool.query('select * from teloa_work_budget_reservations where owner_id=$1 order by model_request_id',[f.owner])).rows
+ for(const id of oldIds){const row=rows.find(r=>r.model_request_id===id);assert.equal(row.state,'unknown');assert.equal(row.reserved_tokens,10);assert.equal(row.actual_tokens,null);assert.equal(row.receipt,null);assert.equal(row.settled_at,null);assert.equal(row.elapsed_ended_at.toISOString(),proof.endedAt)}
+ assert.equal(rows.find(r=>r.model_request_id==='new-host').state,'reserved');assert.equal(rows.find(r=>r.model_request_id==='new-host').elapsed_terminal,null)
+ const budget=await service.read(f.owner,{budgetAccountId:lineage.budgetAccountId});assert.equal(budget.usedTokens,30);assert.equal(budget.concurrent,1)
+})

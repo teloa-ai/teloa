@@ -69,3 +69,12 @@ test('真实取消清空 Node 内存，权限策略变化不可复用旧worker�
  const reopened=await f.create('ptc-persistent','u4-reopened-session')
  assert.notEqual(reopened,previous);assert.match(text(await f.run(reopened,'typeof privateOwnerValue')),/undefined/,'相同会话ID不等于原运行主体')
 })
+
+
+test('细文件范围直接调用原生run_code也在审批和执行体前拒绝',{timeout:30000},async t=>{
+ const f=await nativePtcToolPath(t),agent=await f.create('ptc-persistent');let asks=0
+ f.ctx.on('approval/request',async()=>{asks++;return 'allowed-once'})
+ registerTaskToolGuard(f.ctx,async()=>({allowedTools:['read','run_code'],argumentRules:[{name:'read',allowed:[],workspaceFiles:'default-workspace',workspacePaths:{files:['input.csv'],directories:[]}},{name:'run_code',allowed:[],anyArguments:true}]}))
+ const result=await f.run(agent,`require('node:fs').writeFileSync('forbidden.txt','no')`)
+ assert.equal(result.isError,true);assert.equal(asks,0);await assert.rejects(access(join(f.workspace,'forbidden.txt')))
+})

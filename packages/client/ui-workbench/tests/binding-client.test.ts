@@ -10,6 +10,32 @@ function fixture() {
   const port:WorkPort={isNativeChild:()=>false,list:async()=>[],read:async id=>row(id),ensure:async id=>{const d=deferred<Conversation>();calls.set(id,d);return d.promise},catalog:async id=>({schema:'teloa.capabilities/v1',conversation:row(id),observedAt:'2026-09-10T00:00:00Z',skills:[],knowledge:{status:'not-connected'},connections:{status:'not-connected'},writes:{status:'not-implemented'}}),block:(id,reason)=>{blocks.set(id,reason)},create:async input=>({...row('new'),requestId:input.requestId,...(input.workspaceId===undefined?{}:{requestedWorkspaceId:input.workspaceId})}),adopt:async id=>id,open:()=>{},current:()=>undefined}
   return {calls,blocks,port,client:new BindingClient(port)}
 }
+test('任务交付真正收口后只读刷新并开放原输入，读取失败仍保持编排锁',async t=>{
+ const f=fixture(),conversation={...row('managed'),purpose:'task-run' as const}
+ t.mock.timers.enable({apis:['setTimeout']})
+ t.after(()=>f.client.select(undefined))
+ f.port.selectBinding=async()=>conversation
+ let reads=0,available=false
+ f.port.readRunInteraction=async()=>{reads++;return available}
+ await f.client.select('managed');await Promise.resolve()
+ assert.match(f.blocks.get('managed')??'',/任务执行/)
+ available=true;t.mock.timers.tick(2000);await Promise.resolve()
+ assert.equal(f.blocks.get('managed'),undefined);assert.equal(reads,2)
+ f.port.readRunInteraction=async()=>{throw Error('unknown')}
+ await f.client.select('managed');await Promise.resolve()
+ assert.match(f.blocks.get('managed')??'',/任务执行/)
+})
+
+test('离开原会话后忽略迟到续聊资格，不解除当前会话的任务锁',async t=>{
+ const f=fixture(),old=deferred<boolean>()
+ t.after(()=>f.client.select(undefined))
+ f.port.selectBinding=async id=>({...row(id),purpose:'task-run'})
+ f.port.readRunInteraction=id=>id==='old'?old.promise:Promise.resolve(false)
+ await f.client.select('old');await f.client.select('new')
+ old.resolve(true);await Promise.resolve()
+ assert.equal(f.client.getSnapshot().sessionId,'new')
+ assert.match(f.blocks.get('new')??'',/任务执行/)
+})
 test('分页首屏在后页未完成前发布，最终完整且不重复走旧全量 list',async()=>{
  const f=fixture(),later=deferred<{items:Conversation[]}>(),started=deferred<void>(),snapshots:string[][]=[]
  f.port.list=async()=>{throw Error('不应调用旧全量入口')}

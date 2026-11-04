@@ -141,7 +141,7 @@ export function installResidentModelBudget(ctx:Context,options:Options):()=>void
    const lease=combineWorkAccessLeases([routing.lease,budgets.lease(owner,reservation)])
    let dispatched=false,usage:number|null=null,finish:ModelFinish|undefined,streamActivitySeen=false
    try{
-    request.signal?.throwIfAborted();lease.assertCurrent();await budgets.markDispatched(owner,{reservationId:reservation.id});dispatched=true
+    request.signal?.throwIfAborted();lease.assertCurrent();await budgets.markDispatched(owner,{reservationId:reservation.id,...controls.ports.hostGeneration?{hostGeneration:controls.ports.hostGeneration()!}:{}});dispatched=true
     request.signal?.throwIfAborted();lease.assertCurrent()
     for await(const chunk of next()){
      if(chunk.type==='finish')finish=chunk.reason;else streamActivitySeen=true
@@ -169,7 +169,7 @@ export function installResidentModelBudget(ctx:Context,options:Options):()=>void
    const reservation=await reserveOrExplain(()=>budgets.reserve(owner,reserve))
    reservationId=reservation.id
    request.signal?.throwIfAborted();claim.lease.assertCurrent();controlled.lease.assertCurrent()
-   await budgets.markDispatched(owner,{reservationId});dispatched=true
+   await budgets.markDispatched(owner,{reservationId,...controls.ports.hostGeneration?{hostGeneration:controls.ports.hostGeneration()!}:{}});dispatched=true
    request.signal?.throwIfAborted();claim.lease.assertCurrent();controlled.lease.assertCurrent()
    for await(const chunk of next()){
     if(chunk.type!=='finish')streamActivitySeen=true

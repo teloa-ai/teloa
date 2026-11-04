@@ -99,7 +99,7 @@ export class BusinessRecordService{
   const rows=(await db.query('select object_version,source_id,snapshot_hash,snapshot from teloa_business_object_snapshots where owner_id=$1 and scope_id=$2 and object_type=$3 and object_id=$4 and object_version between $5 and $6 order by object_version',[owner,source.scope,source.type,source.id,fixed,head.current_version])).rows as SnapshotRow[]
   if(rows.length!==head.current_version-fixed+1)throw new WorkError('teloa/source-unavailable','业务事件连续历史已不可用。')
   const snapshots=rows.map((row,index)=>this.readSnapshot(row,{...source,version:fixed+index},definition.sourceId)),object=snapshots[0]!
-  if(snapshots.some(value=>!isDeepStrictEqual(eventContent(value),eventContent(object))))throw new WorkError('teloa/version-conflict','业务记录中间已有实质变更，请基于当前版本重新准备。')
+  if(snapshots.some(value=>!isDeepStrictEqual(eventContent(value),eventContent(object))))throw new WorkError('teloa/version-conflict','业务记录中间已有实质变更，本次未按原版本继续处理。')
   return {sourceVersion:String(object.version),basisHash:object.snapshotHash,active:object.deletedAt===undefined,data:{object,definitionHash:businessRecordSchemaFingerprint(definition),configuration:basis.configuration}}
  }
 
@@ -266,7 +266,7 @@ export class BusinessRecordService{
    if('id' in input){
     const head=await this.head(db,actor,input,definition.sourceId)
     before=await this.snapshot(db,actor,{...input,version:head.current_version},definition.sourceId)
-    if(before.version!==input.expectedVersion)throw new WorkError('teloa/version-conflict','记录已被修改，请重新读取后再提交。')
+    if(before.version!==input.expectedVersion)throw new WorkError('teloa/version-conflict','记录版本已变化，本次未更新。')
     if(before.deletedAt||before.version>=2147483647)throw new WorkError('teloa/conflict','记录已归档或版本数已达上限。')
    }
    const now=this.identity.now()
@@ -417,11 +417,11 @@ export class BusinessRecordService{
   if(prior){if(prior.request_hash!==requestHash||JSON.stringify(sourceIdentity(prior.source===null?undefined:prior.source))!==JSON.stringify(source))throw conflict();if(JSON.stringify(prior.child_request_ids)!==JSON.stringify(children))throw corrupt();return (await this.replayBatch(db,actor,prior,true)).result}
   for(const requestId of [input.requestId,...children])if(await this.receiptRow(db,actor.ownerId,requestId)||requestId!==input.requestId&&await this.batchRow(db,actor.ownerId,requestId))throw conflict()
   await lockBusinessConfiguration(db,actor.ownerId,input.scope,'shared')
-  if(expected&&!('guards' in expected)&&businessRecordSchemaFingerprint(await this.definition(db,actor,expected))!==expected.schemaFingerprint)throw new WorkError('teloa/version-conflict','业务对象定义已改变，请重新预览后再提交。')
+  if(expected&&!('guards' in expected)&&businessRecordSchemaFingerprint(await this.definition(db,actor,expected))!==expected.schemaFingerprint)throw new WorkError('teloa/version-conflict','业务对象定义已变化，本次未执行。')
   const writes=input.operations.map(({operation,...body},index)=>({operation,input:{...body,scope:input.scope,requestId:children[index]!} as WriteInput}))
   await lockBusinessRecordTypes(db,actor.ownerId,input.scope,writes.map(row=>row.input.type))
   await this.lockHeads(db,actor,await this.writeTargets(db,actor,writes))
-  if(expected&&'guards' in expected&&(await this.previewBatchInTransaction(db,actor,input)).fingerprint!==expected.previewFingerprint)throw new WorkError('teloa/version-conflict','审批期间记录、关联或定义已改变，请重新准备。')
+  if(expected&&'guards' in expected&&(await this.previewBatchInTransaction(db,actor,input)).fingerprint!==expected.previewFingerprint)throw new WorkError('teloa/version-conflict','审批期间记录、关联或定义已变化，本次未执行。')
   const archivingTargets=new Set(writes.flatMap(row=>row.operation==='archive'&&'id' in row.input?[JSON.stringify([row.input.type,row.input.id])]:[]))
   const prepared:Prepared[]=[]
   for(const row of writes)prepared.push(await this.prepare(db,actor,row.operation,row.input,archivingTargets))

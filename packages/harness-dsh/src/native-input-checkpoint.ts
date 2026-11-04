@@ -44,6 +44,10 @@ export type NativeInputRestoreInput=Readonly<{
 }>
 export type NativeInputRestoreLease=Readonly<{
  roots:readonly NativeInputRoot[]
+ /** 原Task须先重装固定执行租约，再由私有原地唤醒口继续。 */
+ deferWake?:true
+ /** 仅持久原Task续作票据可提供；新真实Inbox消息保留自己的受理回执，执行根继承已核原输入。 */
+ inheritedRoots?:readonly NativeInputRoot[]
  /** 仅允许已核验根继续执行；不能据此接纳新输入。 */
  assertCurrent:()=>undefined
 }>

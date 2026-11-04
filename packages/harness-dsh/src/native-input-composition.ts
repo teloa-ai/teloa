@@ -49,7 +49,7 @@ export const nativeInputRequiredAPIs=table({
 })
 /** 宿主提供持久确认（输入与进度检查点）时另需的能力。 */
 export const nativeInputCheckpointAPIs=table({
- '@deepseek-ai/dsh-agent-loop':['AgentLoop.requireInputCheckpoint','AgentLoop.installInputCheckpoint','AgentLoop.requireProgressCheckpoint','AgentLoop.installProgressCheckpoint'],
+ '@deepseek-ai/dsh-agent-loop':['AgentLoop.requireInputCheckpoint','AgentLoop.installInputCheckpoint','AgentLoop.requireProgressCheckpoint','AgentLoop.installProgressCheckpoint','AgentLoop.wakePending','AgentLoopRestoreAdmissionInput.liveAgent'],
 })
 export const nativeInputGoalAPIs=table({'@deepseek-ai/dsh-goal-round-driver':['GoalInputAdmission','GoalRoundDriverOptions','requireGoalInputAdmission','installGoalInputAdmission']})
 export const nativeInputJobAPIs=table({'@deepseek-ai/dsh-tool-jobs':['JobCompletionAdmission','JobCompletionOptions','completionAdmissionVersion','observeCompletionDecision(job,notify)']})

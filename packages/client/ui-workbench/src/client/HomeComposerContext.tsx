@@ -32,8 +32,8 @@ export function HomeComposerContext({sessionId,useSession,useInput,api,roles,blo
   if(!bindingReady){block(sessionId,copy('reading'));return}
   const current=++generation.current;setStatus('loading');setError(undefined);block(sessionId,copy('reading'))
   try{const linked=!await isAssistantContext(sessionId);if(current!==generation.current)return;setObjectIdentity(linked);if(linked){block(sessionId,undefined);return}
-   const [row,available]=await Promise.all([api.read(sessionId),roles()]);if(current!==generation.current)return;setContext(row);setOptions(available);if(api.pending()?.sessionId===sessionId){setStatus('failed');setError(copy('failed'));block(sessionId,copy('failed'))}else{setStatus('ready');block(sessionId,undefined)}}
-  catch(cause){if(current!==generation.current)return;setError(localizeWorkError(locale,cause));setStatus('failed');block(sessionId,copy('failed'))}
+   const [row,available]=await Promise.all([api.read(sessionId),roles()]);if(current!==generation.current)return;setContext(row);setOptions(available);if(api.pending()){setStatus('failed');setError(copy('pendingContext'));block(sessionId,copy('pendingContext'))}else{setStatus('ready');block(sessionId,undefined)}}
+  catch(cause){if(current!==generation.current)return;const unresolved=!!api.pending();setError(unresolved?copy('pendingContext'):localizeWorkError(locale,cause));setStatus('failed');block(sessionId,copy(unresolved?'pendingContext':'failed'))}
  }
  useEffect(()=>{void refresh();return()=>{generation.current++;block(sessionId,undefined)}},[sessionId,api,bindingReady,excluded])
  useEffect(()=>api.subscribe(()=>{void refresh()}),[sessionId,api,bindingReady,excluded])
@@ -43,11 +43,16 @@ export function HomeComposerContext({sessionId,useSession,useInput,api,roles,blo
  },[sessionId])
  useEffect(()=>{try{sessionStorage.setItem('teloa.home-attachment-count/'+sessionId,String(input.attachmentIds.length))}catch{/* 原生附件仍由运行期所有者保留。 */}},[sessionId,input.attachmentIds.length])
  useEffect(()=>{if(input.attachmentIds.length)setLostAttachments(false)},[sessionId,input.attachmentIds.length])
- const change=async(scopeId:string,roleId:string|null,retry=false)=>{
-  if(!retry&&(locked||status!=='ready'))return
+ const change=async(scopeId:string,roleId:string|null)=>{
+  if(locked||status!=='ready')return
   const current=++generation.current;setStatus('saving');setError(undefined);block(sessionId,copy('saving'))
-  try{const row=await (retry?api.retry():api.set({sessionId,scopeId,roleId,expectedVersion:context?.version??0}));if(current!==generation.current)return;setContext(row);setStatus('ready');block(sessionId,undefined)}
+  try{const row=await api.set({sessionId,scopeId,roleId,expectedVersion:context?.version??0});if(current!==generation.current)return;setContext(row);setStatus('ready');block(sessionId,undefined)}
   catch(cause){if(current!==generation.current)return;setError(localizeWorkError(locale,cause));setStatus('failed');block(sessionId,copy('failed'))}
+ }
+ const recover=async()=>{
+  const current=++generation.current;setStatus('loading');setError(undefined);block(sessionId,copy('reading'))
+  try{await api.reconcilePending();if(current!==generation.current)return;if(api.pending())await api.retry();if(current!==generation.current)return;await refresh()}
+  catch(cause){if(current!==generation.current)return;const unresolved=!!api.pending();setError(unresolved?copy('pendingContext'):localizeWorkError(locale,cause));setStatus('failed');block(sessionId,copy(unresolved?'pendingContext':'failed'))}
  }
  const scopeId=context?.scopeId??'general',roleId=context?.roleId??null
  if(run)return <div className={css.context}><span className={css.fixed} aria-label={copy('scope')} title={copy('scope')}>{scopes[run.scope]??run.scope}</span></div>
@@ -57,6 +62,7 @@ export function HomeComposerContext({sessionId,useSession,useInput,api,roles,blo
   {locked?<span className={css.fixed} aria-label={copy('scope')} title={copy('scope')}>{scopes[scopeId]??scopeId}</span>:<label><span className={css.visuallyHidden}>{copy('scope')}</span><select aria-label={copy('scope')} value={scopeId} disabled={readonly} onChange={event=>void change(event.target.value,roleId)}>{Object.entries(scopes).filter(([id])=>!roleId||options.some(role=>role.id===roleId&&canReceiveHomeWorkAssignee(role,id))).map(([id,name])=><option key={id} value={id}>{name}</option>)}</select></label>}
   {roleId&&<span className={css.fixed}>{copy('owner')} · {options.find(role=>role.id===roleId)?.name??copy('missing')}{!locked&&<button type="button" disabled={readonly} aria-label={locale.startsWith('zh')?'移除指定员工':'Remove assigned employee'} onClick={()=>void change(scopeId,null)}>×</button>}</span>}
   {status==='loading'||status==='saving'?<span className={css.visuallyHidden} role="status">{copy(status==='saving'?'saving':'reading')}</span>:null}
-  {(error||lostAttachments)&&<div className={css.notice}>{error&&<p role="alert">{error} <button type="button" onClick={()=>void (pending?.sessionId===sessionId?change(scopeId,roleId,true):refresh())}>{copy('retry')}</button></p>}{lostAttachments&&<p role="status">{draftContinuityCopy(locale,'missing')}</p>}</div>}
+  {locked&&<span className={css.fixedHint}>{copy('fixedContext')}</span>}
+  {(error||lostAttachments)&&<div className={css.notice}>{error&&<p role="alert">{error} <button type="button" disabled={status==='loading'||status==='saving'} onClick={()=>void (pending?recover():refresh())}>{copy(pending?'inspectContext':'retry')}</button></p>}{lostAttachments&&<p role="status">{draftContinuityCopy(locale,'missing')}</p>}</div>}
  </div>
 }

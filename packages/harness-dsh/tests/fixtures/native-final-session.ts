@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict'
 import {join} from 'node:path'
+import {mkdtemp,rm} from 'node:fs/promises'
+import {tmpdir} from 'node:os'
 import {pathToFileURL} from 'node:url'
 import {Context} from '@deepseek-ai/cordis'
 import type {Session,SessionEvent,SessionStore} from '@deepseek-ai/dsh-session'
@@ -35,10 +37,12 @@ export async function patchedCorePackages(t:Cleanup,options:{toolsCompat?:string
 }
 
 /** 真 patched Session/LLM/Tools/Loop + 官方 AgentRegistry/Inbox，同一 Context registry。 */
-export async function patchedSessionFixture(t:Cleanup){
+export async function patchedSessionFixture(t:Cleanup,options:{persistence?:boolean}={}){
  const {sessionPackage,agentPackage,persistencePackage,llmPackage,toolsPackage,loopPackage}=await patchedCorePackages(t)
- const ctx=new Context();t.after(()=>ctx.fiber.dispose())
+ const root=options.persistence?await mkdtemp(join(tmpdir(),'teloa-final-session-')):undefined
+ const ctx=new Context();t.after(async()=>{try{await ctx.fiber.dispose()}finally{if(root)await rm(root,{recursive:true,force:true})}})
  for(const plugin of [llmPackage.LlmRuntime,sessionPackage.SessionStore,SessionProjectionRegistry,SystemPrompt,toolsPackage.ToolRuntime,agentPackage.AgentRegistry])await ctx.plugin(plugin)
+ if(root)await ctx.plugin(persistencePackage,{root,compression:'none'})
  await ctx.plugin(loopPackage.AgentLoop,{agents:[]})
  const {agent}=await ctx.agents.create({sessionId:sessionPackage.SessionId('final-a'),agentOptions:{provider:'test',model:'test'}})
  const {agent:other}=await ctx.agents.create({sessionId:sessionPackage.SessionId('final-b'),agentOptions:{provider:'test',model:'test'}})

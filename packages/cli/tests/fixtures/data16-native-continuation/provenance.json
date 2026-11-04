@@ -1,0 +1,18 @@
+{
+  "schema": "teloa.frozen-data-reader/v1",
+  "sourceCommit": "71086b1929cb1fc279229ad5c873bb81ffe6f2d7",
+  "dataVersion": 16,
+  "origin": "Community data16 source reader before native continuation; compiled by Node stripTypeScriptTypes, no runtime data; trailing whitespace normalized",
+  "files": [
+    {
+      "path": "data-version.js.txt",
+      "bytes": 1016,
+      "sha256": "7563d3a36555420cb1f462f363b22b7dc0940599d836461cbca4c48f6aa0f62a"
+    },
+    {
+      "path": "data-version.json",
+      "bytes": 2866,
+      "sha256": "d1573365a16a8f2fdb66a0ce7bf26bf9af0d90f2cd9fe009b1908d24d1d23501"
+    }
+  ]
+}
