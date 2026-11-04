@@ -180,6 +180,7 @@ test('真实预览wire明确对象输出与记录页必填，不携带assisted�
  assert.match(protocol.pageContract.homePageId,/非空.*现有页面/);assert.match(protocol.pageContract.homePageId,/省略.*保留/)
  assert.equal(f.requests[0]!.tools?.length??0,0);assert.equal(f.draftWrites(),1)
  const assisted=businessBuilderGenerationSchema(f.draft()).capabilities.patchProtocol
+ assert.ok('input' in assisted)
  assert.equal(assisted.input,'patchJson');assert.equal(assisted.legacyInput,'patch');assert.equal(assisted.exactlyOne,true);assert.match(assisted.rules,/JSON\.stringify/)
 })
 

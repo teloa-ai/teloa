@@ -6,7 +6,7 @@ import {join} from 'node:path'
 import {Context} from '@deepseek-ai/cordis'
 import {AgentRegistry,type Agent} from '@deepseek-ai/dsh-agent'
 import {AgentLoop} from '@deepseek-ai/dsh-agent-loop'
-import {LlmAdapter,LlmRuntime,createUserMessage,type ContextFormed,type GenerateOptions,type StreamChunk} from '@deepseek-ai/dsh-llm'
+import {LlmAdapter,LlmRuntime,ToolCallId,createUserMessage,type ContextFormed,type GenerateOptions,type StreamChunk} from '@deepseek-ai/dsh-llm'
 import {SessionId,SessionSeq,SessionStore,type SessionEvent} from '@deepseek-ai/dsh-session'
 import * as JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
 import {SessionProjectionRegistry} from '@deepseek-ai/dsh-session-projection'
@@ -351,19 +351,21 @@ test('普通员工真实拒绝事实在generic继续保留，无关工具不受�
  f.ctx.tools.register(defineTool({name:'read_other_fixture',description:'读取另一份已授权夹具',parameters:{},output:{schema:{type:'string'},render:(_args,value)=>[{type:'text',text:value}]},execute:async()=>{unrelatedReads++;return 'other fixture'}}))
  f.ctx.on('approval/request',async()=>{asks++;return 'rejected'})
  f.ctx.on('tools/pre-execute',async(exec,next)=>exec.name==='read_public_fixture'&&requireApproval?{kind:'ask',reason:'核对本次只读操作'}:next())
- const call:StreamChunk[]=[{type:'block-start',index:0,blockType:'tool-call'},{type:'tool-call-delta',index:0,id:'approval-call',name:'read_public_fixture',argumentsDelta:'{}'},{type:'block-end',index:0,block:{type:'tool-call',id:'approval-call',name:'read_public_fixture',arguments:'{}'}},{type:'finish',reason:{kind:'tool-calls'}}]
+ const call:StreamChunk[]=[{type:'block-start',index:0,blockType:'tool-call'},{type:'tool-call-delta',index:0,id:ToolCallId('approval-call'),name:'read_public_fixture',argumentsDelta:'{}'},{type:'block-end',index:0,block:{type:'tool-call',id:ToolCallId('approval-call'),name:'read_public_fixture',arguments:'{}'}},{type:'finish',reason:{kind:'tool-calls'}}]
  f.adapter.scripts.push(call,reply)
  await f.send('核对本次只读操作')
  assert.equal(asks,1);assert.equal(f.toolExecutions(),0)
  const tools=(await f.ctx.systemPrompt.assemble({agent:f.agent,scope:f.agent})).tools
  await f.send('继续')
- const section=snapshots(f.agent).at(-1)!.data.source.sections.find(row=>row.name==='teloa/role-tool-approval-facts')
+ const source=snapshots(f.agent).at(-1)!.data.source
+ assert.ok(source.kind==='runtime-context')
+ const section=source.sections.find(row=>row.name==='teloa/role-tool-approval-facts')
  assert.ok(section,'普通员工真实下一请求必须含结构化拒绝事实')
  const facts=JSON.parse(section.text)
  assert.equal(facts.rejectedAttempts.length,1);assert.equal(facts.rejectedAttempts[0].callId,'approval-call');assert.equal(facts.actor,'not-recorded')
  assert.match(JSON.stringify(f.adapter.requests.at(-1)!.messages),/teloa.role-tool-approval-context\/v1/)
  assert.deepEqual((await f.ctx.systemPrompt.assemble({agent:f.agent,scope:f.agent})).tools,tools)
- requireApproval=false;f.adapter.scripts.push(call.map(chunk=>chunk.type==='tool-call-delta'?{...chunk,id:'unrelated-call',name:'read_other_fixture'}:chunk.type==='block-end'&&chunk.block.type==='tool-call'?{...chunk,block:{...chunk.block,id:'unrelated-call',name:'read_other_fixture'}}:chunk),reply)
+ requireApproval=false;f.adapter.scripts.push(call.map(chunk=>chunk.type==='tool-call-delta'?{...chunk,id:ToolCallId('unrelated-call'),name:'read_other_fixture'}:chunk.type==='block-end'&&chunk.block.type==='tool-call'?{...chunk,block:{...chunk.block,id:ToolCallId('unrelated-call'),name:'read_other_fixture'}}:chunk),reply)
  await f.send('另行读取可用夹具')
  assert.equal(unrelatedReads,1);assert.equal(f.toolExecutions(),0);assert.equal(asks,1)
 })
@@ -374,7 +376,7 @@ async function recordedApproval(t:TestContext,outcome:'rejected'|'cancelled'|'un
  await f.ctx.plugin(ApprovalService,{policy:'ask'})
  f.ctx.on('approval/request',async()=>outcome)
  f.ctx.on('tools/pre-execute',async(exec,next)=>exec.name==='read_public_fixture'?{kind:'ask',reason:'核对本次只读操作'}:next())
- f.adapter.scripts.push([{type:'block-start',index:0,blockType:'tool-call'},{type:'tool-call-delta',index:0,id:'fixed-call',name:'read_public_fixture',argumentsDelta:'{}'},{type:'block-end',index:0,block:{type:'tool-call',id:'fixed-call',name:'read_public_fixture',arguments:'{}'}},{type:'finish',reason:{kind:'tool-calls'}}],reply)
+ f.adapter.scripts.push([{type:'block-start',index:0,blockType:'tool-call'},{type:'tool-call-delta',index:0,id:ToolCallId('fixed-call'),name:'read_public_fixture',argumentsDelta:'{}'},{type:'block-end',index:0,block:{type:'tool-call',id:ToolCallId('fixed-call'),name:'read_public_fixture',arguments:'{}'}},{type:'finish',reason:{kind:'tool-calls'}}],reply)
  await f.send('核对原操作')
  return f
 }
@@ -404,7 +406,9 @@ test('普通员工拒绝事实经官方JSONL冷读不被新消息清空，跨本
  await first.ctx.fiber.dispose()
  const restored=await fixture(t,{root:directory,resume:true});registerRoleConversationContext(restored.ctx,restored.ports)
  await restored.send('继续')
- const section=snapshots(restored.agent).at(-1)!.data.source.sections.find(row=>row.name==='teloa/role-tool-approval-facts')!
+ const source=snapshots(restored.agent).at(-1)!.data.source
+ assert.ok(source.kind==='runtime-context')
+ const section=source.sections.find(row=>row.name==='teloa/role-tool-approval-facts')!
  assert.deepEqual(JSON.parse(section.text).rejectedAttempts,original.rejectedAttempts)
  restored.state.bindingOwner='other';const count=restored.adapter.requests.length;await restored.send('继续');assert.equal(restored.adapter.requests.length,count,'错误owner在发模型前拒绝')
  const fresh=await fixture(t);registerRoleConversationContext(fresh.ctx,fresh.ports);await fresh.send('继续')
