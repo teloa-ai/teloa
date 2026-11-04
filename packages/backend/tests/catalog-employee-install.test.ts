@@ -231,6 +231,27 @@ slow('并发：同一安装器与两套独立服务同时添加，只建一位�
 // 屏障只停住对方那一套服务实例的对应步骤，放行前这一路自行推进或等待。
 const gate=()=>{let open!:()=>void;const wait=new Promise<void>(resolve=>{open=resolve});return {open,wait}}
 const pause=(ms:number)=>new Promise<void>(resolve=>setTimeout(resolve,ms))
+
+slow('技能清单：并发安装提交不混合快照，下次读取可见且损坏使用记录仍拒绝',async()=>{
+ const owner='local:'+randomUUID(),read=gate(),resume=gate(),readerPool=new Pool({connectionString:container.getConnectionUri(),max:1})
+ const client=await readerPool.connect(),query=client.query.bind(client);client.release()
+ let armed=true,isolation='',readOnly=''
+ client.query=(async(...args:any[])=>{const result=await (query as any)(...args);if(armed&&typeof args[0]==='string'&&args[0].startsWith('select * from teloa_skill_installations where owner_id=')){armed=false;isolation=(await query('show transaction_isolation')).rows[0].transaction_isolation;readOnly=(await query('show transaction_read_only')).rows[0].transaction_read_only;read.open();await resume.wait}return result}) as typeof client.query
+ const unused=async()=>{throw Error('list 不应访问来源或文件')}
+ const reader=new SkillInstallationService(readerPool,identity,{read:unused},{inspect:unused,publish:unused,verify:unused,remove:unused})
+ const pending=reader.list(owner,{});void pending.catch(()=>{})
+ try{
+  await read.wait
+  const installed=full(await services(owner).installer()(triage));assert.equal(installed.install.complete,true)
+  resume.open()
+  const previous=await pending;assert.deepEqual(previous,{items:[],usages:[]})
+  assert.equal(isolation,'repeatable read');assert.equal(readOnly,'on')
+  const current=await reader.list(owner,{});assert.equal(current.items.length,1);assert.equal(current.usages.length,1);assert.equal(current.usages[0]!.installationId,current.items[0]!.id)
+  await pool.query('update teloa_skill_install_usages set usage_hash=$2 where owner_id=$1',[owner,'0'.repeat(64)])
+  await assert.rejects(reader.list(owner,{}),(error:any)=>error?.code==='teloa/storage-corrupt')
+ }finally{resume.open();await pending.catch(()=>{});client.query=query;await readerPool.end()}
+},{timeout:180000})
+
 async function converged(owner:string,receipts:CatalogEmployeeReceipt[]){
  assert.equal(new Set(receipts.map(row=>row.roleId)).size,1,await evidence(owner,receipts));assert.ok(receipts[0]!.roleId);assert.ok(receipts.every(row=>row.install.complete))
  assert.equal((await ownerRoles(owner)).length,1);assert.equal((await services(owner).loads.list(owner,{})).items.length,1);assert.equal((await services(owner).skills.list(owner,{})).items.length,1)
