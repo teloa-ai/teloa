@@ -1,0 +1,162 @@
+name: Community arm64 container smoke
+on:
+  push:
+    branches: [codex/container-0.2.12-smoke]
+permissions:
+  contents: read
+concurrency:
+  group: container-smoke-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  container:
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 60
+    env:
+      REVISION: 91e4780581ed09bacc0cfdbd7c1c130744578bc9
+      IMAGE: teloa-container-smoke:0.2.12
+      COMPOSE_PROJECT_NAME: teloa-smoke-${{ github.run_id }}
+      TELOA_PORT: '3369'
+    steps:
+      - name: Checkout exact merged public source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: 91e4780581ed09bacc0cfdbd7c1c130744578bc9
+          persist-credentials: false
+          fetch-depth: 1
+      - name: Reclaim only unused ephemeral runner SDKs
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$RUNNER_ENVIRONMENT" = github-hosted
+          test "$RUNNER_OS" = Linux
+          test "$RUNNER_ARCH" = ARM64
+          test "$(git rev-parse HEAD)" = "$REVISION"
+          mkdir smoke-evidence
+          df -B1 . > smoke-evidence/disk-before.txt
+          # This hosted VM is disposable; retain Docker, Node, system packages and all source.
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /opt/hostedtoolcache/CodeQL
+          df -B1 . > smoke-evidence/disk-after-sdk-retirement.txt
+          docker version > smoke-evidence/docker-version.txt
+          docker compose version >> smoke-evidence/docker-version.txt
+          test "$(df -B1 --output=avail . | tail -1 | tr -d ' ')" -ge 12884901888
+      - name: Build unchanged public Dockerfile on native arm64
+        shell: bash
+        run: |
+          set -euo pipefail
+          git archive --format=tar "$REVISION" | docker buildx build --platform linux/arm64 --progress=plain --label org.opencontainers.image.version=0.2.12 --label org.opencontainers.image.revision="$REVISION" --tag "$IMAGE" --iidfile smoke-evidence/image.iid --metadata-file smoke-evidence/build-metadata.json --load - > smoke-evidence/build.log 2>&1 &
+          build_pid=$!
+          trap 'kill -TERM "$build_pid" 2>/dev/null || true; wait "$build_pid" 2>/dev/null || true' EXIT
+          while kill -0 "$build_pid" 2>/dev/null; do
+            available=$(df -B1 --output=avail . | tail -1 | tr -d ' ')
+            printf '%s %s\n' "$(date -u +%FT%TZ)" "$available" >> smoke-evidence/build-disk-bytes.log
+            if [ "$available" -lt 1073741824 ]; then
+              kill -TERM "$build_pid" 2>/dev/null || true
+              wait "$build_pid" || true
+              echo 'Ephemeral runner disk guard HOLD; no retry.' >&2
+              exit 1
+            fi
+            sleep 5
+          done
+          wait "$build_pid"
+          trap - EXIT
+          docker image inspect "$IMAGE" --format '{{json .}}' | node --input-type=module -e 'let s="";for await(const c of process.stdin)s+=c;const i=JSON.parse(s);if(i.Architecture!=="arm64"||i.Os!=="linux"||i.Config.User!=="node"||i.Config.Labels["org.opencontainers.image.version"]!=="0.2.12"||i.Config.Labels["org.opencontainers.image.revision"]!==process.env.REVISION)throw Error("image identity");console.log(JSON.stringify({id:i.Id,architecture:i.Architecture,os:i.Os,user:i.Config.User,labels:i.Config.Labels}))' > smoke-evidence/image-manifest.json
+      - name: Offline non-root CLI and fixed dependency checks
+        shell: bash
+        run: |
+          set -euo pipefail
+          version=$(docker run --rm --network none --entrypoint node "$IMAGE" --input-type=module -e 'import {main} from "./packages/cli/lib/bin.js";await main(["--version"])')
+          test "$version" = 0.2.12
+          docker run --rm --network none --entrypoint node "$IMAGE" -e 'const fs=require("fs");if(process.getuid()===0)throw Error("root");const p=JSON.parse(fs.readFileSync("packages/cli/package.json"));if(p.version!=="0.2.12")throw Error("version");console.log(JSON.stringify({uid:process.getuid(),version:p.version}))' > smoke-evidence/nonroot-cli.json
+          docker run --rm --network none --entrypoint node "$IMAGE" scripts/核对DSH依赖.mjs > smoke-evidence/fixed-dependencies.log
+      - name: Normal official compose init and isolated PG/app health
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > smoke.override.yaml <<'YAML'
+          services:
+            init:
+              image: ${IMAGE}
+              restart: "no"
+            db:
+              restart: "no"
+            app:
+              image: ${IMAGE}
+              restart: "no"
+              environment:
+                CI: 'true'
+                TELOA_MARKET_REMOTE: 'off'
+                TELOA_USAGE_STATS: 'off'
+          networks:
+            default:
+              internal: true
+          YAML
+          docker pull --platform linux/arm64 postgres@sha256:18cfe3ef5e6815560c98237d6216d1e5119702fb0f3894c8785dd58b8bbe5d73 > smoke-evidence/postgres-pull.log 2>&1
+          docker compose -f compose.yaml -f smoke.override.yaml up -d --no-build --pull never > smoke-evidence/compose-up.log 2>&1
+          healthy=false
+          for attempt in $(seq 1 90); do
+            app_id=$(docker compose -f compose.yaml -f smoke.override.yaml ps -q app)
+            db_id=$(docker compose -f compose.yaml -f smoke.override.yaml ps -q db)
+            if [ -n "$app_id" ] && [ -n "$db_id" ]; then
+              app_health=$(docker inspect --format '{{.State.Health.Status}}' "$app_id")
+              db_health=$(docker inspect --format '{{.State.Health.Status}}' "$db_id")
+              if [ "$app_health" = healthy ] && [ "$db_health" = healthy ]; then healthy=true; break; fi
+              test "$(docker inspect --format '{{.State.Status}}' "$app_id")" = running
+            fi
+            sleep 5
+          done
+          test "$healthy" = true
+          init_id=$(docker compose -f compose.yaml -f smoke.override.yaml ps -a -q init)
+          test "$(docker inspect --format '{{.State.ExitCode}}' "$init_id")" = 0
+          test "$(docker inspect --format '{{.Config.User}}' "$app_id")" = node
+          network_id=$(docker inspect --format '{{range .NetworkSettings.Networks}}{{.NetworkID}}{{end}}' "$app_id")
+          test "$(docker network inspect --format '{{.Internal}}' "$network_id")" = true
+          node --input-type=module -e 'const r=await fetch("http://127.0.0.1:3369/");if(!r.ok&&r.status!==401)throw Error("health status "+r.status);console.log(JSON.stringify({httpStatus:r.status,authenticated:false,sessionOpened:false}))' > smoke-evidence/http-health.json
+          docker compose -f compose.yaml -f smoke.override.yaml exec -T db psql -U teloa -d teloa -X -A -t -v ON_ERROR_STOP=1 -c "select json_build_object('tables',(select count(*) from pg_tables where schemaname='public' and tablename like 'teloa_%'),'tasks',(select count(*) from teloa_tasks),'runs',(select count(*) from teloa_task_runs),'budgetReservations',(select count(*) from teloa_work_budget_reservations),'nativeCheckpoints',(select count(*) from teloa_native_session_checkpoints),'nativeContinuations',(select count(*) from teloa_native_session_continuations));" > smoke-evidence/empty-work.json
+          node -e 'const fs=require("fs"),r=JSON.parse(fs.readFileSync("smoke-evidence/empty-work.json"));if(r.tables!==298||Object.entries(r).some(([k,v])=>k!=="tables"&&v!==0))throw Error("unexpected work/schema");console.log("fresh work/schema PASS; no model or task submitted")'
+          docker compose -f compose.yaml -f smoke.override.yaml exec -T app node --input-type=module > smoke-evidence/actual-native-compat.json <<'JS'
+          import {readFile,readdir,stat} from 'node:fs/promises';import {join} from 'node:path';import {createRequire} from 'node:module';import {pathToFileURL} from 'node:url';import {createHash} from 'node:crypto';import assert from 'node:assert/strict';
+          const sha=b=>createHash('sha256').update(b).digest('hex'),read=async p=>JSON.parse(await readFile(p,'utf8'));
+          assert.notEqual(process.getuid(),0);assert.equal((await read('/app/packages/cli/package.json')).version,'0.2.12');const metadata=await read('/app/packages/cli/src/data-version.json');assert.equal(metadata.dataVersion,17);assert.deepEqual(metadata.compatibleDataVersions,[17]);
+          const manifests=new Map();for(const n of await readdir('/app/packages/harness-dsh/compat'))if(n.endsWith('.json')){const bytes=await readFile(join('/app/packages/harness-dsh/compat',n)),m=JSON.parse(bytes);if(m.schema==='teloa.dsh-compat-patch/v1')manifests.set(sha(bytes),{m,sha:sha(bytes)})}
+          const base='/data/teloa/native-runtime',graphs=[];for(const n of await readdir(base))if(!n.startsWith('.')){const r=await read(join(base,n,'receipt.json'));assert.equal(r.fingerprint,n);graphs.push({root:join(base,n),r})}assert.equal(graphs.length,1);const {root,r}=graphs[0];let checked=0;
+          for(const row of r.packages){const {m,sha:manifestSHA}=manifests.get(row.manifestSha256)??{};assert(m);assert.equal(m.package,row.name);assert.equal(row.manifestSha256,manifestSHA);const copy=join(root,row.name.slice('@deepseek-ai/'.length));for(const f of row.files){assert.equal(sha(await readFile(join(copy,f.path))),f.sha256);checked++}for(const f of m.files){assert.equal(sha(await readFile(join(row.source,f.path))),f.beforeSha256);assert.equal(sha(await readFile(join(copy,f.path))),f.afterSha256)}}
+          const loop=r.packages.find(p=>p.name==='@deepseek-ai/dsh-agent-loop');assert(loop);assert(manifests.get(loop.manifestSha256).m.api.includes('AgentLoop.wakePending'));
+          const runtime=await import('/app/scripts/runtime/native-runtime.mjs'),plan=await runtime.prepareNativeRuntime({programRoot:'/app',runtimeRoot:'/data/teloa'});assert.equal(plan.fingerprint,r.fingerprint);runtime.installNativeRuntime(plan);const require=createRequire('/app/package.json'),official=createRequire(require.resolve('@deepseek-ai/dsh/package.json'));const {AgentLoop}=await import(pathToFileURL(official.resolve('@deepseek-ai/dsh-agent-loop')).href);for(const key of ['requireWorkAdmission','installWorkAdmission','requireInputCheckpoint','installInputCheckpoint','requireRestoreAdmission','installRestoreAdmission','wakePending'])assert.equal(typeof AgentLoop.prototype[key],'function',key);
+          const processes=[];for(const n of await readdir('/proc'))if(/^\d+$/.test(n)){try{const cmd=await readFile('/proc/'+n+'/cmdline','utf8');if(cmd.includes('/app/scripts/runtime/native-runtime-entry.mjs'))processes.push(Number(n))}catch{}}assert(processes.length>0);
+          let sessionLogs=0;async function walk(p){let entries;try{entries=await readdir(p,{withFileTypes:true})}catch(e){if(e.code==='ENOENT')return;throw e}for(const e of entries){if(e.isDirectory())await walk(join(p,e.name));else if(/^session\.v4\.jsonl(?:\.zstd)?$/.test(e.name))sessionLogs++}}await walk('/data/dsh/sessions');assert.equal(sessionLogs,0);
+          console.log(JSON.stringify({version:'0.2.12',dataVersion:17,compatibleDataVersions:[17],uid:process.getuid(),nativeFingerprint:r.fingerprint,packages:r.packages.length,checkedLeaves:checked,agentLoopManifestSHA256:loop.manifestSha256,agentLoopFiles:loop.files.filter(f=>f.path==='lib/index.js'||f.path==='lib/types/index.d.ts'),normalBootWrapperObserved:true,officialGraphRevalidated:true,actualWorkAdmissionExportsVerified:true,sessionLogs,noPromptOrTaskSubmitted:true,networkInternal:true,noCredentialsImported:true}));
+          JS
+      - name: Always collect sanitized logs and normally release this compose project
+        if: always()
+        shell: bash
+        run: |
+          set -uo pipefail
+          mkdir -p smoke-evidence
+          cleanup=0
+          if [ -f smoke.override.yaml ]; then
+            if docker image inspect "$IMAGE" >/dev/null 2>&1; then
+              docker compose -f compose.yaml -f smoke.override.yaml logs --no-color 2>&1 | docker run --rm -i --network none --entrypoint node "$IMAGE" --input-type=module -e 'import {redactLog} from "./packages/cli/lib/diagnostics.js";let text="";for await(const c of process.stdin)text+=c;console.log(redactLog(text).replace(/https?:\/\/\S+/g,"[runtime URL omitted]"))' > smoke-evidence/compose.sanitized.log || cleanup=1
+            fi
+            docker compose -f compose.yaml -f smoke.override.yaml down --volumes --remove-orphans --timeout 30 > smoke-evidence/cleanup.log 2>&1 || cleanup=1
+          fi
+          # This exact run project only; never prune unrelated images, containers, volumes or caches.
+          test -z "$(docker ps -aq --filter label=com.docker.compose.project="$COMPOSE_PROJECT_NAME")" || cleanup=1
+          test -z "$(docker volume ls -q --filter label=com.docker.compose.project="$COMPOSE_PROJECT_NAME")" || cleanup=1
+          if docker image inspect "$IMAGE" >/dev/null 2>&1 && [ -f smoke-evidence/image.iid ]; then
+            if [ "$(docker image inspect --format '{{.Id}}' "$IMAGE")" = "$(cat smoke-evidence/image.iid)" ] && [ "$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' "$IMAGE")" = "$REVISION" ]; then
+              docker image rm "$IMAGE" >> smoke-evidence/cleanup.log 2>&1 || cleanup=1
+            else cleanup=1; fi
+          fi
+          df -B1 . > smoke-evidence/disk-final.txt
+          printf '{"normalComposeCleanupExit":%s,"imagePublished":false,"modelsSubmitted":false}\n' "$cleanup" > smoke-evidence/cleanup-summary.json
+          node -e 'const fs=require("fs"),tail=p=>{try{return fs.readFileSync(p,"utf8").split("\n").slice(-80).join("\n").slice(-32768).replace(/https?:\/\/\S+/g,"[URL omitted]").replace(/postgres(?:ql)?:\/\/\S+/g,"[database URL omitted]")}catch{return "not produced"}};fs.writeFileSync("smoke-evidence/diagnostic-tails.json",JSON.stringify({build:tail("smoke-evidence/build.log"),compose:tail("smoke-evidence/compose.sanitized.log"),cleanup:tail("smoke-evidence/cleanup.log")}))'
+          exit "$cleanup"
+      - name: Upload only bounded smoke evidence, never image or data volumes
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: container-0.2.12-arm64-smoke-${{ github.run_id }}
+          path: smoke-evidence/*.json
+          if-no-files-found: error
+          retention-days: 7
+          include-hidden-files: false
