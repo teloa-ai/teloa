@@ -261,7 +261,9 @@ test('过渡创建屏障保留已落seed；冷pending在中断修复前拒绝，
  reset()
  const f=await nativeProviderFixture(t),model=new NoModel(),root=await realpath(await mkdtemp(join(tmpdir(),'teloa-provider-seed-')))
  // 本例没有恢复票据，不能沿用独立普通会话夹具的默认恢复许可。
- Reflect.deleteProperty(f.ctx.get('teloaResidentInputAdmission' as never) as object,'restore')
+ const resident:unknown=f.ctx.get('teloaResidentInputAdmission' as never)
+ assert.ok(resident&&typeof resident==='object')
+ Reflect.deleteProperty(resident,'restore')
  t.after(()=>rm(root,{recursive:true,force:true}))
  f.ctx.llm.registerAdapter(['controlled'],model)
  await f.ctx.plugin(f.persistencePackage,{root});await f.ctx.plugin(TeloaNativeInput)
@@ -364,7 +366,9 @@ test('profile等价真实依赖图：agent-loop配置冷pending必须等待provi
  reset()
  const f=await nativeProviderKernel(t),model=new NoModel(),root=await realpath(await mkdtemp(join(tmpdir(),'teloa-provider-configured-')))
  // 本例没有恢复票据，不能沿用独立普通会话夹具的默认恢复许可。
- Reflect.deleteProperty(f.ctx.get('teloaResidentInputAdmission' as never) as object,'restore')
+ const resident:unknown=f.ctx.get('teloaResidentInputAdmission' as never)
+ assert.ok(resident&&typeof resident==='object')
+ Reflect.deleteProperty(resident,'restore')
  t.after(()=>rm(root,{recursive:true,force:true}))
  f.ctx.llm.registerAdapter(['controlled'],model);await f.ctx.plugin(f.persistencePackage,{root})
  const id=SessionId('configured-pending'),input=message('configuration-not-a-permit')

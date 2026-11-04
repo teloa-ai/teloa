@@ -23,7 +23,11 @@ const permit=(input:NativeInputRestoreInput,assertCurrent:()=>undefined=()=>unde
 async function fixture(t:TestContext,restore?:NativeInputRestore){
  const f=await nativeProviderKernel(t),root=await mkdtemp(join(tmpdir(),'teloa-input-restore-'))
  // 无部署恢复策略的场景不能继承通用夹具的 standalone restore 转发口。
- if(restore===undefined)Reflect.deleteProperty(f.ctx.get('teloaResidentInputAdmission' as never) as object,'restore')
+ if(restore===undefined){
+  const resident:unknown=f.ctx.get('teloaResidentInputAdmission' as never)
+  assert.ok(resident&&typeof resident==='object')
+  Reflect.deleteProperty(resident,'restore')
+ }
  t.after(()=>rm(root,{recursive:true,force:true}))
  await f.ctx.plugin(f.persistencePackage,{root,compression:'none'})
  const provider=f.ctx.plugin(TeloaNativeInput,restore===undefined?{}:{restore});await provider
