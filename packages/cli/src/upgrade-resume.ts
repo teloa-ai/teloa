@@ -53,8 +53,9 @@ function readJournal(value:unknown):Journal|undefined{
 export async function completedUpgradeReceiptProvenance(state:InstallState,value:unknown,intentId:string,targetManifestSha256:string):Promise<Array<{path:string;sha256:string}>>{
  const receipt=readReceipt(value);if(receipt.status!=='complete'||!uuid(intentId))throw refuse()
  if(receipt.restartId===intentId)return []
+ // process.port 是私密 control 通道；应用端口由 binding.port 核对，不能要求二者相等。
  const journalPath=pathOf(state),bytes=await readFile(journalPath),journal=readJournal(await readPrivateJson(journalPath)),home=await lstat(state.layout.home),b=journal?.binding,last=journal?.attempts.at(-1)
- if(!journal||!b||!last||last.phase!=='completed'||!last.process||last.process.installId!==state.id||last.process.port!==state.port||last.requestId!==receipt.restartId||b.installId!==state.id||b.home!==state.layout.home||b.device!==home.dev||b.inode!==home.ino||b.port!==state.port||b.workspace!==state.layout.workspaceRoot||b.from!==receipt.from||b.to!==receipt.to||b.backup!==receipt.backup||b.targetManifestSha256!==targetManifestSha256||b.originalReceipt.restartId!==intentId||!['switching','failed'].includes(b.originalReceipt.status)||b.originalReceipt.from!==receipt.from||b.originalReceipt.to!==receipt.to||b.originalReceipt.backup!==receipt.backup||!isDeepStrictEqual(JSON.parse(bytes.toString()),journal))throw refuse()
+ if(!journal||!b||!last||last.phase!=='completed'||!last.process||last.process.installId!==state.id||last.requestId!==receipt.restartId||b.installId!==state.id||b.home!==state.layout.home||b.device!==home.dev||b.inode!==home.ino||b.port!==state.port||b.workspace!==state.layout.workspaceRoot||b.from!==receipt.from||b.to!==receipt.to||b.backup!==receipt.backup||b.targetManifestSha256!==targetManifestSha256||b.originalReceipt.restartId!==intentId||!['switching','failed'].includes(b.originalReceipt.status)||b.originalReceipt.from!==receipt.from||b.originalReceipt.to!==receipt.to||b.originalReceipt.backup!==receipt.backup||!isDeepStrictEqual(JSON.parse(bytes.toString()),journal))throw refuse()
  const originalPath=join(state.layout.instanceRoot,'upgrade-failures',b.originalReceiptSha256+'.json'),original=await readFile(originalPath),backupPath=join(b.backup,'backup-manifest.json'),backup=await readFile(backupPath)
  if(sha(original)!==b.originalReceiptSha256||!isDeepStrictEqual(readReceipt(JSON.parse(original.toString())),b.originalReceipt)||sha(backup)!==b.backupManifestSha256)throw refuse()
  return [{path:journalPath,sha256:sha(bytes)},{path:originalPath,sha256:sha(original)},{path:backupPath,sha256:sha(backup)}]
@@ -72,10 +73,12 @@ export async function archiveCompletedUpgradeResumeJournal(state:InstallState):P
  if(binding.from===receipt.from&&binding.to===receipt.to&&binding.backup===receipt.backup)return {archived:false}
  const last=journal.attempts.at(-1)!,original=readReceipt(binding.originalReceipt)
  if(last.phase!=='completed'||!last.process||last.process.installId!==state.id)throw pending()
- const previous=exactVersion(binding.to)&&binding.to.split('.').map(Number),current=exactVersion(receipt.from)&&receipt.from.split('.').map(Number)
- const older=previous&&current&&previous.reduce((value,n,i)=>value||Math.sign(n-current[i]!),0)<=0
- const allowedReceipt=receipt.status==='failed'||isDeepStrictEqual(receipt,await ordinarySwitchingReceipt(state,state.version,state.layout.releaseRoot))
- if(state.phase!=='maintenance'||!allowedReceipt||receipt.to!==state.version||!older||binding.installId!==state.id||binding.home!==state.layout.home||binding.device!==home.dev||binding.inode!==home.ino||binding.port!==state.port||binding.workspace!==state.layout.workspaceRoot||binding.from!==original.from||binding.to!==original.to||binding.backup!==original.backup||!['failed','switching'].includes(original.status))throw refuse()
+ // 轮次由已完成的固定证据和当前普通 intent 证明；版本可能跨 RC、稳定或降号，不能据数值推断先后。
+ const switching=await ordinarySwitchingReceipt(state,state.version,state.layout.releaseRoot)
+ const allowedReceipt=switching?['failed','switching'].includes(receipt.status)&&isDeepStrictEqual({...receipt,status:'switching'},switching):receipt.status==='failed'
+ // 本人正常stop保留stopped；只有当前完整普通switching证据可进入这条续办分支。
+ const distinctOperation=receipt.restartId!==original.restartId&&!journal.attempts.some(attempt=>attempt.requestId===receipt.restartId)
+ if(state.phase!=='maintenance'&&!(state.phase==='stopped'&&isDeepStrictEqual(receipt,switching))||!allowedReceipt||receipt.to!==state.version||!distinctOperation||binding.installId!==state.id||binding.home!==state.layout.home||binding.device!==home.dev||binding.inode!==home.ino||binding.port!==state.port||binding.workspace!==state.layout.workspaceRoot||binding.from!==original.from||binding.to!==original.to||binding.backup!==original.backup||!['failed','switching'].includes(original.status))throw refuse()
  for(const backup of [binding.backup,receipt.backup])if(await realpath(backup)!==backup||dirname(backup)!==state.layout.home+'.backups')throw refuse()
  const originalBytes=await readFile(join(state.layout.instanceRoot,'upgrade-failures',binding.originalReceiptSha256+'.json'))
  if(sha(originalBytes)!==binding.originalReceiptSha256||!isDeepStrictEqual(readReceipt(JSON.parse(originalBytes.toString())),original))throw refuse()
@@ -126,7 +129,7 @@ export async function resumeUpgradeInstall(state:InstallState,version:string,sou
  if(!isDeepStrictEqual(target,source)||target.version!==version||old.version!==receipt.from||!canUpgradeData(target,old.dataVersion)||backup.installId!==state.id||backup.version!==receipt.from||backup.dataVersion!==old.dataVersion||installation.workspaceRoot!==state.layout.workspaceRoot||installation.port!==state.port)throw refuse()
  const binding:Binding={installId:state.id,home:state.layout.home,device:home.dev,inode:home.ino,port:state.port,workspace:state.layout.workspaceRoot,from:receipt.from,to:version,backup:receipt.backup,backupManifestSha256:sha(await readFile(join(receipt.backup,'backup-manifest.json'))),targetManifestSha256:sha(await readFile(join(state.layout.releaseRoot,'release-manifest.json'))),originalReceipt:receipt,originalReceiptSha256:journal?journal.binding.originalReceiptSha256:sha(receiptBytes)}
  if(journal&&!isDeepStrictEqual(journal.binding,binding))throw refuse()
- if(!journal&&(state.phase!=='maintenance'||currentReceipt.status!=='failed'&&!(currentReceipt.status==='switching'&&isDeepStrictEqual(currentReceipt,boundSwitching))))throw refuse()
+ if(!journal&&(state.phase!=='maintenance'&&!(state.phase==='stopped'&&isDeepStrictEqual(currentReceipt,boundSwitching))||currentReceipt.status!=='failed'&&!(currentReceipt.status==='switching'&&isDeepStrictEqual(currentReceipt,boundSwitching))))throw refuse()
  if(journal){const original=await readFile(join(state.layout.instanceRoot,'upgrade-failures',binding.originalReceiptSha256+'.json'));if(sha(original)!==binding.originalReceiptSha256||!isDeepStrictEqual(readReceipt(JSON.parse(original.toString())),receipt))throw refuse()}
  const proof=async()=>{
   await lease()
