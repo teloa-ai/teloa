@@ -358,7 +358,7 @@ test('普通员工真实拒绝事实在generic继续保留，无关工具不受�
  const tools=(await f.ctx.systemPrompt.assemble({agent:f.agent,scope:f.agent})).tools
  await f.send('继续')
  const source=snapshots(f.agent).at(-1)!.data.source
- assert.ok(source.kind==='runtime-context')
+ assert.ok(source.kind==='runtime-context'&&source.form==='snapshot')
  const section=source.sections.find(row=>row.name==='teloa/role-tool-approval-facts')
  assert.ok(section,'普通员工真实下一请求必须含结构化拒绝事实')
  const facts=JSON.parse(section.text)
@@ -407,7 +407,7 @@ test('普通员工拒绝事实经官方JSONL冷读不被新消息清空，跨本
  const restored=await fixture(t,{root:directory,resume:true});registerRoleConversationContext(restored.ctx,restored.ports)
  await restored.send('继续')
  const source=snapshots(restored.agent).at(-1)!.data.source
- assert.ok(source.kind==='runtime-context')
+ assert.ok(source.kind==='runtime-context'&&source.form==='snapshot')
  const section=source.sections.find(row=>row.name==='teloa/role-tool-approval-facts')!
  assert.deepEqual(JSON.parse(section.text).rejectedAttempts,original.rejectedAttempts)
  restored.state.bindingOwner='other';const count=restored.adapter.requests.length;await restored.send('继续');assert.equal(restored.adapter.requests.length,count,'错误owner在发模型前拒绝')
