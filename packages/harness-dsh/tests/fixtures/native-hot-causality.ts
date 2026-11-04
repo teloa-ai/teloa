@@ -15,7 +15,7 @@ import {createNativeWorkInput} from '../../src/native-work-input.ts'
 import {patchedSessionPackage,type FinalSessionStore} from './native-final-session.ts'
 import {patchedNativePackage} from './native-patched-package.ts'
 import * as Persistence from '@deepseek-ai/dsh-session-persistence-jsonl'
-import type {NativeInputCheckpoint,NativeProgressCheckpoint} from '../../src/native-input-checkpoint.ts'
+import type {NativeInputCheckpoint,NativeProgressCheckpoint,NativeInputRestore} from '../../src/native-input-checkpoint.ts'
 
 const denied=()=>new WorkError('teloa/forbidden','热运行工作因果已失效。')
 export type StreamAdmissionRuntime=LlmRuntime&{
@@ -108,7 +108,7 @@ export class HotAdapter extends LlmAdapter{
 }
 
 /** 独立双断言只模拟业务许可；受理因果必须来自真实最终 Session 受理回执。 */
-export async function nativeHotCausalityFixture(t:TestContext,options:{checkpoint?:NativeInputCheckpoint;progress?:NativeProgressCheckpoint;persistenceRoot?:string;capabilityPolicy?:WorkAccessPolicy}={}){
+export async function nativeHotCausalityFixture(t:TestContext,options:{checkpoint?:NativeInputCheckpoint;progress?:NativeProgressCheckpoint;restore?:NativeInputRestore;persistenceRoot?:string;capabilityPolicy?:WorkAccessPolicy;resident?:import('../../src/native-work-input.ts').ResidentInputAdmission}={}){
  const f=await nativeHotKernel(t),{ctx}=f
  if(options.persistenceRoot)await ctx.plugin(Persistence,{root:options.persistenceRoot,compression:'none'})
  const observed=new Map<Session,SessionEvent[]>()
@@ -126,7 +126,8 @@ export async function nativeHotCausalityFixture(t:TestContext,options:{checkpoin
    assertContinuationCurrent(){counters.continuationAssertions++;if(rights.revoked||generation!==rights.generation)throw denied()},
   })
  })
- const work=createNativeWorkInput(ctx,access,options.checkpoint,options.progress);t.after(()=>work.close())
+ if(options.resident)ctx.provide('teloaResidentInputAdmission' as never,options.resident as never)
+ const work=createNativeWorkInput(ctx,access,options.checkpoint,options.progress,options.restore,options.resident!==undefined);t.after(()=>work.close())
  const adapter=new HotAdapter();ctx.llm.registerAdapter(['hot-test'],adapter)
  const toolExecutions:ToolRunContext[]=[]
  let toolAction:(exec:ToolRunContext)=>Promise<void>=async()=>{}

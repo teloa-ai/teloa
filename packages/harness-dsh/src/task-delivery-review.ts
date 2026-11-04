@@ -339,11 +339,10 @@ export function reviewInputSources(inputs:ReviewMaterial['inputs']):string{
  return '本轮输入来源（宿主按冻结输入确认）：本轮业务资料只有'+kinds.join('、')+'，全部是随任务提供的文字，本轮没有工具取得的内容。宿主没有在本轮额外核验资料的提供者身份、采集渠道、真伪或独立佐证；这只表示这些前提在资料未写明时仍属未知，不表示资料中没有凭证或核实记载，也不表示资料不实。资料原文明确记载的凭证、核实情况及其限制，按原文评估；宿主不替资料作真实背书。固定工作方法（含其中的角色设定、对使用者的称呼与示例）只规定做法与定义，不能用来补出本人、资料提供者或佐证情况等前提。'
 }
 /**
- * 起草与复核分别计步：未成稿的取证起草循环限十步；复核从第 1 轮首个单元起另计，覆盖 R1–R4 各至多四个单元与整租约唯一一次纠正，
+ * 起草与复核分别计步：取证起草由既有工作额度控制；复核从第 1 轮首个单元起另计，覆盖 R1–R4 各至多四个单元与整租约唯一一次纠正，
  * 取证步数多少不挤占复核预算。
  */
 export const maxReviewRounds=4,maxReviewModelSteps=maxReviewRounds*maxReviewUnits+1
-const maxDraftModelSteps=10
 /** 只有本 Run 成功的加载回执能激活方法；绑定目录不等于本轮已读正文。 */
 export function activateDeferredReviewMethods(material:ReviewMaterial,evidence:ReviewToolEvidence):ReviewMaterial{
  if(material.deferredMethods===undefined)return material
@@ -511,7 +510,8 @@ function acceptedReviewDelivery(source:object,text:string,events:readonly Sessio
 /** v4不把旧AI意见变为事实：重算两次实际改稿，并逐字核对中间数据、拒绝回执和最终全部依赖。 */
 function acceptedRepairDelivery(source:object,text:string,events:readonly SessionEvent[],turn:number|undefined):boolean{
  const raw=Reflect.get(source,'rounds'),catalogSha=Reflect.get(source,'sourceCatalogSha256')
- if(turn===undefined||events.filter(event=>event.type==='step/start'&&event.data.turn===turn).length>maxDraftModelSteps+maxReviewModelSteps||Reflect.get(source,'phase')!=='verify'||Reflect.get(source,'verdict')!=='accepted'||Reflect.get(source,'deliverySha256')!==draftSha256(text)||typeof catalogSha!=='string'||!/^[a-f0-9]{64}$/.test(catalogSha)||!Array.isArray(raw)||raw.length!==4||raw.some(round=>!plainRecord(round)))return false
+ const draft=events.find(event=>event.type==='assistant/message'&&event.data.turn===turn&&event.data.message.id===Reflect.get(source,'draftMessageId'))
+ if(turn===undefined||!draft||events.filter(event=>event.type==='step/start'&&event.data.turn===turn&&event.seq>draft.seq).length>maxReviewModelSteps||Reflect.get(source,'phase')!=='verify'||Reflect.get(source,'verdict')!=='accepted'||Reflect.get(source,'deliverySha256')!==draftSha256(text)||typeof catalogSha!=='string'||!/^[a-f0-9]{64}$/.test(catalogSha)||!Array.isArray(raw)||raw.length!==4||raw.some(round=>!plainRecord(round)))return false
  const rounds=raw as Record<string,unknown>[],[r1,r2,r3,r4]=rounds as [Record<string,unknown>,Record<string,unknown>,Record<string,unknown>,Record<string,unknown>]
  for(const [index,round]of rounds.entries()){
   const revise=index%2===0,protocol=index<2?deliveryReviewProtocol:deliveryRepairProtocol
@@ -853,7 +853,7 @@ export function ownsDeliveryReviewSubmission(exec:Pick<ToolExecution,'name'|'age
  * 计划由宿主租约绑定到自己持有的同一完整快照（摘要由宿主计算并写入回执结果与轮次记录，模型不输入），只按编号整块替换本单元的块；一轮的全部单元计划都校验通过后才一次性应用。有界收尾：第 1 轮
  * 全部单元通过后原子应用，即使零改也不交付，按当前完整快照重新划分块与单元再做第2轮验收；第2轮只接收明确验收回执，
  * 任一单元拒绝或未知均不交付。仅第2轮有依据的正式拒绝可在剩余预算足够完整修订与冷验时，
- * 追加一次第3轮修订和第4轮独立验收；仍拒绝则收错。起草限十步，复核另计 maxReviewModelSteps 步；整个租约共享唯一一次纠正名额。
+ * 追加一次第3轮修订和第4轮独立验收；仍拒绝则收错。起草沿用工作额度，复核另计 maxReviewModelSteps 步；整个租约共享唯一一次纠正名额。
  * 复核步只向模型提供这一个回执工具（登记在本 agent 自己的作用域，不改岗位授权清单），其他工具调用一律拒绝；回执只在本 agent、
  * 本请求轮次、本单元已进入的那一步、且本单元尚未提交时接收，一次为限。唯一调用的严格参数或工具体语义校验失败可沿 SDK 的真实错误回执纠正一次，
  * 不重发输入、不新增轮次；单元只写推理或说明、没有任何工具调用即收尾时，可改用这一名额在同一轮发一次补交提醒。名额用尽后再次非法或缺交、
@@ -1114,7 +1114,7 @@ export function leaseTaskDeliveryReview(agent:Pick<Agent,'ctx'|'session'>,lease:
    if(phase==='idle'&&payload.messages.some(message=>message.source.kind==='user'&&Reflect.get(message.source,'rpcId')===lease.requestId))reviewTurn=payload.turn
    if(!('skip'in material)&&phase!=='done'&&payload.turn===reviewTurn){
     const steps=readSessionEvents(agent.session).filter(event=>event.type==='step/start'&&event.data.turn===payload.turn).length
-    if(phase==='idle'?steps>=maxDraftModelSteps:steps-reviewBase>=maxReviewModelSteps)fail('review-model-step-limit','本次模型步骤预算已用尽，未解决的交付问题仍保留。')
+    if(phase!=='idle'&&steps-reviewBase>=maxReviewModelSteps)fail('review-model-step-limit','本次模型步骤预算已用尽，未解决的交付问题仍保留。')
    }
    if(!reviewing())return next()
    payload.signal.throwIfAborted()

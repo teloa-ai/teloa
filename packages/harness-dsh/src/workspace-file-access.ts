@@ -86,7 +86,12 @@ function scopedFileDefinition(definition:ToolDefinition,policy:TaskToolPolicy,_c
  const parameters=definition.parameters as {type:'object';properties:Record<string,object>}
  return {...definition,parameters:{...parameters,properties:{...parameters.properties,file_path:{...parameters.properties.file_path,...restriction}}} as ToolDefinition['parameters']}
 }
-function fileAllowed(policy:TaskToolPolicy,name:FileName,path?:string):boolean{const has=(op:FileName)=>policy.allowedTools.includes(op)&&!!policy.argumentRules?.some(rule=>rule.name===op&&isWorkspaceFileRule(rule)&&(path===undefined||workspacePathAllowed(rule,path)));return has(name)&&(name!=='edit'||!hasWorkspacePaths(policy.argumentRules)||has('read')&&has('write'))}
+function fileAllowed(policy:TaskToolPolicy,name:FileName,path?:string):boolean{
+ const permits=(rules:TaskToolPolicy['argumentRules'],op:FileName)=>!!rules?.some(rule=>rule.name===op&&isWorkspaceFileRule(rule)&&(path===undefined||workspacePathAllowed(rule,path)))
+ // 已完成 Run 的原范围与岗位当前范围同时成立；成功写回执不能替代后来收窄的路径授权。
+ const has=(op:FileName)=>policy.allowedTools.includes(op)&&permits(policy.argumentRules,op)&&(policy.currentArgumentRules===undefined||permits(policy.currentArgumentRules,op))
+ return has(name)&&(name!=='edit'||!hasWorkspacePaths(policy.argumentRules)&&!hasWorkspacePaths(policy.currentArgumentRules)||has('read')&&has('write'))
+}
 export type TaskRunWorkspaceFileAccess={
  check:(exec:ToolExecution,root:{id:string;header:{cwd?:string};snapshotEvents?:()=>readonly {type:string;data:any}[]},policy:TaskToolPolicy)=>Promise<string|undefined>
  recheck:(exec:ToolExecution)=>Promise<void>

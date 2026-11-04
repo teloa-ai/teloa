@@ -19,6 +19,8 @@ export interface WorkPort {
   selectBinding?(sessionId:string):Promise<Conversation>
   /** 只读核对已有原生运行目录，不创建或领养普通会话。 */
   readRunSession?(sessionId:string):Promise<string>
+  /** 仅核对任务及正式交付已收口，不继续旧执行。 */
+  readRunInteraction?(sessionId:string):Promise<boolean>
   isNativeChild(sessionId:string):boolean
   homeSkills?(signal?:AbortSignal):Promise<CapabilitySnapshot['skills']>
   catalog(sessionId:string):Promise<CapabilitySnapshot>
@@ -46,11 +48,25 @@ export class BindingClient {
   private directory:{generation:number;ownerId:string|undefined;signal:AbortSignal|undefined;status:'idle'|'loading'|'ready'|'failed';rows:Conversation[];error:unknown|undefined;loadingMore?:boolean;refreshing?:boolean}={generation:0,ownerId:undefined,signal:undefined,status:'idle',rows:[],error:undefined}
   private directorySettled=this.directory
   private directoryAbort:AbortController|undefined
+  private interactionGeneration=0
+  private interactionTimer:ReturnType<typeof setTimeout>|undefined
+  private interaction:{conversation:Conversation;available:boolean}|undefined
   constructor(port:WorkPort) {this.port=port}
   getSnapshot=():BindingState=>this.state
   getDirectorySnapshot=()=>this.directory
   subscribe=(listener:()=>void)=>{this.listeners.add(listener);return ()=>{this.listeners.delete(listener)}}
-  private publish(patch:Partial<BindingState>) {this.state={...this.state,...patch};for(const listener of this.listeners)listener()}
+  private publish(patch:Partial<BindingState>) {if(patch.status!==undefined&&patch.status!=='ready'||'sessionId'in patch&&patch.sessionId!==this.state.sessionId){this.interactionGeneration++;clearTimeout(this.interactionTimer)}this.state={...this.state,...patch};for(const listener of this.listeners)listener()}
+  private inputBlock(sessionId:string):void{
+    const conversation=this.state.conversation,generation=++this.interactionGeneration
+    clearTimeout(this.interactionTimer)
+    if(this.state.status!=='ready'||conversation?.sessionId!==sessionId)return
+    if(conversation.purpose!=='task-run'){this.port.block(sessionId,undefined);return}
+    this.port.block(sessionId,this.interaction?.conversation===conversation&&this.interaction.available?undefined:taskRunInputBlock)
+    if(!this.port.readRunInteraction)return
+    const current=()=>generation===this.interactionGeneration&&this.state.status==='ready'&&this.state.sessionId===sessionId&&this.state.conversation===conversation
+    const apply=(available:boolean)=>{if(!current())return;this.interaction={conversation,available};this.port.block(sessionId,available?undefined:taskRunInputBlock);if(!available)this.interactionTimer=setTimeout(()=>{if(current())this.inputBlock(sessionId)},2000)}
+    void this.port.readRunInteraction(sessionId).then(apply,()=>apply(false))
+  }
   private assertCreationResult(conversation:Conversation,creation:ConversationCreation):void {
     if(conversation.requestId!==creation.requestId)throw Error('创建结果请求身份不一致，已停止原生会话领养。')
     if(creation.title!==undefined&&conversation.title!==creation.title)throw Error('创建结果标题不一致，已停止原生会话领养。')
@@ -59,7 +75,7 @@ export class BindingClient {
   async select(sessionId:string|undefined):Promise<void> {
     const nativeChild=sessionId!==undefined&&this.port.isNativeChild(sessionId)
     if(!nativeChild&&sessionId&&this.state.sessionId===sessionId&&this.state.status==='ready'&&this.state.conversation?.sessionId===sessionId){
-      this.port.block(sessionId,this.state.conversation.purpose==='task-run'?taskRunInputBlock:undefined)
+      this.inputBlock(sessionId)
       return
     }
     const generation=++this.generation;this.catalogGeneration++
@@ -71,7 +87,7 @@ export class BindingClient {
       const conversation=await (this.port.selectBinding?.(sessionId)??this.port.ensure(sessionId))
       if(generation!==this.generation)return
       if(conversation.sessionId!==sessionId||conversation.status!=='ready')throw Error('返回的工作会话绑定与当前会话不一致。')
-      this.publish({status:'ready',conversation});this.port.block(sessionId,conversation.purpose==='task-run'?taskRunInputBlock:undefined)
+      this.publish({status:'ready',conversation});this.inputBlock(sessionId)
     }catch(error){
       if(generation!==this.generation)return
       const reason=error instanceof Error?error.message:'工作会话绑定读取失败。'
@@ -140,7 +156,7 @@ export class BindingClient {
     const previous=this.state
     const commit=()=>{
       this.publish({sessionId,status:'ready',conversation,error:undefined,capabilities:undefined,catalogStatus:'idle',catalogError:undefined})
-      this.port.block(sessionId,conversation.purpose==='task-run'?taskRunInputBlock:undefined)
+      this.inputBlock(sessionId)
     }
     try {return await this.openResolvedConversation(conversation,signal,true,{...navigation,commit})}
     catch(error){
@@ -161,7 +177,9 @@ export class BindingClient {
       this.releaseOpeningBlock=undefined
       if(opening!==this.opening||generation!==this.generation||this.port.current()!==previous||!previous)return
       const ready=this.state.sessionId===previous&&this.state.status==='ready'
-      this.port.block(previous,this.port.isNativeChild(previous)?undefined:ready?this.state.conversation?.purpose==='task-run'?taskRunInputBlock:undefined:this.state.error??'正在确认工作会话绑定…')
+      if(this.port.isNativeChild(previous))this.port.block(previous,undefined)
+      else if(ready)this.inputBlock(previous)
+      else this.port.block(previous,this.state.error??'正在确认工作会话绑定…')
     }
     this.releaseOpeningBlock=restore
     const cancel=()=>{

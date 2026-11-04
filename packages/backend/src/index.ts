@@ -69,6 +69,7 @@ export { ArtifactFeedbackService,initializeArtifactFeedback } from './work/artif
 export * from './work/artifact-messages.ts'
 
 export {taskArtifactSource,taskArtifactSessions} from './work/artifact-task-source.ts'
+export {TaskRunInteractionService,type TaskRunInteraction} from './work/task-run-interaction.ts'
 export {listConversationArtifacts} from './work/artifact-conversation-directory.ts'
 
 export {TaskTransitions,initializeTaskTransitions,initializeTaskCompletions} from './work/task-transitions.ts'

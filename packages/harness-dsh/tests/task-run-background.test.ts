@@ -142,6 +142,24 @@ test('官方 job 尚在运行或停止中时，初始轮完成不能把业务 Ru
  assert.equal((await driver.reconcile('owner',{runId:'run'})).state,'ended')
 })
 
+test('独立追问Job紧邻登记和结束时，待核对内存占位不能把结束回执写入旧Run',async t=>{
+ const {ctx,agent}=await runtime(),links=linkStore(),run={id:'original-run',sessionId:agent.id,nativeRequestId:'original-request'}
+ let release!:()=>void
+ const checking=new Promise<void>(resolve=>{release=resolve}),background=createTaskRunBackground(ctx,links,undefined,undefined,async()=>{await checking;return undefined})
+ t.after(async()=>{release();background.dispose();await ctx.fiber.dispose()})
+ await background.start(run)
+ agent.session.append('turn/start',{turn:0})
+ agent.session.append('user/message',createUserMessage({content:[],source:{kind:'user',rpcId:'original-request'}}),{surfaceOp:'append'})
+ agent.session.append('turn/end',{turn:0,reason:{kind:'completed'}})
+ agent.session.append('turn/start',{turn:1})
+ agent.session.append('user/message',createUserMessage({content:[],source:{kind:'user',rpcId:'independent-followup'}}),{surfaceOp:'append'})
+ const before=await links.list({runId:run.id}),job=ctx.jobs.start({kind:'bash',label:'追问的独立工作',owner:agent.id,run:()=>({done:Promise.resolve({status:'completed' as const}),cancel:()=>{}})})
+ await ctx.jobs.wait(job,1000,agent.id)
+ release();await background.flush(agent.id)
+ assert.deepEqual(await links.list({runId:run.id}),before)
+ assert.equal(ctx.jobs.get(job,agent.id).status,'completed')
+})
+
 test('后台关联从官方 owner 记录，取消只作用本 Run，重建适配不能重放丢失工作',async t=>{
  const {ctx,agent}=await runtime(),finishes:Array<(outcome:JobOutcome)=>void>=[]
  t.after(async()=>{for(const finish of finishes)finish({status:'killed'});await ctx.fiber.dispose()})

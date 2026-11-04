@@ -10,12 +10,14 @@ Teloa 用于构建、协作和运行 AI 团队。**Teloa 社区版** 是面向�
 
 需要 Node.js **24.22.1+（24.x）或 22.23.4+（22.x）**、npm **11.12.1+（11.x）**，以及已启动的本机 Docker 引擎（用于独立 PostgreSQL 数据库）。
 
+以下命令面向正式版 0.2.11，须在对应版本实际发布后使用。
+
 ```sh
-npm install -g --ignore-scripts https://github.com/teloa-ai/teloa/releases/download/v0.2.11-rc.4/teloa-cli-0.2.11-rc.4.tgz
+npm install -g --ignore-scripts https://github.com/teloa-ai/teloa/releases/download/v0.2.11/teloa-cli-0.2.11.tgz
 teloa up
 ```
 
-测试候选 0.2.11-rc.4 已作为 GitHub prerelease 发布；npm 包尚未发布，后续 npm 候选计划使用 `next`。这不是稳定版 0.2.11，最新稳定版仍为 0.2.10；上述 GitHub 工件命令现已可用，npm 版本命令须等对应包发布后使用。本版本可从 [GitHub Release](https://github.com/teloa-ai/teloa/releases/tag/v0.2.11-rc.4) 取得；npm 渠道可用版本以[注册表](https://www.npmjs.com/package/@teloa/cli?activeTab=versions)为准。升级已有安装时，安装本命令包后先运行 `teloa stop`，再运行 `teloa upgrade --to 0.2.11-rc.4`（自定义安装继续传入原 `--home`）。`--to` 等于当前命令包版本时以本包为候选，其他版本从 npm 注册表取得；升级前自动备份，并保留原安装身份与数据。
+本源码的正式发行目标为 0.2.11，目前尚待发布；不能将源码版本视为已发布工件。当前已发布稳定版仍为 0.2.10，早前的 [0.2.11-rc.4 GitHub prerelease](https://github.com/teloa-ai/teloa/releases/tag/v0.2.11-rc.4) 保留为历史测试版本。正式版发布后可从 [GitHub Release](https://github.com/teloa-ai/teloa/releases/tag/v0.2.11) 取得；npm 渠道可用版本以[注册表](https://www.npmjs.com/package/@teloa/cli?activeTab=versions)为准。升级已有安装时，安装本命令包后先运行 `teloa stop`，再运行 `teloa upgrade --to 0.2.11`（自定义安装继续传入原 `--home`）。`--to` 等于当前命令包版本时以本包为候选，其他版本从 npm 注册表取得；升级前自动备份，并保留原安装身份与数据。
 
 默认打开本机 Web 界面，首次进入后在设置中配置模型。在浏览器未自动打开时运行 `teloa open`。默认安装目录为 `~/.teloa`，Web 端口为 3100；新安装可通过 `teloa up --home <目录> --port <端口> --workspace <工作目录>` 指定。
 
@@ -48,7 +50,7 @@ This package includes the Community application and its installation and mainten
 
 Use Node.js **24.22.1+ (24.x) or 22.23.4+ (22.x)**, npm **11.12.1+ (11.x)**, and a running local Docker engine for the dedicated PostgreSQL database. Run the installation commands above, then configure your model in the Web interface. The default home is `~/.teloa` and the default Web port is 3100. A new installation accepts `--home`, `--port` and `--workspace`; `--no-open` suppresses the browser launch.
 
-Use `status`, `doctor`, `open`, `logs`, `stop` and `restart` for daily maintenance. Stop the installation before backups or upgrades. Version 0.2.11-rc.4 is available as a GitHub testing prerelease. Its npm package has not been published; a future npm candidate is intended for `next`. This is not stable 0.2.11; the latest stable release remains 0.2.10. GitHub artifact commands and links are available now; npm version commands require the corresponding package to be published first. Get that release from [GitHub Releases](https://github.com/teloa-ai/teloa/releases/tag/v0.2.11-rc.4); check the [registry](https://www.npmjs.com/package/@teloa/cli?activeTab=versions) for versions available on npm. To upgrade an existing installation, install this command package, run `teloa stop`, then `teloa upgrade --to 0.2.11-rc.4`, passing the original `--home` for a custom installation. When `--to` matches the running package, it is the candidate; other versions come from the npm registry. The upgrade backs up first and keeps the installation identity and data. Restore backups into a new home. Backups exclude model credentials and workspace files; reconfigure credentials and verify the original workspace before resuming. `uninstall` unregisters the service and preserves data. Consult `teloa --help` for version-specific arguments.
+Use `status`, `doctor`, `open`, `logs`, `stop` and `restart` for daily maintenance. Stop the installation before backups or upgrades. This source targets stable 0.2.11, whose publication is still pending. Installation commands require the corresponding artifact to be published first. The latest published stable release remains 0.2.10; the earlier [0.2.11-rc.4 GitHub prerelease](https://github.com/teloa-ai/teloa/releases/tag/v0.2.11-rc.4) remains a historical testing release. After publication, get 0.2.11 from [GitHub Releases](https://github.com/teloa-ai/teloa/releases/tag/v0.2.11); check the [registry](https://www.npmjs.com/package/@teloa/cli?activeTab=versions) for versions available on npm. To upgrade an existing installation, install this command package, run `teloa stop`, then `teloa upgrade --to 0.2.11`, passing the original `--home` for a custom installation. When `--to` matches the running package, it is the candidate; other versions come from the npm registry. The upgrade backs up first and keeps the installation identity and data. Restore backups into a new home. Backups exclude model credentials and workspace files; reconfigure credentials and verify the original workspace before resuming. `uninstall` unregisters the service and preserves data. Consult `teloa --help` for version-specific arguments.
 
 To use your own PostgreSQL, supply a protected JSON file containing `connectionString` through `--database-config`. Only a dedicated database named `teloa` on `localhost` or `127.0.0.1` is accepted. It must be empty for a new installation; existing business databases or databases owned by another installation are rejected. Keep this file at mode `0600` and keep credentials out of command lines, repositories and shared logs.
 

@@ -1,6 +1,8 @@
 import type {ProductLocale} from './i18n/locale.js'
 const copy={
- pendingContext:['上次业务设置尚待核对，请回到原会话重试后再开始。','The previous work context is unconfirmed. Retry in its original conversation first.'],
+ pendingContext:['上次业务设置仍待核对，请先核对上次设置。','The previous business setting is still unconfirmed. Check that setting first.','上次業務設定仍待核對，請先核對上次設定。'],
+ inspectContext:['核对上次设置','Check previous setting','核對上次設定'],
+ fixedContext:['会话发送第一条消息后业务固定，切换业务需新建工作。','The business is fixed after the first message. Start new work to change it.','會話傳送第一則訊息後業務固定，切換業務需建立新工作。'],
  differentContext:['会话已绑定其他业务，请回到原会话核对。','This conversation is bound to another business. Check its context before continuing.'],
  scope:['业务','Business'],owner:['指定员工','Assigned employee'],assistant:['主助手','Main assistant'],
  reading:['正在核对业务上下文…','Checking work context…'],saving:['正在保存业务上下文…','Saving work context…'],
@@ -20,4 +22,4 @@ const copy={
  inspect:['核对已接收消息','Check accepted messages'],
  missing:['所选员工已不可用','The selected employee is unavailable'],
 } as const
-export function homeNativeCopy(locale:ProductLocale,key:keyof typeof copy):string{return copy[key][locale.startsWith('zh')?0:1]}
+export function homeNativeCopy(locale:ProductLocale,key:keyof typeof copy):string{const values:readonly string[]=copy[key];return (locale==='zh-HK'||locale==='zh-TW')&&values[2]!==undefined?values[2]:values[locale.startsWith('zh')?0:1]!}

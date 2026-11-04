@@ -23,7 +23,7 @@ import {recheckNativeAutoReviewPermissions} from './native-auto-review-guard.ts'
 import {ownsDeliveryReviewSubmission} from './task-delivery-review.ts'
 export type TaskRunGoalObservationReader=(sessionId:string,events:readonly SessionEvent[])=>Promise<GoalObservationContext|undefined>
 
-export type TaskToolPolicy={allowedTools:readonly string[];nativeRequestId?:string;argumentRules?:readonly TaskToolArgumentRule[];stopRequested?:boolean;textOnly?:boolean;selfAuthorizedTools?:readonly string[]}
+export type TaskToolPolicy={allowedTools:readonly string[];nativeRequestId?:string;argumentRules?:readonly TaskToolArgumentRule[];currentArgumentRules?:readonly TaskToolArgumentRule[];interactive?:true;stopRequested?:boolean;textOnly?:boolean;selfAuthorizedTools?:readonly string[]}
 /** null 仅表示该会话不受任务执行管理；岗位暂停应返回空清单，不能降级为 null。 */
 export type TaskToolPolicyReader=(sessionId:string,signal:AbortSignal)=>Promise<TaskToolPolicy|null>
 /**
@@ -96,6 +96,7 @@ export function registerTaskToolGuard(ctx:Context,readPolicy:TaskToolPolicyReade
   if(ctx.tools.get(exec.name,exec.agent)!==checked.definition)throw Error('编排工具已变更，请重新确认后再试。')
   const policy=await readPolicy(checked.rootId,exec.signal)
   if(checked.policy===null?policy!==null:policy===null||policy.nativeRequestId!==checked.policy.nativeRequestId||policy.stopRequested||!policy.allowedTools.includes(exec.name))throw Error('本次编排授权已变化，请重新确认后再试。')
+  if(policy?.currentArgumentRules!==undefined&&!taskToolArgumentsAllowed(policy.currentArgumentRules,exec.name,exec.arguments))throw Error('编排参数已超出员工当前授权。')
   if(policy?.argumentRules!==undefined&&!taskToolArgumentsAllowed(policy.argumentRules,exec.name,exec.arguments))throw Error('编排参数已超出本次任务授权。')
   exec.signal.throwIfAborted()
   recheckNativeAutoReviewPermissions(exec)
@@ -115,6 +116,7 @@ export function registerTaskToolGuard(ctx:Context,readPolicy:TaskToolPolicyReade
   exec.signal.throwIfAborted()
   const policy=await readPolicy(checked.rootId,exec.signal)
   if(!policy||policy.nativeRequestId!==checked.policy.nativeRequestId||policy.stopRequested||!policy.allowedTools.includes(exec.name))throw Error('本次任务授权已变化，请重新确认后再试。')
+  if(policy.currentArgumentRules!==undefined&&(exec.name===skillHttpToolName?!skillHttpGrantedSkills(policy.currentArgumentRules).includes(String((exec.arguments as Record<string,unknown>|undefined)?.skill)):!taskToolArgumentsAllowed(policy.currentArgumentRules,exec.name,exec.arguments)))throw Error('工具参数已超出员工当前授权。')
   if(policy.argumentRules!==undefined&&(exec.name===skillHttpToolName?!skillHttpGrantedSkills(policy.argumentRules).includes(String((exec.arguments as Record<string,unknown>|undefined)?.skill)):!taskToolArgumentsAllowed(policy.argumentRules,exec.name,exec.arguments)))throw Error('工具参数已超出本次任务授权。')
   if(ctx.tools.get(exec.name,exec.agent)!==checked.definition)throw Error('任务工具已变更，请重新确认后再试。')
   exec.signal.throwIfAborted()
@@ -138,6 +140,7 @@ export function registerTaskToolGuard(ctx:Context,readPolicy:TaskToolPolicyReade
    cleanup=await browserCleanup?.consume(exec,policy)??false
    if(cleanup)checkedCleanup.add(exec)
    if(policy?.stopRequested===true&&!cleanup)return {kind:'deny',reason:'本次执行已请求停止，不能继续调用工具。'}
+   if(policy?.currentArgumentRules!==undefined&&!cleanup&&exec.name!=='present'&&(exec.name===skillHttpToolName?!skillHttpGrantedSkills(policy.currentArgumentRules).includes(String((exec.arguments as Record<string,unknown>|undefined)?.skill)):!taskToolArgumentsAllowed(policy.currentArgumentRules,exec.name,exec.arguments)))return {kind:'deny',reason:'工具参数超出员工当前授权，不能沿旧任务权限执行。'}
    if(policy!==null&&(!Array.isArray(policy.allowedTools)||policy.allowedTools.some(name=>typeof name!=='string'||!name.trim())))throw Error('invalid policy')
    authorizationStage='team-membership'
    if(policy!==null&&Reflect.get(ctx,'agentTeams')?.tryMembership(exec.agent)?.role==='teammate'){
@@ -184,7 +187,9 @@ export function registerTaskToolGuard(ctx:Context,readPolicy:TaskToolPolicyReade
   // present 只声明当前 Run 已获准读取的已有文件，不授予额外读取或外发能力。
   // 进入受限 FS 检查并在 tools/execute 再核对；不能借工具名授权或自授权提前放行。
   if(policy!==null&&exec.name==='present'){
-   if(!workspaceFiles||!policy.argumentRules?.some(rule=>isWorkspaceFileRule(rule)&&(rule.name==='read'&&policy.allowedTools.includes('read')||hasWorkspacePaths(policy.argumentRules)&&rule.name==='write'&&policy.allowedTools.includes('write'))))return {kind:'deny',reason:'文件交付需要当前任务的工作目录读取授权。'}
+const canPresent=(rules:readonly TaskToolArgumentRule[]|undefined)=>rules?.some(rule=>isWorkspaceFileRule(rule)&&(rule.name==='read'&&policy.allowedTools.includes('read')||hasWorkspacePaths(rules)&&rule.name==='write'&&policy.allowedTools.includes('write')))
+   if(policy.currentArgumentRules!==undefined&&!canPresent(policy.currentArgumentRules))return {kind:'deny',reason:'文件交付需要员工当前的工作目录文件授权。'}
+   if(!workspaceFiles||!canPresent(policy.argumentRules))return {kind:'deny',reason:'文件交付需要当前任务的工作目录文件授权。'}
    const issue=await workspaceFiles.check(exec,lineage.root,policy)
    return issue===undefined?next():{kind:'deny',reason:issue}
   }

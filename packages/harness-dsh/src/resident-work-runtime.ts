@@ -38,6 +38,7 @@ type Pool=TaskRunService['pool']
 type Permit=Awaited<ReturnType<WorkRecoveryService['begin']>>
 type RunDriverBinding={ports:TaskRunPorts;runtimeLinks:ConstructorParameters<typeof WorkControlDriver>[0]['runtimeLinks']}
 export type ResidentWorkRuntimeOptions={
+ interactiveAdmission?:(sessionId:string,continuation?:true)=>Promise<WorkAccessLease>
  owner:string;pool:Pool;identity:{id:()=>string;now:()=>string};nativeInput:TeloaNativeInput['input'];ownerAuthority:OwnerWorkAuthority
  runs:()=>Promise<TaskRunService>;resources:ResourceService;dailyLogs:()=>Promise<RoleDailyLogService>
  executionScope:(db:Parameters<TaskRunService['readVerifiedInTransaction']>[0],owner:string,runId:string,mode:'active'|'completion')=>Promise<TaskExecutionScope>
@@ -351,7 +352,7 @@ export async function createResidentWorkRuntime(ctx:Context,options:ResidentWork
   if(child.length){if(child.some(row=>row.owner_id!==owner)||new Set(child.map(row=>row.run_id)).size!==1)throw new WorkError('teloa/forbidden','子会话不属于当前本人的固定执行。');return(await runs()).get(owner,{runId:child[0].run_id})}
   return(await runs()).skillScope(owner,{sessionId})
  }
- const acquire=async(input:{sessionId:string;producer:string}):Promise<WorkAccessLease|null>=>{if(closed)throw unavailable();if(isRoutingSession(input.sessionId)){if(input.producer!=='prompt'&&input.producer!=='queue')throw unavailable();return(await resolveRouting(input.sessionId))!.lease}const run=await resolveRun(input.sessionId);if(!run)return null;return combineWorkAccessLeases([await(await runs()).executionAdmission(owner,run.id),(await controls.acquireForRun(owner,{runId:run.id,mode:'new-input'})).lease,...(recoveringInputs.has(input.sessionId)?[recoveringInputs.get(input.sessionId)!]:[])])}
+ const acquire=async(input:{sessionId:string;producer:string;sourceKind?:string}):Promise<WorkAccessLease|null>=>{if(closed)throw unavailable();if(isRoutingSession(input.sessionId)){if(input.producer!=='prompt'&&input.producer!=='queue')throw unavailable();return(await resolveRouting(input.sessionId))!.lease}const run=await resolveRun(input.sessionId);if(!run)return null;if(run.state==='ended'){const continuation=input.producer==='task-run'&&input.sourceKind==='tool-jobs';if(!options.interactiveAdmission||!continuation&&input.producer!=='prompt'&&input.producer!=='queue')throw unavailable();return options.interactiveAdmission(input.sessionId,continuation?true:undefined)}if(input.sourceKind==='user'&&(input.producer==='prompt'||input.producer==='queue'))throw new WorkError('teloa/conflict','原任务仍由执行编排管理，暂不能提交独立追问。');return combineWorkAccessLeases([await(await runs()).executionAdmission(owner,run.id),(await controls.acquireForRun(owner,{runId:run.id,mode:'new-input'})).lease,...(recoveringInputs.has(input.sessionId)?[recoveringInputs.get(input.sessionId)!]:[])])}
  const prepareRetry=async(run:TaskRun,signal:AbortSignal):Promise<void>=>{
   if(closed)throw unavailable();signal.throwIfAborted();await zeroWorkFailure(run,signal)
   if(!run.lineage||run.lineage.ownerId!==owner||run.lineage.definitionControlId!==null)throw unavailable()

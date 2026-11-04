@@ -14,7 +14,7 @@ export type NativeInputProducer=Extract<WorkAccessRequest,{kind:'native-input'}>
 // identity 由拥有实际发布点的 producer 构造。它只绑定上下文，不凭此标记授予许可。
 export type NativeInputContext=Readonly<{producer:NativeInputProducer;identity:string}>
 /** 宿主实际工作归属的附加准入；不向模型或浏览器公开。 */
-export type ResidentInputAdmission={acquire:(input:{sessionId:string;producer:NativeInputProducer})=>Promise<WorkAccessLease|null>;restore?:(input:NativeInputRestoreInput,base:NativeInputRestore)=>ReturnType<NativeInputRestore>}
+export type ResidentInputAdmission={acquire:(input:{sessionId:string;producer:NativeInputProducer;sourceKind?:string})=>Promise<WorkAccessLease|null>;restore?:(input:NativeInputRestoreInput,base:NativeInputRestore)=>ReturnType<NativeInputRestore>}
 type SubagentInput=Readonly<{kind:'initial'|'live'|'resume';agent:Agent;sender:Agent;message:UserMessage;signal?:AbortSignal}>
 type SubagentCompletion=Readonly<{agent:Agent;message:UserMessage;childId:string}>
 const producers=new Set<NativeInputProducer>(['prompt','queue','subagent','schedule','goal','task-run'])
@@ -37,7 +37,7 @@ export function createNativeWorkInput(ctx:Context,access:WorkAccess=workAccess,c
   const session=agent.session,identity=nativeInputIdentity(snapshot,rpcId)
   const assertTarget=()=>{signal?.throwIfAborted();if(ctx.agents.get(agent.id)!==agent||agent.session!==session||(Reflect.get(ctx,'sessions') as unknown as SessionStore).get(agent.id)!==session)throw denied()}
   assertTarget()
-  return {session,identity,rpcId,assertTarget:()=>{causality.assertReady();assertTarget()}}
+  return {session,identity,rpcId,sourceKind:snapshot.source.kind,assertTarget:()=>{causality.assertReady();assertTarget()}}
  }
  const publish=(prepared:ReturnType<typeof prepare>,lease:WorkAccessLease,submit:()=>void,ordinary=false)=>{
   const assertLease=lease.assertCurrent,assertContinuation=lease.assertContinuationCurrent??assertLease
@@ -57,11 +57,11 @@ export function createNativeWorkInput(ctx:Context,access:WorkAccess=workAccess,c
   })
  }
  const resident=()=>ctx.get('teloaResidentInputAdmission' as never) as ResidentInputAdmission|undefined
- const residentLease=async(sessionId:string,producer:NativeInputProducer)=>{
+ const residentLease=async(sessionId:string,producer:NativeInputProducer,sourceKind?:string)=>{
   const provider=resident()
   if(provider===undefined){if(requireResident)throw new WorkError('teloa/unavailable','工作服务正在准备，请稍后继续。');return null}
   if(typeof provider.acquire!=='function')throw denied()
-  const lease=await provider.acquire({sessionId,producer});if(lease!==null&&typeof lease?.assertCurrent!=='function')throw denied();return lease
+  const lease=await provider.acquire({sessionId,producer,...(sourceKind===undefined?{}:{sourceKind})});if(lease!==null&&typeof lease?.assertCurrent!=='function')throw denied();return lease
  }
  const controlledRestore:NativeInputRestore|undefined=restore?async input=>{
   const provider=resident();if(requireResident&&!provider?.restore)throw denied()
@@ -84,7 +84,7 @@ export function createNativeWorkInput(ctx:Context,access:WorkAccess=workAccess,c
   await causality.whenReady();prepared.assertTarget()
   const capabilities=await access.authorizeSessionCapabilities(agent.id,producer)
   prepared.assertTarget();capabilities.assertCurrent()
-  const roleLease=await residentLease(agent.id,producer)
+  const roleLease=await residentLease(agent.id,producer,prepared.sourceKind)
   const projectLease=await projectRuntimeInputHooks(ctx)?.acquire(agent,message,signal)
   const lease=await access.authorize(request)
   publish(prepared,combineWorkAccessLeases([capabilities,lease,...extra?[extra]:[],...roleLease?[roleLease]:[],...projectLease?[projectLease]:[]]),submit,(producer==='prompt'||producer==='queue')&&roleLease===null)
@@ -120,7 +120,7 @@ export function createNativeWorkInput(ctx:Context,access:WorkAccess=workAccess,c
    const signal=AbortSignal.timeout(15000)
    return causality.withJobCompletion(candidate,async signal=>{
     signal.throwIfAborted()
-    return Promise.race([residentLease(candidate.agent.id,'task-run'),new Promise<never>((_resolve,reject)=>signal.addEventListener('abort',()=>reject(signal.reason),{once:true}))])
+    return Promise.race([residentLease(candidate.agent.id,'task-run',candidate.message.source.kind),new Promise<never>((_resolve,reject)=>signal.addEventListener('abort',()=>reject(signal.reason),{once:true}))])
    },publish,signal)
   },
   async withSubagentInput(candidate:SubagentInput,context:NativeInputContext,submit:()=>void):Promise<void>{

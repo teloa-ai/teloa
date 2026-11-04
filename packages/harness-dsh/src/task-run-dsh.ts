@@ -569,6 +569,27 @@ export function dshTaskRunPorts(ctx:Context,owner:string,inspect:(sessionId:stri
  }
  const ports:DshTaskRunPorts={
   ...goal,
+  openInteraction:async(input,signal)=>{
+   const run=Object.freeze(structuredClone(input))
+   signal.throwIfAborted()
+   if(run.state!=='ended'||run.evidence?.state!=='ended'||run.evidence.reason!=='completed'||run.stopRequestedAt!==null)throw new WorkError('teloa/conflict','原运行尚未完成收口。')
+   const evidence=run.evidence
+   const agent=ctx.agents.get(brandString<SessionId>(run.sessionId))
+   if(!agent||agent.session.id!==run.sessionId)throw new WorkError('teloa/session-unavailable','独立交互会话尚未就绪。')
+   await serialize('interaction:'+run.sessionId,async()=>{
+    if(retired.get(agent)===run.id)return
+    if(agent.status!=='idle'||agent.inbox.nextTurn.length||agent.inbox.nextStep.length)throw new WorkError('teloa/conflict','原会话仍有待收口的工作。')
+    const events=readSessionEvents(agent.session).slice(0,evidence.endSeq+1)
+    if(!isDeepStrictEqual(observeTaskRun(events,run.nativeRequestId,await ports.continuations?.(run,events),await ports.goalObservation?.(run,events)),run.evidence))throw new WorkError('teloa/conflict','原运行的固定结束证据尚未核实。')
+    await background?.prepareContinuation(run)
+    signal.throwIfAborted()
+    const lease=runLeases.get(agent),approval=approvalLeases.get(agent)
+    if(lease&&lease.runId!==run.id||approval&&approval.runId!==run.id)throw new WorkError('teloa/conflict','原会话已装配其他执行。')
+    // 退役旧任务指令、审批与固定模型；已受理的工具白名单仍由独立交互策略与原工具租约共同收窄。
+    lease?.dispose();approval?.dispose();ensureModels.release(agent,run.id)
+    continuing.delete(agent);retired.set(agent,run.id)
+   })
+  },
   inspectSourceFollowup:(run,signal)=>inspectSourceFollowup(ctx,run,signal,async events=>{const observed=observeTaskRun(events,run.nativeRequestId,await ports.continuations?.(run,events),await ports.goalObservation?.(run,events));if(!isDeepStrictEqual(run.evidence?.state==='ended'&&run.evidence.inputAnchor?verifiedAcceptedInboxError(run,events):observed,run.evidence))throw new WorkError('teloa/conflict','原执行终态已变化，不能重核成果。')}),
   resolvePreset,
   prepareSession,

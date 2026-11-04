@@ -122,17 +122,33 @@ export function createHomeContextApi(call:(endpoint:string,payload:unknown)=>Pro
   if(saved){const row=JSON.parse(saved) as PendingContext;if(typeof row.requestId!=='string'||typeof row.sessionId!=='string'||typeof row.scopeId!=='string'||row.roleId!==null&&typeof row.roleId!=='string'||!Number.isSafeInteger(row.expectedVersion)||row.expectedVersion<0)throw Error('业务设置恢复记录格式不正确。');pending=row}}catch{recoveryError=Error('业务设置恢复记录无法读取，请恢复浏览器存储后重试。')}
   return pending
  }
- const clear=(requestId:string)=>{
+ const same=(left:PendingContext|undefined,right:PendingContext)=>!!left&&(['requestId','sessionId','scopeId','roleId','expectedVersion'] as const).every(key=>left[key]===right[key])
+ const clear=(request:PendingContext)=>{
   const saved=storage.getItem(contextKey)
-  if(saved&&(JSON.parse(saved) as PendingContext).requestId===requestId)storage.removeItem(contextKey)
-  if(pending?.requestId===requestId)pending=undefined
+  if(saved&&same(JSON.parse(saved) as PendingContext,request))storage.removeItem(contextKey)
+  if(same(pending,request))pending=undefined
  }
+ const rejected=(error:unknown)=>!!error&&typeof error==='object'&&'code'in error&&['teloa/invalid-input','teloa/forbidden','teloa/conflict','teloa/version-conflict','teloa/not-bound'].includes(String(error.code))
  reload()
+ /** 只读核对原请求；版本前进表示已生效或被后续设置取代，不把旧业务绑定到当前会话。 */
+ const reconcilePending=async()=>{
+  const request=reload();if(recoveryError)throw recoveryError
+  if(!request||writing)return request
+  try{
+   const value=await call('work-context/read',{sessionId:request.sessionId}),row=value===null?null:parseContext(value,request.sessionId)
+   reload()
+   if(!writing&&same(pending,request)&&row&&row.version>request.expectedVersion)clear(request)
+  }catch(error){if(rejected(error)&&!writing){reload();if(same(pending,request))clear(request)}}
+  return reload()
+ }
  const read=async(sessionId:string)=>{
-  reload();if(recoveryError)throw recoveryError
+  const original=reload();if(recoveryError)throw recoveryError
+  if(original&&original.sessionId!==sessionId)await reconcilePending()
+  if(recoveryError)throw recoveryError
+  const request=reload()
   const value=await call('work-context/read',{sessionId}),row=value===null?null:parseContext(value,sessionId)
   reload()
-  if(row&&pending&&pending.sessionId===sessionId&&row.version===pending.expectedVersion+1&&row.scopeId===pending.scopeId&&row.roleId===pending.roleId)clear(pending.requestId)
+  if(!writing&&row&&request&&same(pending,request)&&request.sessionId===sessionId&&row.version>request.expectedVersion)clear(request)
   return row
  }
  const set=(input:HomeContextInput):Promise<HomeWorkContext>=>{
@@ -144,15 +160,15 @@ export function createHomeContextApi(call:(endpoint:string,payload:unknown)=>Pro
   const operation=call('work-context/set',request).then(value=>{
    const row=parseContext(value,input.sessionId)
    if(row.scopeId!==input.scopeId||row.roleId!==input.roleId)throw Error('工作上下文回执与原设置不一致。')
-   clear(request.requestId);return row
+   clear(request);return row
   }).catch(error=>{
    // 后端确认这些错误在事务写入前拒绝；网络或宿主未知错误仍保留原身份。
-   if(error&&typeof error==='object'&&'code' in error&&['teloa/invalid-input','teloa/forbidden','teloa/conflict','teloa/version-conflict'].includes(String(error.code)))clear(request.requestId)
+   if(rejected(error))clear(request)
    throw error
   })
   writing=operation;void operation.then(()=>{writing=undefined},()=>{writing=undefined})
   return operation
  }
- return {read,set,pending:reload,retry:()=>{const request=reload();return request?set(request):Promise.reject(Error('没有待核对的业务设置。'))},subscribe:(listener:()=>void)=>{if(typeof window==='undefined')return()=>{};const changed=(event:StorageEvent)=>{if(event.key===contextKey)listener()};window.addEventListener('storage',changed);return()=>window.removeEventListener('storage',changed)}}
+ return {read,set,reconcilePending,pending:reload,retry:()=>{const request=reload();return request?set(request):Promise.reject(Error('没有待核对的业务设置。'))},subscribe:(listener:()=>void)=>{if(typeof window==='undefined')return()=>{};const changed=(event:StorageEvent)=>{if(event.key===contextKey)listener()};window.addEventListener('storage',changed);return()=>window.removeEventListener('storage',changed)}}
 }
 export type HomeContextApi=ReturnType<typeof createHomeContextApi>

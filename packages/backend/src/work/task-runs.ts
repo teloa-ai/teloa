@@ -72,6 +72,8 @@ import {initializeTaskRunSubagents,type TaskRunSubagent} from './task-run-subage
 import {readEmployeeApiPermissionMode,type EmployeePermissionMode} from '../../../sdk/contract.mjs'
 import {groupContextNotice,groupFileHandleLine,groupReferenceNotice,readStoredRunGroupContext,runGroupContextHash,type RunGroupOwnerSelection,type RunGroupContext} from './task-run-group-context.ts'
 import {readStoredGroupTopic,type RunGroupTopic} from './group-topic.ts'
+import type {TaskRunInteraction} from './task-run-interaction.ts'
+type TaskRunInteractionReader=(owner:string,sessionId:string,db:PoolClient)=>Promise<(TaskRunInteraction&{requestId?:string})|null>
 
 /** taskVersion 是本次执行固定的任务版本；当前运行状态版本由服务端另行校验。 */
 export type TaskExecutionScope={taskId:string;taskVersion:number;sessionId:string;linkVersion:number;scope:string;groupId?:string|null;memoryViewId?:string|null;knowledgeIds?:readonly string[]|null;fixedKnowledgeRead?:FixedRunKnowledgeRead}
@@ -291,6 +293,9 @@ function read(row:Record<string,unknown>):TaskRun{
 /** 只准备真实执行，不在数据库中假启动模型；宿主发送入口尚需接线。 */
 type RoleGrantPolicy={narrow?:(rules:TaskToolArgumentRule[],knowledge:RunKnowledge[],context:{db:PoolClient;owner:string;role:DigitalRole})=>Promise<TaskToolArgumentRule[]>;validate:(rules:TaskToolArgumentRule[],knowledge:RunKnowledge[],context:{db:PoolClient;owner:string;role:DigitalRole})=>void|Promise<void>;recheck:(run:TaskRun,target:TaskExecutionScope,context:{db:PoolClient;owner:string;role:DigitalRole})=>Promise<void>}
 export class TaskRunService{
+ private interactionReader:TaskRunInteractionReader|undefined
+ /** 只有真实宿主在原生冷读与交付服务装配完成后安装；默认仍禁止旧Run取得交互执行权。 */
+ enableCompletedInteractions(read:TaskRunInteractionReader):void{if(this.interactionReader)throw new WorkError('teloa/conflict','任务续聊准入已经装配。');this.interactionReader=read}
  private readonly sourcePlanRuns=new WeakMap<object,TaskRun>()
  readonly pool:Pool;readonly identity:{id:()=>string;now:()=>string};readonly inspect:Inspect;private readonly allowedTools:readonly string[];private readonly argumentRules:TaskToolArgumentRule[]|undefined;private readonly roleGrants:RoleGrantPolicy|undefined;private readonly industryContext:((db:PoolClient,owner:string,taskId:string)=>Promise<RunIndustryContext|undefined>)|undefined;private readonly businessContext:((db:PoolClient,owner:string,task:WorkTask,authorization:{roleId:string;allowedTools:readonly string[];argumentRules?:TaskToolArgumentRule[]})=>Promise<RunBusinessContext|undefined>)|undefined;private readonly ownerPlans:OwnerPlanAuthority|undefined;private readonly planContext:((db:PoolClient,owner:string,taskId:string,completion?:CompletedPlanRunProof,includeMethodSource?:boolean,singleOwner?:SourceFollowupPlanAdmission)=>Promise<RunPlanContext|undefined>)|undefined;private readonly industrySkills:((db:PoolClient,owner:string,taskId:string,roleId:string)=>Promise<IndustryRunSkillBindings|undefined>)|undefined;private readonly runReservation:((owner:string,sessionId:string)=>Promise<boolean>)|undefined;private readonly roleMemory:((db:PoolClient,owner:string,target:TaskExecutionScope,role:DigitalRole,selectedIds?:readonly string[])=>Promise<RunRoleMemory[]>)|undefined;private readonly groupContext:((db:PoolClient,owner:string,task:WorkTask,role:DigitalRole,continuationReferences?:readonly MessageReference[],ownerSelection?:RunGroupOwnerSelection)=>Promise<RunGroupContext|undefined>)|undefined;private readonly groupTopic:((db:PoolClient,owner:string,groupContext:RunGroupContext,continuation?:GroupWorkContinuation)=>Promise<RunGroupTopic|undefined>)|undefined;private readonly onSettled:((owner:string,run:TaskRun)=>Promise<void>)|undefined
  constructor(pool:Pool,identity:{id:()=>string;now:()=>string},inspect:Inspect,policy:{ownerPlans?:OwnerPlanAuthority;allowedTools:readonly string[];argumentRules?:readonly TaskToolArgumentRule[];roleGrants?:RoleGrantPolicy;industryContext?:(db:PoolClient,owner:string,taskId:string)=>Promise<RunIndustryContext|undefined>;businessContext?:(db:PoolClient,owner:string,task:WorkTask,authorization:{roleId:string;allowedTools:readonly string[];argumentRules?:TaskToolArgumentRule[]})=>Promise<RunBusinessContext|undefined>;planContext?:(db:PoolClient,owner:string,taskId:string,completion?:CompletedPlanRunProof,includeMethodSource?:boolean,singleOwner?:SourceFollowupPlanAdmission)=>Promise<RunPlanContext|undefined>;industrySkills?:(db:PoolClient,owner:string,taskId:string,roleId:string)=>Promise<IndustryRunSkillBindings|undefined>;runReservation?:(owner:string,sessionId:string)=>Promise<boolean>;roleMemory?:(db:PoolClient,owner:string,target:TaskExecutionScope,role:DigitalRole,selectedIds?:readonly string[])=>Promise<RunRoleMemory[]>;groupContext?:(db:PoolClient,owner:string,task:WorkTask,role:DigitalRole,continuationReferences?:readonly MessageReference[],ownerSelection?:RunGroupOwnerSelection)=>Promise<RunGroupContext|undefined>;groupTopic?:(db:PoolClient,owner:string,groupContext:RunGroupContext,continuation?:GroupWorkContinuation)=>Promise<RunGroupTopic|undefined>;onSettled?:(owner:string,run:TaskRun)=>Promise<void>}={allowedTools:[]}){this.ownerPlans=policy.ownerPlans;this.pool=pool;this.identity=identity;this.inspect=inspect;this.roleGrants=policy.roleGrants;this.planContext=policy.planContext;this.industryContext=policy.industryContext;this.businessContext=policy.businessContext;this.industrySkills=policy.industrySkills;this.runReservation=policy.runReservation;this.roleMemory=policy.roleMemory;this.groupContext=policy.groupContext;this.groupTopic=policy.groupTopic;this.onSettled=policy.onSettled;this.allowedTools=Object.freeze(toolNames(policy.allowedTools));this.argumentRules=policy.argumentRules===undefined?undefined:readTaskToolArgumentRules(policy.argumentRules);if(this.argumentRules?.some(rule=>!this.allowedTools.includes(rule.name)))throw new WorkError('teloa/invalid-input','参数授权必须属于允许的工具。')}
@@ -688,6 +693,7 @@ private async readVerified(db:PoolClient,owner:string,row:Record<string,unknown>
   }catch(failure){await db.query('rollback');throw failure}finally{db.release()}
  }
  private async sessionRunInTransaction(db:PoolClient,owner:string,sessionId:string){
+   if(this.interactionReader){const hint=(await db.query('select role_id from teloa_task_runs where owner_id=$1 and session_id=$2 order by created_at desc,id desc limit 1',[owner,sessionId])).rows[0];if(hint?.role_id)await db.query('select id from teloa_roles where owner_id=$1 and id=$2 for share',[owner,hint.role_id])}
    // 不先按 owner 过滤，避免把他人的受控会话误认成普通会话。
    const result=await db.query('select * from teloa_task_runs where session_id=$1 order by created_at desc,id desc for share',[sessionId])
    if(!result.rows.length){
@@ -728,6 +734,7 @@ private async readVerified(db:PoolClient,owner:string,row:Record<string,unknown>
    if(!selected){await db.query('commit');return null}
    const {run,row,retained}=selected,conversation=await this.inspect(owner,value.sessionId as string)
    if(conversation.ownerId!==owner||conversation.sessionId!==value.sessionId||conversation.status!=='ready')throw new WorkError('teloa/forbidden','执行会话身份或状态不匹配。')
+   if(run.state==='ended'&&this.interactionReader){const interaction=await this.interactionReader(owner,run.sessionId,db);if(interaction?.run.id!==run.id)throw new WorkError('teloa/forbidden','原任务尚未开放独立交互。');interaction.lease.assertCurrent();await db.query('commit');return run}
    if(retained&&run.executor?.kind==='owner'){const current=await this.currentOwner(db,owner,row.request_spec,row.task_state_version??undefined);current.grant.admission.assertCurrent()}
    else if(retained){
     const verified=await this.current(db,owner,row.request_spec,row.task_state_version??undefined,conversation,run.roleSnapshot)
@@ -739,17 +746,21 @@ private async readVerified(db:PoolClient,owner:string,row:Record<string,unknown>
   }catch(error){await db.query('rollback');throw error}finally{db.release()}
  }
  /** 仅宿主配置可以提供工具清单。普通会话返回 null；任何已受控会话不能因结束而放开。 */
- async toolPolicy(owner:string,input:unknown,transactionDb?:PoolClient):Promise<{allowedTools:string[];nativeRequestId?:string;argumentRules?:TaskToolArgumentRule[];stopRequested?:boolean;textOnly?:boolean;selfAuthorizedTools?:readonly string[]}|null>{
+ async toolPolicy(owner:string,input:unknown,transactionDb?:PoolClient):Promise<{allowedTools:string[];nativeRequestId?:string;argumentRules?:TaskToolArgumentRule[];currentArgumentRules?:readonly TaskToolArgumentRule[];interactive?:true;stopRequested?:boolean;textOnly?:boolean;selfAuthorizedTools?:readonly string[]}|null>{
   actor(owner);const row=taskInput(input,['sessionId']);if(!session(row.sessionId))throw new WorkError('teloa/invalid-input','会话身份无效。')
   // 采用事务复用原连接；重新借连接会被本事务已持有的任务锁阻塞。事务的提交、回滚与释放由调用方负责。
   const db=transactionDb??await this.pool.connect(),manage=async(command:string)=>{if(!transactionDb)await db.query(command)}
   try{
    await manage('begin')
-   if(transactionDb){const hint=(await db.query("select role_id from teloa_task_runs where owner_id=$1 and session_id=$2 order by (state not in ('ended','withdrawn','configuration_failed','submission_unknown')) desc,created_at desc,id desc limit 1",[owner,row.sessionId])).rows[0];if(hint)await db.query('select id from teloa_roles where owner_id=$1 and id=$2 for share',[owner,hint.role_id])}
+   if(transactionDb||this.interactionReader){const hint=(await db.query("select role_id from teloa_task_runs where owner_id=$1 and session_id=$2 order by (state not in ('ended','withdrawn','configuration_failed','submission_unknown')) desc,created_at desc,id desc limit 1",[owner,row.sessionId])).rows[0];if(hint)await db.query('select id from teloa_roles where owner_id=$1 and id=$2 for share',[owner,hint.role_id])}
    const rows=await db.query("select * from teloa_task_runs where owner_id=$1 and session_id=$2 order by (state not in ('ended','withdrawn','configuration_failed','submission_unknown')) desc,created_at desc,id desc limit 1 for share",[owner,row.sessionId])
    if(!rows.rows[0]){const reserved=await this.runReservation?.(owner,row.sessionId as string)??false;await manage('commit');return reserved?{allowedTools:[]}:null}
    const run=await this.readVerified(db,owner,rows.rows[0]),textOnly=run.textCapability!==undefined||run.analysisScope!==undefined||await verifiedGroupReply(db,owner,run),denied={allowedTools:[],nativeRequestId:run.nativeRequestId,...(textOnly?{textOnly:true}:{})}
    if(run.stopRequestedAt!==null){await manage('commit');return {...denied,stopRequested:true,...(run.argumentRules===undefined?{}:{argumentRules:run.argumentRules})}}
+   if(run.state==='ended'&&this.interactionReader){
+    try{const interaction=await this.interactionReader(owner,run.sessionId,db);if(interaction?.run.id!==run.id||!interaction.requestId){await manage('commit');return denied}interaction.lease.assertCurrent();await manage('commit');return {allowedTools:[...interaction.allowedTools],nativeRequestId:interaction.requestId,interactive:true,...(interaction.originalRules===undefined?{}:{argumentRules:[...interaction.originalRules]}),...(interaction.currentRules===undefined?{}:{currentArgumentRules:interaction.currentRules})}}
+    catch(error){if(error instanceof WorkError&&['teloa/conflict','teloa/forbidden','teloa/version-conflict'].includes(error.code)){await manage('rollback');return denied}throw error}
+   }
    if(run.state==='prepared'||run.state==='ended'||run.state==='withdrawn'||run.state==='configuration_failed'||run.state==='submission_unknown'){await manage('commit');return denied}
    if(runAnalysisSelfAuthorizedTools(run.analysisScope).length){
     try{await assertRunAnalysisControls(db,owner,run.analysisScope!,run.id)}catch(error){if(error instanceof WorkError&&['teloa/conflict','teloa/version-conflict','teloa/forbidden'].includes(error.code)){await manage('rollback');return denied}throw error}
@@ -1001,6 +1012,7 @@ private async readVerified(db:PoolClient,owner:string,row:Record<string,unknown>
   if(!stored)throw new WorkError('teloa/forbidden','执行不属于本人。')
   if(stored.role_id!==hint.role_id)throw new WorkError('teloa/storage-corrupt','执行身份归属已变化。')
   const run=await this.readVerified(db,owner,stored)
+  if(run.state==='ended'&&input.mode!=='completion'&&this.interactionReader){const interaction=await this.interactionReader(owner,run.sessionId,db);if(interaction?.run.id!==run.id)throw new WorkError('teloa/forbidden','原任务尚未开放独立交互。');interaction.lease.assertCurrent();return interaction.target}
   if(run.state==='withdrawn'||run.state==='configuration_failed'||run.state==='submission_unknown'||run.state==='ended'&&input.mode!=='completion')throw new WorkError('teloa/conflict','本次执行已结束。')
   const completion=input.mode==='completion'
   if(!completion)await assertSourceFollowupDispatch(db,owner,run)
@@ -1024,6 +1036,7 @@ private async readVerified(db:PoolClient,owner:string,row:Record<string,unknown>
    if(!selected){await db.query('commit');return null}
    const run=selected.run
    if(run.contextMode!==runContextMode){await db.query('commit');return null}
+   if(run.state==='ended'&&this.interactionReader){const interaction=await this.interactionReader(owner,sessionId,db);if(interaction?.run.id!==run.id)throw new WorkError('teloa/forbidden','原任务尚未开放独立交互。');await checkKnowledge(db,run,interaction.target);interaction.lease.assertCurrent();await db.query('commit');return run}
    if(!['submitting','accepted','active'].includes(run.state)||run.stopRequestedAt!==null)throw new WorkError('teloa/forbidden','本次执行未开始或已停止。')
    const target=await this.executionScopeInTransaction(db,owner,{runId:run.id})
    await checkKnowledge(db,run,target)

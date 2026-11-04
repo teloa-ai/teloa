@@ -2,6 +2,7 @@ import test,{type TestContext} from 'node:test'
 import assert from 'node:assert/strict'
 import type {StreamChunk} from '@deepseek-ai/dsh-llm'
 import type {SessionEvent} from '@deepseek-ai/dsh-session'
+import {defineTool} from '@deepseek-ai/dsh-tools'
 import {createReviewSourceCatalog,deliveryRepairProtocol,deliveryReviewProtocol,deliveryReviewSource,deliveryReviewToolName,deliveryRoundData,draftSha256,leaseTaskDeliveryReview,splitReviewUnits,type DeliveryReviewTrace,type ReviewMaterial,type ReviewRound} from '../src/task-delivery-review.ts'
 import {readTaskRunGroupResult} from '../src/task-run-group-result.ts'
 import {registerTaskToolGuard} from '../src/task-tool-guard.ts'
@@ -12,7 +13,7 @@ const text=(value:string):Reply=>[{type:'block-start',index:0,blockType:'text'},
 let serial=0
 const call=(args:unknown,name=deliveryReviewToolName):Reply=>[
  {type:'block-start',index:0,blockType:'tool-call'},
- {type:'block-end',index:0,block:{type:'tool-call',id:'repair-call-'+(++serial),name,arguments:args}},
+ {type:'block-end',index:0,block:{type:'tool-call',id:'repair-call-'+(++serial),name,arguments:name==='investigation_probe'?JSON.stringify(args):args}},
  {type:'finish',reason:{kind:'tool-calls'}},
 ] as unknown as Reply
 const goal='只有独立付款凭据可标A级；口述且无凭据为待核。当前甲店仅口述付款，资料未提供凭据。'
@@ -33,12 +34,15 @@ const clone=(events:readonly SessionEvent[])=>JSON.parse(JSON.stringify(events))
 const delivered=(events:readonly SessionEvent[])=>events.filter((event):event is Extract<SessionEvent,{type:'user/message'}>=>event.type==='user/message'&&event.surfaceOp==='append'&&event.data.source.kind===deliveryReviewSource&&Reflect.get(event.data.source,'summary')==='复核后交付')
 
 /** 原版官方 Loop/ToolRuntime，只替换模型流；每个场景固定输入队列，实际额外调用会使测试失败。 */
-async function runtime(t:TestContext,scripts:Reply[]){
+async function runtime(t:TestContext,scripts:Reply[],investigation=false){
  const f=await loopWorkFixture(t,true),traces:DeliveryReviewTrace[]=[]
  f.adapter.scripts.push(...scripts)
- registerTaskToolGuard(f.ctx,async()=>({allowedTools:[],nativeRequestId:'loop-input'}))
- leaseTaskDeliveryReview(f.agent,{runId:'repair-run',requestId:'loop-input',material,trace:entry=>{traces.push(entry)},publish:async message=>{f.agent.inject(message)}})
- return {...f,traces}
+ let probes=0
+ const allowedTools=investigation?['investigation_probe']:[]
+ if(investigation)f.ctx.tools.register(defineTool({name:'investigation_probe',description:'本机合成调查取证',parameters:{},output:{schema:{type:'string'},render:(_args,value)=>[{type:'text',text:value}]},execute:async()=>{probes++;return '原资料不建立独立付款凭据。'}}))
+ registerTaskToolGuard(f.ctx,async()=>({allowedTools,nativeRequestId:'loop-input'}))
+ leaseTaskDeliveryReview(f.agent,{runId:'repair-run',requestId:'loop-input',material,trace:entry=>{traces.push(entry)},publish:async message=>{f.agent.inject(message)},...(investigation?{requireReview:true,readExecution:async()=>({runId:'repair-run',sessionId:f.agent.id,requestId:'loop-input',allowedTools,continuationMessageIds:new Set<string>(),runtimeLinks:[],jobs:[],pendingJobCompletion:false,pendingInput:false,children:'none' as const,flow:'none' as const})}:{})})
+ return {...f,traces,probes:()=>probes}
 }
 const result=(events:readonly SessionEvent[])=>readTaskRunGroupResult(events,'loop-input',undefined,undefined,{requireReview:true,runId:'repair-run'})
 const successScripts=(first=false)=>{
@@ -114,32 +118,34 @@ test('真实Loop的R4隔离全部旧AI意见，只保留当前稿、原事实和
  assert.equal(result(legacy),fixed,'旧v4四轮冷读继续核全部旧意见和真实依赖')
 })
 
-test('真实Loop：复核预算与起草取证步数分开计，长稿四单元R2有据拒绝后也能进入完整R3修订与R4独立验收',async t=>{
+test('真实Loop：长稿四轮各四单元加一次纠参，完整17步复核不被起草步数挤占',async t=>{
  const section=(n:number)=>`## 第${n}节\n\n`+Array.from({length:140},(_,j)=>`第${n}节第${j}句内容。`).join('')+'\n'
  const longDraft=Array.from({length:9},(_,i)=>section(i+1)).join('\n')
  assert.equal(splitReviewUnits(longDraft).length,4,'实际单元划分产生已消费的模型步骤')
  const heading='## 第1节（待核）',repaired=longDraft.replace('## 第1节',heading).trim()
  const repair={phase:'revise',issues:[{problem:'按原资料修正分类及其依据。',basis:basis.map(ref=>({...ref})),affectedBlockIds:[1],coverage:{change:[1],retain:[],unrelated:Array.from({length:17},(_,i)=>i+2),unknown:[]},edits:[{blockId:1,after:heading}]}]}
- // R1 四单元零改 + R2 首单元有据拒绝后，R3 四单元与 R4 四单元仍在独立复核预算（4+1+4+4≤17）内。
- const f=await runtime(t,[text(longDraft),...Array.from({length:4},()=>call(revise())),call(r2Reject()),call(repair),...Array.from({length:3},()=>call(revise())),call(r4Accept()),...Array.from({length:3},()=>call(verify()))]);await f.send()
- assert.equal(f.adapter.requests.length,1+4+1+4+4)
+ // R2 最后一单元有据拒绝，四轮各四单元与唯一一次纠参恰好用满17步。
+ const f=await runtime(t,[text(longDraft),call({phase:'revise',issues:''}),...Array.from({length:4},()=>call(revise())),...Array.from({length:3},()=>call(verify())),call(r2Reject()),call(repair),...Array.from({length:3},()=>call(revise())),call(verify(['r2:u4:f1','r3:u1:i1'])),...Array.from({length:3},()=>call(verify()))]);await f.send()
+ assert.equal(f.adapter.requests.length,18,JSON.stringify(f.traces))
  assert.ok(!f.traces.some(entry=>entry.reason==='review-repair-budget'),'不在repair开始前因起草步数挤占而停止')
- assert.deepEqual(f.traces.filter(entry=>entry.state==='requested').map(entry=>[entry.round,entry.unit]),[[1,0],[1,1],[1,2],[1,3],[2,0],[3,0],[3,1],[3,2],[3,3],[4,0],[4,1],[4,2],[4,3]],'第3轮修订与第4轮独立验收的请求实际发出')
+ assert.deepEqual(f.traces.filter(entry=>entry.state==='planned').map(entry=>[entry.round,entry.unit]),[1,2,3,4].flatMap(round=>[0,1,2,3].map(unit=>[round,unit])),'四轮各四单元都实际取得合法回执')
  assert.deepEqual(ends(f.events),['completed'])
  assert.equal(result(f.events),repaired)
  assert.equal(result(clone(f.events)),repaired)
  assert.equal(delivered(f.events).length,1)
 })
 
-test('真实Loop：尚未形成草稿时仍受同租约十步硬限，真实工具错误续步不能发出第十一次provider调用',async t=>{
- const f=await runtime(t,Array.from({length:11},()=>call({},'unregistered_repair_budget_probe')));await f.send()
- assert.equal(f.adapter.requests.length,10)
- assert.equal(f.events.filter(event=>event.type==='step/start').length,10)
- assert.equal(f.events.filter(event=>event.type==='tool/result'&&event.data.message.isError).length,10,'每一步都真实经历原生工具失败和自然续步')
- assert.deepEqual(ends(f.events),['error'])
- assert.equal(f.traces.at(-1)!.reason,'review-model-step-limit')
- assert.equal(result(f.events),undefined)
- assert.equal(delivered(f.events).length,0)
+test('真实Loop：长调查超十步后完成四轮复核，正式报告冷读仅核复核步数',async t=>{
+ const f=await runtime(t,[...Array.from({length:30},()=>call({},'investigation_probe')),...successScripts()],true);await f.send()
+ assert.equal(f.adapter.requests.length,35,JSON.stringify({traces:f.traces,probes:f.probes(),last:f.events.filter(event=>event.type==='turn/end').at(-1)}))
+ assert.equal(f.probes(),30)
+ const calls=new Set(f.events.flatMap(event=>event.type==='tool/call'&&event.data.name==='investigation_probe'?[event.data.callId]:[]))
+ assert.equal(f.events.filter(event=>event.type==='tool/result'&&calls.has(event.data.message.toolCallId)&&!event.data.message.isError).length,30,'已完成工具原回执保留，不挤占复核预算')
+ assert.deepEqual(ends(f.events),['completed'])
+ assert.equal(result(f.events),fixed)
+ assert.equal(result(clone(f.events)),fixed)
+ assert.equal(delivered(f.events).length,1)
+ assert.ok(!f.traces.some(entry=>entry.reason==='review-model-step-limit'))
 })
 
 test('真实Loop：R2之后取消或原来源许可失效，R3仍须经过原取消/模型准入，不发provider',async t=>{

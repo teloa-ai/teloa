@@ -13,12 +13,13 @@ import type {TaskRunDeliveryReader} from './task-run-delivery-status.ts'
 export const taskRunEndpoints=['task-runs/retry','task-runs/readiness','task-runs/origin','task-runs/list','task-runs/prepare','task-runs/start','task-runs/reconcile','task-runs/stop','task-runs/withdraw','task-runs/subagents/recover'] as const
 type TaskRunMutationEndpoint=Exclude<typeof taskRunEndpoints[number],'task-runs/list'|'task-runs/origin'|'task-runs/readiness'>
 export const taskRunOwnerEndpoint='task-runs/dispose-unknown'
-export const taskRunOwnerEndpoints=[taskRunOwnerEndpoint,'task-runs/session','task-runs/source-followup/get','task-runs/source-followup/prepare'] as const
+export const taskRunOwnerEndpoints=[taskRunOwnerEndpoint,'task-runs/session','task-runs/interaction','task-runs/source-followup/get','task-runs/source-followup/prepare'] as const
 export type TaskKnowledgeLoader=(target:TaskExecutionScope,role:DigitalRole,database:TaskRunSkillDatabase,signal:AbortSignal)=>Promise<TaskRun['knowledge']>
 /** `admitRun` 在 prepare 写入 Run 的同一事务内执行容量准入；拒绝即不建 Run，调用方按原请求下次再准备。 */
 type RunAdmission=NonNullable<Parameters<TaskRunService['prepare']>[7]>
 export type ManagedTaskRunPreparationPorts={conversations:Pick<ConversationService,'createRun'|'runReservation'|'failRunReservation'>&Partial<Pick<ConversationService,'snapshotBySession'>>;links:Pick<ObjectConversationService,'change'>;beforeCreate?:(sessionId:string)=>void;admitRun?:(db:Parameters<RunAdmission>[0],owner:string,lineage:Parameters<RunAdmission>[1])=>Promise<void>}
 type TaskRunSessionRead={schema:'teloa.task-run-session/v1';conversation:Awaited<ReturnType<ConversationService['snapshotBySession']>>;anchor:TaskRun;currentRunId:string;run:TaskRun}
+type TaskRunInteractionRead={sessionId:string;available:boolean}
 export type TaskRunSubagentReader={listMany:(owner:string,runIds:readonly string[])=>Promise<Map<string,TaskRunSubagent[]>>;recover?:(owner:string,input:unknown)=>Promise<TaskRunSubagent>}
 /** 运行会话是原生资源，令牌估算只在读口附带，不回写或改变 Run 的固定快照。 */
 export type TaskRunMeasurementReader={estimate:(sessionId:string)=>Promise<number|undefined>}
@@ -74,11 +75,13 @@ export function createTaskRunHandler(owner:string,get:()=>Promise<TaskRunService
  function handle(endpoint:'task-runs/origin',payload:unknown,signal:AbortSignal,parentIdentity?:ConversationTaskIdentity):Promise<TaskRunOrigin>
  function handle(endpoint:'task-runs/list',payload:unknown,signal:AbortSignal,parentIdentity?:ConversationTaskIdentity):Promise<TaskRun[]>
  function handle(endpoint:'task-runs/session',payload:unknown,signal:AbortSignal,parentIdentity?:ConversationTaskIdentity):Promise<TaskRunSessionRead>
+ function handle(endpoint:'task-runs/interaction',payload:unknown,signal:AbortSignal,parentIdentity?:ConversationTaskIdentity):Promise<TaskRunInteractionRead>
  function handle(endpoint:TaskRunMutationEndpoint,payload:unknown,signal:AbortSignal,parentIdentity?:ConversationTaskIdentity):Promise<TaskRun>
- function handle(endpoint:string,payload:unknown,signal:AbortSignal,parentIdentity?:ConversationTaskIdentity):Promise<TaskRun|TaskRun[]|TaskRunOrigin|TaskRunSourceFollowupCandidate|TaskRunSessionRead|TaskRunReadiness>
- async function handle(endpoint:string,payload:unknown,signal:AbortSignal,parentIdentity?:ConversationTaskIdentity):Promise<TaskRun|TaskRun[]|TaskRunOrigin|TaskRunSourceFollowupCandidate|TaskRunSessionRead|TaskRunReadiness>{
+ function handle(endpoint:string,payload:unknown,signal:AbortSignal,parentIdentity?:ConversationTaskIdentity):Promise<TaskRun|TaskRun[]|TaskRunOrigin|TaskRunSourceFollowupCandidate|TaskRunSessionRead|TaskRunReadiness|TaskRunInteractionRead>
+ async function handle(endpoint:string,payload:unknown,signal:AbortSignal,parentIdentity?:ConversationTaskIdentity):Promise<TaskRun|TaskRun[]|TaskRunOrigin|TaskRunSourceFollowupCandidate|TaskRunSessionRead|TaskRunReadiness|TaskRunInteractionRead>{
   if(!taskRunOwnerEndpoints.some(known=>known===endpoint)&&!taskRunEndpoints.some(known=>known===endpoint))throw new WorkError('teloa/not-found','未提供此执行接口。')
   if(endpoint==='task-runs/session')return readSession(payload,signal,true,parentIdentity)
+  if(endpoint==='task-runs/interaction'){const input=taskInput(payload,['sessionId']);if(parentIdentity||typeof input.sessionId!=='string'||!/^[-a-zA-Z0-9_]{1,128}$/.test(input.sessionId))throw new WorkError('teloa/invalid-input','续聊会话身份不正确。');signal.throwIfAborted();return ports.interaction?ports.interaction(input.sessionId,signal):{sessionId:input.sessionId,available:false}}
   if(endpoint==='task-runs/readiness'){
    const input=taskRunReadinessInput(payload);if(parentIdentity)throw new WorkError('teloa/invalid-input','准备检查不接受执行身份。')
    const service=await get(),source=await service.conversationParent(owner,{taskId:input.taskId})

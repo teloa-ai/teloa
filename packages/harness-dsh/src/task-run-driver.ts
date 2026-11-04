@@ -70,6 +70,8 @@ function completedTextRun(run:TaskRun,events:readonly SessionEvent[],observed:Ta
 }
 
 export type TaskRunPorts={
+ interaction?:(sessionId:string,signal:AbortSignal)=>Promise<{sessionId:string;available:boolean}>
+ openInteraction?:(run:TaskRun,signal:AbortSignal)=>Promise<void>
  /** 持久提交协议：只有宿主在关闭原生发布回调后签收的未发布记录才可恢复。 */
  submissions?:import('@teloa/backend').TaskRunSubmissionJournal
  withAcceptedInboxFailureFence?:<T>(run:TaskRun,signal:AbortSignal,work:(fence:import('@teloa/backend').AcceptedInboxErrorFence)=>Promise<T>)=>Promise<T|null>

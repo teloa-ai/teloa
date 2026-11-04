@@ -66,7 +66,7 @@ export async function initializeRoleDelegations(pool:Pool):Promise<void>{
  * 且库中没有任何发布残留——无待发布、无结果文件、无以该 Run 为作者的群回帖、无未定案 outbox——时才算收口；
  * 零工具旧例外不对失败终态放行，不伪造成功交付。
  */
-async function settledOwnerGroupDelivery(db:PoolClient,owner:string,raw:Record<string,unknown>,run:TaskRun,legacy:boolean):Promise<boolean>{
+export async function settledOwnerGroupDelivery(db:PoolClient,owner:string,raw:Record<string,unknown>,run:TaskRun,legacy:boolean):Promise<boolean>{
  const plan=readStoredRunPlanReport(raw),context=run.groupContext
  if(!context&&!plan)return true
  if(run.evidence?.state!=='ended'||raw.group_publication!=null||raw.group_publication_next_at!=null)return false
@@ -89,7 +89,7 @@ async function settledOwnerGroupDelivery(db:PoolClient,owner:string,raw:Record<s
  return !(await db.query("select 1 from teloa_group_routing_outbox where owner_id=$1 and (run_id=$2 or (message_id=$3 and role_id=$4)) and state<>'settled' limit 1 for share",[owner,run.id,message.id,run.roleId])).rowCount
 }
 
-async function settledOwnerEffects(db:PoolClient,owner:string,taskId:string):Promise<boolean>{
+export async function settledOwnerEffects(db:PoolClient,owner:string,taskId:string):Promise<boolean>{
  const schema=(await db.query("select to_regclass('teloa_security_actions') actions,to_regclass('teloa_security_action_executions') executions")).rows[0]
  if(!schema?.actions||!schema.executions)return false
  return !(await db.query("select 1 from teloa_security_action_executions e join teloa_security_actions a on a.owner_id=e.owner_id and a.id=e.action_id where a.owner_id=$1 and a.task_id=$2 and e.state not in ('succeeded','failed') limit 1",[owner,taskId])).rowCount

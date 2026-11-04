@@ -238,7 +238,10 @@ export class EmployeeApiWorkService{
  }
  /** 原生 prepare/start/reconcile/stop 是唯一执行路径。事务只锁本集成与工作，不改原 Task/Run 规则。 */
  async tick(signal:AbortSignal,report:(error:unknown)=>void=error=>{throw error}){
-  const ids=(await this.pool.query("select id from teloa_employee_api_work where owner_id=$1 and next_check_at<=$2 and (state in ('queued','running','waiting','cancel_requested') or (state='succeeded' and delivery_required)) order by case when state='cancel_requested' then 0 else 1 end,next_check_at limit 32",[this.owner,this.now()])).rows.map(row=>row.id as string)
+  const ids=(await this.pool.query(`select w.id from teloa_employee_api_work w where w.owner_id=$1 and w.next_check_at<=$2 and (w.state in ('queued','running','waiting','cancel_requested') or (w.state='succeeded' and w.delivery_required) or (w.state='failed' and w.error='empty_result' and exists(
+   select 1 from teloa_employee_api_rounds a join teloa_task_runs r on r.owner_id=w.owner_id and r.id=a.run_id and r.task_id=a.task_id join teloa_tasks t on t.owner_id=r.owner_id and t.id=r.task_id
+   where a.work_id=w.id and a.round=w.round and r.state='ended' and r.evidence->>'reason'='completed' and r.stop_requested_at is null and t.state='waiting')))
+   order by case when w.state='cancel_requested' then 0 else 1 end,w.next_check_at limit 32`,[this.owner,this.now()])).rows.map(row=>row.id as string)
   for(const id of ids){signal.throwIfAborted();try{await this.advance(id,signal)}catch(error){signal.throwIfAborted();report(error);await this.recordDispatchFailure(id,error)}}
  }
  /** 可恢复故障保留同一请求；受理后发现的确定配置缺口必须对调用方可见。 */
@@ -247,7 +250,7 @@ export class EmployeeApiWorkService{
   try{
    await db.query('begin')
    const row=(await db.query('select * from teloa_employee_api_work where id=$1 and owner_id=$2 for update',[id,this.owner])).rows[0]
-   if(!row||terminal.has(row.state)){await db.query('commit');return}
+   if(!row||terminal.has(row.state)){if(row?.state==='failed'&&row.error==='empty_result')await db.query('update teloa_employee_api_work set next_check_at=$2 where id=$1',[id,new Date(this.now().getTime()+30_000)]);await db.query('commit');return}
    const round=await this.round(db,id,row.round)
    const reason=cause instanceof WorkError?cause.details?.reason:undefined
    const controlInactive=cause instanceof WorkError&&cause.code==='teloa/forbidden'&&reason==='work-control-inactive'
@@ -327,10 +330,16 @@ export class EmployeeApiWorkService{
   const db=await this.pool.connect()
   try{
    await db.query('begin');const row=(await db.query('select * from teloa_employee_api_work where id=$1 for update skip locked',[id])).rows[0]
-   if(!row||terminal.has(row.state)&&!(row.state==='succeeded'&&row.delivery_required)){await db.query('commit');return}
+   const resultRecovery=row?.state==='failed'&&row.error==='empty_result'
+   if(!row||terminal.has(row.state)&&!(row.state==='succeeded'&&row.delivery_required)&&!resultRecovery){await db.query('commit');return}
    const integrationRow=(await db.query('select * from teloa_employee_integrations where id=$1 for share',[row.integration_id])).rows[0],identity=readEmployeeIntegration(integrationRow)
    const round=(await db.query('select * from teloa_employee_api_rounds where work_id=$1 and round=$2',[id,row.round])).rows[0]
    if(!round?.task_id)throw new EmployeeApiError('work_unavailable','The saved work round is unavailable.',503)
+   if(resultRecovery){
+    // 只补读原固定 Run；没有等待交付的可信完成证据时保留原失败，绝不走 prepare/start。
+    const eligible=round.run_id&&(await db.query("select 1 from teloa_task_runs r join teloa_tasks t on t.owner_id=r.owner_id and t.id=r.task_id where r.owner_id=$1 and r.id=$2 and r.task_id=$3 and r.state='ended' and r.evidence->>'reason'='completed' and r.stop_requested_at is null and t.state='waiting'",[row.owner_id,round.run_id,round.task_id])).rows.length>0
+    if(!eligible||identity.revokedAt!==null||Date.parse(identity.expiresAt)<=this.now().getTime()){await db.query('update teloa_employee_api_work set next_check_at=$2 where id=$1',[id,new Date(this.now().getTime()+30_000)]);await db.query('commit');return}
+   }
    const config=roundConfig(round),originalRunId=round.run_id,originalModel=config.model
    let roundPersisted=false
    // round 外键引用 Task。同一事务内连续更新 round 会持有被引用 Task 的锁；
@@ -353,6 +362,7 @@ export class EmployeeApiWorkService{
      run=await this.runtime.prepare(identity.ownerId,{requestId:round.request_id,taskId:round.task_id,expectedTaskVersion:round.task_version,...(round.permission_mode?{permissionMode:round.permission_mode as EmployeePermissionMode}:{}),...(config.model?{model:config.model}:{})},signal)
      round.run_id=run.id
     }else run=await this.runtime.read(identity.ownerId,round.run_id,signal)
+    if(resultRecovery&&(run.id!==round.run_id||run.taskId!==round.task_id||run.state!=='ended'||run.evidence?.state!=='ended'||run.evidence.reason!=='completed'||run.stopRequestedAt!==null)){await db.query('update teloa_employee_api_work set next_check_at=$2 where id=$1',[id,new Date(this.now().getTime()+30_000)]);await db.query('commit');return}
     if(row.state==='cancel_requested'||revoked&&run.state==='prepared')run=await (run.state==='prepared'?this.runtime.withdraw(identity.ownerId,run.id,signal):this.runtime.stop(identity.ownerId,run.id,signal))
     else if(run.state==='prepared')run=await this.runtime.start(identity.ownerId,run.id,signal)
     // 恢复的是同一真实 Run：即使上一轮外层事务回滚，也从其固定模型策略恢复默认模型选择。
@@ -376,6 +386,7 @@ export class EmployeeApiWorkService{
     else{const taskState=(await db.query('select state from teloa_tasks where owner_id=$1 and id=$2',[row.owner_id,round.task_id])).rows[0]?.state;state=row.state==='cancel_requested'?'cancel_requested':taskState==='paused'||taskState==='blocked'||await this.runtime.waiting?.(run)?'waiting':'running'}
    }catch(cause){
     signal.throwIfAborted()
+    if(resultRecovery)throw cause
     if(cause instanceof EmployeeApiError&&['employee_changed','employee_unavailable'].includes(cause.code)){state='failed';error=cause.code}
     else if(cause instanceof WorkError&&cause.code==='teloa/permission-mode-unavailable'){state='failed';error='permission_mode_unavailable'}
     else if(cause instanceof WorkError&&cause.code==='teloa/model-unavailable'){state='failed';error='model_unavailable'}
@@ -395,7 +406,7 @@ export class EmployeeApiWorkService{
     }
     const saved=(await db.query("update teloa_employee_api_work set state=$2,error=$3,result_version=$4,delivery_required=false,version=version+1,updated_at=$5,next_check_at=$5::timestamptz+interval '2 seconds' where id=$1 returning *",[id,state,error,resultVersion,this.now()])).rows[0]
     await this.event(db,saved,config)
-   }else await db.query('update teloa_employee_api_work set next_check_at=$2 where id=$1',[id,new Date(this.now().getTime()+2000)])
+   }else await db.query('update teloa_employee_api_work set next_check_at=$2 where id=$1',[id,new Date(this.now().getTime()+(resultRecovery?30_000:2000))])
    await db.query('commit')
   }catch(error){await db.query('rollback');throw error}finally{db.release()}
  }

@@ -485,6 +485,7 @@ export async function apply(ctx: Context): Promise<void> {
     ensure:ensureConversation,
     selectBinding:sessionId=>readTaskRunSelectedBinding(taskRunChat,sessionId,()=>ensureConversation(sessionId)),
     readRunSession:sessionId=>readNativeSessionForOpening(requireWorkContext().sessions,sessionId),
+    readRunInteraction:async sessionId=>{const value=await call('task-runs/interaction',{sessionId});if(!value||typeof value!=='object'||!('sessionId'in value)||value.sessionId!==sessionId||!('available'in value)||typeof value.available!=='boolean')throw Error('任务续聊状态无法核对。');return value.available},
     isNativeChild:sessionId=>isNativeChildSession(requireWorkContext().sessions,brandString<SessionId>(sessionId)),
     homeSkills:async signal=>{const value=await call('capabilities/home-skills',{},signal);if(!isSkillCatalog(value))throw Error('首页技能目录格式不正确。');return value},
     catalog:async(sessionId)=>{
