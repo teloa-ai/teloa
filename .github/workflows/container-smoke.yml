@@ -86,9 +86,6 @@ jobs:
                 CI: 'true'
                 TELOA_MARKET_REMOTE: 'off'
                 TELOA_USAGE_STATS: 'off'
-          networks:
-            default:
-              internal: true
           YAML
           docker pull --platform linux/arm64 postgres@sha256:18cfe3ef5e6815560c98237d6216d1e5119702fb0f3894c8785dd58b8bbe5d73 > smoke-evidence/postgres-pull.log 2>&1
           docker compose -f compose.yaml -f smoke.override.yaml up -d --no-build --pull never > smoke-evidence/compose-up.log 2>&1
@@ -109,7 +106,17 @@ jobs:
           test "$(docker inspect --format '{{.State.ExitCode}}' "$init_id")" = 0
           test "$(docker inspect --format '{{.Config.User}}' "$app_id")" = node
           network_id=$(docker inspect --format '{{range .NetworkSettings.Networks}}{{.NetworkID}}{{end}}' "$app_id")
-          test "$(docker network inspect --format '{{.Internal}}' "$network_id")" = true
+          test "$(docker network inspect --format '{{.Internal}}' "$network_id")" = false
+          mapping=$(docker port "$app_id" 8080/tcp)
+          test "$mapping" = 127.0.0.1:3369
+          node -e 'console.log(JSON.stringify({containerPort:"8080/tcp",hostBinding:process.argv[1],networkInternal:false}))' "$mapping" > smoke-evidence/published-port.json
+          docker compose -f compose.yaml -f smoke.override.yaml exec -T app node --input-type=module -e 'const r=await fetch("http://127.0.0.1:8080/");if(!r.ok&&r.status!==401)throw Error("container health status "+r.status);console.log(JSON.stringify({httpStatus:r.status,containerLocal:true,authenticated:false,sessionOpened:false}))' > smoke-evidence/container-http-health.json
+          # The startup URL and cookie stay only in the pipe/container process memory.
+          docker compose -f compose.yaml -f smoke.override.yaml logs --no-color app | docker compose -f compose.yaml -f smoke.override.yaml exec -T app node --input-type=module -e '
+            import {findStartupUrl,assertTeloaReady} from "/app/scripts/核对宿主就绪.mjs";
+            import {redactLog} from "/app/packages/cli/lib/diagnostics.js";
+            try{let text="";for await(const chunk of process.stdin)text+=chunk;const startup=findStartupUrl(text,"127.0.0.1:3100");text="";if(!startup)throw Error("owned app startup URL unavailable");await assertTeloaReady(startup);console.log(JSON.stringify({schema:"teloa.runtime-readiness/v1",ready:true,officialHelper:"assertTeloaReady",authenticatedProbe:true,promptSubmitted:false}));}catch(error){console.error(redactLog(error.message).replace(/https?:\/\/\S+/g,"[runtime URL omitted]"));process.exitCode=1}
+          ' > smoke-evidence/official-runtime-readiness.json
           node --input-type=module -e 'const r=await fetch("http://127.0.0.1:3369/");if(!r.ok&&r.status!==401)throw Error("health status "+r.status);console.log(JSON.stringify({httpStatus:r.status,authenticated:false,sessionOpened:false}))' > smoke-evidence/http-health.json
           docker compose -f compose.yaml -f smoke.override.yaml exec -T db psql -U teloa -d teloa -X -A -t -v ON_ERROR_STOP=1 -c "select json_build_object('tables',(select count(*) from pg_tables where schemaname='public' and tablename like 'teloa_%'),'tasks',(select count(*) from teloa_tasks),'runs',(select count(*) from teloa_task_runs),'budgetReservations',(select count(*) from teloa_work_budget_reservations),'nativeCheckpoints',(select count(*) from teloa_native_session_checkpoints),'nativeContinuations',(select count(*) from teloa_native_session_continuations));" > smoke-evidence/empty-work.json
           node -e 'const fs=require("fs"),r=JSON.parse(fs.readFileSync("smoke-evidence/empty-work.json"));if(r.tables!==298||Object.entries(r).some(([k,v])=>k!=="tables"&&v!==0))throw Error("unexpected work/schema");console.log("fresh work/schema PASS; no model or task submitted")'
@@ -124,7 +131,7 @@ jobs:
           const runtime=await import('/app/scripts/runtime/native-runtime.mjs'),plan=await runtime.prepareNativeRuntime({programRoot:'/app',runtimeRoot:'/data/teloa'});assert.equal(plan.fingerprint,r.fingerprint);runtime.installNativeRuntime(plan);const require=createRequire('/app/package.json'),official=createRequire(require.resolve('@deepseek-ai/dsh/package.json'));const {AgentLoop}=await import(pathToFileURL(official.resolve('@deepseek-ai/dsh-agent-loop')).href);for(const key of ['requireWorkAdmission','installWorkAdmission','requireInputCheckpoint','installInputCheckpoint','requireRestoreAdmission','installRestoreAdmission','wakePending'])assert.equal(typeof AgentLoop.prototype[key],'function',key);
           const processes=[];for(const n of await readdir('/proc'))if(/^\d+$/.test(n)){try{const cmd=await readFile('/proc/'+n+'/cmdline','utf8');if(cmd.includes('/app/scripts/runtime/native-runtime-entry.mjs'))processes.push(Number(n))}catch{}}assert(processes.length>0);
           let sessionLogs=0;async function walk(p){let entries;try{entries=await readdir(p,{withFileTypes:true})}catch(e){if(e.code==='ENOENT')return;throw e}for(const e of entries){if(e.isDirectory())await walk(join(p,e.name));else if(/^session\.v4\.jsonl(?:\.zstd)?$/.test(e.name))sessionLogs++}}await walk('/data/dsh/sessions');assert.equal(sessionLogs,0);
-          console.log(JSON.stringify({version:'0.2.12',dataVersion:17,compatibleDataVersions:[17],uid:process.getuid(),nativeFingerprint:r.fingerprint,packages:r.packages.length,checkedLeaves:checked,agentLoopManifestSHA256:loop.manifestSha256,agentLoopFiles:loop.files.filter(f=>f.path==='lib/index.js'||f.path==='lib/types/index.d.ts'),normalBootWrapperObserved:true,officialGraphRevalidated:true,actualWorkAdmissionExportsVerified:true,sessionLogs,noPromptOrTaskSubmitted:true,networkInternal:true,noCredentialsImported:true}));
+          console.log(JSON.stringify({version:'0.2.12',dataVersion:17,compatibleDataVersions:[17],uid:process.getuid(),nativeFingerprint:r.fingerprint,packages:r.packages.length,checkedLeaves:checked,agentLoopManifestSHA256:loop.manifestSha256,agentLoopFiles:loop.files.filter(f=>f.path==='lib/index.js'||f.path==='lib/types/index.d.ts'),normalBootWrapperObserved:true,officialGraphRevalidated:true,actualWorkAdmissionExportsVerified:true,sessionLogs,noPromptOrTaskSubmitted:true,networkInternal:false,noCredentialsImported:true}));
           JS
       - name: Always collect sanitized logs and normally release this compose project
         if: always()
