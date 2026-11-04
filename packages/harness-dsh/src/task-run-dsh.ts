@@ -121,12 +121,14 @@ export function taskRunReviewMaterial(run:Pick<TaskRun,'taskId'|'taskVersion'|'i
  }else if(snapshot.planContext!==undefined){
    const plan=reviewPlanContext(snapshot,run.executor?.kind==='owner')
    if(plan.goalEdit){
-    const edit=plan.goalEdit,role=readRunRoleSnapshot(snapshot.role),business=taskInput(snapshot.businessContext,['taskId','sourceId','object','updates','action','resultMappings','notice'])
-    if(edit.taskId!==run.taskId||edit.editVersion>run.taskVersion||edit.goal!==goal||role.authorization.kind!=='task'||role.authorization.taskId!==run.taskId||role.authorization.taskContentVersion!==edit.taskContentVersion||!Array.isArray(business.updates)||!business.updates.length)throw new WorkError('teloa/storage-corrupt','本人任务编辑与固定来源不一致。')
+    // 原目标身份由 readTaskRunGoal 核验；来源续办包装后的 goal 仍用于当前复核。
+    const fixedGoal=(snapshot.task as {goal:string}).goal,edit=plan.goalEdit,role=readRunRoleSnapshot(snapshot.role),business=taskInput(snapshot.businessContext,['taskId','sourceId','object','updates','action','resultMappings','notice'])
+    if(edit.taskId!==run.taskId||edit.editVersion>run.taskVersion||edit.goal!==fixedGoal||role.authorization.kind!=='task'||role.authorization.taskId!==run.taskId||role.authorization.taskContentVersion!==edit.taskContentVersion||!Array.isArray(business.updates)||!business.updates.length)throw new WorkError('teloa/storage-corrupt','本人任务编辑与固定来源不一致。')
     sources=[{id:'goal',kind:'goal',title:'本人本轮任务目标',text:goal,origin:{field:'inputText',pointer:'/task/goal'}},{id:'plan-original-goal',kind:'context',title:'原计划领取目标',text:plan.goal,origin:{field:'inputText',pointer:'/planContext/goal'}}]
    }else{
-    if(plan.goal!==goal)throw new WorkError('teloa/storage-corrupt','本人计划目标与固定来源不一致。')
-    goal=plan.goal;sources=[{id:'goal',kind:'goal',title:'本人已确认的计划目标',text:goal,origin:{field:'inputText',pointer:'/planContext/goal'}}]
+    const fixedGoal=(snapshot.task as {goal:string}).goal
+    if(plan.goal!==fixedGoal)throw new WorkError('teloa/storage-corrupt','本人计划目标与固定来源不一致。')
+    sources=[{id:'goal',kind:'goal',title:'本人已确认的计划目标',text:plan.goal,origin:{field:'inputText',pointer:'/planContext/goal'}}]
    }
  }else if(run.executor?.kind==='owner'||conversationSource){
    if(!conversationSource||!conversationSource.source||typeof conversationSource.sourceText!=='string'||!conversationSource.sourceText.trim()||typeof conversationSource.summary!=='string'||!conversationSource.summary.trim()||!isDeepStrictEqual([conversationSource.runId,conversationSource.taskId,conversationSource.taskVersion,conversationSource.roleId,conversationSource.roleVersion,conversationSource.sessionId,conversationSource.nativeRequestId,conversationSource.inputSha256],[run.id,run.taskId,run.taskVersion,run.roleId??null,run.roleVersion??null,run.sessionId,run.nativeRequestId,createHash('sha256').update(run.inputText).digest('hex')])||run.executor?.kind==='owner'&&(conversationSource.source.requestId!==run.executor.grantId||run.executor.grantVersion!==1)||!Number.isSafeInteger(conversationSource.source.messageSeq)||conversationSource.source.messageSeq<0||!conversationSource.source.sessionId||!conversationSource.source.messageId)throw new WorkError('teloa/forbidden','本人复核来源与固定运行不一致。')

@@ -981,3 +981,61 @@ test('按需交付复核只纳入本Run实际成功加载的方法，不重新�
  assert.deepEqual(active.methods,[{name:'identity',sha256:methods[0]!.sha256}]);assert.ok(active.catalog.sources.some(s=>s.kind==='method'&&s.text===methods[0]!.content));assert.ok(!JSON.stringify(active.catalog).includes(methods[1]!.content))
  assert.throws(()=>activateDeferredReviewMethods(material,{...evidence,receipts:[{...evidence.receipts[0]!,text:JSON.stringify({...methods[0],content:'tampered'})}]}),/固定版本/)
 })
+
+test('计划目标编辑与来源失败续办组合：核对固定原目标并保留本人当前核验目标',async()=>{
+ const {goalEditFixture}=await import('../../backend/tests/fixtures/plan-goal-edit-unpublished.ts')
+ const {errorRecoveryNotice}=await import('@teloa/contract')
+ const {randomUUID}=await import('node:crypto')
+ const f=goalEditFixture(),snapshot=JSON.parse(f.runRow.input_text),goalEdit=await f.read()
+ assert.ok(goalEdit)
+ snapshot.planContext={occurrenceId:f.claim.id,goal:f.claim.snapshot.fields.goal,dataScope:'仅本合成来源',delivery:'合成报告',event:f.claim.snapshot.event,notice:planContextNotice,goalEdit}
+ const followup={schema:'teloa.task-run-source-followup/v1',kind:'error-recovery',requestId:randomUUID(),taskId:f.task.id,taskVersion:snapshot.task.version,sessionId:f.runRow.session_id,originalRunId:randomUUID(),originalNativeRequestId:randomUUID(),originalInputSha256:'a'.repeat(64),originalEvidenceSha256:'b'.repeat(64),sourceUpdateId:randomUUID(),sourceTaskVersion:1,sourceEventId:randomUUID(),reference:{scope:snapshot.task.scope,type:'alert',id:'AL01',version:2,snapshotHash:'c'.repeat(64)},instruction:'只核验新来源，保留原权限限制',confirmedAt:'2026-09-02T00:00:00.000Z',notice:errorRecoveryNotice}
+ snapshot.sourceFollowup=followup
+ const run={taskId:f.task.id,taskVersion:snapshot.task.version,inputText:JSON.stringify(snapshot)} as TaskRun
+ const material=taskRunReviewMaterial(run)
+ assert.ok(!('skip'in material))
+ assert.equal(material.goal,errorRecoveryNotice+'\n\n本人本轮核验要求：\n'+followup.instruction+'\n\n原目标与持续限制：\n'+snapshot.task.goal)
+ assert.ok(material.catalog.sources.some(source=>source.id==='goal'&&source.text===followup.instruction),'当前核验要求保留为本人来源')
+ assert.ok(material.catalog.sources.some(source=>source.id==='original-goal'&&source.text.includes(snapshot.task.goal)),'编辑后的固定目标仍保留在原目标来源中')
+ for(const change of ['snapshot-goal','edit-goal','edit-task','edit-version','authorization-version'] as const){
+  const bad=structuredClone(snapshot)
+  if(change==='snapshot-goal')bad.task.goal='没有本人编辑回执的目标'
+  if(change==='edit-goal')bad.planContext.goalEdit.goal='另一个编辑目标'
+  if(change==='edit-task')bad.planContext.goalEdit.taskId=randomUUID()
+  if(change==='edit-version')bad.planContext.goalEdit.editVersion=run.taskVersion+1
+  if(change==='authorization-version')bad.role.authorization.taskContentVersion++
+  assert.throws(()=>taskRunReviewMaterial({...run,inputText:JSON.stringify(bad)}),/本人任务编辑与固定来源不一致/,change)
+ }
+})
+
+
+test('未编辑的计划固定目标与来源续办组合：当前要求保留，原计划来源仍逐字固定',async()=>{
+ const {randomUUID}=await import('node:crypto')
+ const {readRunPlanContext}=await import('../../backend/src/work/task-run-plan-context.ts')
+ const {readTaskRunSourceFollowup,resultFollowupNotice}=await import('@teloa/contract')
+ const taskId=randomUUID(),fixedGoal='只核对已授权合成来源，保留原报告，不重复旧动作。'
+ const plan=readRunPlanContext({occurrenceId:randomUUID(),goal:fixedGoal,dataScope:'仅原合成来源',delivery:'三行核验结论'})
+ assert.ok(plan);assert.equal(plan.goalEdit,undefined,'固定计划与任务目标相同，不需要本人目标编辑回执')
+ const followup=readTaskRunSourceFollowup({schema:'teloa.task-run-source-followup/v1',kind:'result-verification',requestId:randomUUID(),taskId,taskVersion:3,sessionId:'task-run-'+randomUUID(),originalRunId:randomUUID(),originalNativeRequestId:randomUUID(),originalInputSha256:'a'.repeat(64),originalEvidenceSha256:'b'.repeat(64),sourceUpdateId:randomUUID(),sourceTaskVersion:1,sourceEventId:randomUUID(),reference:{scope:'SOC',type:'alert',id:'AL01',version:2,snapshotHash:'c'.repeat(64)},instruction:'只核验新来源的状态，不重复原动作。',confirmedAt:'2026-09-02T00:00:00.000Z',notice:resultFollowupNotice})
+ const snapshot={schema:'teloa.task-run-input/v2',task:{id:taskId,version:3,title:'合成固定计划任务',scope:'SOC',goal:fixedGoal},planContext:{...plan,notice:planContextNotice},sourceFollowup:followup}
+ const run={taskId,taskVersion:3,inputText:JSON.stringify(snapshot),skills:[],knowledge:[]}
+ const material=taskRunReviewMaterial(run)
+ assert.ok(!('skip'in material))
+ assert.equal(material.goal,resultFollowupNotice+'\n\n本人本轮核验要求：\n'+followup.instruction+'\n\n原目标与持续限制：\n'+fixedGoal,'不能用原计划目标覆盖本轮来源核验要求')
+ const current=material.catalog.sources.find(source=>source.id==='goal'),original=material.catalog.sources.find(source=>source.id==='original-goal')
+ assert.equal(current?.text,followup.instruction)
+ assert.deepEqual(current?.origin,{field:'inputText',pointer:'/sourceFollowup/instruction'})
+ assert.equal(original?.text,fixedGoal,'原计划来源不包装本轮指令，也不混入后来目标')
+ assert.equal(original?.kind,'context')
+ assert.deepEqual(original?.origin,{field:'inputText',pointer:'/planContext/goal'})
+ for(const changed of ['task','plan'] as const){
+  const bad=structuredClone(snapshot)
+  if(changed==='task')bad.task.goal='未获固定计划确认的目标'
+  else bad.planContext.goal='被替换的计划目标'
+  assert.throws(()=>taskRunReviewMaterial({...run,inputText:JSON.stringify(bad)}),/本人计划目标与固定来源不一致/,changed)
+ }
+ const {sourceFollowup:_followup,...withoutFollowup}=snapshot
+ const ordinary=taskRunReviewMaterial({...run,inputText:JSON.stringify(withoutFollowup)})
+ assert.ok(!('skip'in ordinary));assert.equal(ordinary.goal,fixedGoal)
+ assert.equal(ordinary.catalog.sources.find(source=>source.id==='goal')?.text,fixedGoal,'普通未编辑计划仍沿用原固定目标')
+})

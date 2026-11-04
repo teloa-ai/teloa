@@ -7,6 +7,7 @@ import {createUserMessage,type ContextFormed} from '@deepseek-ai/dsh-llm'
 import {taskInputWithoutMemory,taskMessageQuery} from './task-memory-input.ts'
 import {readSessionEvents} from './session-events.ts'
 import {withEmployeeSystemPrompt} from './employee-system-prompt.ts'
+import {roleToolApprovalContextName,roleToolApprovalFacts} from './role-tool-approval-context.ts'
 
 declare module '@deepseek-ai/dsh-llm'{interface MessageSourceMap{'runtime-context':{kind:'runtime-context'}&ContextFormed}}
 
@@ -146,7 +147,10 @@ export function registerRoleConversationContext(ctx:Context,ports:RoleContextPor
   const assignment=await roleAssignmentText(agent,role,link.scopeId,ports.scopeTitle,context.signal)
   context.signal?.throwIfAborted()
   // 官方 renderContextSections 会对 contexts.text 做 {{name}} 插值；正文作为变量值只替换一次，保留岗位原文中的 {{...}}。
-  const employee=withEmployeeSystemPrompt(result,role.kind)
+  const facts=roleToolApprovalFacts(readSessionEvents(agent.session),agent.session,{ownerId:ports.owner,sessionId,conversationId:binding.id,roleId:role.id})
+  if(result.contexts.some(row=>row.name===roleToolApprovalContextName)||Object.hasOwn(result.variables,'teloa_role_tool_approval_facts'))throw new WorkError('teloa/conflict','岗位审批事实上下文名称已被占用。')
+  const approval=facts.totalRejected||facts.issues.length?{...result,contexts:[...result.contexts,{name:roleToolApprovalContextName,text:'{{teloa_role_tool_approval_facts}}'}],variables:{...result.variables,teloa_role_tool_approval_facts:JSON.stringify(facts)}}:result
+  const employee=withEmployeeSystemPrompt(approval,role.kind)
   const identity={...employee,contexts:[...employee.contexts,{name:'teloa/role-identity',text:'{{teloa_role_identity}}'}],variables:{...employee.variables,teloa_role_identity:roleContextText(role)+(assignment?'\n\n'+assignment:'')}}
   const privateScope=link.scopeId??(role.scopes.length===1?role.scopes[0]:undefined)
   if(memoryEnabled&&ports.privateMemory&&role.kind==='twin'&&query&&privateScope!==undefined){

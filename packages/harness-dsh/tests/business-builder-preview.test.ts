@@ -14,10 +14,10 @@ import {SessionStore,SessionId} from '@deepseek-ai/dsh-session'
 import {SessionProjectionRegistry} from '@deepseek-ai/dsh-session-projection'
 import {SystemPrompt} from '@deepseek-ai/dsh-system-prompt'
 import {ToolRuntime,defineTool} from '@deepseek-ai/dsh-tools'
-import {WorkError,readBusinessConfigurationCandidateVersioned,businessConfigurationLimits} from '@teloa/contract'
+import {WorkError,readBusinessConfigurationCandidateVersioned,readBusinessConfigurationPatchVersioned,businessConfigurationLimits} from '@teloa/contract'
 import {businessConfigurationHash,type BusinessConfigurationDraft} from '@teloa/backend'
 import {registerBusinessBuilderPreview} from '../src/business-builder-preview.ts'
-import {registerBusinessBuilderTools,type BusinessBuilderToolsPorts} from '../src/business-builder-tools.ts'
+import {businessBuilderGenerationSchema,registerBusinessBuilderTools,type BusinessBuilderToolsPorts} from '../src/business-builder-tools.ts'
 import {nativeHotCausalityFixture} from './fixtures/native-hot-causality.ts'
 import {registerProjectRuntimeContext} from '../src/project-runtime-context.ts'
 import {readSessionEvents} from '../src/session-events.ts'
@@ -158,5 +158,65 @@ test('真实封套再嵌套、内层普通文字及超原尺寸上限仍拒绝�
   await f.mode('preview');f.reply(raw);await f.run()
   assert.equal(f.requests.length,1);assert.equal(f.draftWrites(),0);assert.deepEqual(f.draft(),before)
   assert.ok(f.errors.length);assert.ok(Object.values(f.formalWrites).every(value=>value===0))
+ }
+})
+
+
+test('真实预览wire明确对象输出与记录页必填，不携带assisted字符串交付指令',async t=>{
+ const f=await fixture(t);await f.mode('preview');await f.run()
+ const texts=f.requests[0]!.messages.flatMap(message=>message.content.flatMap(part=>part.type==='text'?[part.text]:[]))
+ const schema=texts.flatMap(text=>{try{const value=JSON.parse(text);return value.candidate&&value.capabilities?[value]:[]}catch{return []}})[0]
+ assert.ok(schema,'实际组装请求携带当前schema')
+ const protocol=schema.capabilities.patchProtocol
+ assert.equal(protocol.output,'patch-object');assert.equal(protocol.input,undefined);assert.equal(protocol.legacyInput,undefined);assert.equal(protocol.exactlyOne,undefined)
+ assert.doesNotMatch(protocol.rules,/JSON\.stringify|patchJson 是/)
+ assert.deepEqual(protocol.allowedKeys,['title','homePageId','upsertDefinitions','removeDefinitions','upsertPages','removePageIds','pageOrder'])
+ assert.equal(protocol.additionalProperties,false)
+ assert.doesNotMatch(schema.capabilities.rules,/整组 patch 复用/)
+ assert.match(protocol.rules,/format.*baseVersion.*宿主.*不能/)
+
+ assert.deepEqual(protocol.pageContract.records.required,['id','title','kind','objectType','fields','allowCreate','allowEdit','allowArchive'])
+ assert.deepEqual(protocol.pageContract.records.booleans,['allowCreate','allowEdit','allowArchive']);assert.equal(protocol.pageContract.records.nullable,false)
+ assert.match(protocol.pageContract.homePageId,/非空.*现有页面/);assert.match(protocol.pageContract.homePageId,/省略.*保留/)
+ assert.equal(f.requests[0]!.tools?.length??0,0);assert.equal(f.draftWrites(),1)
+ const assisted=businessBuilderGenerationSchema(f.draft()).capabilities.patchProtocol
+ assert.ok('input' in assisted)
+ assert.equal(assisted.input,'patchJson');assert.equal(assisted.legacyInput,'patch');assert.equal(assisted.exactlyOne,true);assert.match(assisted.rules,/JSON\.stringify/)
+})
+
+
+test('记录页false原样保存；首页省略保留既有绑定；null或字符串开关仍严格拒绝',async t=>{
+ const valid=await fixture(t);await valid.mode('preview');const patch=valid.patch();patch.upsertPages=patch.upsertPages.map(page=>({...page,allowCreate:false,allowEdit:false,allowArchive:false}));valid.reply(patch);await valid.run()
+ assert.deepEqual(valid.errors,[]);assert.equal(valid.draftWrites(),1);assert.deepEqual(valid.draft().candidate.pages[0],patch.upsertPages[0])
+ valid.reply({title:'保留原首页的修改'});await valid.run();assert.equal(valid.draft().candidate.homePageId,'bookings');assert.equal(valid.draftWrites(),2)
+ for(const value of [null,'false',0]){
+  const invalid=await fixture(t),before=invalid.draft();await invalid.mode('preview');const raw=invalid.patch();invalid.reply({...raw,upsertPages:raw.upsertPages.map(page=>({...page,allowArchive:value}))});await invalid.run()
+  assert.equal(invalid.draftWrites(),0);assert.deepEqual(invalid.draft(),before);assert.ok(invalid.errors.some(error=>error instanceof WorkError&&error.code==='teloa/invalid-input'));assert.equal(invalid.requests.length,1)
+ }
+})
+
+test('assisted实际wire仍提供原patchJson工具契约，不套用preview对象交付',async t=>{
+ const f=await fixture(t);await f.mode('assisted');await f.run()
+ const tool=f.requests[0]!.tools?.find(tool=>tool.name==='teloa_business_builder_revise')
+ assert.ok(tool);assert.match(tool.description??'',/patchJson/);assert.ok(JSON.stringify(tool).includes('patchJson'));assert.equal(f.draftWrites(),0)
+})
+
+test('公开patch协议示例直接通过v1/v2 strict reader，根metadata和错scope仍拒绝',async t=>{
+ const f=await fixture(t)
+ for(const format of ['teloa.business-configuration/v1','teloa.business-configuration/v2'] as const){
+  const draft={...f.draft(),candidate:readBusinessConfigurationCandidateVersioned({...f.draft().candidate,format})}
+  for(const delivery of ['tool','preview'] as const){
+   const protocol=businessBuilderGenerationSchema(draft,delivery).capabilities.patchProtocol
+   const minimal=JSON.parse(protocol.minimalExampleJson)
+   assert.deepEqual(readBusinessConfigurationPatchVersioned(minimal,format),{title:draft.candidate.title})
+   const complete=readBusinessConfigurationPatchVersioned(JSON.parse(protocol.exampleJson),format)
+   const merged={...draft.candidate,definitions:complete.upsertDefinitions,pages:complete.upsertPages,homePageId:complete.homePageId}
+   assert.doesNotThrow(()=>readBusinessConfigurationCandidateVersioned(merged))
+   for(const [key,value] of Object.entries({format,baseVersion:0,scope:draft.scope,sources:draft.candidate.sources,owner:'other-owner',draftId:randomUUID(),sessionId:'other',expectedRevision:1,unknown:true})){
+    assert.throws(()=>readBusinessConfigurationPatchVersioned({...minimal,[key]:value},format),{code:'teloa/invalid-input'},key)
+   }
+   const wrongScope=structuredClone(merged);wrongScope.definitions![0]!.definition.domain='business_'+randomUUID().replaceAll('-','')
+   assert.throws(()=>readBusinessConfigurationCandidateVersioned(wrongScope),{code:'teloa/invalid-input'})
+  }
  }
 })

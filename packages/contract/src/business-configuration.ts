@@ -20,6 +20,7 @@ export type BusinessConfigurationPage=
 type Shared={format:typeof businessConfigurationFormat;scope:string;title:string;sources:BusinessConfigurationSource[];pages:BusinessConfigurationPage[];homePageId?:string}
 export type BusinessConfigurationCandidate=Shared&{definitions:BusinessConfigurationCandidateDefinition[]}
 export type BusinessConfigurationManifest=Shared&{definitions:BusinessConfigurationDefinitionReference[]}
+export const businessConfigurationPatchKeys=['title','homePageId','upsertDefinitions','removeDefinitions','upsertPages','removePageIds','pageOrder'] as const
 export type BusinessConfigurationPatch={title?:string;homePageId?:string;upsertDefinitions?:BusinessConfigurationCandidateDefinition[];removeDefinitions?:Array<{kind:BusinessConfigurationDefinitionKind;localId:string}>;upsertPages?:BusinessConfigurationPage[];removePageIds?:string[];pageOrder?:string[]}
 
 const bad=(message:string)=>new WorkError('teloa/invalid-input',message)
@@ -133,7 +134,7 @@ export function readBusinessConfigurationManifest(value:unknown):BusinessConfigu
 }
 
 export function readBusinessConfigurationPatch(value:unknown):BusinessConfigurationPatch{
- const row=exact(value,[],['title','homePageId','upsertDefinitions','removeDefinitions','upsertPages','removePageIds','pageOrder'],'配置修改格式不正确。')
+ const row=exact(value,[],businessConfigurationPatchKeys,'配置修改格式不正确。')
  const result:BusinessConfigurationPatch={}
  if('title' in row){if(!title(row.title))throw bad('配置标题不合法。');result.title=row.title}
  if('homePageId' in row)result.homePageId=identifier(row.homePageId,'配置首页标识不合法。')
