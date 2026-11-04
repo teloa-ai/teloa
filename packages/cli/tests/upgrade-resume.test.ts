@@ -9,14 +9,14 @@ import {once} from 'node:events'
 import {fork,type ChildProcess} from 'node:child_process'
 import {resolveLayout} from '../src/layout.ts'
 import {writeInstall,writePrivateJson,readPrivateJson,withInstallLock,readInstall} from '../src/state.ts'
-import {resumeUpgradeInstall,upgradeResumePending,archiveCompletedUpgradeResumeJournal,type UpgradeResumePorts} from '../src/upgrade-resume.ts'
+import {resumeUpgradeInstall,upgradeResumePending,archiveCompletedUpgradeResumeJournal,completedUpgradeReceiptProvenance,type UpgradeResumePorts} from '../src/upgrade-resume.ts'
 import {controlRecord,controlRequest,sleep,type ControlRecord} from '../src/service.ts'
 import type {InstallState,Status} from '../src/contracts.ts'
 
 const digest=(value:string|Buffer)=>createHash('sha256').update(value).digest('hex')
-async function fixture(t:{after:(fn:()=>Promise<unknown>)=>unknown},dataVersion=4){
+async function fixture(t:{after:(fn:()=>Promise<unknown>)=>unknown},dataVersion=4,versions={from:'0.2.22',to:'0.2.35'}){
  const root=await realpath(await mkdtemp(join(tmpdir(),'teloa-upgrade-resume-')));t.after(()=>rm(root,{recursive:true,force:true}))
- const home=join(root,'home'),version='0.2.35',from='0.2.22',layout=await resolveLayout({home,version}),state:InstallState={schema:'teloa.install/v1',id:randomUUID(),version,layout,port:3236,database:{kind:'docker'},phase:'maintenance'}
+ const home=join(root,'home'),version=versions.to,from=versions.from,layout=await resolveLayout({home,version}),state:InstallState={schema:'teloa.install/v1',id:randomUUID(),version,layout,port:3236,database:{kind:'docker'},phase:'maintenance'}
  await writeInstall(state)
  const release=async(path:string,v:string)=>{await mkdir(path,{recursive:true});await writeFile(join(path,'entry.js'),'// frozen '+v+'\n');await writePrivateJson(join(path,'release-manifest.json'),{schema:'teloa.release/v1',version:v,dshVersion:'0.2.1-rc.2',dataVersion,compatibleDataVersions:[dataVersion],files:[{path:'entry.js',sha256:digest('// frozen '+v+'\n')}]})}
  await release(layout.releaseRoot,version);await release(join(home,'releases',from),from)
@@ -34,19 +34,129 @@ async function fixture(t:{after:(fn:()=>Promise<unknown>)=>unknown},dataVersion=
  return {root,home,state,source,backup,receipt,original,journal,p,status,run,setApp:(value:Status['app'])=>{app=value},getControl:()=>control,setControl:(value:ControlRecord|null)=>{control=value},counts:()=>({starts,prepares})}
 }
 
-async function laterFailure(t:{after:(fn:()=>Promise<unknown>)=>unknown},versions={previous:4,source:4,target:4}){
- const f=await fixture(t,versions.previous);await f.run();const oldJournal=await readFile(f.journal)
- const version='0.2.60',from='0.2.59',layout=await resolveLayout({home:f.home,version,workspace:f.state.layout.workspaceRoot}),state:InstallState={...f.state,version,layout,phase:'maintenance'}
+async function laterFailure(t:{after:(fn:()=>Promise<unknown>)=>unknown},versions={previous:4,source:4,target:4},releases={previousFrom:'0.2.22',previousTo:'0.2.35',from:'0.2.59',to:'0.2.60'}){
+ const f=await fixture(t,versions.previous,{from:releases.previousFrom,to:releases.previousTo});await f.run();const oldJournal=await readFile(f.journal)
+ const version=releases.to,from=releases.from,layout=await resolveLayout({home:f.home,version,workspace:f.state.layout.workspaceRoot}),state:InstallState={...f.state,version,layout,phase:'maintenance'}
  const release=async(path:string,v:string,dataVersion:number)=>{await mkdir(path,{recursive:true});const body='// next frozen '+v+'\n';await writeFile(join(path,'entry.js'),body);await writePrivateJson(join(path,'release-manifest.json'),{schema:'teloa.release/v1',version:v,dshVersion:'0.2.1-rc.2',dataVersion,compatibleDataVersions:[dataVersion],files:[{path:'entry.js',sha256:digest(body)}]})}
- await release(layout.releaseRoot,version,versions.target);await release(join(f.home,'releases',from),from,versions.source);const source=join(f.root,'next-source');await release(source,version,versions.target)
+ await release(layout.releaseRoot,version,versions.target);if(from!==releases.previousTo)await release(join(f.home,'releases',from),from,versions.source);const source=join(f.root,'next-source');await release(source,version,versions.target)
  const backup=join(f.home+'.backups','before-'+version+'-'+randomUUID());await mkdir(backup,{recursive:true});const bodies={'database.dump':'next original DB archive','installation.json':JSON.stringify({workspaceRoot:layout.workspaceRoot,port:state.port})}
  for(const[path,body]of Object.entries(bodies))await writeFile(join(backup,path),body,{mode:0o600})
  await writePrivateJson(join(backup,'backup-manifest.json'),{schema:'teloa.backup/v1',id:randomUUID(),createdAt:new Date().toISOString(),installId:state.id,version:from,dataVersion:versions.source,externalWorkspaceIncluded:false,files:Object.entries(bodies).map(([path,body])=>({path,sha256:digest(body)}))})
  const receipt={from,to:version,backup,restartId:randomUUID(),status:'failed'};await writePrivateJson(join(layout.instanceRoot,'upgrade.json'),receipt);await writeInstall(state)
  let app:Status['app']='stopped',control:ControlRecord|null=null,starts=0,prepares=0
  const status=():Status=>({app,database:'ready',activeWork:0,version,port:state.port}),p:UpgradeResumePorts={status:async()=>status(),control:async()=>control,prepare:async()=>{prepares++},start:async s=>{starts++;control={pid:process.pid,startedAt:new Date().toISOString(),nonce:randomUUID(),installId:s.id,port:45000,secret:'b'.repeat(64)};app='ready';await writeInstall({...s,phase:'prepared'});return status()}}
- return {...f,state,source,backup,receipt,oldJournal,p,run:(s=state)=>withInstallLock(f.home,()=>resumeUpgradeInstall(s,version,source,p)),counts:()=>({starts,prepares}),archive:join(layout.instanceRoot,'upgrade-resume-history',digest(oldJournal)+'.json')}
+ return {...f,state,source,backup,receipt,oldJournal,p,run:(s=state)=>withInstallLock(f.home,()=>resumeUpgradeInstall(s,version,source,p)),setApp:(value:Status['app'])=>{app=value},counts:()=>({starts,prepares}),archive:join(layout.instanceRoot,'upgrade-resume-history',digest(oldJournal)+'.json')}
 }
+
+async function ordinarySwitching(f:Awaited<ReturnType<typeof laterFailure>>){
+ const home=await lstat(f.home),source={...f.state,version:f.receipt.from,layout:await resolveLayout({home:f.home,version:f.receipt.from,workspace:f.state.layout.workspaceRoot}),phase:'stopped' as const}
+ const intent={schema:'teloa.ordinary-upgrade-intent/v1',id:f.receipt.restartId,source,device:home.dev,inode:home.ino,to:f.state.version,sourceManifestSha256:digest(await readFile(join(source.layout.releaseRoot,'release-manifest.json'))),targetManifestSha256:digest(await readFile(join(f.state.layout.releaseRoot,'release-manifest.json'))),databaseConfigSha256:null,backup:f.backup,purpose:'ordinary-upgrade'}
+ // 正常 intent 的备份目录由 intent ID 固定；复用同一已验证备份，不新建保护点。
+ const backup=join(f.home+'.backups','before-'+f.state.version+'-'+intent.id)
+ await (await import('node:fs/promises')).rename(f.backup,backup);intent.backup=backup;f.backup=backup;f.receipt.backup=backup
+ const checkpoint={schema:'teloa.ordinary-upgrade-checkpoint/v1',intentSha256:digest(JSON.stringify(intent)),phase:'switch-issued',attempts:[],backupManifestSha256:digest(await readFile(join(backup,'backup-manifest.json')))}
+ await writePrivateJson(join(f.state.layout.instanceRoot,'upgrade-intent.json'),{intent,checkpoint})
+ await writePrivateJson(join(f.state.layout.instanceRoot,'upgrade.json'),{...f.receipt,status:'switching'})
+ return {intent,checkpoint}
+}
+
+test('已完成遗留journal按身份与固定证据归档，不按RC稳定或降号版本排序',async t=>{
+ const sequences=[
+  {previousFrom:'0.2.131',previousTo:'0.2.132',from:'0.2.11-rc.6',to:'0.2.11-rc.9'},
+  {previousFrom:'0.2.11-rc.1',previousTo:'0.2.11-rc.2',from:'0.2.11-rc.6',to:'0.2.11-rc.9'},
+  {previousFrom:'0.2.11-rc.1',previousTo:'0.2.11-rc.2',from:'0.2.11-rc.2',to:'0.2.11'},
+  {previousFrom:'0.2.131',previousTo:'0.2.132',from:'0.2.20',to:'0.2.11'},
+ ]
+ for(const releases of sequences)await t.test(releases.previousTo+' -> '+releases.from+' -> '+releases.to,async sub=>{
+  const f=await laterFailure(sub,{previous:16,source:16,target:16},releases);await ordinarySwitching(f);await chmod(f.journal,0o400)
+  const originalInfo=await lstat(f.journal),receipt=await readFile(join(f.state.layout.instanceRoot,'upgrade.json'))
+  const archived=await withInstallLock(f.home,()=>archiveCompletedUpgradeResumeJournal(f.state));assert.deepEqual(archived,{archived:true,path:f.archive,sha256:digest(f.oldJournal)})
+  assert.deepEqual(await readFile(f.archive),f.oldJournal);const info=await lstat(f.archive);assert.equal(info.ino,originalInfo.ino);assert.equal(info.dev,originalInfo.dev);assert.equal(info.mode,originalInfo.mode)
+  assert.deepEqual(await readFile(join(f.state.layout.instanceRoot,'upgrade.json')),receipt);assert.deepEqual(f.counts(),{starts:0,prepares:0})
+  assert.equal((await f.run()).phase,'ready');assert.deepEqual(f.counts(),{starts:1,prepares:1});assert.deepEqual(await readFile(f.archive),f.oldJournal)
+ })
+})
+
+test('跨轮归档必须验证当前普通intent且不能重用旧轮操作或attempt身份',async t=>{
+ for(const kind of ['valid-failed','wrong-receipt','bad-checkpoint','old-operation','old-attempt','old-home-inode','old-port','old-workspace','missing-process'] as const)await t.test(kind,async sub=>{
+  const f=await laterFailure(sub),old=JSON.parse(f.oldJournal.toString()) as {binding:{originalReceipt:{restartId:string};inode:number;port:number;workspace:string};attempts:Array<{requestId:string;process?:unknown}>}
+  if(kind==='old-operation')f.receipt.restartId=old.binding.originalReceipt.restartId
+  if(kind==='old-attempt')f.receipt.restartId=old.attempts.at(-1)!.requestId
+  const operation=await ordinarySwitching(f),receiptPath=join(f.state.layout.instanceRoot,'upgrade.json')
+  // failed 不能绕过已存在的普通 intent；合法原 failed 同样可被证明并归档。
+  await writePrivateJson(receiptPath,{...f.receipt,status:'failed'})
+  if(kind==='wrong-receipt')await writePrivateJson(receiptPath,{...f.receipt,restartId:randomUUID(),status:'failed'})
+  if(kind==='bad-checkpoint')await writePrivateJson(join(f.state.layout.instanceRoot,'upgrade-intent.json'),{...operation,checkpoint:{...operation.checkpoint,backupManifestSha256:'0'.repeat(64)}})
+  if(kind==='old-home-inode')old.binding.inode++
+  if(kind==='old-port')old.binding.port++
+  if(kind==='old-workspace')old.binding.workspace=join(f.root,'foreign-workspace')
+  if(kind==='missing-process')delete old.attempts.at(-1)!.process
+  if(['old-home-inode','old-port','old-workspace','missing-process'].includes(kind))await writePrivateJson(f.journal,old)
+  const bytes=await readFile(f.journal),receipt=await readFile(receiptPath),state=await readFile(join(f.state.layout.instanceRoot,'state.json'))
+  if(kind==='valid-failed'){
+   assert.equal((await withInstallLock(f.home,()=>archiveCompletedUpgradeResumeJournal(f.state))).archived,true)
+   assert.deepEqual(await readFile(f.archive),f.oldJournal)
+  }else{
+   await assert.rejects(withInstallLock(f.home,()=>archiveCompletedUpgradeResumeJournal(f.state)))
+   assert.deepEqual(await readFile(f.journal),bytes);await assert.rejects(lstat(join(f.state.layout.instanceRoot,'upgrade-resume-history',digest(bytes)+'.json')),{code:'ENOENT'})
+  }
+  assert.deepEqual(await readFile(receiptPath),receipt);assert.deepEqual(await readFile(join(f.state.layout.instanceRoot,'state.json')),state);assert.deepEqual(f.counts(),{starts:0,prepares:0})
+ })
+})
+
+test('completed provenance区分私密control端口与app端口，保留世代身份及固定证据校验',async t=>{
+ for(const kind of ['valid','foreign-process','invalid-control-port','bad-nonce','bad-time','binding-app-port','wrong-attempt','target-hash','backup-hash'] as const)await t.test(kind,async sub=>{
+  const f=await fixture(sub),ready=await f.run(),receipt=await readPrivateJson(join(f.state.layout.instanceRoot,'upgrade.json')),j=await readPrivateJson(f.journal) as {binding:{port:number;backupManifestSha256:string};attempts:Array<{requestId:string;process:{installId:string;port:number;nonceSha256:string;startedAt:string}}>}
+  assert.equal(ready.port,3236);assert.equal(j.binding.port,ready.port);assert.equal(j.attempts.at(-1)!.process.port,45000)
+  if(kind==='foreign-process')j.attempts.at(-1)!.process.installId=randomUUID()
+  if(kind==='invalid-control-port')j.attempts.at(-1)!.process.port=65536
+  if(kind==='bad-nonce')j.attempts.at(-1)!.process.nonceSha256='invalid'
+  if(kind==='bad-time')j.attempts.at(-1)!.process.startedAt='invalid'
+  if(kind==='binding-app-port')j.binding.port++
+  if(kind==='wrong-attempt')j.attempts.at(-1)!.requestId=randomUUID()
+  if(kind==='backup-hash')j.binding.backupManifestSha256='0'.repeat(64)
+  if(kind!=='valid'&&kind!=='target-hash')await writePrivateJson(f.journal,j)
+  const journal=await readFile(f.journal),receiptPath=join(f.state.layout.instanceRoot,'upgrade.json'),receiptBytes=await readFile(receiptPath),target=kind==='target-hash'?'0'.repeat(64):digest(await readFile(join(ready.layout.releaseRoot,'release-manifest.json')))
+  const proof=()=>completedUpgradeReceiptProvenance(ready,receipt,f.receipt.restartId,target)
+  if(kind==='valid'){
+   const refs=await proof();assert.deepEqual(refs.map(x=>x.path),[f.journal,join(ready.layout.instanceRoot,'upgrade-failures',digest(f.original)+'.json'),join(f.backup,'backup-manifest.json')])
+   for(const ref of refs)assert.equal(digest(await readFile(ref.path)),ref.sha256)
+  }else await assert.rejects(proof())
+  assert.deepEqual(await readFile(f.journal),journal);assert.deepEqual(await readFile(receiptPath),receiptBytes);assert.deepEqual(f.counts(),{starts:1,prepares:1})
+ })
+})
+
+test('普通switching已ready后本人明确stop，同intent仅从stopped续办一次且不再备份或stage',async t=>{
+ for(const oldJournal of [false,true])await t.test(oldJournal?'archive-old-completed':'no-current-journal',async sub=>{
+  const f=await laterFailure(sub);await ordinarySwitching(f);if(!oldJournal)await unlink(f.journal)
+  const receiptPath=join(f.state.layout.instanceRoot,'upgrade.json'),receipt=await readFile(receiptPath),backup=await readFile(join(f.backup,'backup-manifest.json')),target=await readFile(join(f.state.layout.releaseRoot,'release-manifest.json')),backups=await (await import('node:fs/promises')).readdir(f.home+'.backups')
+  // 注入端口模拟普通up已ready；正式stopService写stopped，而非手造maintenance。
+  const ready:InstallState={...f.state,phase:'ready'};f.setApp('ready');await writeInstall(ready)
+  await assert.rejects(f.run(ready));assert.deepEqual(f.counts(),{starts:0,prepares:0})
+  const stopped:InstallState={...ready,phase:'stopped'};f.setApp('stopped');await writeInstall(stopped)
+  const result=await f.run(stopped);assert.equal(result.phase,'ready');assert.deepEqual(f.counts(),{starts:1,prepares:1})
+  assert.deepEqual(await readFile(join(f.backup,'backup-manifest.json')),backup);assert.deepEqual(await readFile(join(result.layout.releaseRoot,'release-manifest.json')),target);assert.deepEqual(await (await import('node:fs/promises')).readdir(f.home+'.backups'),backups)
+  const complete=await readPrivateJson(receiptPath) as {from:string;to:string;backup:string;status:string};const original=JSON.parse(receipt.toString());assert.equal(complete.status,'complete');assert.equal(complete.from,original.from);assert.equal(complete.to,original.to);assert.equal(complete.backup,original.backup)
+  if(oldJournal)assert.deepEqual(await readFile(f.archive),f.oldJournal)
+  assert.equal((await f.run(result)).phase,'ready');assert.deepEqual(f.counts(),{starts:1,prepares:1})
+ })
+})
+
+test('stopped豁免只属于完整当前switching intent；legacy、错intent、宿主不明及未结journal拒绝',async t=>{
+ for(const kind of ['no-intent','wrong-intent','failed-receipt','host-ready','host-unknown','launching-journal','unknown-journal'] as const)await t.test(kind,async sub=>{
+  const f=await laterFailure(sub);if(kind!=='no-intent')await ordinarySwitching(f)
+  if(kind==='wrong-intent')await writePrivateJson(join(f.state.layout.instanceRoot,'upgrade.json'),{...f.receipt,status:'switching',restartId:randomUUID()})
+  if(kind==='failed-receipt')await writePrivateJson(join(f.state.layout.instanceRoot,'upgrade.json'),{...f.receipt,status:'failed'})
+  if(kind==='launching-journal'||kind==='unknown-journal'){
+   const journal=await readPrivateJson(f.journal) as {attempts:Array<{phase:string}>};journal.attempts.at(-1)!.phase=kind==='launching-journal'?'launching':'unknown';await writePrivateJson(f.journal,journal)
+  }
+  // 宿主结果不明不得因state写着stopped而启动；用无journal分支隔离实际端口核验。
+  if(kind==='host-ready'||kind==='host-unknown'){await unlink(f.journal);f.setApp(kind==='host-ready'?'ready':'unknown')}
+  const stopped:InstallState={...f.state,phase:'stopped'};await writeInstall(stopped);const receipt=await readFile(join(stopped.layout.instanceRoot,'upgrade.json')),state=await readFile(join(stopped.layout.instanceRoot,'state.json'))
+  await assert.rejects(f.run(stopped));assert.deepEqual(f.counts(),{starts:0,prepares:0});assert.deepEqual(await readFile(join(stopped.layout.instanceRoot,'upgrade.json')),receipt);assert.deepEqual(await readFile(join(stopped.layout.instanceRoot,'state.json')),state)
+  await assert.rejects(lstat(f.archive),{code:'ENOENT'})
+ })
+})
 
 test('旧completed跨轮journal保全原字节和权限后续当前失败，同轮再次收口不启动',async t=>{
  const f=await laterFailure(t);await chmod(f.journal,0o400)
