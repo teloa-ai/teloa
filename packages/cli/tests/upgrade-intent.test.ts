@@ -176,12 +176,15 @@ test('现代completed ordinary intent经显式维护谱系核验才可归档；�
  assert.equal(await ordinaryUpgradePending(state),true)
  const lineage:NonNullable<OrdinaryUpgradePorts['preparedLineage']>=async(s,r,_backup,guard,action)=>{reads++;await typedUpgradeProofs(s,r);await guard();return action(guard)}
  await withInstallLock(state.layout.home,async()=>{
-  const journalPath=join(state.layout.instanceRoot,'upgrade-resume.json'),journal=await readPrivateJson(journalPath)as {attempts:Array<{process?:{installId:string;port:number}}>},last=journal.attempts.at(-1)!,originalProcess=structuredClone(last.process!)
-  for(const process of [undefined,{...originalProcess,installId:randomUUID()},{...originalProcess,port:state.port+1}]){
+  const journalPath=join(state.layout.instanceRoot,'upgrade-resume.json'),journal=await readPrivateJson(journalPath)as {binding:{port:number};attempts:Array<{process?:{installId:string;port:number}}>},last=journal.attempts.at(-1)!,originalProcess=structuredClone(last.process!)
+  for(const process of [undefined,{...originalProcess,installId:randomUUID()},{...originalProcess,port:0},{...originalProcess,port:65536}]){
    if(process===undefined)delete last.process;else last.process=process
    await writePrivateJson(journalPath,journal);await assert.rejects(authorizeCompletedPreparedUpgradeSource(state,lineage));assert.equal(reads,0)
   }
-  last.process=originalProcess;await writePrivateJson(journalPath,journal)
+  // 私密控制端口独立于app端口；拒绝的应是错误app绑定，而不是合法控制端口。
+  last.process={...originalProcess,port:state.port+1};const bindingPort=journal.binding.port;journal.binding.port=state.port+1
+  await writePrivateJson(journalPath,journal);await assert.rejects(authorizeCompletedPreparedUpgradeSource(state,lineage));assert.equal(reads,0)
+  journal.binding.port=bindingPort;await writePrivateJson(journalPath,journal)
   const operation=await readPrivateJson(f.intentPath)as {checkpoint:{backupManifestSha256:string}},backupSHA=operation.checkpoint.backupManifestSha256
   operation.checkpoint.backupManifestSha256='0'.repeat(64);await writePrivateJson(f.intentPath,operation);await assert.rejects(authorizeCompletedPreparedUpgradeSource(state,lineage));assert.equal(reads,0);operation.checkpoint.backupManifestSha256=backupSHA;await writePrivateJson(f.intentPath,operation)
   assert.equal(await authorizeCompletedPreparedUpgradeSource(state,lineage),true);assert.equal(await ordinaryUpgradePending(state),false);assert.equal(reads,1)
