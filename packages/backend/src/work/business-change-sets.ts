@@ -33,7 +33,7 @@ export class BusinessChangeSetService{
    const prior=(await db.query('select request_hash,document from teloa_business_change_requests where owner_id=$1 and request_id=$2',[actor.ownerId,input.requestId])).rows[0]
    if(prior){if(prior.request_hash!==requestHash)throw error('teloa/conflict','同一指令已准备另一份修改。');return prior.document}
    const existing=input.changeSetId?await this.row(db,actor,input.changeSetId,true):undefined
-   if(existing&&(existing.document.scope!==input.scope||existing.document.revision!==input.expectedRevision||existing.document.state==='applied'))throw error('teloa/version-conflict','草稿已改变或已采用，请重新读取。')
+   if(existing&&(existing.document.scope!==input.scope||existing.document.revision!==input.expectedRevision||existing.document.state==='applied'))throw error('teloa/version-conflict','草稿已变化或已采用，本次未重新准备。')
    const batch=await this.records.normalizeBatchInTransaction(db,actor,{scope:input.scope,requestId:existing?.document.batch.requestId??this.identity.id(),operations:input.operations})
    const preview=await this.records.previewBatchInTransaction(db,actor,batch),id=existing?.document.id??this.identity.id(),revision=(existing?.document.revision??0)+1,now=this.identity.now()
    const document:BusinessChangeSet={schema:'teloa.business-change-set/v1',id,scope:input.scope,revision,digest:hash({id,revision,batch,preview,origin}),state:'draft',sessionId:origin.sessionId,batch,preview,createdAt:existing?.document.createdAt??now,updatedAt:now}
@@ -66,7 +66,7 @@ export class BusinessChangeSetService{
    const result={...document,state:'rejected' as const,updatedAt:this.identity.now()};await this.save(db,actor,result,origin);return result
   })
  }
- private check(document:BusinessChangeSet,input:{expectedRevision:number;expectedDigest:string}){if(document.revision!==input.expectedRevision||document.digest!==input.expectedDigest||document.state==='stale')throw error('teloa/version-conflict','修改内容或来源已改变，请重新准备并审阅。');if(document.state==='rejected')throw error('teloa/conflict','这份修改已被拒绝。')}
+ private check(document:BusinessChangeSet,input:{expectedRevision:number;expectedDigest:string}){if(document.revision!==input.expectedRevision||document.digest!==input.expectedDigest||document.state==='stale')throw error('teloa/version-conflict','修改内容或来源已变化，本次未采用。');if(document.state==='rejected')throw error('teloa/conflict','这份修改已被拒绝。')}
  async apply(actor:Actor,value:unknown,authorize:(db:PoolClient,origin:BusinessChangeSetOrigin)=>Promise<string>):Promise<BusinessChangeSet>{
   const input=readBusinessChangeSetApply(value)
   return this.transaction(async db=>{const {document,origin}=await this.row(db,actor,input.changeSetId,true);this.check(document,input)

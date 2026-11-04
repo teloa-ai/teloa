@@ -138,7 +138,7 @@ export function registerBusinessRecordTools(ctx:Context,ports:BusinessRecordTool
    const row=target(rows,op.type),definition=row.definition
    if(op.operation!=='archive'&&!row.writable)throw new WorkError('teloa/invalid-input','关联目标类型未在当前业务的本地配置中就绪，请先读取真实类型目录。')
    let before:BusinessObjectSnapshot|undefined
-   if(op.operation!=='create'){before=await get(current,{scope:current.scope,type:op.type,id:op.id});if(before.deletedAt||before.version!==op.expectedVersion)throw new WorkError('teloa/version-conflict','原记录版本已变化，请重新完整读取。')}
+   if(op.operation!=='create'){before=await get(current,{scope:current.scope,type:op.type,id:op.id});if(before.deletedAt||before.version!==op.expectedVersion)throw new WorkError('teloa/version-conflict','原记录版本已变化，本次未执行。')}
    if(op.operation!=='archive'){
     if(op.fields.some(field=>!definition.fields.some(defined=>defined.name===field.name)))throw invalid()
     if(op.operation==='edit'&&(op.fields.length!==definition.fields.length||definition.fields.some(field=>!op.fields.some(value=>value.name===field.name))))throw new WorkError('teloa/invalid-input','编辑 fields 是完整替换：请读取记录并保留所有未改字段，清空字段须显式传空字符串。')
@@ -198,12 +198,12 @@ export function registerBusinessRecordTools(ctx:Context,ports:BusinessRecordTool
  for(const definition of definitions)ctx.tools.register(defineTool({...definition,output:{schema:{type:'string'} as const,render:(_args:unknown,value:string)=>[{type:'text' as const,text:value}]},execute:async(args,exec)=>{
   try{
    const fixed=authorized.get(exec),current=await authorize(exec)
-   if(!fixed||fixed.current.fingerprint!==current.fingerprint||JSON.stringify(fixed.current.instruction)!==JSON.stringify(current.instruction))throw new WorkError('teloa/conflict','确认期间本人指令或业务归属已变化，请重新读取。')
+   if(!fixed||fixed.current.fingerprint!==current.fingerprint||JSON.stringify(fixed.current.instruction)!==JSON.stringify(current.instruction))throw new WorkError('teloa/conflict','确认期间本人指令或业务归属已变化，本次未执行。')
    if(definition.name===read)return query(current,args)
    const input=writeInput(args,current.scope,requestId(ports.owner,current.instruction)),prepared=await prepare(current,input)
-   if(!fixed.prepared||!prepared.replay&&fixed.prepared.fingerprint!==prepared.fingerprint)throw new WorkError('teloa/conflict','确认期间记录或类型已变化，请重新读取。')
+   if(!fixed.prepared||!prepared.replay&&fixed.prepared.fingerprint!==prepared.fingerprint)throw new WorkError('teloa/conflict','确认期间记录或类型已变化，本次未执行。')
    const latest=await authorize(exec)
-   if(latest.fingerprint!==fixed.current.fingerprint||JSON.stringify(latest.instruction)!==JSON.stringify(fixed.current.instruction))throw new WorkError('teloa/conflict','执行前本人指令或业务归属已变化，请重新读取。')
+   if(latest.fingerprint!==fixed.current.fingerprint||JSON.stringify(latest.instruction)!==JSON.stringify(fixed.current.instruction))throw new WorkError('teloa/conflict','执行前本人指令或业务归属已变化，本次未执行。')
    exec.signal.throwIfAborted()
    const result=await ports.records.batch(current.actor,input,current.instruction)
    return json(receipt(result,current.scope,input.requestId,input))

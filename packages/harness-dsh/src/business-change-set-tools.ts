@@ -45,7 +45,7 @@ export function registerBusinessChangeSetTools(ctx:Context,ports:BusinessChangeS
  }
  const definitions:readonly {name:typeof names[number];description:string;parameters:ParameterSchemaSpec}[]=[
   {name:names[0],description:'准备当前业务的持久修改草稿，不写正式记录、不请求采用。operations 与本地记录写入同一批次协议，1–50项、128KiB：'+businessRecordBatchProtocol+'。记录类型 id 与字段 name 以业务定义为准（本人会话可先读取真实类型和记录；群工作按本人交办与业务上下文）。可用changeSetId和expectedRevision调整尚未采用的草稿。返回固定id、revision、digest供本人审阅；采用须另用apply工具经原生批准。',parameters:{operations:businessRecordOperationsParameter,changeSetId:{type:'string'},expectedRevision:{type:'integer'}}},
-  {name:names[1],description:'采用本人已审阅的固定业务修改草稿。只接受changeSetId、expectedRevision、expectedDigest；原生批准后原子写入。过期时重新准备，不修改摘要重试。结果未知使用read核对原ID；批准只针对此版本，分析统计不需要此工具。',parameters:{changeSetId:{type:'string',required:true},expectedRevision:{type:'integer',required:true},expectedDigest:{type:'string',required:true}}},
+  {name:names[1],description:'采用本人已审阅的固定业务修改草稿。只接受changeSetId、expectedRevision、expectedDigest；原生批准后原子写入。过期时本次不采用；是否重读、准备或重试由本人原指令与当前授权决定，不修改摘要绕过版本校验。结果未知使用read核对原ID；批准只针对此版本，分析统计不需要此工具。',parameters:{changeSetId:{type:'string',required:true},expectedRevision:{type:'integer',required:true},expectedDigest:{type:'string',required:true}}},
   {name:names[2],description:'读取当前业务修改草稿及固定采用回执；不重写记录、不制造批准。',parameters:{changeSetId:{type:'string',required:true}}},
  ]
  for(const definition of definitions)ctx.tools.register(defineTool({...definition,output:{schema:{type:'string'} as const,render:(_a:unknown,value:string)=>[{type:'text' as const,text:value}]},execute:async(args,exec)=>{
