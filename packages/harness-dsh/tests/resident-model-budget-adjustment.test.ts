@@ -24,14 +24,17 @@ after(async()=>{await db?.close()})
 const unlimited={...defaultWorkBudgetPolicy,maxTokens:null,maxGoalRounds:null,maxConcurrent:null,maxElapsedMs:null}
 for(const action of ['raise','work-lower','owner-lower','mixed-lower','stop','restart','role-revoke','overspend'] as const)test('真实原生模型流中调整 '+action+'：纯放宽继续原调用，收紧/停止/撤权/超耗保持保护',{timeout:30000},async t=>{
  const f=await patchedSessionFixture(t),{owner,role}=await roleFixture(db.pool,'employee')
+ let generation=1,physicalRequests=0
+ const budgets=new WorkBudgetService(db.pool,identity,ownerAuthority),controls=new WorkControlService(db.pool,identity,{ownerAuthority,hostGeneration:()=>generation})
+ // 正常宿主先登记当前epoch；必须在创建本轮工作控制前撤防，而非绕过派发时的host核验。
+ await controls.disarmForRestart(owner,{hostGeneration:generation})
  await db.pool.query("update teloa_roles set state='active' where id=$1",[role.id])
  const task=await new TaskService(db.pool,identity).create(owner,{requestId:randomUUID(),fields:{title:'流中额度合成验收',goal:'仅处理测试合成资料',scope:'general'},assignee:{roleId:role.id,expectedVersion:role.version}})
  const {agent}=await f.ctx.agents.create({sessionId:SessionId(randomUUID()),agentOptions:{provider:'adjustment-test',model:'finite-output',maxTokens:32}}),conversationId=randomUUID(),inspect=async()=>({id:conversationId,ownerId:owner,sessionId:agent.id,status:'ready'})
  await new ObjectConversationService(db.pool,inspect,identity.now).change(owner,{requestId:randomUUID(),kind:'task',objectId:task.id,expectedObjectVersion:1,sessionId:agent.id,expectedLinkVersion:0,action:'link'})
  const runs=new TaskRunService(db.pool,identity,inspect),run=await runs.prepare(owner,{requestId:randomUUID(),taskId:task.id,expectedTaskVersion:1,roleId:role.id,expectedRoleVersion:role.version,sessionId:agent.id,expectedLinkVersion:1},undefined,undefined,undefined,async()=> 'default-agent')
  await runs.claim(owner,{runId:run.id});assert.ok(run.lineage)
- let generation=1,physicalRequests=0
- const budgets=new WorkBudgetService(db.pool,identity,ownerAuthority),controls=new WorkControlService(db.pool,identity,{ownerAuthority,hostGeneration:()=>generation}),input=createNativeWorkInput(f.ctx,new WorkAccess()),entered=deferred(),release=deferred()
+ const input=createNativeWorkInput(f.ctx,new WorkAccess()),entered=deferred(),release=deferred()
  const close=installResidentModelBudget(f.ctx,{owner,pool:db.pool,identity,runs:async()=>runs,controls,budgets,resolveRun:async session=>session===agent.id?runs.get(owner,{runId:run.id}):null,nativeInput:input,report:()=>{}})
  t.after(()=>{release.resolve();close();input.close()})
  class Model extends LlmAdapter{
@@ -44,8 +47,8 @@ for(const action of ['raise','work-lower','owner-lower','mixed-lower','stop','re
   }
  }
  f.ctx.llm.registerAdapter(['adjustment-test'],new Model())
- const message=createUserMessage({source:{kind:'user',rpcId:randomUUID()},content:[{type:'text',text:run.inputText}]})
- await input.withNewInput(agent,message,{producer:'task-run',identity:run.id},()=>agent.followup(message));await entered.promise
+ const message=createUserMessage({source:{kind:'user',rpcId:run.nativeRequestId},content:[{type:'text',text:run.inputText}]})
+ await input.withNewInput(agent,message,{producer:'task-run',identity:run.id},()=>agent.followup(message));await until(()=>physicalRequests>0||readSessionEvents(agent.session).some(event=>event.type==='turn/end'));assert.equal(physicalRequests,1,JSON.stringify(readSessionEvents(agent.session).filter(event=>event.type==='turn/end')));await entered.promise
  const active=(await db.pool.query("select id,model_request_id,reserved_tokens,state from teloa_work_budget_reservations where owner_id=$1",[owner])).rows;assert.equal(active.length,1);assert.equal(active[0].state,'unknown');assert.equal(physicalRequests,1)
  const configure=async(target:'work'|'owner',policy:typeof defaultWorkBudgetPolicy)=>target==='work'?budgets.configure(owner,{requestId:randomUUID(),budgetAccountId:run.lineage!.budgetAccountId,expectedVersion:(await budgets.read(owner,{budgetAccountId:run.lineage!.budgetAccountId})).version,policy}):budgets.configureOwner(owner,{requestId:randomUUID(),expectedVersion:(await budgets.readOwner(owner)).version,policy})
  // 先从页面同一后端入口提额，保持正在派发的原生请求与预留。

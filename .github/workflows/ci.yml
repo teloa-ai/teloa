@@ -87,6 +87,12 @@ jobs:
       - name: Install locked Playwright WebKit and Firefox
         if: matrix.suite == 'bindings'
         run: |
+          # Keep Ubuntu signatures and suites; avoid the slow hosted Azure apt mirror.
+          for source in /etc/apt/apt-mirrors.txt /etc/apt/sources.list /etc/apt/sources.list.d/*.list /etc/apt/sources.list.d/*.sources; do
+            if [ -f "$source" ]; then
+              sudo sed -i 's|://azure.archive.ubuntu.com/ubuntu|://archive.ubuntu.com/ubuntu|g' "$source"
+            fi
+          done
           node --input-type=module <<'JS'
           import {readdirSync} from 'node:fs'
           import {createRequire} from 'node:module'

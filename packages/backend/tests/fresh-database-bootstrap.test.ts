@@ -28,6 +28,8 @@ const expectedTables=[
  "teloa_group_delivery_recovery_rejections",
  "teloa_knowledge_copies",
  "teloa_local_knowledge_copies",
+ "teloa_native_session_checkpoints",
+ "teloa_native_session_continuations",
  "teloa_prepared_run_maintenance",
  "teloa_prepared_run_maintenance_cycles",
  "teloa_role_memory_preference_versions",

@@ -68,6 +68,14 @@ export function readResidentRunKnowledge(resources:Pick<ResourceService,'executi
  return resources.executionKnowledgeInTransaction(db,authorization.actor,authorization.targetScopes,ids,undefined,authorization.fixedKnowledgeRead)
 }
 
+/** 同轮下一步领取沿用已落盘的真实模型；新轮首领不继承上一轮选择。 */
+export function nativeCheckpointRequestHeader(events:readonly SessionEvent[],turn:number){
+ const latest=[...events].reverse()
+ const start=latest.find(event=>event.type==='turn/start'&&event.data.turn===turn)
+ if(!start)return undefined
+ return latest.find(event=>event.type==='request/header'&&event.seq>start.seq)
+}
+
 /** 同一宿主共享持久服务和最终许可；启动/本人 RPC 的生命周期由 index 拥有。 */
 export async function createResidentWorkRuntime(ctx:Context,options:ResidentWorkRuntimeOptions){
  const {owner,pool,identity,nativeInput,runs,resources,dailyLogs}=options
@@ -395,7 +403,7 @@ export async function createResidentWorkRuntime(ctx:Context,options:ResidentWork
   const requestId=active?run.nativeRequestId:input.roots.find(root=>root.nativeRequestId!==null)?.nativeRequestId
   if(!requestId||!input.snapshot.events.length)return
   const phase='phase'in input?input.phase:'claimed'
-  const header=phase==='claimed'?undefined:[...input.snapshot.events].reverse().find(event=>event.type==='request/header')
+  const header=nativeCheckpointRequestHeader(input.snapshot.events,input.turn)
   // 独立追问不借用旧Task的模型；只保存本请求已落入官方日志的真实选择。
   const model=active?run.modelPolicy?.primary:header?.type==='request/header'?header.data.header.config:undefined
   let review=active?readDeliveryReviewCheckpoint(input.agent):null
