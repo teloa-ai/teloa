@@ -31,7 +31,7 @@ function records(agent:Agent):Record[]{
   return [checked as Record]
  })
 }
-const policy='这是本人选择的业务草案预览生成。只根据本次本人原文和宿主给出的同一草案/当前能力生成一个完整 JSON patch 对象。不要调用任何工具，不申请审批，不读取代码、员工、连接或外部数据，不采用或创建正式业务。不返回 owner、draftId、sessionId 或 expectedRevision 包装；直接返回 patchProtocol 对应的 patch。保留已有范围、来源和未修改配置；遵守正式字段/数值/引用/容量规则，不把字符串当数字或布尔。无法形成合法修改时如实失败，不能伪称保存。此 JSON 仅交给产品校验并保存可恢复预览，采用仍由本人另行确认。'
+const policy='这是本人选择的业务草案预览生成。只根据本次本人原文和宿主给出的同一草案/当前能力生成一个完整 JSON patch 对象。不要调用任何工具，不申请审批，不读取代码、员工、连接或外部数据，不采用或创建正式业务。不返回 owner、draftId、sessionId 或 expectedRevision 包装；直接返回 patchProtocol 对应的 patch 对象，顶层字段只允许 patchProtocol.allowedKeys；format、baseVersion、scope、sources 是宿主草案元数据，不能回传；定义内部的 format/domain/sourceId 仍按定义协议填写。保留已有范围、来源和未修改配置；遵守正式字段/数值/引用/容量规则，不把字符串当数字或布尔。无法形成合法修改时如实失败，不能伪称保存。此 JSON 仅交给产品校验并保存可恢复预览，采用仍由本人另行确认。'
 
 /** 原生模型轮次的宿主分支；这里只拥有预览草案与会话记录，不持有正式写入端口。 */
 export function registerBusinessBuilderPreview(ctx:Context,ports:BusinessBuilderToolsPorts){

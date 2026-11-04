@@ -14,7 +14,7 @@ import {SessionStore,SessionId} from '@deepseek-ai/dsh-session'
 import {SessionProjectionRegistry} from '@deepseek-ai/dsh-session-projection'
 import {SystemPrompt} from '@deepseek-ai/dsh-system-prompt'
 import {ToolRuntime,defineTool} from '@deepseek-ai/dsh-tools'
-import {WorkError,readBusinessConfigurationCandidateVersioned,businessConfigurationLimits} from '@teloa/contract'
+import {WorkError,readBusinessConfigurationCandidateVersioned,readBusinessConfigurationPatchVersioned,businessConfigurationLimits} from '@teloa/contract'
 import {businessConfigurationHash,type BusinessConfigurationDraft} from '@teloa/backend'
 import {registerBusinessBuilderPreview} from '../src/business-builder-preview.ts'
 import {businessBuilderGenerationSchema,registerBusinessBuilderTools,type BusinessBuilderToolsPorts} from '../src/business-builder-tools.ts'
@@ -170,6 +170,11 @@ test('真实预览wire明确对象输出与记录页必填，不携带assisted�
  const protocol=schema.capabilities.patchProtocol
  assert.equal(protocol.output,'patch-object');assert.equal(protocol.input,undefined);assert.equal(protocol.legacyInput,undefined);assert.equal(protocol.exactlyOne,undefined)
  assert.doesNotMatch(protocol.rules,/JSON\.stringify|patchJson 是/)
+ assert.deepEqual(protocol.allowedKeys,['title','homePageId','upsertDefinitions','removeDefinitions','upsertPages','removePageIds','pageOrder'])
+ assert.equal(protocol.additionalProperties,false)
+ assert.doesNotMatch(schema.capabilities.rules,/整组 patch 复用/)
+ assert.match(protocol.rules,/format.*baseVersion.*宿主.*不能/)
+
  assert.deepEqual(protocol.pageContract.records.required,['id','title','kind','objectType','fields','allowCreate','allowEdit','allowArchive'])
  assert.deepEqual(protocol.pageContract.records.booleans,['allowCreate','allowEdit','allowArchive']);assert.equal(protocol.pageContract.records.nullable,false)
  assert.match(protocol.pageContract.homePageId,/非空.*现有页面/);assert.match(protocol.pageContract.homePageId,/省略.*保留/)
@@ -193,4 +198,24 @@ test('assisted实际wire仍提供原patchJson工具契约，不套用preview对�
  const f=await fixture(t);await f.mode('assisted');await f.run()
  const tool=f.requests[0]!.tools?.find(tool=>tool.name==='teloa_business_builder_revise')
  assert.ok(tool);assert.match(tool.description??'',/patchJson/);assert.ok(JSON.stringify(tool).includes('patchJson'));assert.equal(f.draftWrites(),0)
+})
+
+test('公开patch协议示例直接通过v1/v2 strict reader，根metadata和错scope仍拒绝',async t=>{
+ const f=await fixture(t)
+ for(const format of ['teloa.business-configuration/v1','teloa.business-configuration/v2'] as const){
+  const draft={...f.draft(),candidate:readBusinessConfigurationCandidateVersioned({...f.draft().candidate,format})}
+  for(const delivery of ['tool','preview'] as const){
+   const protocol=businessBuilderGenerationSchema(draft,delivery).capabilities.patchProtocol
+   const minimal=JSON.parse(protocol.minimalExampleJson)
+   assert.deepEqual(readBusinessConfigurationPatchVersioned(minimal,format),{title:draft.candidate.title})
+   const complete=readBusinessConfigurationPatchVersioned(JSON.parse(protocol.exampleJson),format)
+   const merged={...draft.candidate,definitions:complete.upsertDefinitions,pages:complete.upsertPages,homePageId:complete.homePageId}
+   assert.doesNotThrow(()=>readBusinessConfigurationCandidateVersioned(merged))
+   for(const [key,value] of Object.entries({format,baseVersion:0,scope:draft.scope,sources:draft.candidate.sources,owner:'other-owner',draftId:randomUUID(),sessionId:'other',expectedRevision:1,unknown:true})){
+    assert.throws(()=>readBusinessConfigurationPatchVersioned({...minimal,[key]:value},format),{code:'teloa/invalid-input'},key)
+   }
+   const wrongScope=structuredClone(merged);wrongScope.definitions![0]!.definition.domain='business_'+randomUUID().replaceAll('-','')
+   assert.throws(()=>readBusinessConfigurationCandidateVersioned(wrongScope),{code:'teloa/invalid-input'})
+  }
+ }
 })
