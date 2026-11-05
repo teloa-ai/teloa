@@ -57,7 +57,7 @@ test('全局搜索只接收已保存任务和数字员工',async()=>{
 
 
 test('普通群聊执行从正式任务目录和同事在做统计退出；未知来源、明确工作和已变更任务保留',()=>{
- const reply={id:'reply',storage:'persistent',state:'running',contentVersion:1,assigneeId:'role',assigneeRoleVersion:7,updatedAt:'2026-11-05T00:00:00Z',source:{groupId:'g',messageId:'m',rootId:null,text:'你好',trigger:'routed',executionMode:'reply',createdAssignee:{roleId:'role',roleVersion:7}}} as PreviewTask;
+ const reply={id:'reply',storage:'persistent',state:'running',contentVersion:1,assigneeId:'role',assigneeRoleVersion:7,updatedAt:'2026-11-05T00:00:00Z',source:{groupId:'g',messageId:'m',rootId:null,text:'你好',trigger:'routed',executionMode:'reply',createdAssignee:{roleId:'role',roleVersion:7}}} as unknown as PreviewTask;
  const rows=[reply,{...reply,id:'reply-waiting',state:'waiting'}, {...reply,id:'work',source:{...reply.source!,executionMode:'work'}},{...reply,id:'unknown',source:undefined},{...reply,id:'edited',contentVersion:2},{...reply,id:'reassigned',assigneeRoleVersion:8}] as PreviewTask[];
  assert.deepEqual(visibleTaskDirectory(rows,'saved').map(row=>row.id),['work','unknown','edited','reassigned']);
  assert.equal(homeColleagueWork(rows).count,4,'普通交流不制造同事工作数，正式与未核清的工作不被隐藏');

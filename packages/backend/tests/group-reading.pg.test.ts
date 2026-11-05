@@ -1,3 +1,5 @@
+import {initializeGroupRoutingDecisions} from '../src/work/group-routing-decisions.ts'
+import {initializeGroupRoutingOutbox} from '../src/work/group-routing-outbox.ts'
 import test,{before,after} from 'node:test'
 import assert from 'node:assert/strict'
 import {randomUUID} from 'node:crypto'
@@ -18,6 +20,7 @@ before(async()=>{
  process.env.TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE='/var/run/docker.sock'
  container=await new PostgreSqlContainer('postgres:17-alpine').start();pool=new Pool({connectionString:container.getConnectionUri()})
  await initializeRoles(pool);await initializeRoleDelegations(pool);await initializeTasks(pool);await initializeCollaboration(pool);await initializeGroupTasks(pool)
+ await initializeGroupRoutingDecisions(pool);await initializeGroupRoutingOutbox(pool)
 })
 after(async()=>{await pool?.end();await stopTestContainer(container)})
 async function fixture(){

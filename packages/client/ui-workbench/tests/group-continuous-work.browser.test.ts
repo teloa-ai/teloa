@@ -13,7 +13,7 @@ test('群动态状态随真实工作推进，成功回帖收起回执，审批�
  t.after(()=>rm(temp,{recursive:true,force:true}))
  await writeFile(join(temp,'fixture.tsx'),`import React from 'react';import {createRoot} from 'react-dom/client';import {flushSync} from 'react-dom';import {GroupMessageStatus,GroupProgressStatus} from '${client}GroupMessageStatus.tsx';import {I18nProvider} from '${client}i18n/provider.tsx';import {translateMessage} from '${client}i18n/messages.ts';
  const view=createRoot(document.getElementById('root')),locale='zh-CN',snapshot={locale,dshLocale:locale,revision:1},runtime={t:(key,params)=>translateMessage(locale,key,params),subscribe:()=>()=>{},getSnapshot:()=>snapshot};
- const recipient=(phase,mode='work')=>({roleId:'11111111-1111-4111-8111-111111111111',name:'跟进员',taskId:'22222222-2222-4222-8222-222222222222',runId:'33333333-3333-4333-8333-333333333333',phase,resultMessageId:null,executionMode:mode});
+ const recipient=(phase,mode='work')=>({roleId:'11111111-1111-4111-8111-111111111111',name:'跟进员',taskId:mode==='reply'?null:'22222222-2222-4222-8222-222222222222',runId:mode==='reply'?null:'33333333-3333-4333-8333-333333333333',phase,resultMessageId:null,executionMode:mode});
  const f=window.workFixture={calls:[],archived:false,status:null,render:()=>render()};
  f.set=(phase,extra={})=>{f.status={messageId:'44444444-4444-4444-8444-444444444444',attemptVersion:1,phase,recipients:[recipient(phase,extra.mode)],hintCode:extra.hint??null,canRetry:extra.canRetry??false,...(extra.budget?{budget:extra.budget}:{})};render()};
  function render(){flushSync(()=>view.render(<I18nProvider runtime={runtime}><main><textarea aria-label="群讨论消息" defaultValue="未发送的群讨论"/>{f.status&&<GroupMessageStatus status={f.status} archived={f.archived} retrying={false} retryFailed={false} retry={()=>f.calls.push(['retry'])} openTask={taskId=>f.calls.push(['open',taskId])}/>}<div data-n46-progress><GroupProgressStatus statuses={f.status?[f.status]:[]} avatar={()=>null}/></div></main></I18nProvider>))}
@@ -79,11 +79,12 @@ test('群动态状态随真实工作推进，成功回帖收起回执，审批�
  assert.doesNotMatch(await status.innerText(),/暂时无法判断由谁回应|teloa\//)
  // 交流回应由原消息内容承载，退出动态提示，不冒称业务工作完成。
  await set('completed',{mode:'reply'})
- await page.getByRole('button',{name:'查看工作',exact:true}).waitFor()
+ assert.equal(await page.getByRole('button',{name:'查看工作',exact:true}).count(),0,'普通回复不创建业务工作入口')
  assert.equal(await progress.innerText(),'')
  assert.equal(await status.count(),0)
  assert.doesNotMatch(await page.locator('main').innerText(),/已回应|已完成|正在输入|teloa\/|[0-9a-f]{8}-[0-9a-f]{4}/)
  // 多位员工的原工作收在一个数量入口，按员工选择仍打开原 taskId；Esc 回到入口。
+ await set('completed',{mode:'work'})
  await page.evaluate(()=>{const f=(window as any).workFixture,base=f.status.recipients[0];f.status.recipients=[{...base,name:'甲',roleId:'11111111-1111-4111-8111-111111111111',taskId:'77777777-7777-4777-8777-777777777777'},{...base,name:'乙',roleId:'22222222-2222-4222-8222-222222222222',taskId:'88888888-8888-4888-8888-888888888888'}];f.render()})
  const workMenu=page.getByRole('button',{name:'查看 2 项工作',exact:true})
  await workMenu.click();await page.getByRole('menuitem',{name:'查看 乙 的工作',exact:true}).click()

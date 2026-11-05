@@ -24,11 +24,13 @@ test('员工16项资料经显式业务选择准备草稿，未知结果重用请
  const server=createServer((_req,res)=>res.end('<!doctype html><html lang="zh-CN"><meta charset="utf-8"><div id="root"></div></html>'));await new Promise<void>(resolve=>server.listen(0,'127.0.0.1',resolve));t.after(()=>new Promise<void>(resolve=>server.close(()=>resolve())))
  const errors:string[]=[];page.on('pageerror',(e:Error)=>errors.push(e.message));await page.goto('http://127.0.0.1:'+(server.address() as {port:number}).port);await page.addStyleTag({content:bundle.output.flatMap(row=>row.type==='asset'&&row.fileName.endsWith('.css')?[String(row.source)]:[]).join('\n')});await page.addScriptTag({content:bundle.output.find(row=>row.type==='chunk')!.code})
  await page.evaluate(()=>{document.body.dataset.teloaUiFont='14'})
+ assert.equal(await page.getByRole('button',{name:'员工资料操作',exact:true}).count(),0,'列表不常驻员工资料操作');await page.locator('tbody').getByRole('button',{name:'SOC依据01',exact:true}).click();await page.getByRole('button',{name:'文件信息',exact:true}).click()
  for(const width of [390,768,1440])for(const size of [14,28]){
   await page.setViewportSize({width,height:768});await page.evaluate((size:number)=>(window as any).adoptionAcceptance.appearance(size,'dark'),size);await page.waitForFunction((size:number)=>document.querySelector('main')?.style.getPropertyValue('--teloa-design-text-base')===size/16+'rem',size)
   const toolbar=page.getByRole('button',{name:'员工资料操作',exact:true})
   const anchorHeight=await toolbar.evaluate((el:HTMLElement)=>el.parentElement!.getBoundingClientRect().height);await toolbar.click()
   const menu=page.getByRole('dialog',{name:'员工资料操作',exact:true});await menu.waitFor();await page.waitForFunction(()=>{const node=document.querySelector('[role=dialog][aria-label="员工资料操作"]');return !!node&&getComputedStyle(node).position==='fixed'})
+  await page.evaluate(()=>new Promise<void>(resolve=>requestAnimationFrame(()=>requestAnimationFrame(()=>resolve()))))
   const position=await menu.evaluate((el:HTMLElement)=>{const b=el.getBoundingClientRect();return {left:b.left,right:b.right,top:b.top,bottom:b.bottom,background:getComputedStyle(el).backgroundColor,overflow:el.scrollWidth>el.clientWidth+1}})
   assert.ok(position.left>=0&&position.right<=width&&position.top>=0&&position.bottom<=768,JSON.stringify({width,size,position}));assert.equal(position.overflow,false);assert.notEqual(position.background,'rgba(0, 0, 0, 0)')
   assert.equal(await toolbar.evaluate((el:HTMLElement)=>el.parentElement!.getBoundingClientRect().height),anchorHeight,'批量菜单不应撑高资料工具栏')
@@ -40,8 +42,9 @@ test('员工16项资料经显式业务选择准备草稿，未知结果重用请
   const inset=await select.evaluate((el:HTMLElement)=>el.getBoundingClientRect().left-el.closest('dialog')!.getBoundingClientRect().left);assert.ok(Math.abs(inset-(width<600?20:24))<=2,'抽屉内容与标准表单边线对齐，不重复叠加页内面板间距')
   await drawer.locator('details summary').first().click();const sourceList=drawer.locator('ul[tabindex=\"0\"]').first();await sourceList.focus();await page.keyboard.press('End');await page.waitForFunction(()=>document.activeElement?.tagName==='UL'&&(document.activeElement as HTMLElement).scrollTop>0)
   if(process.env.TELOA_UI_SCREENSHOT_DIR&&size===14&&width!==768){await mkdir(process.env.TELOA_UI_SCREENSHOT_DIR,{recursive:true});await page.screenshot({path:join(process.env.TELOA_UI_SCREENSHOT_DIR,'resource-'+width+'.png')})}
-  await drawer.getByRole('button',{name:'取消',exact:true}).scrollIntoViewIfNeeded();await page.keyboard.press('Escape');await drawer.waitFor({state:'hidden'});assert.equal(await toolbar.evaluate((el:HTMLElement)=>el===document.activeElement),true)
+  await drawer.getByRole('button',{name:'取消',exact:true}).scrollIntoViewIfNeeded();await page.keyboard.press('Escape');await drawer.waitFor({state:'hidden'});assert.equal(await page.getByRole('button',{name:'文件信息',exact:true}).getAttribute('aria-expanded'),'true','关闭上层抽屉保留底层文件信息');assert.equal(await toolbar.evaluate((el:HTMLElement)=>el===document.activeElement),true)
  }
+ await page.getByRole('button',{name:'文件信息',exact:true}).focus();await page.keyboard.press('Escape');await page.waitForFunction(()=>document.querySelector('button[aria-label="文件信息"]')?.getAttribute('aria-expanded')==='false');assert.equal(await page.getByRole('button',{name:'文件信息',exact:true}).getAttribute('aria-expanded'),'false','没有上层模态时Escape关闭文件信息');await page.getByRole('button',{name:'文件信息',exact:true}).click()
  assert.deepEqual(await page.evaluate(()=>(window as any).adoptionAcceptance.calls),[],'只打开和关闭不准备或采用资料')
  await page.setViewportSize({width:1440,height:960});await page.evaluate(()=>(window as any).adoptionAcceptance.appearance(14,'light'))
  await page.getByRole('button',{name:'员工资料操作',exact:true}).click()

@@ -18,7 +18,7 @@ export function LibraryLocalDocument({navigation,details,api,resource,source,tex
  const status=resource.status!=='active'?t('knowledge.ui.034'):missing?t('library.sourceUnavailable'):changed?t('library.sourceVersionChanged'):loading?t('library.sourceReading'):error||text===undefined?t('library.sourceReadFailed'):t('knowledge.ui.033')
  const failure=resource.status!=='active'?t('knowledge.local.withdrawn'):missing?t('library.sourceUnavailable'):changed?t('knowledge.local.changed'):error?localizeWorkError(locale,error):undefined
  const closeInfo=()=>{setInfo(false);infoButton.current?.focus()}
- useEffect(()=>{if(!info)return;const key=(event:KeyboardEvent)=>{if(event.key==='Escape'){event.preventDefault();closeInfo()}};document.addEventListener('keydown',key);return()=>document.removeEventListener('keydown',key)},[info])
+ useEffect(()=>{if(!info)return;const key=(event:KeyboardEvent)=>{if(event.key==='Escape'){const modal=document.querySelector('dialog[open]:modal:not([data-context-open="false"])');if(event.defaultPrevented||modal&&!modal.contains(infoButton.current))return;event.preventDefault();closeInfo()}};document.addEventListener('keydown',key);return()=>document.removeEventListener('keydown',key)},[info])
  return <section className={css.document} data-library-reader aria-label={t('knowledge.ui.013')}>
   <LibraryReaderHeader navigation={navigation} title={resource.title}>
    <button type="button" disabled={!ready||text===undefined} onClick={()=>{if(ready&&text!==undefined)downloadLibraryText(text,source?.source??resource.title)}}><Download size={16}/>{copy.download}</button>

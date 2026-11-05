@@ -165,3 +165,6 @@
 .rowAfter:empty{display:none}
 .cards>li:has(.rowAfter:not(:empty)):hover>.rowAfter{background:var(--teloa-subtle)}
 .cards>li:has(.rowAfter:not(:empty)):hover>.gridCard{background:var(--teloa-subtle)}
+
+/* 紧凑卡片骨架保留对应内容槽，避免占位高度高于已读取的 200px 基线。 */
+.cards .skeletonCard .cardHead{height:44px;min-height:44px}.cards .skeletonCard .skeletonPitch{min-height:28px;height:28px}.cards .skeletonCard .skeletonPill{height:26px}

@@ -1,4 +1,5 @@
 import test from 'node:test'
+import * as contract from '@teloa/contract'
 import assert from 'node:assert/strict'
 import {mount,nodes} from './market-component-harness.ts'
 import * as savedState from '../src/client/saved-collaboration-state.ts'
@@ -16,6 +17,7 @@ const group={id:'g1',name:'核对群',scope:'general',version:1,archived:false,p
 const roles=[{id:'r1',name:'林析',kind:'employee',scopes:['general'],state:'active',duty:'核对证据'}]
 function page(archived=false){
  const app=mount('SavedCollaborationPage.tsx',{
+  '@teloa/contract':contract,
   './business-scope-context.js':{useBusinessScopes:()=>({general:'通用工作'})},
   './saved-collaboration-state.js':savedState,
   './group-result-index.js':{groupHasSharedArtifactReference,groupSharedResults},
@@ -215,12 +217,15 @@ test('群成果归入非模态概况并保持同一消息版本，资料页不�
 test('员工消息的头像与姓名用键盘按钮打开同一原身份，本人消息保留原样',()=>{
  const {app}=page(),opened:string[]=[]
  const props={message:{id:'m1',authorId:'r1',runId:'run1',text:'核对完成',createdAt:'2026-10-11T00:00:00Z',references:[]},roleNames:{r1:'林析'},roleAvatars:{r1:roles[0]},opened:{},artifactSummaries:{},artifactFiles:{},openArtifactFile(){},attachmentBytes(){},openImage(){},openRole:(id:string)=>opened.push(id)}
- const tree=app.render('SavedMessage',props)
- const identity=nodes(tree).filter(node=>node.type==='button'&&node.props['aria-label']==='林析')
- assert.equal(identity.length,2)
- for(const button of identity){assert.equal(button.props.type,'button');button.props.onClick()}
- assert.deepEqual(opened,['r1','r1'])
- const {runId,...selfMessage}=props.message
+ const {runId,...plainMessage}=props.message
+ for(const message of [props.message,{...plainMessage,replyExecutionId:'reply1'}]){
+  const tree=app.render('SavedMessage',{...props,message})
+  const identity=nodes(tree).filter(node=>node.type==='button'&&node.props['aria-label']==='林析')
+  assert.equal(identity.length,2)
+  for(const button of identity){assert.equal(button.props.type,'button');button.props.onClick()}
+ }
+ assert.deepEqual(opened,['r1','r1','r1','r1'])
+ const selfMessage=plainMessage
  const self=app.render('SavedMessage',{...props,message:{...selfMessage,authorId:'self'}})
  assert.equal(nodes(self).some(node=>node.type==='button'&&node.props['aria-label']==='collaboration.message.self'),false)
 })

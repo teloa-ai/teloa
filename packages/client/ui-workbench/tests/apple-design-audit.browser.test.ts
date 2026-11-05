@@ -108,12 +108,12 @@ test('项目表单：先说明目标、必填关联提示、自动名称和手�
  await submit.click();await dialog.waitFor({state:'hidden'});assert.equal(await page.evaluate(()=>(window as any).audit.saves[0].title),'本周业务周报')
 })
 
-test('表单采用 14/22 层级；本人字号和浏览器默认字体可同步放大辅助文字与标题',async t=>{
+test('表单采用 13/16 层级；本人字号和浏览器默认字体可同步放大辅助文字与标题',async t=>{
  const page=await mount(t);await page.locator('#task-entry').click();const dialog=page.getByRole('dialog')
  const sizes=()=>dialog.evaluate((node:HTMLElement)=>({input:parseFloat(getComputedStyle(node.querySelector('textarea')!).fontSize),heading:parseFloat(getComputedStyle(node.querySelector('h2')!).fontSize)}))
- assert.deepEqual(await sizes(),{input:14,heading:22})
- await page.evaluate(()=>(window as any).audit.appearance(28));assert.deepEqual(await sizes(),{input:28,heading:44})
- await page.evaluate(()=>{(window as any).audit.appearance(14);document.documentElement.style.fontSize='32px'});assert.deepEqual(await sizes(),{input:28,heading:44})
+ assert.deepEqual(await sizes(),{input:13,heading:16})
+ await page.evaluate(()=>(window as any).audit.appearance(28));assert.deepEqual(await sizes(),{input:26,heading:32})
+ await page.evaluate(()=>{(window as any).audit.appearance(14);document.documentElement.style.fontSize='32px'});assert.deepEqual(await sizes(),{input:26,heading:32})
  await assertNoOverflow(page)
 })
 

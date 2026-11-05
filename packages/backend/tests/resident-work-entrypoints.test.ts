@@ -1,3 +1,5 @@
+import {initializeGroupRoutingDecisions} from '../src/work/group-routing-decisions.ts'
+import {initializeGroupRoutingOutbox} from '../src/work/group-routing-outbox.ts'
 import test,{before,after} from 'node:test'
 import assert from 'node:assert/strict'
 import {randomUUID} from 'node:crypto'
@@ -17,7 +19,7 @@ import {GroupTaskService,initializeGroupTasks} from '../src/work/group-tasks.ts'
 import {TaskService} from '../src/work/tasks.ts'
 
 let env:Awaited<ReturnType<typeof setupRoleWork>>
-before(async()=>{env=await setupRoleWork();await initializeRoleToolGrants(env.pool);await initializePlanOccurrences(env.pool);await initializeConversationWork(env.pool);await initializeGroupTasks(env.pool)})
+before(async()=>{env=await setupRoleWork();await initializeRoleToolGrants(env.pool);await initializePlanOccurrences(env.pool);await initializeConversationWork(env.pool);await initializeGroupTasks(env.pool);await initializeGroupRoutingDecisions(env.pool);await initializeGroupRoutingOutbox(env.pool)})
 after(async()=>{await env?.close()})
 const schedule={kind:'schedule' as const,cadence:'daily' as const,weekday:1,time:'09:00',timezone:'Asia/Singapore' as const}
 async function configuredTwin(){

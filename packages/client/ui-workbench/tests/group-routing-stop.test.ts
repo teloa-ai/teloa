@@ -14,7 +14,7 @@ test('GRP-05 只有仍在运行的接收者给出停止目标；已完成/待核
   recipient('d','completed','run-d'),
   recipient('e','awaiting-approval','run-e','reply'),
  ]))
- assert.deepEqual(targets.map(item=>[item.roleId,item.runId,item.phase]),[
+ assert.deepEqual(targets.map(item=>{assert.ok('runId' in item);return [item.roleId,item.runId,item.phase]}),[
   ['a','run-a','running'],
   ['e','run-e','awaiting-approval'],
  ])

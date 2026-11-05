@@ -5,6 +5,7 @@ import {readFile} from 'node:fs/promises'
 import ts from 'typescript'
 import type {Conversation} from '@teloa/contract'
 import type {PreviewTask} from '../src/client/task-preview.ts'
+import * as taskListPresentation from '../src/client/task-list-presentation.ts'
 import * as taskPreview from '../src/client/task-preview.ts'
 import * as exampleDirectory from '../src/client/example-directory-presentation.ts'
 import * as homeRecentContext from '../src/client/home-recent-context.ts'
@@ -37,6 +38,8 @@ function mount(props:Record<string,unknown>){
  const modules:Record<string,unknown>={
   'lucide-react':new Proxy({},{get:(_,key)=>String(key)}),
   './task-preview.js':taskPreview,
+  './task-list-presentation.js':taskListPresentation,
+  './task-run-chat-presentation.js':{useTaskRunConversationTitles:()=>({})},
   './example-directory-presentation.js':exampleDirectory,
   './home-recent-context.js':homeRecentContext,
   './work-presentation.js':workPresentation,

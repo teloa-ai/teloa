@@ -57,12 +57,12 @@ test('左栏品牌区左缘与导航项对齐并按新字标校正尺寸',async(
   assert.match(styles,/\.navHeader\{display:flex;align-items:center;justify-content:space-between;[^}]*min-height:28px/)
   assert.match(styles,/\.brand img\{display:block;width:81px;height:16px;object-fit:contain\}/)
   assert.match(styles,/\.brandIdentity\{[^}]*gap:4px/)
-  assert.match(styles,/\.brandStudio\{[^}]*font-size:var\(--teloa-font-caption\);line-height:1\.4/)
+  assert.match(styles,/\.brandStudio\{[^}]*font-size:var\(--teloa-font-caption\);line-height:var\(--teloa-leading-heading\)/)
   // 版本名紧跟字标显示为小号灰字，不做胶囊：长名称（Enterprise）与短名称（Pro）都不抢字标。
   // 只取基础规则：窄屏抽屉另有 `.navigation .brandTier{display:none}` 收起版本名。
   const tier=styles.match(/(?:^|\})\.brandTier\{[^}]*\}/m)?.[0]??""
   assert.match(tier,/padding:0;border:0;background:none/)
-  assert.match(tier,/font-size:var\(--teloa-font-caption\);line-height:1\.5;font-weight:var\(--teloa-weight-regular\)/)
+  assert.match(tier,/font-size:var\(--teloa-font-caption\);line-height:var\(--teloa-leading-label\);font-weight:var\(--teloa-weight-regular\)/)
   assert.doesNotMatch(tier,/border-radius|border:1px/)
   assert.match(styles,/\.navItem\{[^}]*min-height:34px;[^}]*padding:0 10px/)
 })
