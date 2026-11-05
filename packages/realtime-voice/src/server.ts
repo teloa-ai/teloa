@@ -20,7 +20,7 @@ type Channel = {
   closing: boolean
   muted: boolean
   generation: number
-  turnGeneration?: number
+  playbackActive: boolean
   latestTurnId?: string
   lastSeen: number
   abort: AbortController
@@ -74,7 +74,7 @@ export function createRealtimeVoiceMedia(ports: TeloaVoicePluginPort) {
   const live = (channel: Channel) => {
     if (disposed || channel.closed || channel.closing || channel.abort.signal.aborted || channel.input.signal.aborted) throw ports.failure('connection-lost')
   }
-  const listening = (channel: Channel) => send(channel, {type: 'phase', phase: channel.turns.active ? 'recording' : 'listening'})
+  const listening = (channel: Channel) => send(channel, {type: 'phase', phase: channel.turns.active ? 'recording' : channel.playbackActive ? 'speaking' : 'listening'})
   const prepareRecognition=(channel:Channel,pcm:Uint8Array|null)=>{
     // 续说只撤销候选资格。SenseVoice 取消推理会销毁常驻 worker，下一句因此冷启动。
     // 最多保留一个本机预识别在途；静音、挂断仍由原采集/通话信号立即取消。
@@ -124,7 +124,6 @@ export function createRealtimeVoiceMedia(ports: TeloaVoicePluginPort) {
     closePcm(channel)
     channel.turns.reset()
     void channel.vad?.close().catch(()=>{})
-    delete channel.turnGeneration
     channel.readyReject(ports.failure('connection-lost'))
     channel.closeResolve()
     for (const [receipt, seal] of seals) if (seal.callId === channel.input.callId) seals.delete(receipt)
@@ -183,7 +182,7 @@ export function createRealtimeVoiceMedia(ports: TeloaVoicePluginPort) {
     void ports.interrupt(channel.input.callId).catch(() => fail(channel, 'connection-failed'))
     return channel.generation
   }
-  const transcribe = (channel: Channel, pcm: Uint8Array, expectedPlaybackGeneration: number) => {
+  const transcribe = (channel: Channel, pcm: Uint8Array) => {
     if (channel.queued >= 3) {
       fail(channel, 'provider-unavailable')
       return
@@ -208,13 +207,14 @@ export function createRealtimeVoiceMedia(ports: TeloaVoicePluginPort) {
     })
     void recognition.catch(()=>{}) // 先完成的失败也由下方顺序准入统一处理。
     channel.pending = channel.pending.then(async () => {
-      // 同包后一句的起音必须先推进世代，不能被一个立即完成的识别回包抢跑。
+      // 同包采集先完成；声音起音本身不代表本人已说出有效插话。
       await channel.capturePending
       live(channel)
       const result=await recognition
       live(channel)
       if (channel.muted || channel.captureEpoch!==captureEpoch || !result){if(channel.latestTurnId===turnId)listening(channel);return}
       if (result.audioSha256 !== audioSha256) throw ports.failure('provider-unavailable')
+      if (!result.text.trim()){if(channel.latestTurnId===turnId)listening(channel);return}
       const producerReceipt = randomUUID()
       const seal = readVoiceTranscriptSeal({
         ...channel.input.roleContext,
@@ -229,6 +229,9 @@ export function createRealtimeVoiceMedia(ports: TeloaVoicePluginPort) {
         complete: true,
         producerReceipt,
       })
+      // ASR 确认有效文字后才清播和推进世代，空识别/噪声不能不可逆地截断回答。
+      const expectedPlaybackGeneration=interrupt(channel)
+      send(channel,{type:'phase',phase:channel.turns.active?'recording':'thinking'})
       seals.set(producerReceipt, seal)
       send(channel, {type: 'transcript', text: seal.text})
       try {
@@ -242,13 +245,11 @@ export function createRealtimeVoiceMedia(ports: TeloaVoicePluginPort) {
     }).finally(() => {channel.queued--})
   }
   const drainCompleted = async (channel: Channel, first: Uint8Array | null) => {
-    const expected = channel.turnGeneration
-    if (first && expected === undefined) throw invalid()
-    for (let turn = first; turn; turn = (await channel.turns.push(new Uint8Array())).turn) transcribe(channel, turn, expected!)
-    if (!channel.turns.active) delete channel.turnGeneration
+    for (let turn = first; turn; turn = (await channel.turns.push(new Uint8Array())).turn) transcribe(channel, turn)
   }
   const playback = (channel: Channel, value: unknown, state: unknown) => {
     if (!generation(value) || value !== channel.generation || state !== 'playing' && state !== 'idle') return
+    channel.playbackActive=state==='playing'
     channel.input.onEvent({type: 'playback', callGeneration: channel.input.callGeneration, playbackGeneration: value, state})
     if (state === 'idle') listening(channel)
   }
@@ -273,7 +274,7 @@ export function createRealtimeVoiceMedia(ports: TeloaVoicePluginPort) {
       const closePromise = new Promise<void>(resolve => {closeResolve = resolve})
       const channel: Channel = {
         input, token: randomUUID(), claimed: false, closed: false, closing: false, muted: false,
-        generation: 0, lastSeen: Date.now(), abort: new AbortController(), turns:createPcmTurns(),
+        generation: 0, playbackActive:false, lastSeen: Date.now(), abort: new AbortController(), turns:createPcmTurns(),
         captureEpoch:0,captureAbort:new AbortController(),capturePending:Promise.resolve(),captureBytes:0,
         readyResolve, readyReject, closeResolve, closePromise, pending: Promise.resolve(), queued: 0,
       }
@@ -313,12 +314,12 @@ export function createRealtimeVoiceMedia(ports: TeloaVoicePluginPort) {
           channel.prepared?.audio.discard();delete channel.prepared
           channel.captureAbort.abort();channel.captureAbort=new AbortController()
           channel.turns.reset()
-          delete channel.turnGeneration
         },
         async interruptPlayback({playbackGeneration}) {
           live(channel)
           if (!generation(playbackGeneration) || playbackGeneration < channel.generation) throw invalid()
           channel.generation = playbackGeneration
+          channel.playbackActive=false
           channel.prepared?.audio.discard();delete channel.prepared
           channel.speech?.abort()
           send(channel, {type: 'clear', generation: playbackGeneration})
@@ -363,6 +364,7 @@ export function createRealtimeVoiceMedia(ports: TeloaVoicePluginPort) {
             live(channel)
             if (channel.generation !== playbackGeneration) throw ports.failure('connection-lost')
           }
+          channel.playbackActive=true
           send(channel, {type: 'speech-start', generation: playbackGeneration})
           timing(channel,'tts-start',{requestId:utteranceId})
           try {
@@ -523,7 +525,6 @@ export function createRealtimeVoiceMedia(ports: TeloaVoicePluginPort) {
             channel.captureEpoch++
             channel.captureAbort.abort();channel.captureAbort=new AbortController()
             channel.turns.reset()
-            delete channel.turnGeneration
           } else if (row.type === 'interrupt') {
             exact(row, ['type'])
             interrupt(channel)
@@ -553,7 +554,7 @@ export function createRealtimeVoiceMedia(ports: TeloaVoicePluginPort) {
           for(let offset=0;offset<bytes.length&&!held.closing&&!held.muted&&held.captureEpoch===epoch;offset+=640){
             const result=await held.turns.push(bytes.subarray(offset,offset+640))
             if(held.closing||held.muted||held.captureEpoch!==epoch)return
-            if(result.started){held.turnGeneration=interrupt(held);send(held,{type:'phase',phase:'recording'})}
+            if(result.started)send(held,{type:'phase',phase:'recording'})
             await drainCompleted(held,result.turn)
           }
         }).catch(()=>{if(!held.closing&&held.captureEpoch===epoch)fail(held,'provider-unavailable')}).finally(()=>{held.captureBytes-=bytes.length})

@@ -33,7 +33,7 @@ test('工作总览、需要你、任务与自动化采用同一可缩放字号�
    const trigger=page.locator('button[class*=filterTrigger]').first();assert.ok(await trigger.count(),'真实任务/自动化页面必须提供筛选入口')
    {
     await trigger.click();const panel=page.getByRole('dialog',{name:(await trigger.getAttribute('aria-label'))!,exact:true});await panel.waitFor()
-    const clipped=await panel.evaluate(root=>{const b=root.getBoundingClientRect();return [...root.querySelectorAll('input,select,button')].filter(e=>{const r=e.getBoundingClientRect(),hit=document.elementFromPoint(r.x+r.width/2,r.y+r.height/2);return r.height>0&&(r.top<b.top||r.bottom>b.bottom||!hit||!(hit===e||e.contains(hit)))}).map(e=>e.getAttribute('aria-label')||e.textContent)})
+    const clipped=await panel.evaluate((root:HTMLElement)=>{const b=root.getBoundingClientRect();return [...root.querySelectorAll('input,select,button')].filter(e=>{const r=e.getBoundingClientRect(),hit=document.elementFromPoint(r.x+r.width/2,r.y+r.height/2);return r.height>0&&(r.top<b.top||r.bottom>b.bottom||!hit||!(hit===e||e.contains(hit)))}).map(e=>e.getAttribute('aria-label')||e.textContent)})
     assert.deepEqual(clipped,[],'真实任务/自动化筛选控件必须完整显示并能命中');if(process.env.TELOA_UI_POLISH_CAPTURE)await page.screenshot({path:process.env.TELOA_UI_POLISH_CAPTURE+'/'+mode+'-'+theme+'-filter.png'});await page.keyboard.press('Escape');await panel.waitFor({state:'hidden'})
    }
   }
