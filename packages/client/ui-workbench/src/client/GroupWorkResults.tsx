@@ -32,6 +32,6 @@ function BoundGroupWorkResults({groupId,rows,summaries,roleNames,openArtifact,op
   <h2 className={css.heading}>{t('collaboration.view.results')}{current.length>0&&<span className={css.count}>{current.length}</span>}</h2>
   {error&&<p role="alert" className={css.error}>{error}</p>}
   {current.length?<div className={css.artifacts}>{current.map(card)}</div>:<p className={css.note}>{t('collaboration.view.resultsEmpty')}</p>}
-  {historical.length>0&&<details key={groupId} className={css.history} open={history.groupId===groupId&&history.open} onToggle={event=>setHistory({groupId,open:event.currentTarget.open})}><summary><ChevronRight size={13}/>{t('knowledge.ui.035')} · {historical.length}</summary><div className={css.artifacts}>{historical.map(card)}</div></details>}
+  {historical.length>0&&<details key={groupId} className={css.history} open={history.groupId===groupId&&history.open} onToggle={event=>setHistory({groupId,open:event.currentTarget.open})}><summary><ChevronRight size={14}/>{t('knowledge.ui.035')} · {historical.length}</summary><div className={css.artifacts}>{historical.map(card)}</div></details>}
  </section>
 }

@@ -509,7 +509,7 @@ test('Auto Dream 与群提及新增词条在十套主语言齐全，禁系统词
     'group.mention.all': '提及全员',
     'group.mention.allNotice': "已通知全员，员工会各自回应。",
     'group.grant.canAutoRun': '允许本群自动开始运行',
-    'group.grant.canAutoRunHint': "关掉时，提及这位员工只会新建待办任务。",
+    'group.grant.canAutoRunHint': "关闭后，这位员工不会自动回应。需要派活时请明确交办。",
   } as const
   const newKeys = [...Object.keys(autoDreamZhCn), ...Object.keys(groupMentionZhCn)] as Array<typeof MESSAGE_KEYS[number]>
   assert.equal(newKeys.length, 51)

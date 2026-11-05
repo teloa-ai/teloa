@@ -1,5 +1,5 @@
 .about>.pageTitle{margin:0 0 18px;font-size:var(--teloa-font-page);font-weight:var(--teloa-weight-heading);line-height:var(--teloa-leading-heading);letter-spacing:-.2px}
-.about{padding:0 0 24px;max-width:820px;box-sizing:border-box;color:var(--teloa-text);font-size:var(--teloa-font-body);line-height:1.7;overflow-wrap:anywhere}.brandHeader{display:flex;align-items:center;gap:24px;flex-wrap:wrap}.identity{display:flex;flex-direction:column;gap:8px}.brandRow{display:flex;align-items:center;gap:18px;max-width:100%;flex-wrap:wrap}.about header p{color:var(--teloa-muted);margin:0}.release{display:flex;flex-direction:column;justify-content:center;gap:3px;padding-left:24px;border-left:1px solid var(--teloa-border);color:var(--teloa-muted);font-size:var(--teloa-font-caption);line-height:1.5;min-height:44px;align-self:stretch}.about>section{border-top:1px solid var(--teloa-border);margin-top:24px;padding-top:18px}.about h2{font-size:var(--teloa-font-section);margin:0;font-weight:var(--teloa-weight-heading);line-height:var(--teloa-leading-label)}.about a{color:var(--teloa-text);text-underline-offset:3px}.about a:focus-visible,.about button:focus-visible{outline:2px solid var(--teloa-focus);outline-offset:2px}.about p{color:var(--teloa-muted)}.brandName{display:flex;align-items:center;gap:10px}.brandName strong{font-size:19px;font-weight:var(--teloa-weight-medium);white-space:nowrap}
+.about{padding:0 0 24px;max-width:820px;box-sizing:border-box;color:var(--teloa-text);font-size:var(--teloa-font-body);line-height:var(--teloa-leading-body);overflow-wrap:anywhere}.brandHeader{display:flex;align-items:center;gap:24px;flex-wrap:wrap}.identity{display:flex;flex-direction:column;gap:8px}.brandRow{display:flex;align-items:center;gap:18px;max-width:100%;flex-wrap:wrap}.about header p{color:var(--teloa-muted);margin:0}.release{display:flex;flex-direction:column;justify-content:center;gap:3px;padding-left:24px;border-left:1px solid var(--teloa-border);color:var(--teloa-muted);font-size:var(--teloa-font-caption);line-height:var(--teloa-leading-label);min-height:44px;align-self:stretch}.about>section{border-top:1px solid var(--teloa-border);margin-top:24px;padding-top:18px}.about h2{font-size:var(--teloa-font-section);margin:0;font-weight:var(--teloa-weight-heading);line-height:var(--teloa-leading-label)}.about a{color:var(--teloa-text);text-underline-offset:3px}.about a:focus-visible,.about button:focus-visible{outline:2px solid var(--teloa-focus);outline-offset:2px}.about p{color:var(--teloa-muted)}.brandName{display:flex;align-items:center;gap:10px}.brandName strong{font-size:19px;font-weight:var(--teloa-weight-medium);white-space:nowrap}
 .qrDialog button{font:inherit;color:var(--teloa-text);background:var(--teloa-surface);border:1px solid var(--teloa-border);border-radius:7px;padding:7px 11px;min-height:36px;cursor:pointer}.qrDialog button:hover{background:var(--teloa-hover)}
 .plansSection>p{margin:0 0 12px}.plansHeader{display:flex;align-items:center;justify-content:space-between;gap:10px 16px;flex-wrap:wrap;margin-bottom:14px}.plansHeader h2{margin:0}.plansSection{container-type:inline-size}
 .foundationSection>h2{grid-column:1/-1;margin:0}
@@ -11,7 +11,7 @@
 
 
 
-.headerTagline{display:flex;align-items:center;margin:0;padding-left:24px;border-left:1px solid var(--teloa-border);min-height:44px;align-self:stretch;color:var(--teloa-muted);font-size:var(--teloa-font-caption);line-height:1.5}
+.headerTagline{display:flex;align-items:center;margin:0;padding-left:24px;border-left:1px solid var(--teloa-border);min-height:44px;align-self:stretch;color:var(--teloa-muted);font-size:var(--teloa-font-caption);line-height:var(--teloa-leading-label)}
 @media(max-width:740px){.headerTagline{padding-left:14px;min-height:40px}}
 
 
@@ -23,7 +23,7 @@
 
 
 
-.foundationLine{margin:0;padding-top:12px;border-top:1px solid var(--teloa-border);font-size:var(--teloa-font-caption);line-height:1.7;color:var(--teloa-muted)}
+.foundationLine{margin:0;padding-top:12px;border-top:1px solid var(--teloa-border);font-size:var(--teloa-font-caption);line-height:var(--teloa-leading-body);color:var(--teloa-muted)}
 .plansMore a{color:var(--teloa-accent);text-decoration:none}.plansMore a:hover{text-decoration:underline}
 .editionsTable{width:100%;border-collapse:collapse;table-layout:fixed;margin:0 0 12px;font-size:var(--teloa-font-control)}.editionsTable th,.editionsTable td{text-align:left;vertical-align:top;padding:14px 12px;border-bottom:1px solid var(--teloa-border);overflow-wrap:anywhere}.editionsTable thead th{font-size:var(--teloa-font-caption);color:var(--teloa-muted);font-weight:var(--teloa-weight-medium);background:var(--teloa-subtle)}.editionsTable th:first-child{width:18%}.editionsTable th:nth-child(2){width:23%}.editionsTable tbody th strong{font-weight:var(--teloa-weight-medium)}.editionsTable tbody td{color:var(--teloa-muted)}.editionCurrent{background:var(--teloa-subtle)}.plansMore{font-size:var(--teloa-font-caption);margin:0}.editionsTable+ .plansMore{margin-bottom:0}
 /* 当前版本只用行背景表达；读屏通过 tr[aria-current] 与隐藏文本获知。 */
@@ -39,11 +39,11 @@
 .contactCardTitle{display:flex;align-items:flex-start;gap:8px;margin:0;font-size:var(--teloa-font-control);font-weight:var(--teloa-weight-medium);line-height:var(--teloa-leading-label)}
 .contactCardTitle svg{flex:none;margin-top:2px;color:var(--teloa-muted)}
 .contactCardActions{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px 12px;margin-top:auto;min-height:36px}
-.contactCardActions a{display:inline-flex;align-items:center;min-height:36px;font-size:var(--teloa-font-caption);line-height:1.5;color:var(--teloa-muted);text-decoration:none}
+.contactCardActions a{display:inline-flex;align-items:center;min-height:36px;font-size:var(--teloa-font-caption);line-height:var(--teloa-leading-label);color:var(--teloa-muted);text-decoration:none}
 .contactCardActions a:hover{color:var(--teloa-text);text-decoration:underline;text-underline-offset:3px}
 .contactNames{display:flex;align-items:baseline;flex-wrap:wrap;gap:8px;font-size:var(--teloa-font-reading);color:var(--teloa-text)}.contactNames strong{font-weight:var(--teloa-weight-medium);white-space:nowrap}.contactNames i{font-style:normal;color:var(--teloa-muted)}
 .contactLinks,.connectionActions{display:flex;align-items:center;gap:4px;flex-wrap:wrap;min-width:0}
-.contactLinks a,.connectionActions button{display:inline-flex;align-items:center;gap:6px;min-height:32px;padding:5px 8px;box-sizing:border-box;border:0;border-radius:6px;background:transparent;color:var(--teloa-muted);font:inherit;font-size:var(--teloa-font-caption);line-height:1.5;text-decoration:none;cursor:pointer}
+.contactLinks a,.connectionActions button{display:inline-flex;align-items:center;gap:6px;min-height:32px;padding:5px 8px;box-sizing:border-box;border:0;border-radius:6px;background:transparent;color:var(--teloa-muted);font:inherit;font-size:var(--teloa-font-caption);line-height:var(--teloa-leading-label);text-decoration:none;cursor:pointer}
 .contactLinks a:hover,.connectionActions button:hover{color:var(--teloa-text);background:var(--teloa-hover)}
 .contactLinks svg,.connectionActions svg{flex:none}
 @media(max-width:600px){.contactLinks a,.connectionActions button{min-height:40px}.contactCard{padding:14px}}

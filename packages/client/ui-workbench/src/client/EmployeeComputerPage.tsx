@@ -35,8 +35,8 @@ export function EmployeeComputerPage({role,computer,loading,error,retry,back,tal
    </aside>}
    <section className={css.desktop} aria-label={`${role.name}${copy('computerNameSuffix')}`}>
     <header className={css.desktopHeader}><Monitor size={18}/><strong>{role.name}{copy('computerNameSuffix')}</strong><EmployeeComputerStatus view={view}/><div className={css.viewActions}>
-     <button ref={expandButton} type="button" aria-label={copy(expanded?'restoreLayout':'enlarge')} title={copy(expanded?'restoreLayout':'enlarge')} aria-pressed={expanded} onClick={()=>setExpanded(value=>!value)}>{expanded?<Minimize size={18}/>:<Maximize size={18}/>}</button>
-     <button type="button" aria-label={copy('popout')} title={copy('popout')} onClick={popout}><ArrowUpRight size={18}/></button>
+     <button ref={expandButton} type="button" aria-label={copy(expanded?'restoreLayout':'enlarge')} title={copy(expanded?'restoreLayout':'enlarge')} aria-pressed={expanded} onClick={()=>setExpanded(value=>!value)}>{expanded?<Minimize size={16}/>:<Maximize size={16}/>}</button>
+     <button type="button" aria-label={copy('popout')} title={copy('popout')} onClick={popout}><ArrowUpRight size={16}/></button>
     </div></header>
     <div className={css.canvas}><EmployeeComputerPreview view={view} name={role.name}/></div>
     <footer className={css.desktopFooter}><span>{copy(view.state==='connected'?'controlPending':'controlUnavailable')}</span><button type="button" disabled title={copy(view.state==='connected'?'controlPending':'computerUnavailable')}>{copy('takeControl')}</button></footer>

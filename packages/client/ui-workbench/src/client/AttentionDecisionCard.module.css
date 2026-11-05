@@ -3,7 +3,7 @@
 .rows{display:flex;flex-direction:column;gap:10px;margin:0}
 .rows>div{display:flex;gap:14px;align-items:flex-start;min-width:0}
 .rows dt{flex:0 0 52px;margin:0;font-size:var(--teloa-font-caption);color:var(--teloa-muted)}
-.rows dd{flex:1;min-width:0;margin:0;font-size:var(--teloa-font-control);line-height:1.75;color:var(--teloa-text);overflow-wrap:anywhere}
+.rows dd{flex:1;min-width:0;margin:0;font-size:var(--teloa-font-control);line-height:var(--teloa-leading-body);color:var(--teloa-text);overflow-wrap:anywhere}
 .badges{display:flex;flex-wrap:wrap;gap:8px;margin:0}
 .badge{display:inline-flex;align-items:center;border:1px solid var(--teloa-border);border-radius:5px;padding:1px 7px;font-size:var(--teloa-font-caption);color:var(--teloa-muted)}
 .actions{display:flex;flex-wrap:wrap;gap:10px}

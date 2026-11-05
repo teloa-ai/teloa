@@ -13,7 +13,7 @@ export function ConnectionTemplateSetup({setup}:{setup:McpConnectionSetup}){
 export function ConnectionTemplateSetupEditor({title,setup,disabled,apply}:{title:string;setup?:McpConnectionSetup|undefined;disabled:boolean;apply:(value:unknown)=>void}){
  const {t}=useI18n(),[url,setUrl]=useState(setup?.urlTemplate??''),[names,setNames]=useState(setup?.configurationKeys.join('\n')??''),[invalid,setInvalid]=useState(false),[saved,setSaved]=useState(false)
  return <form onSubmit={event=>{event.preventDefault();setInvalid(false);setSaved(false);try{apply({...url.trim()?{urlTemplate:url.trim()}:{},configurationKeys:names.split(/[\n,]/).map(name=>name.trim()).filter(Boolean)});setSaved(true)}catch{setInvalid(true)}}}>
-  <strong>{title}</strong>
+  <strong className={css.compositionHeading}>{title}</strong>
   <label>{t('templateShare.addressTemplate')}<input type="text" value={url} disabled={disabled} maxLength={2048} placeholder="https://service.example/{tenant}/mcp?key={API_KEY}" onChange={event=>{setUrl(event.target.value);setSaved(false)}}/></label>
   <label>{t('templateShare.configurationNames')}<textarea value={names} disabled={disabled} maxLength={2600} onChange={event=>{setNames(event.target.value);setSaved(false)}}/></label>
   {invalid&&<p className={css.alert} role="alert">{t('templateShare.connectionTemplateInvalid')}</p>}

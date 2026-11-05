@@ -5,7 +5,7 @@
 .title{margin:0;font-size:var(--teloa-font-section);font-weight:var(--teloa-weight-heading);line-height:var(--teloa-leading-label)}
 .lead{display:flex;flex-direction:column;gap:8px}
 .lead h3{margin:0;font-size:var(--teloa-font-section);font-weight:var(--teloa-weight-heading);line-height:var(--teloa-leading-label)}
-.lead p{margin:0;font-size:var(--teloa-font-control);line-height:1.8;color:var(--teloa-muted)}
+.lead p{margin:0;font-size:var(--teloa-font-control);line-height:var(--teloa-leading-body);color:var(--teloa-muted)}
 /* 只用来给 useDismissible 一个能 contains() 的公共容器；display:contents 让它在布局上消失，
    子节点（.options 与展开的 .sentence）照旧当 .entry 的直接 flex 子项，间距不变。 */
 .sentenceGroup{display:contents}
@@ -14,31 +14,31 @@
 .option:hover{background:var(--teloa-hover)}
 .sentence{display:flex;flex-direction:column;gap:10px;min-width:0;margin:0}
 .sentence>label{display:grid;gap:6px;font-size:var(--teloa-font-caption);color:var(--teloa-muted)}
-.sentence textarea{box-sizing:border-box;width:100%;min-width:0;min-height:132px;border:1px solid var(--teloa-border);border-radius:var(--teloa-design-r1);padding:12px 14px;background:var(--teloa-background);color:var(--teloa-text);font-size:var(--teloa-font-control);line-height:1.7;resize:vertical}
+.sentence textarea{box-sizing:border-box;width:100%;min-width:0;min-height:132px;border:1px solid var(--teloa-border);border-radius:var(--teloa-design-r1);padding:12px 14px;background:var(--teloa-background);color:var(--teloa-text);font-size:var(--teloa-font-control);line-height:var(--teloa-leading-body);resize:vertical}
 .sentence button{align-self:flex-start;padding:8px 12px;min-height:36px;border:1px solid var(--teloa-border);border-radius:var(--teloa-design-r1);background:var(--teloa-surface);color:var(--teloa-text);cursor:pointer}
-.draftsTitle{margin:4px 0 0;font-size:var(--teloa-font-control);font-weight:var(--teloa-weight-medium);line-height:1.6}
+.draftsTitle{margin:4px 0 0;font-size:var(--teloa-font-control);font-weight:var(--teloa-weight-medium);line-height:var(--teloa-leading-heading)}
 .history{border-top:1px solid var(--teloa-border);padding-top:12px}
 .history>summary{color:var(--teloa-muted);font-size:var(--teloa-font-caption);cursor:pointer;padding:4px 0}
 .history>.drafts{margin-top:10px}
 .draftsHeader{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
-.notice{margin:0;font-size:var(--teloa-font-caption);line-height:1.8;color:var(--teloa-muted)}
-.alert{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin:0;font-size:var(--teloa-font-caption);line-height:1.8;color:var(--teloa-warn)}
+.notice{margin:0;font-size:var(--teloa-font-caption);line-height:var(--teloa-leading-body);color:var(--teloa-muted)}
+.alert{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin:0;font-size:var(--teloa-font-caption);line-height:var(--teloa-leading-body);color:var(--teloa-warn)}
 .alert button{padding:6px 10px;border:1px solid var(--teloa-border);border-radius:var(--teloa-design-r1);background:var(--teloa-surface);color:var(--teloa-text);cursor:pointer}
 .drafts{display:flex;flex-direction:column;gap:10px;margin:0;padding:0;list-style:none}
 .drafts>li{border:1px solid var(--teloa-border);border-radius:var(--teloa-design-r2);background:var(--teloa-surface);overflow:hidden}
-.drafts summary{display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:12px 14px;font-size:var(--teloa-font-control);line-height:1.6;cursor:pointer;overflow-wrap:anywhere}
+.drafts summary{display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:12px 14px;font-size:var(--teloa-font-control);line-height:var(--teloa-leading-label);cursor:pointer;overflow-wrap:anywhere}
 .status{display:inline-flex;align-items:center;border:1px solid var(--teloa-border);border-radius:var(--teloa-design-round);padding:1px 8px;font-size:var(--teloa-font-caption);color:var(--teloa-muted)}
 .preview{display:flex;flex-direction:column;gap:10px;padding:0 14px 14px}
 .preview h4{margin:6px 0 0;font-size:var(--teloa-font-body);font-weight:var(--teloa-weight-heading);color:var(--teloa-muted);line-height:var(--teloa-leading-label)}
-.preview p{margin:0;font-size:var(--teloa-font-control);line-height:1.8;overflow-wrap:anywhere}
+.preview p{margin:0;font-size:var(--teloa-font-control);line-height:var(--teloa-leading-body);overflow-wrap:anywhere}
 .fields{display:flex;flex-direction:column;gap:6px;margin:0}
 .fields>div{display:flex;gap:12px;min-width:0}
 .fields dt{flex:0 0 38%;margin:0;font-size:var(--teloa-font-caption);color:var(--teloa-muted);overflow-wrap:anywhere}
-.fields dd{white-space:pre-wrap;flex:1;min-width:0;margin:0;font-size:var(--teloa-font-caption);line-height:1.75;color:var(--teloa-text);overflow-wrap:anywhere}
+.fields dd{white-space:pre-wrap;flex:1;min-width:0;margin:0;font-size:var(--teloa-font-caption);line-height:var(--teloa-leading-body);color:var(--teloa-text);overflow-wrap:anywhere}
 .fields>.documentField{flex-direction:column;gap:6px}
 .fields>.documentField dt{flex:none}
 .fields>.documentField dd{font-size:var(--teloa-font-body)}
-.consequences,.consents{display:flex;flex-direction:column;gap:6px;margin:0;padding:0;list-style:none;font-size:var(--teloa-font-caption);line-height:1.75}
+.consequences,.consents{display:flex;flex-direction:column;gap:6px;margin:0;padding:0;list-style:none;font-size:var(--teloa-font-caption);line-height:var(--teloa-leading-body)}
 .consequences>li{display:flex;flex-wrap:wrap;align-items:center;gap:8px;min-width:0;overflow-wrap:anywhere}
 .disclosure{margin:0;font-size:var(--teloa-font-caption);color:var(--teloa-muted)}
 .actions{display:flex;flex-wrap:wrap;gap:10px;margin-top:4px}

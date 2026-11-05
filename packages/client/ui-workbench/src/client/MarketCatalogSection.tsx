@@ -628,18 +628,18 @@ export function CatalogSolutionProduct({item,pkg,busy,error,add,open,back,retry,
  // 接上团队步骤时照原型只有一个主按钮「添加到我的团队」：加到本机与团队确认合成一步；没接时（单独使用）退回「添加方案」
  const action=team
   ?team.loaded
-   ?<><button type="button" className={pageCss.primaryAction} disabled>{t('market.solution.added')}<Check size={15}/></button>{team.links}</>
+   ?<><button type="button" className={pageCss.primaryAction} disabled>{t('market.solution.added')}<Check size={16}/></button>{team.links}</>
    :entry.compatibility.status==='unsupported'
     ?<p>{conditions[0]??t('market.catalog.official.unsupportedFallback')}</p>
     // 已加到本机、还没加进团队：与卡片「已添加」记号和 AI 员工未完成时同一表达——状态「已添加」+「继续添加」打开同一个团队确认步骤 +「查看」本机副本，不再给「添加」主按钮
     :item.addedContentId
      ?<div className={css.actions}><span>{t('market.catalog.official.added')}</span><button type="button" className={pageCss.primaryAction} disabled={busy!==undefined} aria-expanded={!!team.panel} onClick={team.addToTeam}>{busy===entry.id?t('market.catalog.official.adding'):t('templateShare.catalogRoleContinue')}</button><ToolbarIconButton label={t('market.catalog.official.view')} icon={ArrowUpRight} onClick={()=>open(item.addedContentId!)}/></div>
-     :<button type="button" className={pageCss.primaryAction} disabled={busy!==undefined} aria-expanded={!!team.panel} onClick={team.addToTeam}>{busy===entry.id?t('market.catalog.official.adding'):t('market.industry.loadWorkspace')}<Plus size={15}/></button>
+     :<button type="button" className={pageCss.primaryAction} disabled={busy!==undefined} aria-expanded={!!team.panel} onClick={team.addToTeam}>{busy===entry.id?t('market.catalog.official.adding'):t('market.industry.loadWorkspace')}<Plus size={16}/></button>
   :item.addedContentId
-  ?<><button type="button" className={pageCss.primaryAction} disabled>{t('market.catalog.official.added')}<Check size={15}/></button><ToolbarIconButton label={t('market.catalog.official.view')} icon={ArrowUpRight} onClick={()=>open(item.addedContentId!)}/></>
+  ?<><button type="button" className={pageCss.primaryAction} disabled>{t('market.catalog.official.added')}<Check size={16}/></button><ToolbarIconButton label={t('market.catalog.official.view')} icon={ArrowUpRight} onClick={()=>open(item.addedContentId!)}/></>
   :entry.compatibility.status==='unsupported'
    ?<p>{conditions[0]??t('market.catalog.official.unsupportedFallback')}</p>
-   :<button type="button" className={pageCss.primaryAction} disabled={busy!==undefined} onClick={add}>{busy===entry.id?t('market.catalog.official.adding'):t('market.catalog.official.addSolution')}<Plus size={15}/></button>
+   :<button type="button" className={pageCss.primaryAction} disabled={busy!==undefined} onClick={add}>{busy===entry.id?t('market.catalog.official.adding'):t('market.catalog.official.addSolution')}<Plus size={16}/></button>
  const rows=pkg.status==='ready'?composeFromManifest(pkg.manifest):[]
  const capabilities=(['now','needs','permissions'] as const).map(group=>[t(capabilityGroupKeys[group]),entry.solution.capabilities[group].map(value=>catalogText(value,locale))] as const)
  return <article className={clsx(pageCss.detail,pageCss.industryDetail)} data-teloa-catalog-entry={entry.id} aria-label={title}>

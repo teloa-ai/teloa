@@ -29,14 +29,14 @@ export function IndustryResourceBrowser<T extends Resource>({resources,render,st
  const count=(kind:IndustryResourceKind)=>resources.filter(row=>row.kind===kind).length
  return <div className={showCategories?css.browser:css.browserWithoutTree}>
   {showCategories&&<div className={css.tree} role="group" aria-label={t('market.industry.browser.categories')}>
-   <button type="button" aria-label={t('market.industry.browser.allCount',{count:resources.length})} aria-pressed={kind==='all'} onClick={()=>setKind('all')}><Boxes size={15}/>{t('common.all')} · {resources.length}</button>
+   <button type="button" aria-label={t('market.industry.browser.allCount',{count:resources.length})} aria-pressed={kind==='all'} onClick={()=>setKind('all')}><Boxes size={16}/>{t('common.all')} · {resources.length}</button>
    {industryBrowserGroups.map(group=><section key={group.title}><h4>{t(group.title)}</h4>{group.kinds.map(value=>{const label=kindLabel(value)+' · '+count(value);return <button type="button" key={value} aria-label={label} aria-pressed={kind===value} onClick={()=>setKind(value)}>{label}</button>})}</section>)}
   </div>}
   <div className={css.main}>
    <div className={css.toolbar}><strong>{title??(kind==='all'?t('market.industry.browser.allResources'):kindLabel(kind))} · {rows.length}</strong><input aria-label={t('market.industry.browser.searchAria')} placeholder={t('market.industry.browser.search')} value={query} onChange={event=>setQuery(event.target.value)}/></div>
    <div className={css.workbench}>
     <div className={css.list} role="listbox" aria-label={t('market.industry.browser.list')}>
-     {rows.map(resource=><button type="button" role="option" aria-selected={selected?.id===resource.id} className={css.resource} key={resource.id} onClick={()=>setSelectedId(resource.id)}><span><strong>{resource.title}</strong><small>{kindLabel(resource.kind)} · v{resource.version}</small></span><em>{status(resource)}</em><ChevronRight size={15}/></button>)}
+     {rows.map(resource=><button type="button" role="option" aria-selected={selected?.id===resource.id} className={css.resource} key={resource.id} onClick={()=>setSelectedId(resource.id)}><span><strong>{resource.title}</strong><small>{kindLabel(resource.kind)} · v{resource.version}</small></span><em>{status(resource)}</em><ChevronRight size={14}/></button>)}
      {!rows.length&&<p className={css.empty}>{query?t('market.industry.browser.noMatch'):t('market.industry.browser.emptyKind',{kind:kind==='all'?t('market.industry.browser.resources'):kindLabel(kind)})}</p>}
     </div>
     <section className={css.preview} aria-label={t('market.industry.browser.preview')}>

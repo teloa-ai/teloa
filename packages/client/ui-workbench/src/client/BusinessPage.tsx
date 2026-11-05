@@ -104,7 +104,7 @@ function BusinessConnectionGuide({connect,sourceNoun}:{connect:()=>void;sourceNo
  */
 function BusinessComposition({sections,go}:{sections:readonly CompositionSection[];go:(target:CompositionTarget)=>void}){
  const {t}=useI18n()
- return <details className={css.composition}><summary>{t('business.composition.panel')}<ChevronDown size={13}/></summary><div className={css.compositionRows}>{COMPOSITION_ROWS.map(row=>{
+ return <details className={css.composition}><summary>{t('business.composition.panel')}<ChevronDown size={14}/></summary><div className={css.compositionRows}>{COMPOSITION_ROWS.map(row=>{
   const section=sections.find(item=>item.id===row.id),empty=COMPOSITION_EMPTY_KEYS[row.id]
   // 看板行可能只有视图、一条对象类型都没有：那也按空态句说话，不摆一个空列表。
   if(!section?.items.length&&!empty)return null
@@ -117,7 +117,7 @@ function BusinessComposition({sections,go}:{sections:readonly CompositionSection
 /** 历史任务属于次级入口；台账首屏只回答本范围有哪些对象与当前处境。 */
 function BusinessHistory({scope,tasks,openTask}:{scope:string;tasks:TaskPreview['tasks'];openTask:(id:string)=>void}){
  const {t}=useI18n(),done=businessCompletedTasks(tasks,scope)
- return <section className={css.current} aria-label={t('business.done.title')}><header className={css.currentHeader}><div><h2>{t('business.done.title')}</h2></div></header>{done.length?<div className={css.currentList}>{done.map(task=><button type="button" key={task.id} onClick={()=>openTask(task.id)}><span className={css.rowIcon}><ListTodo size={17}/></span><span><strong>{task.title}</strong><small>{task.object}</small></span><span className={css.state}>{t(taskStates[task.state])}</span><ChevronRight size={16}/></button>)}</div>:<div className={base.empty}><h3>{t('business.done.empty.title')}</h3></div>}</section>
+ return <section className={css.current} aria-label={t('business.done.title')}><header className={css.currentHeader}><div><h2>{t('business.done.title')}</h2></div></header>{done.length?<div className={css.currentList}>{done.map(task=><button type="button" key={task.id} onClick={()=>openTask(task.id)}><span className={css.rowIcon}><ListTodo size={16}/></span><span><strong>{task.title}</strong><small>{task.object}</small></span><span className={css.state}>{t(taskStates[task.state])}</span><ChevronRight size={16}/></button>)}</div>:<div className={base.empty}><h3>{t('business.done.empty.title')}</h3></div>}</section>
 }
 
 function IndustryResourceDeclarations({rows,label,openPlans}:{rows:readonly IndustryWorkspaceProjection[];label:string;openPlans:(()=>void)|undefined}){

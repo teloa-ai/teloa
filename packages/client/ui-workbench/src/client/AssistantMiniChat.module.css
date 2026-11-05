@@ -1,5 +1,5 @@
 /* 小窗沿用工作台令牌与原面板圆角、阴影；非模态，不遮挡页面其余操作。 */
-.window{position:fixed;display:flex;flex-direction:column;width:340px;max-width:calc(100vw - 16px);height:min(460px,calc(100dvh - 16px));box-sizing:border-box;border:1px solid var(--teloa-border);border-radius:12px;background:var(--teloa-surface);box-shadow:var(--teloa-shadow);color:var(--teloa-text);font-size:var(--teloa-font-control);line-height:1.55;overflow:hidden}
+.window{position:fixed;display:flex;flex-direction:column;width:340px;max-width:calc(100vw - 16px);height:min(460px,calc(100dvh - 16px));box-sizing:border-box;border:1px solid var(--teloa-border);border-radius:12px;background:var(--teloa-surface);box-shadow:var(--teloa-shadow);color:var(--teloa-text);font-size:var(--teloa-font-control);line-height:var(--teloa-leading-body);overflow:hidden}
 .window:focus{outline:none}
 .window button{font:inherit;color:inherit;cursor:pointer}
 .window button:disabled{opacity:.5;cursor:default}
@@ -37,10 +37,10 @@
 .notice button{flex:none}
 .composer{display:flex;align-items:flex-end;gap:6px;margin:0 10px 10px;padding:6px 6px 6px 10px;border:1px solid var(--teloa-border);border-radius:10px;background:var(--teloa-surface)}
 .composer:focus-within{border-color:var(--teloa-focus)}
-.composer textarea{flex:1;min-width:0;min-height:22px;max-height:120px;field-sizing:content;resize:none;border:0;padding:3px 0;background:transparent;color:inherit;font:inherit;font-size:var(--teloa-font-control);line-height:1.5;outline:none}
+.composer textarea{flex:1;min-width:0;min-height:22px;max-height:120px;field-sizing:content;resize:none;border:0;padding:3px 0;background:transparent;color:inherit;font:inherit;font-size:var(--teloa-font-control);line-height:var(--teloa-leading-label);outline:none}
 .composer textarea:disabled{cursor:not-allowed}
 .send{display:grid;place-items:center;width:28px;height:28px;padding:0;border:0;border-radius:7px;background:var(--teloa-primary);color:var(--teloa-on-primary)!important;flex:none}
 .send:disabled{background:var(--teloa-subtle);color:var(--teloa-muted)!important;opacity:1!important}
 
-.window{width:380px;max-width:calc(100vw - 24px);height:min(560px,calc(100dvh - 24px));border-radius:14px}.header{padding:12px}.header strong{line-height:1.5}.header span{line-height:1.6}.log{padding:16px;gap:16px}.bubble{padding:10px 12px;line-height:1.7}.composer textarea{min-height:44px;line-height:1.6}.window .icon{min-width:36px;min-height:36px}
+.window{width:380px;max-width:calc(100vw - 24px);height:min(560px,calc(100dvh - 24px));border-radius:14px}.header{padding:12px}.header strong{line-height:var(--teloa-leading-label)}.header span{line-height:var(--teloa-leading-body)}.log{padding:16px;gap:16px}.bubble{padding:10px 12px;line-height:var(--teloa-leading-body)}.composer textarea{min-height:44px;line-height:var(--teloa-leading-body)}.window .icon{min-width:36px;min-height:36px}
 @media(max-width:600px){.window .icon{min-width:44px;min-height:44px}.composer textarea{font-size:var(--teloa-font-touch-input)}}

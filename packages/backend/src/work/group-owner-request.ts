@@ -50,7 +50,12 @@ async function readChain(db:Database,owner:string,groupId:string,messageId:strin
   if(message?.author_id==='self')return [await own(id)]
   const {readTrustedGroupMessageRunSource}=await import('./group-routing-outbox.ts')
   const source=await readTrustedGroupMessageRunSource(db,owner,{groupId,messageId:id},pool)
-  if(!source)throw new WorkError('teloa/forbidden','员工工作交接缺少可信原运行来源。')
+  if(!source){
+   const {readTrustedGroupReplySource}=await import('./group-reply-executions.ts'),reply=await readTrustedGroupReplySource(db,owner,{groupId,messageId:id})
+   if(!reply)throw new WorkError('teloa/forbidden','员工工作交接缺少可信原执行来源。')
+   const previous=await read(reply.snapshot.messageId),fixed=messages(reply.snapshot.ownerRequest)
+   await Promise.all(fixed.map(item=>own(item.messageId,item)));assertSelection(previous,fixed);return previous
+  }
   const raw=(await db.query('select * from teloa_task_runs where owner_id=$1 and id=$2',[owner,source.runId])).rows[0],run=readStoredTaskRun(raw)
   if(!run.groupContext)throw new WorkError('teloa/forbidden','无法确认本次交接沿用的本人原目标，请核对原工作来源。')
   const inherited=run.groupContext.ownerRequest

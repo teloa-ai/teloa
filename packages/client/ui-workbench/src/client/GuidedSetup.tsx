@@ -18,7 +18,7 @@ export function GuidedSetup({title,description,steps}:{title:string;description:
       <span className={css.index}>{step.state==='complete'?<Check size={14}/>:index+1}</span>
       <span className={css.copy}><strong>{step.title}</strong><small>{step.description}</small></span>
       <span className={css.state}>{step.label??t(step.state==='complete'?'p6.guidedSetup.complete':step.state==='current'?'p6.guidedSetup.current':'p6.guidedSetup.upcoming')}</span>
-      {index<steps.length-1&&<ChevronRight className={css.arrow} size={15} aria-hidden="true"/>}
+      {index<steps.length-1&&<ChevronRight className={css.arrow} size={14} aria-hidden="true"/>}
     </li>)}</ol>
   </section>
 }

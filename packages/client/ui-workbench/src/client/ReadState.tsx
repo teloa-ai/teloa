@@ -44,7 +44,7 @@ export function ReadState({status,subject,loadingLabel,reason,skeleton,cancel,re
   return ()=>{timers.forEach(clearTimeout);clearInterval(tick)}
  },[status,timing.skeleton,timing.slow,timing.timeout])
  if(status==='failed'||status==='timeout')return <div className={css.failed} role="alert">
-  <p className={css.title}><CloudOff size={15} aria-hidden="true"/>{t('readState.failedTitle',{subject})}</p>
+  <p className={css.title}><CloudOff size={16} aria-hidden="true"/>{t('readState.failedTitle',{subject})}</p>
   <p className={css.reason}>{status==='timeout'?t('readState.timeout',{seconds:Math.round(timing.timeout/1000)}):reason}</p>
   <div className={css.actions}><button type="button" className={css.primary} onClick={retry}><RotateCw size={13} aria-hidden="true"/>{t('readState.retry')}</button>{back&&<button type="button" onClick={back}>{t('readState.back')}</button>}</div>
  </div>
@@ -53,7 +53,7 @@ export function ReadState({status,subject,loadingLabel,reason,skeleton,cancel,re
  </div>
  const slow=elapsed>=timing.slow
  return <div className={css.pending} aria-busy="true" data-read-phase={slow?'slow':elapsed>=timing.skeleton?'skeleton':'waiting'}>
-  {slow?<div className={css.slow}><LoaderCircle size={15} className={css.spinner} aria-hidden="true"/><span role="status">{t('readState.slow')}</span><span className={css.elapsed}>{t('readState.elapsed',{seconds:Math.floor(elapsed/1000)})}</span><button type="button" onClick={cancel}>{t('readState.cancel')}</button></div>
+  {slow?<div className={css.slow}><LoaderCircle size={16} className={css.spinner} aria-hidden="true"/><span role="status">{t('readState.slow')}</span><span className={css.elapsed}>{t('readState.elapsed',{seconds:Math.floor(elapsed/1000)})}</span><button type="button" onClick={cancel}>{t('readState.cancel')}</button></div>
    :<p className={css.srOnly} role="status">{loadingLabel}</p>}
   {elapsed>=timing.skeleton&&<div className={css.skeleton} aria-hidden="true">{skeleton}</div>}
  </div>

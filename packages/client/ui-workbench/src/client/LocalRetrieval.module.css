@@ -1,7 +1,7 @@
 .panel { padding: 16px; border: 1px solid var(--teloa-border); border-radius: 12px; background: var(--teloa-surface); color: var(--teloa-text); font-size: var(--teloa-font-body); min-width: 0; overflow-wrap: anywhere; }
 .panel h2 { font-size: var(--teloa-font-detail); margin: 16px 0 8px; }
 .panel h3 { font-size: var(--teloa-font-body); }
-.panel p { line-height: 1.6; }
+.panel p { line-height: var(--teloa-leading-body); }
 .panel button { font: inherit; cursor: pointer; }
 .button, .primary { min-height: 36px; border: 1px solid var(--teloa-border); border-radius: 8px; padding: 7px 12px; background: var(--teloa-surface); color: var(--teloa-text); }
 .primary { background: var(--teloa-accent); color: var(--teloa-on-accent, #fff); }
@@ -11,11 +11,11 @@
 .confirm { margin-top: 16px; padding: 12px; border: 1px solid var(--teloa-border); border-radius: 8px; }
 .sources { margin: 12px 0 0; padding: 8px 12px; border: 1px solid var(--teloa-border); border-radius: 8px; }
 .sources legend { padding: 0 4px; color: var(--teloa-muted); }
-.sources label { display: flex; gap: 8px; align-items: baseline; line-height: 1.6; }
+.sources label { display: flex; gap: 8px; align-items: baseline; line-height: var(--teloa-leading-label); }
 .sources p { margin: 6px 0; }
 .details dl { display: grid; grid-template-columns: minmax(100px, 1fr) minmax(0, 4fr); gap: 12px; }
 .details dt { color: var(--teloa-muted); }
-.details dd { margin: 0; line-height: 1.6; }
+.details dd { margin: 0; line-height: var(--teloa-leading-body); }
 .details code { font-size: .9em; overflow-wrap: anywhere; white-space: normal; }
 .details li { margin: 12px 0; }
 .details summary { cursor: pointer; padding: 8px 0; }
@@ -92,7 +92,7 @@
 .settingsDrawer [data-retrieval-model]{border:0;border-radius:0;margin:0;padding:0}
 
 .excerpt:focus-visible{outline:2px solid var(--teloa-focus);outline-offset:2px}
-.excerpt {white-space:pre-wrap;overflow-wrap:anywhere;max-height:18rem;overflow:auto;font:inherit;line-height:1.6;padding:12px;background:var(--teloa-surface-muted,var(--teloa-surface));border:1px solid var(--teloa-border);border-radius:8px;}
+.excerpt {white-space:pre-wrap;overflow-wrap:anywhere;max-height:18rem;overflow:auto;font:inherit;line-height:var(--teloa-leading-body);padding:12px;background:var(--teloa-surface-muted,var(--teloa-surface));border:1px solid var(--teloa-border);border-radius:8px;}
 
 .trialForm{display:flex;align-items:end;flex-wrap:wrap;gap:12px;}
 .trialForm label{display:grid;gap:6px;flex:1 1 240px;min-width:0;}
@@ -119,3 +119,6 @@
 .bulkFooter>p{font-size:var(--teloa-font-caption);overflow-wrap:anywhere}.bulkFooter>div{display:flex;flex-wrap:wrap;gap:10px;justify-content:flex-end}
 .trialResults{display:grid;gap:14px;margin-top:16px;min-width:0}.trialResults article{min-width:0}.trialResults article>header{display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:10px}.trialResults h4{margin:0;min-width:0;overflow-wrap:anywhere}.trialResults pre{max-width:100%;box-sizing:border-box}
 @media(max-width:600px){.bulkManager{padding:20px}.bulkFooter{margin-inline:-20px;margin-bottom:-20px;padding:14px 20px}.bulkFooter button,.bulkSearch input{min-height:44px}}
+
+/* 深层配置与详情标题使用界面层级，避免浏览器默认字号和粗体。 */
+.trialResults>article>header>h4{font-size:var(--teloa-font-control);font-weight:var(--teloa-weight-heading);}

@@ -34,9 +34,11 @@ export type GroupMessageStatusPresentation={
 
 export function groupMessageStatusPresentation(status:GroupRoutingStatusView,archived:boolean):GroupMessageStatusPresentation{
  const tone=groupStatusTone(status.phase)
+ // 普通交流的回帖就是结果，不把内部 Task/Run 暴露成工作；失败、未知和暂停仍保留原执行入口供处理。
+ const visibleTask=(item:GroupRoutingStatusView['recipients'][number])=>item.executionMode!=='reply'||groupStatusTone(item.phase)==='attention'
  const recipients=status.recipients.filter(item=>groupStatusTone(item.phase)==='attention'&&(item.phase!==status.phase||status.recipients.length>1)).map(({roleId,name,phase,taskId})=>({roleId,name,phase,taskId}))
  const listed=new Set(recipients.flatMap(item=>item.taskId?[item.taskId]:[])),tasks:{taskId:string;name:string}[]=[]
- for(const item of status.recipients)if(item.taskId&&!listed.has(item.taskId)){listed.add(item.taskId);tasks.push({taskId:item.taskId,name:item.name})}
+ for(const item of status.recipients)if(visibleTask(item)&&item.taskId&&!listed.has(item.taskId)){listed.add(item.taskId);tasks.push({taskId:item.taskId,name:item.name})}
  // 交付中的「结果正在贴回」由聚合行的「正在交付结果」表达；其余提示码都是真实原因，照常可读。
  const hintCode=tone==='active'&&status.hintCode==='result-pending'?null:status.hintCode
  return {tone,phase:tone==='attention'?status.phase:null,hintCode,recipients,tasks,canRetry:status.canRetry&&!archived}

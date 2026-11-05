@@ -1,6 +1,6 @@
 /* 群关联工作选择器：紧凑搜索、按需筛选与清晰的选择计数；按钮与字体沿用工作台令牌。 */
 .picker{display:flex;flex-direction:column;gap:14px;padding:14px 20px 18px}
-.notice{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:0;padding:8px 10px;border-radius:8px;background:var(--teloa-subtle);font-size:var(--teloa-font-caption);line-height:1.6}
+.notice{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:0;padding:8px 10px;border-radius:8px;background:var(--teloa-subtle);font-size:var(--teloa-font-caption);line-height:var(--teloa-leading-body)}
 .notice button{flex:none;padding:0;border:0;background:transparent;color:var(--teloa-accent);font:inherit;cursor:pointer}
 .search{display:flex;align-items:center;gap:9px;min-height:38px;padding:0 10px;border:1px solid var(--teloa-border);border-radius:9px;color:var(--teloa-muted)}
 .search:focus-within{border-color:var(--teloa-focus)}

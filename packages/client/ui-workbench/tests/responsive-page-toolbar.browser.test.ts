@@ -73,7 +73,7 @@ async function automationAlignment(page:any,label:string){
  assert.ok(Math.max(...positions)-Math.min(...positions)<2,label+' 标题、页签和搜索应共用左边线：'+positions)
  await fits(page,label)
  const density=await page.locator('[data-continuous-mode] [data-teloa-field-shell]').first().evaluate((node:Element)=>({height:node.getBoundingClientRect().height,line:Number.parseFloat(getComputedStyle(node.querySelector('input')!).lineHeight)}))
- assert.ok(density.height<=density.line+22,label+' 搜索控件不应重复叠加输入框内边距')
+ assert.ok(density.height<=Math.max(density.line+22,44),label+' 搜索控件在保留窄窗口44px目标后不应重复叠加内边距：'+JSON.stringify(density))
 }
 
 for(const theme of ['light','dark'])for(const font of [14,28]){

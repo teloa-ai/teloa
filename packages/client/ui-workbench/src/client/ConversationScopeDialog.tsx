@@ -19,7 +19,7 @@ export function ConversationScopeDialog({name,options,close,select}:Props){
   const dismissEvents=useDialogDismiss(close)
   return <dialog ref={dialog} className={css.dialog} aria-label={t('conversationDialog.scopeTitle')} {...dismissEvents}>
     <form onSubmit={event=>{event.preventDefault();if(selected)select(selected)}}>
-      <header><div><h2>{t('conversationDialog.scopeTitle')}</h2><p>{t('conversationDialog.scopeDescription',{name})}</p></div><button type="button" className={css.icon} aria-label={t('conversationDialog.close')} onClick={close}><X size={18}/></button></header>
+      <header><div><h2>{t('conversationDialog.scopeTitle')}</h2><p>{t('conversationDialog.scopeDescription',{name})}</p></div><button type="button" className={css.icon} aria-label={t('conversationDialog.close')} onClick={close}><X size={16}/></button></header>
       <label htmlFor="teloa-create-scope">{t('conversationDialog.scope')}</label>
       <select id="teloa-create-scope" ref={control} required value={selected} onChange={event=>setSelected(event.target.value)}>
         {options.map(option=><option key={option.id} value={option.id}>{option.label}</option>)}

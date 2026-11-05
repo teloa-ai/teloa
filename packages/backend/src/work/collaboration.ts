@@ -161,6 +161,7 @@ export async function initializeCollaboration(pool:Pool):Promise<void>{
     );
     alter table teloa_group_messages add column if not exists task_id uuid;
     alter table teloa_group_messages add column if not exists run_id uuid;
+    alter table teloa_group_messages add column if not exists reply_execution_id uuid;
     alter table teloa_group_messages add column if not exists full_text text;
     alter table teloa_group_messages add column if not exists full_text_meta jsonb;
     do $$ begin
@@ -173,10 +174,12 @@ export async function initializeCollaboration(pool:Pool):Promise<void>{
       if exists(select 1 from pg_constraint where conrelid='teloa_group_messages'::regclass and conname='teloa_group_messages_author_id_check') then
         alter table teloa_group_messages drop constraint teloa_group_messages_author_id_check;
       end if;
-      if not exists(select 1 from pg_constraint where conrelid='teloa_group_messages'::regclass and conname='teloa_group_messages_author_execution_v1') then
-        alter table teloa_group_messages add constraint teloa_group_messages_author_execution_v1 check(
-          (author_id='self' and task_id is null and run_id is null) or
-          (author_id<>'self' and task_id is not null and run_id is not null)
+      alter table teloa_group_messages drop constraint if exists teloa_group_messages_author_execution_v1;
+      if not exists(select 1 from pg_constraint where conrelid='teloa_group_messages'::regclass and conname='teloa_group_messages_author_execution_v2') then
+        alter table teloa_group_messages add constraint teloa_group_messages_author_execution_v2 check(
+          (author_id='self' and task_id is null and run_id is null and reply_execution_id is null) or
+          (author_id<>'self' and task_id is not null and run_id is not null and reply_execution_id is null) or
+          (author_id<>'self' and task_id is null and run_id is null and reply_execution_id is not null)
         );
       end if;
     end $$;

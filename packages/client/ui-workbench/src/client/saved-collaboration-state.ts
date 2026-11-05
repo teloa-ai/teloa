@@ -29,8 +29,8 @@ export function groupMentionCandidates(members:readonly GroupMember[],roles:read
 }
 
 /** 新回传作者取已验证服务端消息的执行快照；旧消息沿既有历史身份回退。 */
-export function groupMessageIdentity(message:{authorId:string;runId?:string;source?:unknown;author?:unknown},roleNames:Readonly<Record<string,string>>,t:TeloaTranslate):{name:string;kind:'human'|'employee'|'twin'}{
- if(!message.runId)return {name:roleNames.self||t('collaboration.message.self'),kind:'human'}
+export function groupMessageIdentity(message:{authorId:string;runId?:string;replyExecutionId?:string;source?:unknown;author?:unknown},roleNames:Readonly<Record<string,string>>,t:TeloaTranslate):{name:string;kind:'human'|'employee'|'twin'}{
+ if(!message.runId&&!message.replyExecutionId)return {name:roleNames.self||t('collaboration.message.self'),kind:'human'}
  if(message.author&&typeof message.author==='object'){
   const author=message.author as Record<string,unknown>
   if(typeof author.name==='string'&&author.name.trim()&&(author.kind==='employee'||author.kind==='twin')&&Number.isSafeInteger(author.version)&&Number(author.version)>0)return {name:author.kind==='twin'?roleNames[message.authorId]??author.name:author.name,kind:author.kind}
@@ -56,14 +56,14 @@ export function groupMentionLabel(role:PreviewRole,candidates:readonly PreviewRo
 }
 
 /**
- * 正文里光标前那段「行首或空白后的 @前缀」；没有就返回 undefined。
+ * 正文里光标前的 @前缀；中文不依赖空格分词，也允许在中文或分隔标点后打开候选。
  * 只用来决定弹不弹候选与过滤词，绝不据此推断 roleId——提及一律由选择动作产生。
  */
 export function groupMentionQuery(text:string,caret:number):{start:number;query:string}|undefined{
  const before=text.slice(0,caret),start=before.lastIndexOf('@')
  if(start<0)return undefined
  const previous=start>0?before[start-1]:undefined
- if(previous!==undefined&&!/\s/.test(previous))return undefined
+ if(previous!==undefined&&!/[\s\p{Script=Han}（【「『《〈，。！？：；、(\[{]/u.test(previous))return undefined
  const query=before.slice(start+1)
  return /[\s@]/.test(query)?undefined:{start,query}
 }

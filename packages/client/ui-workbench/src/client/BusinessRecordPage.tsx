@@ -135,8 +135,8 @@ function SavedRecords({page,scope,flow,importFlow,capabilities,onDispatch,taskLi
    <div className={css.actions}>
     {onDispatch&&<button type="button" disabled={busy||!!state.form||detailLoading||detailError} onClick={()=>onDispatch(businessObjectReference({scope:selected.scope,type:selected.type,id:selected.id,version:selected.version,snapshotHash:selected.snapshotHash}))}>{t('business.records.dispatch')}</button>}
     {!historical&&!selected.deletedAt&&selected.source==='本地记录'&&rights.edit&&<button type="button" disabled={busy||!!state.form||detailLoading||detailError} onClick={()=>start('edit')}>{t('business.records.edit')}</button>}
-    {!historical&&!selected.deletedAt&&selected.source==='本地记录'&&rights.archive&&<button type="button" disabled={busy||!!state.form||detailLoading||detailError} onClick={()=>start('archive')}><Archive size={15} aria-hidden="true"/>{t('business.records.archive')}</button>}
-    {historical&&!referenceOnly&&<button type="button" disabled={detailLoading} onClick={()=>void read(selected)}><ArrowLeft size={15} aria-hidden="true"/>{t('business.records.current')}</button>}
+    {!historical&&!selected.deletedAt&&selected.source==='本地记录'&&rights.archive&&<button type="button" disabled={busy||!!state.form||detailLoading||detailError} onClick={()=>start('archive')}><Archive size={16} aria-hidden="true"/>{t('business.records.archive')}</button>}
+    {historical&&!referenceOnly&&<button type="button" disabled={detailLoading} onClick={()=>void read(selected)}><ArrowLeft size={16} aria-hidden="true"/>{t('business.records.current')}</button>}
    </div>
    {taskList&&!detailLoading&&!detailError&&<BusinessTaskList {...taskList} scope={scope} object={{type:selected.type,id:selected.id}}/>}
    {flow.api.work?.enabled&&!detailLoading&&!detailError&&!selected.deletedAt&&<BusinessWorkResults key={JSON.stringify([selected.id,selected.version])} reference={businessObjectReference({scope:selected.scope,type:selected.type,id:selected.id,version:selected.version,snapshotHash:selected.snapshotHash})} title={selected.title} api={flow.api.work} openTask={taskList?.openTask}/>}

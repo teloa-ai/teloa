@@ -4,5 +4,5 @@
 .provenance summary:focus-visible{outline:2px solid var(--teloa-text);outline-offset:3px}
 .provenance p{margin:6px 0;max-width:64ch;overflow-wrap:anywhere}
 .body{overflow-wrap:anywhere;user-select:text}
-.footer{display:flex;flex-wrap:wrap;gap:8px;align-items:center;font-size:.85em}
+.footer{display:flex;flex-wrap:wrap;gap:8px;align-items:center;font-size:var(--teloa-font-caption)}
 .warning{color:var(--teloa-danger,#b42318)}

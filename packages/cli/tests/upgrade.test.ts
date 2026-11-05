@@ -92,10 +92,10 @@ test('只有显式升级把一次性计划重启回执交给新宿主；普通�
 })
 
 
-test('data17保留全部历史迁移并明确追加1..16的备份迁移边',async()=>{
+test('data18保留全部历史迁移并明确追加1..17的备份迁移边',async()=>{
  const {dataVersionMetadata}=await import('../src/data-version.ts')
- assert.equal(dataVersionMetadata.dataVersion,17);assert.deepEqual(dataVersionMetadata.compatibleDataVersions,[17])
- assert.equal(dataVersionMetadata.migrations.length,136)
- assert.equal(new Set(dataVersionMetadata.migrations.map(row=>row.from+':'+row.to)).size,136)
- for(let to=2;to<=17;to++)for(let from=1;from<to;from++)assert.ok(dataVersionMetadata.migrations.some(row=>row.from===from&&row.to===to))
+ assert.equal(dataVersionMetadata.dataVersion,18);assert.deepEqual(dataVersionMetadata.compatibleDataVersions,[18])
+ assert.equal(dataVersionMetadata.migrations.length,153)
+ assert.equal(new Set(dataVersionMetadata.migrations.map(row=>row.from+':'+row.to)).size,153)
+ for(let to=2;to<=18;to++)for(let from=1;from<to;from++)assert.ok(dataVersionMetadata.migrations.some(row=>row.from===from&&row.to===to))
 })

@@ -26,10 +26,10 @@ export function AdoptConversationDialog({management,candidates,available,close}:
     finally{pending.current=false;if(active.current)setBusy(undefined)}
   }
   return <dialog ref={dialog} className={css.dialog} aria-label={t('adoptDialog.title')} {...dismissEvents}>
-    <header><h2>{t('adoptDialog.title')}</h2><button type="button" aria-label={t('adoptDialog.closeAria')} onClick={close}><X size={18}/></button></header>
+    <header><h2>{t('adoptDialog.title')}</h2><button type="button" aria-label={t('adoptDialog.closeAria')} onClick={close}><X size={16}/></button></header>
     <label data-teloa-field-shell className={css.search}><Search size={16} aria-hidden/><input ref={search} aria-label={t('adoptDialog.search')} value={query} onChange={event=>setQuery(event.target.value)} placeholder={t('adoptDialog.placeholder')}/></label>
     {!available||!state.ready?<p role="status">{t('adoptDialog.waiting')}</p>:<div className={css.list} role="group" aria-label={t('adoptDialog.available')}>
-      {rows.length===0?<p>{t(needle?'adoptDialog.noMatches':'adoptDialog.noneAvailable')}</p>:rows.map(row=><button type="button" className={css.row} key={row.id} disabled={!!busy||!!state.pending[row.id]} aria-busy={busy===row.id||undefined} onClick={()=>void submit(row)}><MessageSquare size={18} aria-hidden/><span><strong>{row.title}</strong><small>{row.workspace}</small></span>{busy===row.id?<LoaderCircle className={css.loading} size={16} aria-label={t('adoptDialog.adopting')}/>:<ChevronRight className={css.open} size={16} aria-hidden/>}</button>)}
+      {rows.length===0?<p>{t(needle?'adoptDialog.noMatches':'adoptDialog.noneAvailable')}</p>:rows.map(row=><button type="button" className={css.row} key={row.id} disabled={!!busy||!!state.pending[row.id]} aria-busy={busy===row.id||undefined} onClick={()=>void submit(row)}><MessageSquare size={16} aria-hidden/><span><strong>{row.title}</strong><small>{row.workspace}</small></span>{busy===row.id?<LoaderCircle className={css.loading} size={16} aria-label={t('adoptDialog.adopting')}/>:<ChevronRight className={css.open} size={16} aria-hidden/>}</button>)}
     </div>}
     {error&&<p role="alert">{error}</p>}
   </dialog>

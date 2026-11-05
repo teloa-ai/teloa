@@ -1,7 +1,7 @@
 .card{min-width:0;max-width:100%;box-sizing:border-box;padding:20px;border:1px solid var(--teloa-border);border-radius:12px;background:var(--teloa-surface);color:var(--teloa-text);font-size:var(--teloa-font-body);line-height:var(--teloa-leading-body,1.5);overflow-wrap:anywhere}
 .card h2{margin:0;font-size:var(--teloa-font-section)}
 .hint{margin:8px 0;color:var(--teloa-muted)}
-.status{margin:16px 0;font-weight:600}
+.status{margin:16px 0;font-weight:var(--teloa-weight-regular)}
 .notice{padding:12px;border:1px solid var(--teloa-border);border-radius:8px;margin:12px 0}
 .form{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px}
 .form label{display:flex;min-width:0;flex-direction:column;gap:8px}
@@ -12,3 +12,6 @@
 .card button:disabled,.form select:disabled{opacity:.55;cursor:default}
 .card button:focus-visible,.form select:focus-visible{outline:2px solid var(--teloa-focus);outline-offset:2px}
 @media(max-width:740px){.card{padding:16px}.form{grid-template-columns:minmax(0,1fr)}.card button,.form select{min-height:44px}}
+
+/* 深层配置与详情标题使用界面层级，避免浏览器默认字号和粗体。 */
+.card>header>h2{font-weight:var(--teloa-weight-heading);}

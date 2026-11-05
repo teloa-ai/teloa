@@ -9,7 +9,7 @@ import {useBusinessScopes} from './business-scope-context.js'
 import {useI18n} from './i18n/provider.js'
 import {localizeWorkError} from './i18n/errors.js'
 import {isCompletedGroupReply} from './group-task-source-presentation.js'
-import {groupWorkTaskStateLabel} from './task-list-presentation.js'
+import {groupWorkTaskStateLabel,isGroupReplyExecution} from './task-list-presentation.js'
 export {isCompletedGroupReply} from './group-task-source-presentation.js'
 import css from './CollaborationPage.module.css'
 import picker from './GroupLinkedWork.module.css'
@@ -21,7 +21,7 @@ const defaultKind=(scope:string):GroupWorkLink['kind']=>scope==='general'?'task'
 /** 列表与数量的同一来源：显式关联、仅在项目侧的关联，以及来源于本群但未显式关联的派生任务。 */
 export function groupLinkedWorkRows(detail:GroupWorkLinks|undefined,tasks:readonly PreviewTask[],messageStatuses:readonly GroupRoutingStatusView[]=[]){
  const linked=detail?.items??[],projectLinks=detail?.projectLinks??[],projectOnly=projectLinks.filter(project=>!linked.some(item=>groupWorkLinkKey(item)===groupWorkLinkKey(project)))
- return {linked,projectLinks,projectOnly,displayLinks:[...linked,...projectOnly],implicit:tasks.filter(task=>!linked.some(link=>link.kind==='task'&&link.id===task.id)&&!isCompletedGroupReply(task,messageStatuses,detail?.groupId))}
+ return {linked,projectLinks,projectOnly,displayLinks:[...linked,...projectOnly],implicit:tasks.filter(task=>!linked.some(link=>link.kind==='task'&&link.id===task.id)&&!isGroupReplyExecution(task)&&!isCompletedGroupReply(task,messageStatuses,detail?.groupId))}
 }
 
 /** 概览页签与员工负责事项使用的真实计数；未读到时返回 undefined，不以 0 冒充。 */
@@ -78,7 +78,7 @@ export function GroupLinkedWork({profileName,group,api,tasks,taskDirectory=tasks
  return <section className={css.workSummary}>
   <header><div className={picker.linkActions}>
    {filterOptions.length>1&&<select className={picker.listFilter} aria-label={copy('筛选关联工作','篩選關聯工作','Filter linked work')} value={activeFilter} onChange={event=>setFilter(event.target.value)}><option value="all">{copy('全部关联工作','全部關聯工作','All linked work')}</option>{filterOptions.map(([kind,count])=><option key={kind} value={kind}>{category(kind)+' · '+count}</option>)}</select>}
-   <button type="button" className={css.iconButton} disabled={blocked||busy||!detail||!!pending} aria-label={copy('关联工作','關聯工作','Link work')} title={copy('关联已有工作','關聯已有工作','Link existing work')} onClick={()=>{setSelection(value=>value??linked);setFormBase(value=>value??detail);setEditing(true)}}><Plus size={17}/></button>
+   <button type="button" className={css.iconButton} disabled={blocked||busy||!detail||!!pending} aria-label={copy('关联工作','關聯工作','Link work')} title={copy('关联已有工作','關聯已有工作','Link existing work')} onClick={()=>{setSelection(value=>value??linked);setFormBase(value=>value??detail);setEditing(true)}}><Plus size={16}/></button>
   </div></header>
   {error&&<p role="alert">{error}<button type="button" onClick={()=>setRevision(value=>value+1)}>{t('common.retry')}</button></p>}
   {!detail&&!error&&<p role="status" className={css.hint}>{copy('正在读取关联工作…','正在讀取關聯工作…','Loading linked work…')}</p>}
@@ -101,7 +101,7 @@ export function GroupLinkedWork({profileName,group,api,tasks,taskDirectory=tasks
     {Object.keys(scopes).length>1&&<select className={picker.scope} aria-label={copy('业务空间','業務空間','Business space')} disabled={busy} value={scope} onChange={event=>setScope(event.target.value)}>{Object.entries(scopes).map(([id,name])=><option key={id} value={id}>{name}</option>)}</select>}
    </div>
    <section className={picker.section}><header><h3>{copy('已选','已選','Selected')}</h3><span>{selection?.length??0}</span></header>
-    {(selection??[]).map(item=><div className={picker.row} key={groupWorkLinkKey(item)}><span><strong>{label(item)}</strong><small>{category(item.kind)} · {scopes[item.scope]??item.scope}</small></span><button type="button" className={picker.remove} aria-label={copy('移除关联：','移除關聯：','Unlink: ')+label(item)} disabled={busy} onClick={()=>setSelection(rows=>(rows??[]).filter(row=>groupWorkLinkKey(row)!==groupWorkLinkKey(item)))}><X size={15}/></button></div>)}
+    {(selection??[]).map(item=><div className={picker.row} key={groupWorkLinkKey(item)}><span><strong>{label(item)}</strong><small>{category(item.kind)} · {scopes[item.scope]??item.scope}</small></span><button type="button" className={picker.remove} aria-label={copy('移除关联：','移除關聯：','Unlink: ')+label(item)} disabled={busy} onClick={()=>setSelection(rows=>(rows??[]).filter(row=>groupWorkLinkKey(row)!==groupWorkLinkKey(item)))}><X size={16}/></button></div>)}
    </section>
    {!!projectOnly.length&&<section className={picker.section}><header><h3>{copy('来自项目','來自專案','From projects')}</h3><span>{projectOnly.length} · {copy('在原项目中调整','在原專案中調整','Manage in the project')}</span></header>
     {projectOnly.map(item=><button type="button" key={groupWorkLinkKey(item)} className={picker.link} disabled={!item.available} onClick={()=>open(item)}>{label(item)}</button>)}

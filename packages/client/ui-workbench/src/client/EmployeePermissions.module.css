@@ -1,19 +1,22 @@
 .permissions{min-width:0;color:var(--teloa-text);display:grid;gap:20px}
 .heading{display:flex;align-items:flex-start;justify-content:space-between;gap:20px}
 .heading h2{margin:0;font-size:var(--teloa-font-section,18px);font-weight:var(--teloa-weight-heading,600)}
-.permissions p{margin:6px 0 0;line-height:1.75;font-size:var(--teloa-font-control,14px)}
+.permissions p{margin:6px 0 0;line-height:var(--teloa-leading-body);font-size:var(--teloa-font-control,14px)}
 .heading p,.muted{color:var(--teloa-muted,#666);font-size:var(--teloa-font-caption,13px)}
 .refresh{flex:none;border:0;background:transparent;color:var(--teloa-muted,#666);padding:5px 0;font:inherit;font-size:var(--teloa-font-caption,13px);cursor:pointer}
 .summary{margin:0;border:1px solid var(--teloa-border,#ddd);border-radius:var(--teloa-design-r2,10px);overflow:hidden}
 .summary>div{padding:17px 20px;border-bottom:1px solid var(--teloa-border,#ddd)}.summary>div:last-child{border-bottom:0}
 .summary dt{font-size:var(--teloa-font-caption,13px);color:var(--teloa-muted,#666);margin:0 0 8px}
-.summary dd{margin:0;min-width:0;line-height:1.8;font-size:var(--teloa-font-control,14px)}
+.summary dd{margin:0;min-width:0;line-height:var(--teloa-leading-label);font-size:var(--teloa-font-control,14px)}
 .tags{display:flex;flex-wrap:wrap;gap:6px}.tags>span{padding:2px 8px;background:var(--teloa-subtle,#f5f5f5);border:1px solid var(--teloa-border,#ddd);border-radius:var(--teloa-design-r1,6px);font-size:var(--teloa-font-caption,13px)}
 .toolNames{display:flex;flex-wrap:wrap;gap:5px 14px;padding:0;margin:7px 0 0;list-style:none;color:var(--teloa-muted,#666);font-size:var(--teloa-font-caption,13px)}
-.group{border-top:1px solid var(--teloa-border,#ddd);padding-top:16px}.group>summary{cursor:pointer;font-size:var(--teloa-font-control,14px);font-weight:var(--teloa-weight-medium,500);line-height:1.6}
+.group{border-top:1px solid var(--teloa-border,#ddd);padding-top:16px}.group>summary{cursor:pointer;font-size:var(--teloa-font-control,14px);font-weight:var(--teloa-weight-medium,500);line-height:var(--teloa-leading-label)}
 .content{margin-top:16px;min-width:0}.group:not([open])>.content{display:none}
 .pending{border:1px solid var(--teloa-border,#ddd);background:var(--teloa-subtle,#f5f5f5);border-radius:var(--teloa-design-r1,6px);padding:12px 16px;font-size:var(--teloa-font-control,14px)}
 .pending p{font-size:var(--teloa-font-caption,13px);color:var(--teloa-muted,#666)}
 @media(max-width:600px){.summary>div{padding:14px}.heading{gap:12px}.permissions{gap:16px}}
 
 .group>summary>small{display:block;font-weight:400;margin:5px 0 0}
+
+/* 仅规范本组件的界面标签；正文和代码中的强调保持原样。 */
+.pending>strong{font-weight:var(--teloa-weight-regular)}

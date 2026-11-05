@@ -15,7 +15,7 @@ export function DialogueNameDialog({title,value,hint,allowEmpty=false,close,save
  const dismiss=()=>close(draft),dismissEvents=useDialogDismiss(dismiss)
  useEffect(()=>openDialog(dialog.current,input.current),[])
  return <dialog ref={dialog} className={base.dialog+' '+css.dialog} aria-labelledby={id} {...dismissEvents}><div className={css.content}>
-  <header className={css.header}><h2 id={id}>{title}</h2><button type="button" className={css.close} aria-label={t('market.common.close')} onClick={dismiss}><X size={18}/></button></header>
+  <header className={css.header}><h2 id={id}>{title}</h2><button type="button" className={css.close} aria-label={t('market.common.close')} onClick={dismiss}><X size={16}/></button></header>
   <form onSubmit={event=>{event.preventDefault();try{save(draft);close()}catch(cause){setError(dialogueErrorCopy(locale,cause))}}}>
    <label className={css.field}>{dialogueCopy(locale,'name')}<input ref={input} value={draft} maxLength={80} required={!allowEmpty} onChange={event=>{setDraft(event.target.value);setError('')}}/></label>
    {hint&&<p className={css.description}>{hint}</p>}{error&&<p role="alert" className={css.error}>{error}</p>}
@@ -28,7 +28,7 @@ export function DialogueFolderMoveDialog({entry,title,organization,close}:{entry
  const [folder,setFolder,clearFolder]=useLightDraft('dialogue-move:'+JSON.stringify([entry.kind,entry.id]),()=>state.placements[JSON.stringify([entry.kind,entry.id])]??''),[error,setError]=useState(''),dismissEvents=useDialogDismiss(close)
  useEffect(()=>openDialog(dialog.current,select.current),[])
  return <dialog ref={dialog} className={base.dialog+' '+css.dialog} aria-labelledby={id} {...dismissEvents}><div className={css.content}>
-  <header className={css.header}><h2 id={id}>{dialogueCopy(locale,'move')}</h2><button type="button" className={css.close} aria-label={t('market.common.close')} onClick={close}><X size={18}/></button></header><p className={css.subject}>{title}</p>
+  <header className={css.header}><h2 id={id}>{dialogueCopy(locale,'move')}</h2><button type="button" className={css.close} aria-label={t('market.common.close')} onClick={close}><X size={16}/></button></header><p className={css.subject}>{title}</p>
   <form onSubmit={event=>{event.preventDefault();try{organization.move(entry,folder||null);clearFolder();close()}catch(cause){setError(dialogueErrorCopy(locale,cause))}}}><label className={css.field}>{dialogueCopy(locale,'folders')}<select ref={select} value={folder} onChange={event=>setFolder(event.target.value)}><option value="">{dialogueCopy(locale,'unfiled')}</option>{state.folders.map(row=><option key={row.id} value={row.id}>{row.name}</option>)}</select></label>{error&&<p role="alert" className={css.error}>{error}</p>}<footer className={css.footer}><button type="button" onClick={close}>{t('market.common.cancel')}</button><button type="submit" className={css.primary}>{dialogueCopy(locale,'save')}</button></footer></form>
  </div></dialog>
 }

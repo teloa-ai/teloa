@@ -57,7 +57,7 @@ function MetricValue({text}:{text:string}){
   void document.fonts?.ready.then(scheduleFit)
   return ()=>{active=false;observer.disconnect();if(frame!==undefined)cancelAnimationFrame(frame)}
  },[text])
- return <strong ref={ref} title={text}>{text}</strong>
+ return <strong className={css.clippedText} ref={ref} title={text}>{text}</strong>
 }
 
 /** 日期桶是 UTC 身份；按稳定维度重新本地化，不能沿用宿主计算的中文标签。 */

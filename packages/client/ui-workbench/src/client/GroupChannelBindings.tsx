@@ -22,7 +22,7 @@ export function GroupChannelBindings({groupId,context}:{groupId:string;context?:
  },[groupId,context?.api,revision])
  const current=read?.groupId===groupId?read:undefined
  return <section className={css.channelBindings}>
-  <header><h3>{t('collaboration.form.tab.channels')}</h3>{context&&<button type="button" className={css.iconButton} aria-label={t('collaboration.action.refresh')} title={t('collaboration.action.refresh')} onClick={()=>setRevision(value=>value+1)}><RefreshCw size={15}/></button>}</header>
+  <header><h3>{t('collaboration.form.tab.channels')}</h3>{context&&<button type="button" className={css.iconButton} aria-label={t('collaboration.action.refresh')} title={t('collaboration.action.refresh')} onClick={()=>setRevision(value=>value+1)}><RefreshCw size={16}/></button>}</header>
   {!context?<p className={css.hint}>{t('collaboration.channels.unavailable')}</p>:!current?<p className={css.hint} role="status">{t('collaboration.state.loading')}</p>:'failed' in current?<p className={css.hint} role="alert">{t('collaboration.channels.failed')}</p>:current.bindings.length===0?<p className={css.hint}>{t('collaboration.channels.empty')}</p>:<div className={css.resourceList}>{current.bindings.map(binding=>{
    const channel=current.channels.find(item=>item.channelId===binding.channelId)
    const state=!channel?'unknown':!channel.enabled?'disabled':channel.status.error?'error':channel.status.connected?'connected':'disconnected'

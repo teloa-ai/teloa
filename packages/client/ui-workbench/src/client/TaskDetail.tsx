@@ -211,7 +211,7 @@ export function TaskDetail(props:TaskDetailProps):JSX.Element{
   const statusChildren=<>
         {completion?.rework&&<TaskOwnerRework task={task} api={completion.rework} blocked={value=>setReworkBlock({identity:runIdentity,blocked:value})}/>}
         {attentionReason&&<p className={css.muted} data-teloa-attention-reason aria-label={t('task.detail.attentionReason')}>{attentionReason}</p>}
-        {error&&<div className={css.error} role="alert">{error}<button type="button" onClick={()=>setError(undefined)} aria-label={t('task.detail.closeError')}><X size={15}/></button></div>}
+        {error&&<div className={css.error} role="alert">{error}<button type="button" onClick={()=>setError(undefined)} aria-label={t('task.detail.closeError')}><X size={16}/></button></div>}
         <TaskInputNotice draft={draft} task={task} roles={roles} roleDirectory={roleDirectory} review={review}/>
         {responsible?.state==='paused'&&<p className={css.muted}>{t('task.detail.pausedRole')}</p>}
         {missingToolRun&&<section className={detailCss.section} role="alert" data-teloa-anchor="run-tools-missing">

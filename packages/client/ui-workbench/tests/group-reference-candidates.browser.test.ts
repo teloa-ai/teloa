@@ -103,10 +103,18 @@ test('群输入框引用候选：分组、外点/Esc、键盘与 IME、选一次
  await page.keyboard.press('ArrowDown');assert.equal(await page.locator('li[role="option"][aria-selected="true"]').getAttribute('id'),'resource-main-55555555-5555-4555-8555-555555555555')
  await page.keyboard.press('ArrowUp');await page.keyboard.press('Tab')
  assert.equal(await message.inputValue(),'@林析 ','选员工仍插入 @名字 标记')
+ // 中文连写不要求用户先补空格；在正文中间选择后，继续输入应落在员工标记后而非正文末尾。
+ await message.fill('请，核对。');await message.evaluate((node:HTMLTextAreaElement)=>node.setSelectionRange(1,1));await page.keyboard.type('@林');
+ await listbox('提及员工或引用资料').waitFor();await page.keyboard.press('Tab');
+ assert.equal(await message.inputValue(),'请@林析 ，核对。');assert.equal(await focused(),'群讨论消息');
+ await page.waitForFunction(()=>{const node=document.querySelector('textarea[aria-label="群讨论消息"]') as HTMLTextAreaElement;return node.selectionStart===5});
+ await page.keyboard.type('先');assert.equal(await message.inputValue(),'请@林析 先，核对。');
+
  // 发送：引用只带 id 与固定版本（资料 v2、原附件 v1），没有任何授权请求。
  await message.fill('@林析 请核对合同与方案。');await page.keyboard.press('Enter')
  await page.waitForFunction(()=>(window as any).referenceFixture.sent.length===1)
  const sent=await page.evaluate(()=>(window as any).referenceFixture.sent[0])
+ assert.deepEqual(sent.mentions,[{roleId:'33333333-3333-4333-8333-333333333333',expectedVersion:1}],'中文选中员工后发送仍带固定岗位身份，而非只发送纯文本');
  assert.deepEqual(sent.references,[{kind:'group-resource',id:'44444444-4444-4444-8444-444444444444',version:2},{kind:'attachment',id:'att-shared',version:1}])
  assert.equal(await page.evaluate(()=>(window as any).referenceFixture.grants),0,'选资料/文件不触发员工授权')
  assert.deepEqual(await chips(),[],'发送后标签随草稿清空')

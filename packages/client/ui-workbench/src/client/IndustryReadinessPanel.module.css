@@ -34,3 +34,9 @@
 .batch summary{cursor:pointer;min-height:32px;display:flex;align-items:center}
 .batch details ul{padding-inline-start:20px}
 .batch summary:focus-visible{outline:2px solid var(--teloa-focus);outline-offset:2px}
+
+/* 仅规范本组件的界面标签；正文和代码中的强调保持原样。 */
+.batch>ul>li>strong{font-weight:var(--teloa-weight-regular)}
+
+/* 深层配置与详情标题使用界面层级，避免浏览器默认字号和粗体。 */
+.batch>h4{font-size:var(--teloa-font-control);font-weight:var(--teloa-weight-heading);}

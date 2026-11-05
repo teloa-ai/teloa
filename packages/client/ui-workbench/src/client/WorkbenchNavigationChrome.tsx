@@ -30,7 +30,7 @@ export function WorkbenchHubNavigation({view,onSelect}:{view:WorkbenchView;onSel
 /** 品牌区只保留字标与版本名；产品介绍与构建号统一在「关于」页，不再在顶部弹出重复卡片。 */
 export function WorkbenchNavigationBrand({product,colorScheme,onClose}:{product:ApplicationPresentation['product'];colorScheme:'light'|'dark';onClose:()=>void}){
  const {locale,t}=useI18n()
- return <div className={css.brand}><div className={css.brandIdentity}><div className={css.brandHeading}><img src={colorScheme==='dark'?darkLogo:lightLogo} alt="Teloa"/><span className={css.brandTier}>{applicationProductName(product,locale)}</span></div></div><button type="button" className={css.mobileClose} aria-label={t('shell.navigation.close')} onClick={onClose}><X size={17}/></button></div>
+ return <div className={css.brand}><div className={css.brandIdentity}><div className={css.brandHeading}><img src={colorScheme==='dark'?darkLogo:lightLogo} alt="Teloa"/><span className={css.brandTier}>{applicationProductName(product,locale)}</span></div></div><button type="button" className={css.mobileClose} aria-label={t('shell.navigation.close')} onClick={onClose}><X size={16}/></button></div>
 }
 
 /** 1.0：应用并入市场，侧栏只留「市场」；应用是市场里的一个分类。 */

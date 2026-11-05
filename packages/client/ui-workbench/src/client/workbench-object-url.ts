@@ -208,7 +208,9 @@ export function attachWorkbenchObjectHistory(ports:HistoryPorts){
     if(!live||request!==epoch)return
     const hash=workbenchObjectHash(route)
     if(hash!==win.location.hash){
-     if((settled||businessPageChanged)&&!explicit&&!switched){if(!win.location.hash||win.location.hash.startsWith(prefix))win.history.replaceState(win.history.state,'',hash)}
+     // 新建先展示原生准备入口；随后绑定回填属于同一次导航，即使仍记得上一个会话也不追加历史。
+     const resolvesNativeEntry=route.base.kind==='conversation'&&!route.detail&&win.location.hash===workbenchObjectHash({base:{kind:'directory',view:'messages',mode:'native'}})
+     if(!explicit&&(resolvesNativeEntry||(settled||businessPageChanged)&&!switched)){if(!win.location.hash||win.location.hash.startsWith(prefix))win.history.replaceState(win.history.state,'',hash)}
      else win.history.pushState({...entry(),[historyKey]:undefined},'',hash)
     }
     if(win.location.hash!==hash)return

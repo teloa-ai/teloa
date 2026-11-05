@@ -1,9 +1,15 @@
 .picker,.references{display:flex;flex-direction:column;gap:12px;min-width:0}
 .picker{max-height:460px;overflow:auto;border:1px solid var(--teloa-border);border-radius:10px;padding:14px;background:var(--teloa-sidebar)}
-.choice{display:flex;flex-direction:column;gap:10px;padding:14px;border:1px solid var(--teloa-border);border-radius:10px;min-width:0}
-.choice p{margin:0;line-height:1.7}.choice small,.image small{color:var(--teloa-muted)}
+.choice{display:flex;flex-direction:column;gap:8px;padding:10px;border:1px solid var(--teloa-border);border-radius:10px;min-width:0}
+.choice p{margin:0;line-height:var(--teloa-leading-body)}.choice small,.image small{color:var(--teloa-muted)}
 .identity{font-size:var(--teloa-font-caption);overflow-wrap:anywhere}.original{white-space:pre-wrap;overflow-wrap:anywhere;max-height:300px;overflow:auto}
 .image{display:flex;flex-direction:column;gap:8px;border-top:1px solid var(--teloa-border);padding-top:12px;min-width:0}
 .thumbnail,.expandedImage{max-width:100%;width:auto;height:auto;object-fit:contain;align-self:flex-start;border:1px solid var(--teloa-border);border-radius:8px}.thumbnail{max-height:360px}.expandedImage{max-height:70vh}
 .picker button,.choice button{align-self:flex-start}.choice button{max-width:100%}
-.messagePreview{max-height:150px;overflow:hidden;overflow-wrap:anywhere;font-size:var(--teloa-font-control);line-height:1.6}.messagePreview h1,.messagePreview h2,.messagePreview h3{margin:0 0 6px;font-size:var(--teloa-font-control);line-height:1.5}.messagePreview p{line-height:1.6}.original h1,.original h2,.original h3{font-size:var(--teloa-font-control);line-height:1.5}
+.messagePreview{max-height:150px;overflow:hidden;overflow-wrap:anywhere;font-size:var(--teloa-font-control);line-height:var(--teloa-leading-body)}.messagePreview h1,.messagePreview h2,.messagePreview h3{margin:0 0 6px;font-size:var(--teloa-font-control);line-height:var(--teloa-leading-heading)}.messagePreview p{line-height:var(--teloa-leading-body)}.original h1,.original h2,.original h3{font-size:var(--teloa-font-control);line-height:var(--teloa-leading-reading)}
+
+/* 仅规范本组件的界面标签；正文和代码中的强调保持原样。 */
+.choice>strong,.image>strong{font-weight:var(--teloa-weight-regular)}
+
+/* 深层配置与详情标题使用界面层级，避免浏览器默认字号和粗体。 */
+.references>h3{font-size:var(--teloa-font-section);font-weight:var(--teloa-weight-heading);}

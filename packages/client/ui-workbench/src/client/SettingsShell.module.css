@@ -4,7 +4,7 @@
 .navigationViewport{position:relative;grid-column:1;grid-row:1;min-width:0;min-height:0;border-right:1px solid var(--teloa-border)}
 .navigation{box-sizing:border-box;display:flex;height:100%;max-width:100%;flex-direction:column;gap:0;min-width:0;padding:16px 10px 12px;overflow:auto}
 .navigationScrollHint{display:none}
-.navigationEntry{display:block;flex:none;min-width:0;margin-top:2px}.navigationEntry:has(>.navigationGroup){margin-top:16px;padding-top:12px;border-top:1px solid var(--teloa-border)}.navigationEntry:first-child{margin-top:0;padding-top:0;border-top:0}.navigationGroup{display:block;margin-bottom:3px;padding:2px 10px 6px;color:var(--teloa-secondary);font-size:var(--teloa-font-caption);font-weight:var(--teloa-weight-medium);letter-spacing:.04em;line-height:var(--teloa-leading-label)}
+.navigationEntry{display:block;flex:none;min-width:0;margin-top:2px}.navigationEntry:has(>.navigationGroup){margin-top:16px;padding-top:12px;border-top:1px solid var(--teloa-border)}.navigationEntry:first-child{margin-top:0;padding-top:0;border-top:0}.navigationGroup{display:block;margin-bottom:3px;padding:2px 10px 6px;color:var(--teloa-secondary);font-size:var(--teloa-font-caption);font-weight:var(--teloa-weight-regular);letter-spacing:.04em;line-height:var(--teloa-leading-label)}
 /* 分类之间只留间距，不画分隔线；分类名与条目同一左边线。 */
 @media(min-width:761px){.navigationEntry:not(:first-child):has(>.navigationGroup){margin-top:16px}}
 @media(max-width:760px){.navigationEntry{display:flex;align-items:center}.navigationEntry:not(:first-child):has(>.navigationGroup){margin-top:0}.navigationGroup{display:none}}
@@ -44,7 +44,7 @@
 
 /* 所有设置子页的阅读轴、字段和分组标题。 */
 @media(min-width:761px){.layout{grid-template-columns:220px minmax(0,1fr)}}
-.navigation{padding:20px 12px}.navigation button{min-height:38px;padding:8px 12px;font-size:var(--teloa-font-control)}.navigationGroup{padding-left:12px;color:var(--teloa-muted);font-weight:600;letter-spacing:0}
+.navigation{padding:20px 12px}.navigation button{min-height:38px;padding:8px 12px;font-size:var(--teloa-font-control)}.navigationGroup{padding-left:12px;color:var(--teloa-muted);font-weight:var(--teloa-weight-regular);letter-spacing:0}
 .navigationEntry:has(>.navigationGroup){border-top:0;margin-top:20px;padding-top:0}.content{padding:32px var(--teloa-page-gutter) 48px;scroll-padding-top:24px}
 .general{max-width:880px}.pageTitle,.sectionHeading{margin-bottom:24px}.general>.pageTitle{padding-bottom:20px;border-bottom:1px solid var(--teloa-border)}
 .shell :where(input:not([type=checkbox],[type=radio]),textarea,select){max-width:100%;font-family:inherit;min-height:38px}
@@ -52,3 +52,10 @@
 .shell :where(label,p){overflow-wrap:anywhere}.developerTools{padding-block:20px;gap:20px}.developerTools strong{font-size:var(--teloa-font-body)}
 .connection{max-width:880px;padding:14px 16px}.webPolicy{margin-top:24px;border-radius:12px}.runtimeSurface,.componentStatus{max-width:960px}
 @media(max-width:760px){.layout{padding:20px;gap:16px}.navigation{padding:0 32px 4px 0;gap:24px}.navigation button{min-height:44px;padding:8px 0}.navigationEntry:has(>.navigationGroup){margin-top:0}.content{padding:4px 0 24px}.general>.pageTitle{padding-bottom:16px}.developerTools{align-items:flex-start}.shell :where(input:not([type=checkbox],[type=radio]),textarea,select){min-width:0}}
+
+/* 原生 Agent 预设页按公开设置标识接入工作台字阶，不依赖其 CSS 模块类名。 */
+.content[data-teloa-settings-page="agent-presets"] span[title]{font-size:var(--teloa-font-list);font-weight:var(--teloa-weight-regular)}
+.content[data-teloa-settings-page="agent-presets"] h3{font-size:var(--teloa-font-caption);font-weight:var(--teloa-weight-medium)}
+
+.content :where(summary){box-sizing:border-box;min-height:var(--teloa-action-inline,24px);padding-block:2px;line-height:var(--teloa-leading-label,1.5)}
+.content :where(button:has(>svg)){min-width:var(--teloa-action-inline,24px);min-height:var(--teloa-action-inline,24px)}

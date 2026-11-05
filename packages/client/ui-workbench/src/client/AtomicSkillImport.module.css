@@ -2,3 +2,6 @@
 .identity small,.metadata>summary{color:var(--teloa-muted);font-size:var(--teloa-font-caption)}
 .metadata>summary{cursor:pointer}
 .fields{display:grid;gap:13px;padding-top:13px}
+
+/* 仅规范本组件的界面标签；正文和代码中的强调保持原样。 */
+.identity>strong{font-weight:var(--teloa-weight-regular)}

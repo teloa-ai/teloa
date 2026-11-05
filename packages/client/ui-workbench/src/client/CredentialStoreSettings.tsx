@@ -28,8 +28,8 @@ export function CredentialStoreSettings({api}:{api:CredentialStoreApi}){
  const allSelected=selectable.length>0&&selectable.every(copy=>selected.includes(copy.id))
  return <section className={css.page} aria-label={t('credentialStore.title')}>
   <h2>{t('credentialStore.title')}</h2>
-  {status?.fault&&<div className={css.missing} role="alert"><TriangleAlert size={15} aria-hidden="true"/><span>{t('credentialStore.locked')} {faultDetail}</span></div>}
-  {status&&!status.fault&&status.tier==='plaintext'&&<div className={css.missing} role="alert"><TriangleAlert size={15} aria-hidden="true"/><span>{t('credentialStore.tier.plaintext')}</span></div>}
+  {status?.fault&&<div className={css.missing} role="alert"><TriangleAlert size={16} aria-hidden="true"/><span>{t('credentialStore.locked')} {faultDetail}</span></div>}
+  {status&&!status.fault&&status.tier==='plaintext'&&<div className={css.missing} role="alert"><TriangleAlert size={16} aria-hidden="true"/><span>{t('credentialStore.tier.plaintext')}</span></div>}
   {status&&!status.fault&&(status.tier==='keyring'||status.tier==='file')&&<div className={css.info}><HardDrive size={14} aria-hidden="true"/><span>{t(status.tier==='keyring'?'credentialStore.tier.keyring':'credentialStore.tier.file')}</span></div>}
   {error&&<p role="alert">{error}</p>}
   {refused>0&&<p role="status">{t('credentialStore.copies.refused',{count:refused})}</p>}

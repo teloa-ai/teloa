@@ -1,3 +1,4 @@
+import css from './BusinessBuilderPanel.module.css'
 import {useEffect,useMemo,useRef,useState} from 'react'
 import type {BusinessBuilderApi} from './business-builder-api.js'
 import {useI18n} from './i18n/provider.js'
@@ -24,6 +25,6 @@ export function BusinessSetupReview({api,scope,open,adjust}:{api:BusinessBuilder
  return <section aria-label={t('business.more.changes')}>
   {error&&<p role="alert">{error} <button type="button" onClick={()=>setRevision(value=>value+1)}>{t('common.retry')}</button></p>}
   {!items&&!error&&<p role="status">{t('business.builder.loading')}</p>}
-  {items&&(!items.length?<><p>{t('business.more.noSetupChanges')}</p><button type="button" onClick={adjust}>{t('business.more.openBuilder')}</button></>:<><p>{t('business.more.setupChangesNote')}</p><ul>{items.map(item=><li key={item.draftId}><strong>{item.title}</strong> <button type="button" disabled={busy} onClick={()=>void inspect(item)}>{t('business.plan.review')}</button></li>)}</ul></>)}
+  {items&&(!items.length?<><p>{t('business.more.noSetupChanges')}</p><button type="button" onClick={adjust}>{t('business.more.openBuilder')}</button></>:<><p>{t('business.more.setupChangesNote')}</p><ul>{items.map(item=><li key={item.draftId}><strong className={css.reviewItemLabel}>{item.title}</strong> <button type="button" disabled={busy} onClick={()=>void inspect(item)}>{t('business.plan.review')}</button></li>)}</ul></>)}
  </section>
 }

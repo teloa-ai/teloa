@@ -4,21 +4,21 @@
 .heading h2{flex:1 1 240px;font-size:var(--teloa-font-section);font-weight:var(--teloa-weight-heading);line-height:var(--teloa-leading-heading)}
 .heading h2 [title],.heading h2[title]{-webkit-line-clamp:2}
 .facts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:2px 16px;margin:0 0 16px;padding:4px 0 12px;border-bottom:1px solid var(--teloa-border)}
-.fact,.wideFact{display:grid;grid-template-columns:minmax(4.5em,76px) minmax(0,1fr);align-items:start;gap:8px;min-height:34px;padding:2px 0;font-size:var(--teloa-font-control);line-height:1.6}
+.fact,.wideFact{display:grid;grid-template-columns:minmax(4.5em,76px) minmax(0,1fr);align-items:start;gap:8px;min-height:34px;padding:2px 0;font-size:var(--teloa-font-control);line-height:var(--teloa-leading-body)}
 .wideFact{grid-column:1/-1}
 .fact dt,.wideFact dt{color:var(--teloa-muted);font-size:var(--teloa-font-caption);padding-top:4px}
 .fact dd,.wideFact dd{margin:0;min-width:0;display:flex;flex-wrap:wrap;gap:8px;align-items:center;overflow-wrap:anywhere;min-height:30px}
 .fact button.link,.wideFact button.link,.resultBlock button.link{display:inline-flex;align-items:center;gap:7px;min-height:30px;min-width:0;border:0;background:transparent;padding:2px 0;color:var(--teloa-text);font-size:var(--teloa-font-control);font-weight:var(--teloa-weight-regular);text-align:left;cursor:pointer}
 .link:hover{color:var(--teloa-accent)!important;text-decoration:underline;text-underline-offset:3px}
 .link>svg{flex:none;color:var(--teloa-muted)}
-.ownerName{min-width:0;white-space:normal;overflow-wrap:anywhere;line-height:1.5}
+.ownerName{min-width:0;white-space:normal;overflow-wrap:anywhere;line-height:var(--teloa-leading-label)}
 .ownerActions{display:flex;align-items:center;gap:12px;flex-wrap:wrap;min-width:0;max-width:100%}
 .ownerActions>.link{max-width:100%}
 .section{margin:0 0 24px;min-width:0}
 .statusPanel{margin:0 0 20px;min-width:0}
 .statusPanel>[data-teloa-status-box]{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;margin:0;padding:12px 14px;border-radius:8px;background:var(--teloa-subtle)}
 .statusPanel>[data-teloa-status-box]>p:first-child{flex:1 1 220px;font-size:var(--teloa-font-control);margin:0}
-.statusPanel [data-teloa-attention-reason]{order:2;flex-basis:100%;margin:0;font-size:var(--teloa-font-caption);line-height:1.6}
+.statusPanel [data-teloa-attention-reason]{order:2;flex-basis:100%;margin:0;font-size:var(--teloa-font-caption);line-height:var(--teloa-leading-label)}
 .statusPanel>[data-teloa-status-box]>div:has(>[data-teloa-primary]){order:1;display:flex;flex-wrap:wrap;gap:6px;margin:0}
 .statusPanel [data-teloa-primary],.statusPanel>[data-teloa-status-box]>div:has(>[data-teloa-primary])>button{min-height:32px;width:auto;padding:5px 10px;font-size:var(--teloa-font-caption)}
 .statusPanel .error,.statusPanel form{flex-basis:100%}

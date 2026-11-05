@@ -15,7 +15,7 @@ export type NativeInputProducer=Extract<WorkAccessRequest,{kind:'native-input'}>
 // identity 由拥有实际发布点的 producer 构造。它只绑定上下文，不凭此标记授予许可。
 export type NativeInputContext=Readonly<{producer:NativeInputProducer;identity:string}>
 /** 宿主实际工作归属的附加准入；不向模型或浏览器公开。 */
-export type ResidentInputAdmission={acquire:(input:{sessionId:string;producer:NativeInputProducer;sourceKind?:string})=>Promise<WorkAccessLease|null>;continuation?:(agent:Agent,message:UserMessage,ticketId:string)=>Promise<{snapshot:NativeCheckpointSnapshot;roots:readonly NativeInputRoot[];lease:WorkAccessLease}>;restore?:(input:NativeInputRestoreInput,base:NativeInputRestore)=>ReturnType<NativeInputRestore>;nativeCheckpoint?:NativeInputCheckpoint;nativeProgress?:NativeProgressCheckpoint}
+export type ResidentInputAdmission={acquire:(input:{sessionId:string;producer:NativeInputProducer;sourceKind?:string;nativeRequestId?:string;message?:UserMessage})=>Promise<WorkAccessLease|null>;continuation?:(agent:Agent,message:UserMessage,ticketId:string)=>Promise<{snapshot:NativeCheckpointSnapshot;roots:readonly NativeInputRoot[];lease:WorkAccessLease}>;restore?:(input:NativeInputRestoreInput,base:NativeInputRestore)=>ReturnType<NativeInputRestore>;nativeCheckpoint?:NativeInputCheckpoint;nativeProgress?:NativeProgressCheckpoint}
 type SubagentInput=Readonly<{kind:'initial'|'live'|'resume';agent:Agent;sender:Agent;message:UserMessage;signal?:AbortSignal}>
 type SubagentCompletion=Readonly<{agent:Agent;message:UserMessage;childId:string}>
 const producers=new Set<NativeInputProducer>(['prompt','queue','subagent','schedule','goal','task-run'])
@@ -38,7 +38,7 @@ export function createNativeWorkInput(ctx:Context,access:WorkAccess=workAccess,c
   const session=agent.session,identity=nativeInputIdentity(snapshot,rpcId)
   const assertTarget=()=>{signal?.throwIfAborted();if(ctx.agents.get(agent.id)!==agent||agent.session!==session||(Reflect.get(ctx,'sessions') as unknown as SessionStore).get(agent.id)!==session)throw denied()}
   assertTarget()
-  return {session,identity,rpcId,sourceKind:snapshot.source.kind,assertTarget:()=>{causality.assertReady();assertTarget()}}
+  return {session,identity,rpcId,message:snapshot,sourceKind:snapshot.source.kind,assertTarget:()=>{causality.assertReady();assertTarget()}}
  }
  const publish=(prepared:ReturnType<typeof prepare>,lease:WorkAccessLease,submit:()=>void,ordinary=false)=>{
   const assertLease=lease.assertCurrent,assertContinuation=lease.assertContinuationCurrent??assertLease
@@ -58,11 +58,11 @@ export function createNativeWorkInput(ctx:Context,access:WorkAccess=workAccess,c
   })
  }
  const resident=()=>ctx.get('teloaResidentInputAdmission' as never) as ResidentInputAdmission|undefined
- const residentLease=async(sessionId:string,producer:NativeInputProducer,sourceKind?:string)=>{
+ const residentLease=async(sessionId:string,producer:NativeInputProducer,sourceKind?:string,nativeRequestId?:string,message?:UserMessage)=>{
   const provider=resident()
   if(provider===undefined){if(requireResident)throw new WorkError('teloa/unavailable','工作服务正在准备，请稍后继续。');return null}
   if(typeof provider.acquire!=='function')throw denied()
-  const lease=await provider.acquire({sessionId,producer,...(sourceKind===undefined?{}:{sourceKind})});if(lease!==null&&typeof lease?.assertCurrent!=='function')throw denied();return lease
+  const lease=await provider.acquire({sessionId,producer,...(sourceKind===undefined?{}:{sourceKind}),...(nativeRequestId===undefined?{}:{nativeRequestId}),...(message===undefined?{}:{message})});if(lease!==null&&typeof lease?.assertCurrent!=='function')throw denied();return lease
  }
  // 默认base只投影数据根，不授予执行权；固定宿主仍必须用持久恢复票据逐根许可。
  const baseRestore:NativeInputRestore|undefined=restore??(requireResident?input=>{
@@ -93,7 +93,7 @@ export function createNativeWorkInput(ctx:Context,access:WorkAccess=workAccess,c
   await causality.whenReady();prepared.assertTarget()
   const capabilities=await access.authorizeSessionCapabilities(agent.id,producer)
   prepared.assertTarget();capabilities.assertCurrent()
-  const roleLease=await residentLease(agent.id,producer,prepared.sourceKind)
+  const roleLease=await residentLease(agent.id,producer,prepared.sourceKind,prepared.rpcId,prepared.message)
   const projectLease=await projectRuntimeInputHooks(ctx)?.acquire(agent,message,signal)
   const lease=await access.authorize(request)
   const publishInput=prepared.sourceKind==='plugin:teloa.delivery-review'?()=>{if(producer!=='task-run'||!ownsDeliveryReviewInput(agent,message))throw denied();causality.publishActiveContinuation(agent,message,submit)}:submit

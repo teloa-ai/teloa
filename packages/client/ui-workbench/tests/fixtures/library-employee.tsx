@@ -7,7 +7,7 @@ import {translateMessage} from '../../src/client/i18n/messages.js'
 import {prototypeThemes} from '../../src/brand/prototype-theme.js'
 import tokens from '../../src/client/theme-tokens.module.css'
 
-const stamp='2026-01-01T00:00:00Z',hash='a'.repeat(64)
+const stamp='2026-01-01T00:00:00Z',hash='9e79b1835b49364cca68f031efe4be3942cf71e852a9ea344f2594316742f1b6',markdown='# 合成员工资料\n\n仅用于界面验收。'
 
 // 一条普通粘贴资料 + 两条员工资料
 const pasteRes={id:'paste-res-1',ownerId:'self',title:'产品知识笔记',sourceId:'knowledge_paste-res-1',sourceVersion:hash,scopeIds:['general'],status:'active',version:1,createdAt:stamp,updatedAt:stamp}
@@ -16,9 +16,9 @@ const empRes2={id:'emp-know-2',ownerId:'self',title:'员工专项资料乙',sour
 const resources=[pasteRes,empRes1,empRes2]
 
 const sources=[
-  {id:'knowledge_paste-res-1',title:'产品知识笔记',source:'个人空间/产品知识笔记',version:hash,bytes:80,knowledge:{knowledgeId:'paste-res-1',knowledgeVersion:1,workspaceId:'default',category:'reference',topics:[],scopeIds:['general']}},
-  {id:'knowledge_emp-know-1',title:'员工专项资料甲',source:'个人空间/员工专项资料甲',version:hash,bytes:60,knowledge:{knowledgeId:'emp-know-1',knowledgeVersion:1,workspaceId:'default',category:'reference',topics:[],scopeIds:['general']}},
-  {id:'knowledge_emp-know-2',title:'员工专项资料乙',source:'个人空间/员工专项资料乙',version:hash,bytes:60,knowledge:{knowledgeId:'emp-know-2',knowledgeVersion:1,workspaceId:'default',category:'reference',topics:[],scopeIds:['general']}},
+  {id:'knowledge_paste-res-1',title:'产品知识笔记',source:'个人空间/产品知识笔记',version:hash,bytes:80,knowledge:{knowledgeId:'11111111-1111-4111-8111-111111111111',knowledgeVersion:1,workspaceId:'default',category:'reference',topics:[],scopeIds:['general']}},
+  {id:'knowledge_emp-know-1',title:'员工专项资料甲',source:'个人空间/员工专项资料甲',version:hash,bytes:60,knowledge:{knowledgeId:'22222222-2222-4222-8222-222222222222',knowledgeVersion:1,workspaceId:'default',category:'reference',topics:[],scopeIds:['general']}},
+  {id:'knowledge_emp-know-2',title:'员工专项资料乙',source:'个人空间/员工专项资料乙',version:hash,bytes:60,knowledge:{knowledgeId:'33333333-3333-4333-8333-333333333333',knowledgeVersion:1,workspaceId:'default',category:'reference',topics:[],scopeIds:['general']}},
 ]
 
 const treeRoot:any={id:'root',spaceId:'space',parentId:null,type:'space',title:'个人空间',path:['root'],siblingOrder:0,createdAt:stamp,updatedAt:stamp}
@@ -28,8 +28,8 @@ const api:any={
   directory:async()=>({drafts:[],resources}),
   sources:async()=>sources,
   knowledgeTree:async()=>tree,
-  listKnowledgeVersions:async()=>[],
-  readKnowledgeVersion:async()=>null,
+  listKnowledgeVersions:async(knowledgeId:string)=>[{knowledgeId,ownerId:'self',sourceId:'88888888-8888-4888-8888-888888888888',sourceType:'paste',version:1,contentHash:hash,bytes:new TextEncoder().encode(markdown).length,createdAt:stamp}],
+  readKnowledgeVersion:async(knowledgeId:string)=>({knowledgeId,ownerId:'self',sourceId:'88888888-8888-4888-8888-888888888888',sourceType:'paste',version:1,contentHash:hash,bytes:new TextEncoder().encode(markdown).length,createdAt:stamp,markdown}),
   readContent:async()=>null,
   reviseKnowledgeResource:async()=>{throw Error('fixture：不支持编辑')},
   createKnowledgeFolder:async()=>{throw Error('fixture：不支持创建文件夹')},

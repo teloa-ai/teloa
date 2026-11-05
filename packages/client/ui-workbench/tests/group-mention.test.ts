@@ -206,12 +206,15 @@ const chooseOption=(app:ReturnType<typeof mount>,label:string)=>{optionOf(app,la
 const mentionByTyping=(app:ReturnType<typeof mount>,name:string)=>{const before=draftText(app);typeText(app,(before&&!/\s$/.test(before)?before+' ':before)+'@'+name);chooseOption(app,name)}
 const chipLabels=(app:ReturnType<typeof mount>)=>app.findAll(el=>el.type==='span'&&el.props.className==='mentionChip').map(el=>app.contentOf(el))
 
-test('光标前的 @前缀只在行首或空白后成立，且遇到空白或第二个 @ 就失效',()=>{
+test('光标前的 @前缀兼容中文连续输入和分隔标点，保留邮箱与查询边界',()=>{
  assert.deepEqual(groupMentionQuery('@员','@员'.length),{start:0,query:'员'})
  assert.deepEqual(groupMentionQuery('你好 @员工',6),{start:3,query:'员工'})
  assert.equal(groupMentionQuery('邮箱a@b',5),undefined)
  assert.equal(groupMentionQuery('@员工 甲',4),undefined)
  assert.equal(groupMentionQuery('没有触发词',5),undefined)
+ assert.deepEqual(groupMentionQuery('你好@员工',6),{start:2,query:'员工'})
+ assert.deepEqual(groupMentionQuery('请核对：@员',7),{start:4,query:'员'})
+ assert.equal(groupMentionQuery('mail@example.com',16),undefined)
 })
 
 test('同名同事的候选项与正文标记都带岗位后缀区分',()=>{

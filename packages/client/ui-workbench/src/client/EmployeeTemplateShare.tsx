@@ -47,7 +47,7 @@ export function TemplateFiles({pkg}:{pkg:SharePackage}){
  const selected=pkg.files.find(file=>file.path===path)??pkg.files[0],reader=useRef<HTMLPreElement>(null),scrolls=useRef(new Map<string,number>())
  const selectFile=(next:string)=>{if(selected&&reader.current)scrolls.current.set(selected.path,reader.current.scrollTop);setPath(next)}
  useLayoutEffect(()=>{if(reader.current)reader.current.scrollTop=scrolls.current.get(selected?.path??'')??0},[selected?.path])
- return <details className={css.disclosure}><summary><FileText size={17} aria-hidden="true"/>{t('templateShare.details')}<span className={css.summaryMeta}>{pkg.files.length}</span></summary><div className={css.detailContent}>
+ return <details className={css.disclosure}><summary><FileText size={16} aria-hidden="true"/>{t('templateShare.details')}<span className={css.summaryMeta}>{pkg.files.length}</span></summary><div className={css.detailContent}>
   {(summary.license||summary.publisher)&&<dl className={css.facts}>{summary.publisher&&<><dt>{t('templateShare.publisher')}</dt><dd>{summary.publisher}</dd></>}{summary.license&&<><dt>{t('templateShare.license')}</dt><dd>{summary.license}</dd></>}{summary.provenance.length>0&&<><dt>{t('templateShare.provenance')}</dt><dd>{summary.provenance.map(s=><span key={s.title}>{s.title} · {s.license}{s.url?' · '+s.url:''}</span>)}</dd></>}</dl>}
   {summary.connections.filter(connection=>connection.setup).map(connection=><div key={connection.resourceId}><strong>{connection.title}</strong><ConnectionTemplateSetup setup={connection.setup!}/></div>)}
   <div className={css.fileReader}><nav aria-label={t('templateShare.files')}>{pkg.files.map(file=><button type="button" key={file.path} aria-pressed={selected?.path===file.path} onClick={()=>selectFile(file.path)}>{file.path}</button>)}</nav>{selected&&<section aria-label={selected.path}><h4>{selected.path}</h4><pre ref={reader}>{selected.text}</pre></section>}</div>{pkg.requirements.length>0&&<><strong>{t('templateShare.requirements')}</strong><ul>{pkg.requirements.map((r,i)=><li key={i}>{r}</li>)}</ul></>}
@@ -136,14 +136,14 @@ export function SharePackageDrawer({open,close,storage,bridge,draftKey,hint,titl
  const mainAction=()=>{
   if(!draft)return null
   if(draft.receipt&&!draft.receipt.revoked)return <>
-   <p className={css.shareLink}><Link2 size={15} aria-hidden="true"/><span aria-label={t('templateShare.shareUrl')}>{draft.receipt.shareUrl}</span></p>
-   <button type="button" className={css.primary} disabled={busy} onClick={()=>void run(async()=>{await navigator.clipboard.writeText(draft.receipt!.shareUrl);setCopied(true)})}><Copy size={17} aria-hidden="true"/><span aria-live="polite">{t(copied?'templateShare.copied':'templateShare.copy')}</span></button>
+   <p className={css.shareLink}><Link2 size={16} aria-hidden="true"/><span aria-label={t('templateShare.shareUrl')}>{draft.receipt.shareUrl}</span></p>
+   <button type="button" className={css.primary} disabled={busy} onClick={()=>void run(async()=>{await navigator.clipboard.writeText(draft.receipt!.shareUrl);setCopied(true)})}><Copy size={16} aria-hidden="true"/><span aria-live="polite">{t(copied?'templateShare.copied':'templateShare.copy')}</span></button>
    {onPublished&&!publicationHandled&&<button type="button" disabled={busy} onClick={()=>void run(()=>confirmPublication(draft))}>{t('templateShare.continueConfirmation')}</button>}
   </>
   if(draft.receipt?.revoked)return editable?<button type="button" className={css.primary} disabled={busy} onClick={()=>void newDraft()}>{t('templateShare.newDraft')}</button>:null
   if(policy?.reason==='authentication-required')return <button type="button" className={css.primary} disabled={busy} onClick={()=>void run(async()=>{await window.teloaApplication?.openAccount();setPolicy(await bridge!.policy())})}>{t('templateShare.account')}</button>
-  if(bridge&&(!policy||policy.canPublish))return <button type="button" className={css.primary} disabled={busy||!policy||blocked} onClick={()=>void publish()}><Link2 size={17} aria-hidden="true"/>{t(busy||!policy?'templateShare.busy':draft.attempted?'templateShare.retry':'templateShare.publish')}</button>
-  return <button type="button" className={css.primary} disabled={busy||blocked} onClick={()=>void exportFile()}><FileDown size={17} aria-hidden="true"/>{t('templateShare.export')}</button>
+  if(bridge&&(!policy||policy.canPublish))return <button type="button" className={css.primary} disabled={busy||!policy||blocked} onClick={()=>void publish()}><Link2 size={16} aria-hidden="true"/>{t(busy||!policy?'templateShare.busy':draft.attempted?'templateShare.retry':'templateShare.publish')}</button>
+  return <button type="button" className={css.primary} disabled={busy||blocked} onClick={()=>void exportFile()}><FileDown size={16} aria-hidden="true"/>{t('templateShare.export')}</button>
  }
  const submission=draft?.receipt?draft.submission:undefined
  return <TemplateShareDrawer open={open} title={title} close={close}>
@@ -157,7 +157,7 @@ export function SharePackageDrawer({open,close,storage,bridge,draftKey,hint,titl
     {mainAction()}
     {(!bridge||policy&&!policy.canPublish)&&<p className={css.note}>{t(templateSharePolicyKey(policy))}</p>}
    </TemplateShareCard>
-   <p className={css.privacy}><ShieldCheck size={17} aria-hidden="true"/><span>{t('templateShare.excluded')}</span></p>
+   <p className={css.privacy}><ShieldCheck size={16} aria-hidden="true"/><span>{t('templateShare.excluded')}</span></p>
    {editable&&!draft.attempted&&sharePackageSummary(draft.package).connections.some(connection=>connection.serverName)&&<details className={css.disclosure}><summary>{t('templateShare.connectionTemplate')}</summary><div className={css.detailContent}><p className={css.note}>{t('templateShare.connectionTemplateHint')}</p>{sharePackageSummary(draft.package).connections.filter(connection=>connection.serverName).map(connection=><ConnectionTemplateSetupEditor key={draft.package.id+'/'+connection.resourceId} title={connection.title} setup={connection.setup} disabled={busy} apply={value=>{const next=editShareConnectionSetup(draft.package,connection.resourceId,value);persist({...draft,package:next,inspection:undefined});void inspect(next).then(inspection=>setDraft(current=>current?.package===next?(storage.setItem(key,JSON.stringify({...current,inspection})),{...current,inspection}):current))}}/>)}</div></details>}
    <TemplateFiles pkg={draft.package}/>
    {editable&&!draft.attempted&&<details className={css.disclosure}><summary>{t('templateShare.editIntro')}</summary><div className={css.detailContent}>

@@ -29,7 +29,7 @@
 .treeDocument:disabled{cursor:default;opacity:.7}
 .treeDocument>svg{color:var(--teloa-muted)}
 .treeDocument>span{display:flex;align-items:center;justify-content:space-between;gap:7px;min-width:0}
-.treeDocument strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:var(--teloa-font-caption);font-weight:var(--teloa-weight-medium)}
+.treeDocument strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:var(--teloa-font-caption);font-weight:var(--teloa-weight-regular)}
 .treeDocument small{flex:none;color:var(--teloa-muted);font-size:var(--teloa-font-caption)}
 .treeEmpty{margin:6px 4px;padding:12px;border-radius:8px;background:var(--teloa-subtle)}
 .treeEmpty p{margin:0 0 7px;color:var(--teloa-muted);font-size:var(--teloa-font-caption)}
@@ -40,7 +40,7 @@
 .folderForm>div,.governance form>div{display:flex;justify-content:flex-end;gap:6px}
 .folderForm button,.governance button{display:inline-flex;align-items:center;justify-content:center;gap:5px;min-height:30px;padding:5px 8px;border:1px solid var(--teloa-border);border-radius:6px;background:var(--teloa-background);color:var(--teloa-text);font:inherit;font-size:var(--teloa-font-caption);cursor:pointer}
 .folderForm button:disabled,.governance button:disabled{cursor:default;opacity:.5}
-.unclassifiedNotice{flex:none;margin:0 12px 12px;color:var(--teloa-muted);font-size:var(--teloa-font-caption);line-height:1.5}
+.unclassifiedNotice{flex:none;margin:0 12px 12px;color:var(--teloa-muted);font-size:var(--teloa-font-caption);line-height:var(--teloa-leading-label)}
 .editor{max-width:760px;margin:0 auto}
 .editor h2,.emptyDetail h2{margin:0;font-size:var(--teloa-font-detail);font-weight:var(--teloa-weight-heading);line-height:var(--teloa-leading-heading)}
 .editor fieldset{min-width:0;margin:0;padding:0;border:0}
@@ -73,7 +73,7 @@
 .loadStatus{flex:none;padding:12px 40px;border-bottom:1px solid var(--teloa-border);color:var(--teloa-muted);font-size:var(--teloa-font-caption)}
 .loadStatus h2{margin:0;font:inherit;font-weight:var(--teloa-weight-heading);color:var(--teloa-text)}.loadStatus p{margin:6px 0}
 @media(max-width:720px){.loadStatus{padding:12px 18px}}
-.emptyDetail p,.muted{color:var(--teloa-muted);font-size:var(--teloa-font-caption);line-height:1.65}
+.emptyDetail p,.muted{color:var(--teloa-muted);font-size:var(--teloa-font-caption);line-height:var(--teloa-leading-body)}
 .version{overflow-wrap:anywhere;color:var(--teloa-muted);font-family:inherit;font-size:var(--teloa-font-caption);font-variant-numeric:tabular-nums;}
 .actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:18px}
 .adoption{max-height:65vh;overflow:auto;border-bottom:1px solid var(--teloa-border);background:var(--teloa-surface)}
@@ -122,7 +122,7 @@
 .fileTable tbody tr:hover{background:var(--teloa-hover)}
 .fileName{display:flex;align-items:center;gap:9px;padding:4px 0;min-height:30px;max-width:270px;border:0;background:transparent;color:var(--teloa-text);font:inherit;text-align:left;cursor:pointer;white-space:normal;overflow-wrap:anywhere}
 .fileName svg{flex:none;color:var(--teloa-muted)}
-.fileName>span{min-width:0;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;line-height:1.4;max-height:2.8em}
+.fileName>span{min-width:0;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;line-height:var(--teloa-leading-heading);max-height:2.8em}
 .fileLocation{display:block;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .fileScope{display:block;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--teloa-text)}
 .favorite{display:grid;place-items:center;width:30px;height:30px;padding:0;border:0;background:transparent;color:var(--teloa-muted);border-radius:6px;cursor:pointer}
@@ -156,10 +156,10 @@
 /* 资料目录、正文和表格：相同的字体轴和对齐边线。 */
 @media(min-width:901px){.workspace{grid-template-columns:280px minmax(0,1fr)}}
 .libraryToolbar{padding:16px 14px 12px;align-items:center}.librarySearch{box-sizing:border-box;min-width:0;height:40px;min-height:40px;border-color:var(--teloa-control-border)}.libraryToolbar .addMenu{flex:none}.libraryToolbar .addMenu>summary{display:grid;place-items:center;box-sizing:border-box;flex:none;width:40px;height:40px;min-height:40px;padding:0;border-radius:9px}.libraryToolbar .addMenu>div{top:calc(100% + 8px);right:0;left:auto;max-width:calc(100vw - 32px);box-sizing:border-box}
-.views{padding-bottom:16px}.views button{min-height:38px}.treeHeader{padding:14px 14px 10px}.treeHeader h2{font-weight:600}.treeDocument,.treeBranch>summary{min-height:38px}.treeDocument strong{font-size:var(--teloa-font-control)}
+.views{padding-bottom:16px}.views button{min-height:38px}.treeHeader{padding:14px 14px 10px}.treeHeader h2{font-weight:var(--teloa-weight-regular)}.treeDocument,.treeBranch>summary{min-height:38px}.treeDocument strong{font-size:var(--teloa-font-control)}
 .detail{padding:28px var(--teloa-page-gutter) 40px;scrollbar-gutter:stable}.documentToolbar{justify-content:flex-end;flex-wrap:wrap;gap:8px}.documentToolbar>button:first-child{margin-right:auto}.documentToolbar button{min-height:38px}
 .tableScroll{border:1px solid var(--teloa-border);border-radius:12px;background:var(--teloa-surface);max-height:calc(100dvh - 250px);overscroll-behavior:contain;scroll-padding-top:46px}
-.fileTable{table-layout:fixed}.fileTable th{position:sticky;top:0;z-index:1;background:var(--teloa-panel);padding:12px;font-weight:500;box-shadow:0 1px 0 var(--teloa-border)}.fileTable td{padding:14px 12px;line-height:1.6;white-space:normal;overflow-wrap:anywhere}.fileTable th:first-child{width:30%}.fileTable th:last-child{width:40px}.fileName{max-width:none;font-size:var(--teloa-font-list);font-weight:500}.fileName>span{line-height:1.5;max-height:3em}.fileName>svg{display:block}.fileScope,.fileLocation{max-width:100%}.listCount{font-size:var(--teloa-font-control);margin-bottom:16px}
+.fileTable{table-layout:fixed}.fileTable th{position:sticky;top:0;z-index:1;background:var(--teloa-panel);padding:12px;font-weight:500;box-shadow:0 1px 0 var(--teloa-border)}.fileTable td{padding:14px 12px;line-height:var(--teloa-leading-body);white-space:normal;overflow-wrap:anywhere}.fileTable th:first-child{width:30%}.fileTable th:last-child{width:40px}.fileName{max-width:none;font-size:var(--teloa-font-list);font-weight:var(--teloa-weight-regular)}.fileName>span{line-height:var(--teloa-leading-label);max-height:3em}.fileName>svg{display:block}.fileScope,.fileLocation{max-width:100%}.listCount{font-size:var(--teloa-font-control);margin-bottom:16px}
 @media(max-width:720px){
  .detail{padding:20px}.libraryToolbar{padding:12px}.librarySearch{height:44px;min-height:44px}.libraryToolbar .addMenu>summary{width:44px;height:44px;min-height:44px}.views{gap:4px}.views button{min-height:44px}
  .tableScroll{max-height:none;overflow:visible;border:0;background:transparent;border-radius:0}.fileTable{display:block;min-width:0}.fileTable thead{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%)}.fileTable tbody{display:grid;gap:12px}.fileTable tr{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:12px;padding:16px;border:1px solid var(--teloa-border);border-radius:12px;background:var(--teloa-surface)}.fileTable td{display:block;min-width:0;padding:0;border:0}.fileTable td:first-child{grid-column:1/-1}.fileTable td[data-label]::before{content:attr(data-label);display:block;color:var(--teloa-muted);font-size:var(--teloa-font-caption);margin-bottom:4px}.fileTable .favorite{width:44px;height:44px;margin-left:auto}.fileLocation,.fileScope{white-space:normal}.documentToolbar>button{min-height:44px}
@@ -170,7 +170,7 @@
 
 /* 跨业务资料操作在独立抽屉内完成，长清单单独滚动。 */
 .adoption{box-sizing:border-box;max-width:none;max-height:none;overflow:visible;margin:0;padding:24px;border:0;background:transparent}
-.adoption .editor{max-width:none;margin:0;padding:0;gap:20px}.adoption .editor>p{margin:0;line-height:1.7}.adoption details{min-width:0}.adoption summary{padding:8px 0;cursor:pointer}.adoption ul{max-height:32dvh;overflow:auto;padding-left:20px;overflow-wrap:anywhere}.adoption li{margin:8px 0}.adoption select{box-sizing:border-box;width:100%;min-width:0;min-height:40px;padding:9px 12px;font-size:var(--teloa-font-control)}.adoption .actions{position:sticky;bottom:0;display:flex;flex-wrap:wrap;justify-content:flex-end;gap:8px;padding-top:16px;background:var(--teloa-surface)}
+.adoption .editor{max-width:none;margin:0;padding:0;gap:20px}.adoption .editor>p{margin:0;line-height:var(--teloa-leading-body)}.adoption details{min-width:0}.adoption summary{padding:8px 0;cursor:pointer}.adoption ul{max-height:32dvh;overflow:auto;padding-left:20px;overflow-wrap:anywhere}.adoption li{margin:8px 0}.adoption select{box-sizing:border-box;width:100%;min-width:0;min-height:40px;padding:9px 12px;font-size:var(--teloa-font-control)}.adoption .actions{position:sticky;bottom:0;display:flex;flex-wrap:wrap;justify-content:flex-end;gap:8px;padding-top:16px;background:var(--teloa-surface)}
 @media(max-width:600px){.adoption{padding:20px}.adoption select{min-height:44px;font-size:var(--teloa-font-touch-input)}}
 /* 阅读保留目录连续性，列表筛选和检索管理不进入正文工作区。 */
 .resourceContent{display:flex;flex:1;min-width:0;min-height:0;flex-direction:column}.resourceContent[hidden],.artifactReaderSeat[hidden]{display:none}.resourceContent>.detail{flex:1}
@@ -180,3 +180,6 @@
 
 .libraryMore>summary{padding:6px 8px;border:0;background:transparent;color:var(--teloa-muted)}.libraryMore>summary:hover{background:var(--teloa-subtle);color:var(--teloa-text)}
 .page[data-reading=true] .documentToolbarActions{flex:none}.documentToolbarActions:empty{display:none}
+
+/* 仅规范本组件的界面标签；正文和代码中的强调保持原样。 */
+.toolCard>strong{font-weight:var(--teloa-weight-regular)}

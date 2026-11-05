@@ -10,8 +10,6 @@ export function ResourceKnowledgeDocument({employees,contextRoleId,beforeLeave,.
  const {t}=useI18n(),[roleId,setRoleId]=useState(contextRoleId??(employees.length===1?employees[0]!.id:'')),[editing,setEditing]=useState(!!contextRoleId)
  const role=employees.find(row=>row.id===roleId),employeeApi=props.api.employeeKnowledge
  if(editing&&role&&employeeApi)return <EmployeeKnowledgeDocument key={role.id+':'+props.resource.id} api={employeeApi} role={role} resource={props.resource} initialMode={contextRoleId?'preview':'write'} onDirtyChange={props.onDirtyChange} onClose={()=>beforeLeave(()=>setEditing(false))}/>
- return <>
-  {employeeApi&&props.resource.status==='active'&&<div className={css.employeeEntry}>{employees.length>0?<><label>{t('employeeKnowledge.target')}{employees.length>1&&!contextRoleId?<select aria-label={t('employeeKnowledge.choose')} value={roleId} onChange={event=>setRoleId(event.target.value)}><option value="">{t('employeeKnowledge.choose')}</option>{employees.map(row=><option key={row.id} value={row.id}>{row.name}</option>)}</select>:<strong>{role?.name??employees[0]!.name}</strong>}</label><button type="button" disabled={!role} onClick={()=>beforeLeave(()=>setEditing(true))}><Pencil size={15}/>{t('employeeKnowledge.edit')}</button></>:<p>{t('employeeKnowledge.none')}</p>}</div>}
-  <KnowledgeDocument {...props}/>
- </>
+ const employeeEntry=employeeApi&&props.resource.status==='active'&&employees.length>0&&<div className={css.employeeEntry}><label>{t('employeeKnowledge.target')}{employees.length>1&&!contextRoleId?<select aria-label={t('employeeKnowledge.choose')} value={roleId} onChange={event=>setRoleId(event.target.value)}><option value="">{t('employeeKnowledge.choose')}</option>{employees.map(row=><option key={row.id} value={row.id}>{row.name}</option>)}</select>:<strong>{role?.name??employees[0]!.name}</strong>}</label><button type="button" disabled={!role} onClick={()=>beforeLeave(()=>setEditing(true))}><Pencil size={16}/>{t('employeeKnowledge.edit')}</button></div>
+ return <KnowledgeDocument {...props} details={<>{props.details}{employeeEntry}</>}/>
 }

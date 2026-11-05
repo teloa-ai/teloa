@@ -13,7 +13,7 @@ import {useI18n} from './i18n/provider.js'
 export type DetailProps={state:TaskPreview;go:(target:BusinessTarget)=>void;openTask:(id:string)=>void;act:(change:BusinessChange)=>boolean;team:()=>void;nativeSettings:()=>void;propose:(refs:ObjectRef[])=>void}
 export const stamp=(value:string,locale?:string)=>new Date(value).toLocaleString(locale,{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'})
 export function InputRefs({refs,go}:{refs:ObjectRef[];go:DetailProps['go']}){return <div className={css.refs}>{refs.map(ref=><button type="button" key={objectKey(ref)} onClick={()=>go({scope:ref.scope,section:'data',id:ref.id,objectType:ref.type})}>{ref.title} · v{ref.version}</button>)}</div>}
-function Back({onClick,label}:{onClick:()=>void;label:string}){return <div className={base.buttons}><button type="button" onClick={onClick}><ArrowLeft size={15}/>{label}</button></div>}
+function Back({onClick,label}:{onClick:()=>void;label:string}){return <div className={base.buttons}><button type="button" onClick={onClick}><ArrowLeft size={16}/>{label}</button></div>}
 const taskStateKeys={ready:'business.task.ready',running:'business.task.running',paused:'business.task.paused',waiting:'business.task.waiting',blocked:'business.task.blocked',completed:'business.task.completed',cancelled:'business.task.cancelled'} as const
 const operationStateKeys={pending:'business.operation.state.pending',approved:'business.operation.state.approved',rejected:'business.operation.state.rejected',changes:'business.operation.state.changes',stale:'business.operation.state.stale',executing:'business.operation.state.executing',unknown:'business.operation.state.unknown',partial:'business.operation.state.partial',verified:'business.operation.state.verified'} as const
 

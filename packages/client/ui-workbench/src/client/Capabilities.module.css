@@ -20,7 +20,7 @@
 .option{display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:7px;cursor:pointer}
 .option:hover,.option[data-selected='true']{background:var(--teloa-hover)}
 .option[data-unavailable='true']{cursor:default}
-.optionText{min-width:0;flex:1;display:grid;gap:3px;font-size:var(--teloa-font-caption);line-height:1.5;overflow-wrap:anywhere}
+.optionText{min-width:0;flex:1;display:grid;gap:3px;font-size:var(--teloa-font-caption);line-height:var(--teloa-leading-label);overflow-wrap:anywhere}
 .optionText strong{font-weight:var(--teloa-weight-medium);font-size:var(--teloa-font-control)}
 .optionText>span{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}.optionText>span,.optionText small{color:var(--teloa-muted)}
 .optionText .blocked{display:flex;align-items:center;gap:4px;color:var(--teloa-muted)}
@@ -34,3 +34,7 @@
 .footer button:disabled{opacity:.55;cursor:not-allowed}
 .picker .notConnected{font-size:var(--teloa-font-caption);color:var(--teloa-muted);padding:8px 9px 2px;margin:0}.notConnected summary{cursor:pointer}
 @media(max-width:740px){.search input{font-size:var(--teloa-font-touch-input)}.option{min-height:44px}.footer.footer button{min-height:44px}}
+
+/* 仅规范本组件的界面标签；正文和代码中的强调保持原样。 */
+.list>li>strong,.toolCard>strong{font-weight:var(--teloa-weight-regular)}
+.notConnected>strong{font-weight:var(--teloa-weight-medium)}

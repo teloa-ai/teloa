@@ -1,3 +1,4 @@
+import {groupReplyContentHash,isGroupReplySession,readTrustedGroupReplySource,type GroupReplyExecution,type GroupReplyExecutionService} from '@teloa/backend'
 import {createHash} from 'node:crypto'
 import {TaskRunSubmissionService,ArtifactAvailabilityService} from '@teloa/backend'
 import {NativeSessionContinuationJournal,initializeNativeSessionContinuations,type NativeSessionCheckpoint} from '@teloa/backend'
@@ -301,6 +302,15 @@ export async function createResidentWorkRuntime(ctx:Context,options:ResidentWork
   return Object.freeze({roots,assertCurrent:()=>{input.signal.throwIfAborted();if(closed||recovering.get(input.sessionId)!==entry||entry.permit.checkpointSha256!==hash(input.snapshot))throw unavailable();lease.assertCurrent();return undefined}})
  }
  const restore=async(input:NativeInputRestoreInput,base:NativeInputRestore):Promise<NativeInputRestoreLease>=>{
+  if(isGroupReplySession(input.sessionId)){
+   if(!replyPorts)throw unavailable()
+   const fixed=await replyPorts.service.get(owner,input.sessionId.slice('group-reply-'.length));if(!fixed||!['submitting','accepted','active','unknown'].includes(fixed.state)||input.messages.length!==1)throw unavailable()
+   const message=input.messages[0]!,source=message.source as unknown as {kind:string;rpcId?:string}
+   if(source.kind!=='user'||source.rpcId!==fixed.nativeRequestId||message.id!==fixed.nativeMessageId||!fixed.nativeInputSha256||groupReplyContentHash(message.content)!==fixed.nativeInputSha256)throw unavailable()
+   const routing=await resolveGroupReply(input.sessionId),restored=await base(input);if(!routing||!restored)throw unavailable()
+   return Object.freeze({...restored,assertCurrent:()=>{input.signal.throwIfAborted();routing.lease.assertCurrent();restored.assertCurrent();return undefined}})
+  }
+
   if(automaticContinuation?.admission(input.sessionId))return automaticContinuation.restore(input)
   const entry=recovering.get(input.sessionId);if(!entry){
    if(closed||!manualContinuation)throw unavailable()
@@ -342,6 +352,27 @@ export async function createResidentWorkRuntime(ctx:Context,options:ResidentWork
   await progress.recordRunProgress(value,run.id)
  }
  const events=new WorkEventService(pool,identity,{material:async(db,value,resourceId)=>{assertOwner(value);const row=(await db.query('select spec from teloa_resources where owner_id=$1 and id=$2',[value,resourceId])).rows[0];if(!row||!Array.isArray(row.spec.scopeIds))throw unavailable();const scopes=row.spec.scopeIds as string[],current=(await resources.executionKnowledgeInTransaction(db,{ownerId:value,kind:'agent',scopeIds:scopes},scopes,[resourceId]))[0];if(!current)throw unavailable();return {sourceVersion:current.sourceVersion,contentSha256:createHash('sha256').update(current.text).digest('hex')}},...(options.approval?{approval:options.approval}:{}),...(options.business?{business:options.business}:{}),...(options.businessOrigin?{businessOrigin:options.businessOrigin}:{})},new MarketContentStore(pool,identity))
+ let replyPorts:{service:GroupReplyExecutionService}|undefined
+ const replyInputs=new Map<string,ResidentRoutingBudget>()
+ const bindGroupReply=async(execution:GroupReplyExecution):Promise<()=>void>=>{
+  if(closed||!replyPorts||execution.snapshot.ownerId!==owner||execution.sessionId!=='group-reply-'+execution.id)throw unavailable()
+  const assertRole=await replyPorts.service.authorize(owner,execution.id),leases:WorkAccessLease[]=[{assertCurrent:assertRole}]
+  leases.push(await workAccess.authorize({kind:'capability',capability:'groups',ownerId:owner,sessionId:execution.sessionId,objectId:execution.snapshot.groupId,operation:'run'}))
+  leases.push(await workAccess.authorize({kind:'capability',capability:'people',ownerId:owner,sessionId:execution.sessionId,objectId:execution.snapshot.role.id,operation:'run'}))
+  let budgetAccountId:string|null=null,controlGeneration=1
+  const lineage=execution.snapshot.lineage
+  if(lineage){const db=await pool.connect();try{await db.query('begin');const controlled=await controls.acquireForLineage(owner,{taskId:lineage.rootTaskId,mode:'new-input'},db);leases.push(controlled.lease,await budgets.admissionInTransaction(db,owner,lineage.budgetAccountId));budgetAccountId=lineage.budgetAccountId;controlGeneration=controlled.control.generation;await db.query('commit')}catch(error){await db.query('rollback');throw error}finally{db.release()}}
+  const base=combineWorkAccessLeases(leases),entry:ResidentRoutingBudget={budgetAccountId,controlGeneration,operationId:execution.nativeRequestId,lease:{assertCurrent:()=>{if(closed||replyInputs.get(execution.sessionId)?.operationId!==execution.nativeRequestId)throw unavailable();base.assertCurrent()}}}
+  replyInputs.set(execution.sessionId,entry)
+  // prompt 返回时原生轮次可能仍在跑；保留租约直到后续重核或宿主关闭，不依赖调用栈存活。
+  return ()=>{}
+ }
+ const resolveGroupReply=async(sessionId:string):Promise<ResidentRoutingBudget|null>=>{
+  if(!isGroupReplySession(sessionId))return null
+  if(!replyPorts)throw unavailable()
+  const execution=await replyPorts.service.get(owner,sessionId.slice('group-reply-'.length));if(!execution||!['prepared','submitting','accepted','active','unknown'].includes(execution.state))throw unavailable()
+  await bindGroupReply(execution);return replyInputs.get(sessionId)!
+ }
  const routingInputs=new Map<string,ResidentRoutingBudget>()
  const bindRouting=async(input:{sessionId:string;day:string;groupId:string;messageId:string;nativeRequestId:string;artifactMessageIds?:readonly string[]}):Promise<()=>void>=>{
   if(closed||!/^\d{4}-\d{2}-\d{2}$/.test(input.day)||input.sessionId!==groupRoutingSessionId(owner,input.groupId,input.day)||routingInputs.has(input.sessionId))throw unavailable()
@@ -365,13 +396,21 @@ export async function createResidentWorkRuntime(ctx:Context,options:ResidentWork
     const locked=(await db.query('select archived from teloa_groups where owner_id=$1 and id=$2 for share',[owner,input.groupId])).rows[0];if(!locked||locked.archived)throw unavailable()
     leases.push(await workAccess.authorize({kind:'capability',capability:'groups',ownerId:owner,sessionId:input.sessionId,objectId:input.groupId,operation:'run'}))
    }else{
-    if(!source)throw new WorkError('teloa/conflict','历史角色消息没有可信工作来源，不能自动接力。')
+    if(!source){
+     const reply=await readTrustedGroupReplySource(db,owner,{groupId:input.groupId,messageId:input.messageId})
+     if(!reply||!replyPorts)throw new WorkError('teloa/conflict','历史角色消息没有可信执行来源，不能自动接力。')
+     const assertReply=await replyPorts.service.authorize(owner,reply.id);leases.push({assertCurrent:assertReply})
+     leases.push(await workAccess.authorize({kind:'capability',capability:'groups',ownerId:owner,sessionId:input.sessionId,objectId:input.groupId,operation:'run'}))
+     const lineage=reply.snapshot.lineage
+     if(lineage){const control=await controls.acquireForLineage(owner,{taskId:lineage.rootTaskId,mode:'new-input'},db);leases.push(control.lease,await budgets.admissionInTransaction(db,owner,lineage.budgetAccountId));budgetAccountId=lineage.budgetAccountId;controlGeneration=control.control.generation}
+    }else{
     const role=await new RoleWorkEligibilityService(pool).authorizeGroupRoutingSource(owner,{groupId:input.groupId,messageId:input.messageId},db)
     const run=await(await runs()).readVerifiedInTransaction(db,owner,source.runId)
     if(!run.roleSnapshot||!run.lineage)throw unavailable()
     const control=await controls.acquireForLineage(owner,{taskId:source.taskId,mode:'new-input'},db),budget=await budgets.admissionInTransaction(db,owner,source.lineage.budgetAccountId)
     budgetAccountId=source.lineage.budgetAccountId;controlGeneration=control.control.generation
     leases.push({assertCurrent:role.assertCurrent},control.lease,budget)
+    }
    }
    const base=combineWorkAccessLeases(leases),entry:ResidentRoutingBudget={budgetAccountId,controlGeneration,operationId:input.nativeRequestId,lease:{assertCurrent:()=>{if(closed||routingInputs.get(input.sessionId)!==entry)throw unavailable();base.assertCurrent()}}}
    // 话题向模型裁剪掉 messageId 前先保存原来源；复用当前事务，不嵌套占用第二个池连接。
@@ -380,22 +419,22 @@ export async function createResidentWorkRuntime(ctx:Context,options:ResidentWork
    return ()=>{if(routingInputs.get(input.sessionId)===entry)routingInputs.delete(input.sessionId)}
   }catch(cause){await db.query('rollback');throw cause}finally{db.release()}
  }
- const resolveRouting=async(sessionId:string):Promise<ResidentRoutingBudget|null>=>{if(!isRoutingSession(sessionId))return null;const entry=routingInputs.get(sessionId);if(!entry)throw unavailable();entry.lease.assertCurrent();return entry}
+ const resolveRouting=async(sessionId:string):Promise<ResidentRoutingBudget|null>=>{if(isGroupReplySession(sessionId))return resolveGroupReply(sessionId);if(!isRoutingSession(sessionId))return null;const entry=routingInputs.get(sessionId);if(!entry)throw unavailable();entry.lease.assertCurrent();return entry}
  const unsubscribe=controls.subscribe(async({control,action})=>{if(action!=='resume'&&controlDriver)await controlDriver.apply(owner,control,new AbortController().signal)})
  const resolveRun=async(sessionId:string):Promise<TaskRun|null>=>{
-  if(isRoutingSession(sessionId))return null
+  if(isRoutingSession(sessionId)||isGroupReplySession(sessionId))return null
   const child=(await pool.query('select owner_id,run_id from teloa_task_run_subagents where child_session_id=$1',[sessionId])).rows
   if(child.length){if(child.some(row=>row.owner_id!==owner)||new Set(child.map(row=>row.run_id)).size!==1)throw new WorkError('teloa/forbidden','子会话不属于当前本人的固定执行。');return(await runs()).get(owner,{runId:child[0].run_id})}
   return(await runs()).skillScope(owner,{sessionId})
  }
- const acquire=async(input:{sessionId:string;producer:string;sourceKind?:string}):Promise<WorkAccessLease|null>=>{if(closed)throw unavailable();if(input.producer==='task-run'){const automatic=automaticContinuation?.admission(input.sessionId);if(automatic)return automatic}if(isRoutingSession(input.sessionId)){if(input.producer!=='prompt'&&input.producer!=='queue')throw unavailable();return(await resolveRouting(input.sessionId))!.lease}const run=await resolveRun(input.sessionId);if(!run)return null;if(run.state==='ended'){const continuation=input.producer==='task-run'&&input.sourceKind==='tool-jobs';if(!options.interactiveAdmission||!continuation&&input.producer!=='prompt'&&input.producer!=='queue')throw unavailable();return options.interactiveAdmission(input.sessionId,continuation?true:undefined)}if(input.sourceKind==='user'&&(input.producer==='prompt'||input.producer==='queue'))throw new WorkError('teloa/conflict','原任务仍由执行编排管理，暂不能提交独立追问。');return combineWorkAccessLeases([await(await runs()).executionAdmission(owner,run.id),(await controls.acquireForRun(owner,{runId:run.id,mode:'new-input'})).lease,...(recoveringInputs.has(input.sessionId)?[recoveringInputs.get(input.sessionId)!]:[])])}
+ const acquire=async(input:{sessionId:string;producer:string;sourceKind?:string;nativeRequestId?:string;message?:import('@deepseek-ai/dsh-session').UserMessage}):Promise<WorkAccessLease|null>=>{if(closed)throw unavailable();if(isGroupReplySession(input.sessionId)){if(!replyPorts||input.producer!=='prompt'&&input.producer!=='queue')throw unavailable();const fixed=await replyPorts.service.get(owner,input.sessionId.slice('group-reply-'.length));if(!fixed||fixed.state!=='submitting'||input.nativeRequestId!==fixed.nativeRequestId||input.message?.source.kind!=='user'||!fixed.nativeInputSha256||groupReplyContentHash(input.message.content)!==fixed.nativeInputSha256)throw unavailable();await replyPorts.service.admitNativeInput(owner,fixed.id,input.message.id,groupReplyContentHash(input.message.content));return(await resolveGroupReply(input.sessionId))!.lease}if(input.producer==='task-run'){const automatic=automaticContinuation?.admission(input.sessionId);if(automatic)return automatic}if(isRoutingSession(input.sessionId)){if(input.producer!=='prompt'&&input.producer!=='queue')throw unavailable();return(await resolveRouting(input.sessionId))!.lease}const run=await resolveRun(input.sessionId);if(!run)return null;if(run.state==='ended'){const continuation=input.producer==='task-run'&&input.sourceKind==='tool-jobs';if(!options.interactiveAdmission||!continuation&&input.producer!=='prompt'&&input.producer!=='queue')throw unavailable();return options.interactiveAdmission(input.sessionId,continuation?true:undefined)}if(input.sourceKind==='user'&&(input.producer==='prompt'||input.producer==='queue'))throw new WorkError('teloa/conflict','原任务仍由执行编排管理，暂不能提交独立追问。');return combineWorkAccessLeases([await(await runs()).executionAdmission(owner,run.id),(await controls.acquireForRun(owner,{runId:run.id,mode:'new-input'})).lease,...(recoveringInputs.has(input.sessionId)?[recoveringInputs.get(input.sessionId)!]:[])])}
  const saveNativeCheckpoint=async(input:NativeInputCheckpointInput|NativeProgressCheckpointInput)=>{
   input.assertCurrent()
   if('messages'in input)await manualContinuation?.checkpoint(input)
   if('messages'in input)await automaticContinuation?.checkpoint(input)
   const sessionId=String(input.agent.id)
   // 路由和派生会话保留各自专用恢复协议，不能登记为本人独立会话或任务续作。
-  if(isRoutingSession(sessionId)||input.snapshot.header.origin!==undefined||input.snapshot.header.parentSession!==undefined||input.snapshot.header.isSeeded||(input.snapshot.header.delegationDepth??0)!==0||input.snapshot.inheritedEventCount!==0)return
+  if(isRoutingSession(sessionId)||isGroupReplySession(sessionId)||input.snapshot.header.origin!==undefined||input.snapshot.header.parentSession!==undefined||input.snapshot.header.isSeeded||(input.snapshot.header.delegationDepth??0)!==0||input.snapshot.inheritedEventCount!==0)return
   const rows=(await pool.query('select id,owner_id from teloa_task_runs where session_id=$1 order by created_at desc,id desc',[sessionId])).rows
   if(rows.some(row=>row.owner_id!==owner))throw new WorkError('teloa/forbidden','检查点会话不属于本人。')
   const run=rows.length?await(await runs()).get(owner,{runId:rows[0].id}):null
@@ -440,7 +479,7 @@ export async function createResidentWorkRuntime(ctx:Context,options:ResidentWork
  }
 
  const manualBinding=async(c:NativeSessionCheckpoint,db:Pick<Pool,'query'>=pool):Promise<string>=>{
-  if(closed||c.ownerId!==owner||c.runId!==null||isRoutingSession(c.sessionId))throw unavailable()
+  if(closed||c.ownerId!==owner||c.runId!==null||isRoutingSession(c.sessionId)||isGroupReplySession(c.sessionId))throw unavailable()
   const rows=(await options.ordinaryConversations?.repository.read())?.filter(row=>row.sessionId===c.sessionId)
   if(rows?.length!==1||rows[0]!.ownerId!==owner||rows[0]!.status!=='ready')throw unavailable()
   const row=rows[0]!
@@ -543,7 +582,7 @@ export async function createResidentWorkRuntime(ctx:Context,options:ResidentWork
   },
  })
 
- return {outbox,budgets,controls,recovery,goals,goal,retries,events,progress,lineage,acquire,continuation:automaticContinuation.continuation,prepareRetry,restore,authorizeRestoreRoots,invalidateOrdinaryRestore,resolveRun,bindRouting,resolveRouting,hostGeneration:()=>generation,settleRun,nativeCheckpoint:saveNativeCheckpoint,nativeProgress:saveNativeCheckpoint,
+ return {outbox,budgets,controls,recovery,goals,goal,retries,events,progress,lineage,acquire,continuation:automaticContinuation.continuation,prepareRetry,restore,authorizeRestoreRoots,invalidateOrdinaryRestore,resolveRun,bindRouting,resolveRouting,bindGroupReply,registerGroupReplies:(ports:NonNullable<typeof replyPorts>)=>{if(replyPorts)throw unavailable();replyPorts=ports},hostGeneration:()=>generation,settleRun,nativeCheckpoint:saveNativeCheckpoint,nativeProgress:saveNativeCheckpoint,
   async nativeContinuations(run:TaskRun,events:readonly SessionEvent[]):Promise<ReadonlySet<string>>{
    const result=new Set<string>()
    for(const r of await continuations.records(owner,run.sessionId)){
@@ -590,6 +629,6 @@ export async function createResidentWorkRuntime(ctx:Context,options:ResidentWork
     return manualContinuation.resume(value.sessionId,value.prefixSha256,signal)
    }
    if(endpoint==='work-progress/get'){const row=taskInput(input,['rootTaskId']);return progress.get(owner,{rootTaskId:row.rootTaskId as string})}if(endpoint==='work-controls/get')return controls.get(owner,input as {controlId:string});if(endpoint==='work-controls/change')return controls.change(owner,input as WorkControlChange);if(endpoint==='work-recovery/inspect')return recovery.inspect(owner,input as {controlId:string});if(endpoint==='work-recovery/resume')return coordinator.resume(owner,input as WorkResumeInput,signal);if(endpoint==='work-budgets/read')return budgets.read(owner,input);if(endpoint==='work-budgets/configure')return budgets.configure(owner,input);if(endpoint==='work-budgets/owner/read'){taskInput(input,[]);return budgets.readOwner(owner)}if(endpoint==='work-budgets/owner/configure')return budgets.configureOwner(owner,input);throw new WorkError('teloa/not-found','未提供此本人工作接口。')},
-  close(){closed=true;unsubscribe();goal.close();recovering.clear();recoveryRequests.clear();recoveringInputs.clear();routingInputs.clear();manualContinuation?.close()},
+  close(){closed=true;unsubscribe();goal.close();recovering.clear();recoveryRequests.clear();recoveringInputs.clear();routingInputs.clear();replyInputs.clear();manualContinuation?.close()},
  }
 }

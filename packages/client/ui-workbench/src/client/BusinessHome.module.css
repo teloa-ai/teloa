@@ -18,7 +18,7 @@
 .emptyIcon{display:grid;place-items:center;width:40px;height:40px;margin-bottom:4px;border-radius:10px;background:var(--teloa-subtle);color:var(--teloa-muted)}
 .page .empty>.primaryAction{margin-top:8px;min-height:32px;padding:0 14px;background:var(--teloa-primary);color:var(--teloa-on-primary);border-color:var(--teloa-primary);font-weight:var(--teloa-weight-medium)}
 .empty h2{margin:0;font-size:var(--teloa-font-body);font-weight:var(--teloa-weight-heading);line-height:var(--teloa-leading-label)}
-.empty p{max-width:360px;margin:0;font-size:var(--teloa-font-caption);line-height:1.7;color:var(--teloa-muted)}
+.empty p{max-width:360px;margin:0;font-size:var(--teloa-font-caption);line-height:var(--teloa-leading-body);color:var(--teloa-muted)}
 .spaceCard{display:flex;flex-direction:column;gap:12px;min-width:0;padding:18px 20px 14px;border:1px solid var(--teloa-border);border-radius:12px;background:var(--teloa-surface)}
 .spaceCard:hover{border-color:var(--teloa-muted)}
 .page .spaceOpen{display:flex;align-items:flex-start;gap:12px;width:100%;box-sizing:border-box;min-height:0;padding:0;text-align:left;background:transparent;border:0;border-radius:0}
@@ -26,17 +26,17 @@
 .spaceTile{display:grid;place-items:center;flex:none;width:36px;height:36px;border-radius:9px;background:var(--teloa-subtle);color:var(--teloa-secondary);font-size:15px;font-weight:var(--teloa-weight-heading)}
 .tile1{background:var(--teloa-tile-1-bg);color:var(--teloa-tile-1-fg)}.tile2{background:var(--teloa-tile-2-bg);color:var(--teloa-tile-2-fg)}.tile3{background:var(--teloa-tile-3-bg);color:var(--teloa-tile-3-fg)}
 .spaceText{display:flex;flex-direction:column;gap:3px;flex:1;min-width:0}
-.defaultBadge{flex:none;padding:0 8px;border:1px solid var(--teloa-border-strong);border-radius:var(--teloa-design-round);background:var(--teloa-panel);color:var(--teloa-secondary);font-size:var(--teloa-font-caption);line-height:1.5;cursor:help}
-.spaceName{min-width:0;font-size:var(--teloa-font-body);font-weight:var(--teloa-weight-heading);line-height:1.5;color:var(--teloa-text)}
-.spaceSituation{font-size:var(--teloa-font-caption);color:var(--teloa-muted);line-height:1.6}
+.defaultBadge{flex:none;padding:0 8px;border:1px solid var(--teloa-border-strong);border-radius:var(--teloa-design-round);background:var(--teloa-panel);color:var(--teloa-secondary);font-size:var(--teloa-font-caption);line-height:var(--teloa-leading-label);cursor:help}
+.spaceName{min-width:0;font-size:var(--teloa-font-list);font-weight:var(--teloa-weight-regular);line-height:var(--teloa-leading-label);color:var(--teloa-text)}
+.spaceSituation{font-size:var(--teloa-font-caption);color:var(--teloa-muted);line-height:var(--teloa-leading-body)}
 .spaceName,.spaceSituation{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden;overflow-wrap:anywhere}
-.spaceWork{flex:none;font-size:var(--teloa-font-caption);line-height:1.6;color:var(--teloa-secondary)}
+.spaceWork{flex:none;font-size:var(--teloa-font-caption);line-height:var(--teloa-leading-body);color:var(--teloa-secondary)}
 /* 七行摘要：处境句那一块下面一行名词计数，每段是可点的文字按钮，分隔符不可点。 */
 /* 1.0：摘要回到说明色，仍可点进对应位置（悬停下划线）。 */
 .spaceComposition{display:flex;flex-wrap:wrap;align-items:center;gap:2px}
-.page .compositionPart{padding:0 2px;min-height:22px;border:0;border-radius:var(--teloa-design-r1);background:transparent;color:var(--teloa-muted);font-size:var(--teloa-font-caption);line-height:1.6;white-space:nowrap}
+.page .compositionPart{padding:2px 4px;min-height:var(--teloa-action-inline,24px);border:0;border-radius:var(--teloa-design-r1);background:transparent;color:var(--teloa-muted);font-size:var(--teloa-font-caption);line-height:var(--teloa-leading-body);white-space:nowrap}
 .page .compositionPart:hover{background:transparent;text-decoration:underline}
-.compositionGap{color:var(--teloa-muted);font-size:var(--teloa-font-caption);line-height:1.6;white-space:pre}
+.compositionGap{color:var(--teloa-muted);font-size:var(--teloa-font-caption);line-height:var(--teloa-leading-body);white-space:pre}
 .spaceFoot{display:flex;align-items:center;flex-wrap:wrap;gap:12px;margin-top:auto;padding-top:12px;border-top:1px solid var(--teloa-border)}
 .grow{flex:1}
 .page .staffLink{padding:0;min-height:28px;border:0;background:transparent;font-size:var(--teloa-font-caption);color:var(--teloa-accent);white-space:nowrap}
@@ -62,9 +62,9 @@
 
 /* 业务卡是一份可扫描的工作摘要，业务名和处境优先于组成明细。 */
 .container{max-width:var(--teloa-content-width);margin-inline:auto;padding:28px var(--teloa-page-gutter) 32px}
-.cardList{gap:20px;grid-template-columns:repeat(auto-fill,minmax(min(100%,380px),1fr))}.spaceCard{border-radius:14px;padding:20px;min-width:0}
-.spaceOpen{align-items:flex-start;flex-wrap:wrap;gap:12px}.spaceText{min-width:0;flex:1 1 180px}.spaceName{font-size:var(--teloa-font-section);font-weight:600;line-height:1.5;overflow-wrap:anywhere}.spaceSituation{font-size:var(--teloa-font-control);line-height:1.7;margin-top:6px}
-.spaceWork{font-size:var(--teloa-font-caption);white-space:normal;overflow-wrap:anywhere}.spaceComposition{margin:0;line-height:1.8}.spaceComposition button{line-height:1.7}
+.cardList{gap:16px;grid-template-columns:repeat(auto-fill,minmax(min(100%,380px),1fr))}.spaceCard{border-radius:14px;padding:16px;min-width:0}
+.spaceOpen{align-items:flex-start;flex-wrap:wrap;gap:12px}.spaceText{min-width:0;flex:1 1 180px}.spaceName{font-size:var(--teloa-font-list);font-weight:var(--teloa-weight-regular);line-height:var(--teloa-leading-label);overflow-wrap:anywhere}.spaceSituation{font-size:var(--teloa-font-control);line-height:var(--teloa-leading-body);margin-top:4px}
+.spaceWork{font-size:var(--teloa-font-caption);white-space:normal;overflow-wrap:anywhere}.spaceComposition{margin:0;line-height:var(--teloa-leading-body)}.spaceComposition button{line-height:var(--teloa-leading-label)}
 @media(max-width:600px){.container{padding:20px}.spaceCard{padding:18px}.cardList{gap:14px}.spaceWork{margin-left:0}}
 
-.page .spaceOpen{display:grid;grid-template-columns:36px minmax(0,1fr) auto;gap:12px;align-items:start}.spaceOpen .spaceTile{grid-column:1;grid-row:1}.spaceOpen .spaceText{grid-column:2;grid-row:1;min-width:0}.spaceOpen .spaceWork{grid-column:2/-1;grid-row:2;text-align:left}.spaceOpen .defaultBadge{grid-column:3;grid-row:1;align-self:start;line-height:1.6}
+.page .spaceOpen{display:grid;grid-template-columns:36px minmax(0,1fr) auto;gap:12px;align-items:start}.spaceOpen .spaceTile{grid-column:1;grid-row:1}.spaceOpen .spaceText{grid-column:2;grid-row:1;min-width:0}.spaceOpen .spaceWork{grid-column:2/-1;grid-row:2;text-align:left}.spaceOpen .defaultBadge{grid-column:3;grid-row:1;align-self:start;line-height:var(--teloa-leading-label)}

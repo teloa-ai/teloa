@@ -13,7 +13,7 @@ export function KnowledgeSaveReceiptCard({block,inspect,openResources}:ToolCallV
  const headingKeys={saving:'knowledgeReceipt.heading.saving',active:'knowledgeReceipt.heading.active','needs-recovery':'knowledgeReceipt.heading.needs-recovery',failed:'knowledgeReceipt.heading.failed',invalid:'knowledgeReceipt.heading.invalid','tool-error':'knowledgeReceipt.heading.tool-error'} as const
  const heading=t(headingKeys[state])
  return <section className={css.card} data-state={state} aria-label={t('knowledgeReceipt.aria')}>
-  <header>{state==='active'?<CheckCircle2 size={17}/>:state==='saving'||state==='needs-recovery'?<RefreshCw size={17}/>:<AlertCircle size={17}/>}<strong>{heading}</strong></header>
+  <header>{state==='active'?<CheckCircle2 size={16}/>:state==='saving'||state==='needs-recovery'?<RefreshCw size={16}/>:<AlertCircle size={16}/>}<strong>{heading}</strong></header>
   {receipt&&<><h4>{receipt.title}</h4><dl><dt>{t('knowledgeReceipt.scope')}</dt><dd>{receipt.scope}</dd><dt>{t('knowledgeReceipt.category')}</dt><dd>{receipt.category}</dd><dt>{t('knowledgeReceipt.topics')}</dt><dd>{receipt.topics.length?receipt.topics.join(' · '):t('knowledgeReceipt.unset')}</dd>{receipt.kind==='active'&&<><dt>{t('knowledgeReceipt.pinnedVersion')}</dt><dd>{t('knowledgeReceipt.version',{knowledge:receipt.knowledgeVersion,resource:receipt.resourceVersion,hash:receipt.contentHash})}</dd></>}{receipt.kind!=='active'&&<><dt>{t('knowledgeReceipt.stage')}</dt><dd>{receipt.stage}</dd></>}</dl></>}
   {receipt?.kind==='needs-recovery'&&<p>{t('knowledgeReceipt.recovery')}</p>}
   {receipt?.kind==='failed'&&<p role="alert">{t('knowledgeReceipt.failed')}</p>}

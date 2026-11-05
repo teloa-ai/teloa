@@ -1,6 +1,7 @@
+import {isGroupEmployeeResponse} from '@teloa/contract'
 import {useEffect,useRef,useState} from 'react'
 import {MarkdownText} from '@deepseek-ai/dsh-client-ui-primitives'
-import type {GroupEmployeeMessage,GroupMessage,GroupMessageSourceItem,GroupMessageSources as Sources} from '@teloa/contract'
+import type {GroupEmployeeResponse,GroupMessage,GroupMessageSourceItem,GroupMessageSources as Sources} from '@teloa/contract'
 import type {GroupApi} from './group-api.js'
 import {ContextDrawer} from './ContextDrawer.js'
 import {GroupMessageBodyPreview} from './GroupMessageBodyPreview.js'
@@ -10,15 +11,16 @@ import css from './GroupMessageSources.module.css'
 
 type Location={message:GroupMessage;rootId:string|null;excerpt:string}
 /** 只读已验证的来源列表；正文不改写，定位仍由原群分页器处理。 */
-export function GroupMessageSources({api,message,rootId,groupName,author,time,isCurrent,locate,close}:{api:Pick<GroupApi,'messageSources'|'messageBody'>;message:GroupEmployeeMessage;rootId:string|null;groupName:string;author:(message:GroupMessage)=>string;time:(value:string)=>string;isCurrent:()=>boolean;locate:(item:Location)=>Promise<boolean>;close:()=>void}){
+export function GroupMessageSources({api,message,rootId,groupName,author,time,isCurrent,locate,close}:{api:Pick<GroupApi,'messageSources'|'messageBody'>;message:GroupEmployeeResponse;rootId:string|null;groupName:string;author:(message:GroupMessage)=>string;time:(value:string)=>string;isCurrent:()=>boolean;locate:(item:Location)=>Promise<boolean>;close:()=>void}){
+ const proofId='runId'in message?message.runId:message.replyExecutionId
  const {t,locale}=useI18n(),[value,setValue]=useState<Sources>(),[error,setError]=useState(''),[retry,setRetry]=useState(0),[busy,setBusy]=useState(false),[preview,setPreview]=useState<GroupMessageSourceItem>()
  const current=useRef(isCurrent),alive=useRef(true),navigating=useRef(0),moved=useRef(false);current.current=isCurrent
- useEffect(()=>{alive.current=true;return()=>{alive.current=false;++navigating.current}},[api,message.groupId,message.id,message.runId])
+ useEffect(()=>{alive.current=true;return()=>{alive.current=false;++navigating.current}},[api,message.groupId,message.id,proofId])
  useEffect(()=>{
   let active=true;setValue(undefined);setError('')
-  void api.messageSources(message.groupId,message.id,message.runId).then(result=>{if(active&&alive.current&&current.current())setValue(result)}).catch(cause=>{if(active&&alive.current&&current.current())setError(localizeWorkError(locale,cause))})
+  void api.messageSources(message.groupId,message.id,'runId'in message?message.runId:{replyExecutionId:message.replyExecutionId}).then(result=>{if(active&&alive.current&&current.current())setValue(result)}).catch(cause=>{if(active&&alive.current&&current.current())setError(localizeWorkError(locale,cause))})
   return()=>{active=false}
- },[api,message.groupId,message.id,message.runId,retry,locale])
+ },[api,message.groupId,message.id,proofId,retry,locale])
  const present=()=>alive.current&&current.current()
  const dismiss=()=>{++navigating.current;alive.current=false;close()}
  const returnToOrigin=async()=>{
@@ -36,7 +38,7 @@ export function GroupMessageSources({api,message,rootId,groupName,author,time,is
  }
  if(!present())return null
  if(preview){
-  if('runId'in preview.message&&preview.message.fullText)return <GroupMessageBodyPreview groupId={message.groupId} messageId={preview.message.id} summary={preview.message.fullText} authorName={author(preview.message)} groupName={groupName} api={api} isCurrent={present} close={()=>setPreview(undefined)} backLabel={t('group.sources.back')}/>
+  if(isGroupEmployeeResponse(preview.message)&&preview.message.fullText)return <GroupMessageBodyPreview groupId={message.groupId} messageId={preview.message.id} summary={preview.message.fullText} authorName={author(preview.message)} groupName={groupName} api={api} isCurrent={present} close={()=>setPreview(undefined)} backLabel={t('group.sources.back')}/>
   return <ContextDrawer title={t('group.sources.preview')} close={()=>setPreview(undefined)}><div className={css.body}><p className={css.meta}>{author(preview.message)} · {time(preview.message.createdAt)}</p><MarkdownText text={preview.message.text} labels={{code:{copyLabel:t('collaboration.markdown.code.copyLabel'),copiedLabel:t('collaboration.markdown.code.copiedLabel')},footnotes:t('collaboration.markdown.footnotes')}}/><button type="button" onClick={()=>setPreview(undefined)}>{t('group.sources.back')}</button></div></ContextDrawer>
  }
  return <ContextDrawer title={t('group.sources.title')} close={dismiss}><div className={css.body}>

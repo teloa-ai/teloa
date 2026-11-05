@@ -5,6 +5,7 @@ import {groupRoutingSessionId} from '@teloa/contract'
 import {assertRoutingGuardRegisteredFirst,groupRoutingDenyReason,groupRoutingLineageReason,registerGroupRoutingGuard} from '../src/group-routing-guard.ts'
 import {isRoutingSession} from '../src/group-routing.ts'
 import {registerTaskToolGuard} from '../src/task-tool-guard.ts'
+import {isGroupReplySession} from '@teloa/backend'
 
 type Session={id:string;header:{origin?:string;parentSession?:string;delegationDepth?:number}}
 type Decision={kind:string;reason?:string}
@@ -39,7 +40,7 @@ function harness(){
   const decision=await run(0)
   return {...decision,reached}
  }
- return {ctx,preExecute}
+ return {ctx,preExecute,known}
 }
 
 const readPolicy=async()=>null
@@ -60,6 +61,14 @@ test('路由会话里任何工具都被拒，理由逐字固定',async()=>{
   assert.equal(decision.reason,'路由判断不能调用任何工具。')
   assert.equal(decision.reached,false)
  }
+})
+test('普通群回复及其派生子会话使用同一道外部工具硬拒闸',async()=>{
+ const {ctx,preExecute,known}=harness(),reply:Session={id:'group-reply-33333333-3333-4333-8333-333333333333',header:{}}
+ known.set(reply.id,reply)
+ registerGroupRoutingGuard(ctx,id=>isRoutingSession(id)||isGroupReplySession(id))
+ const derived:Session={id:'reply-child',header:{origin:'subagent',parentSession:reply.id,delegationDepth:1}}
+ assert.equal((await preExecute({name:'bash',agent:{session:derived}})).kind,'deny')
+ for(const name of ['bash','reference_read','web_fetch','subagent_task','teloa_group_attach'])assert.equal((await preExecute({name,agent:{session:reply}})).kind,'deny')
 })
 
 test('子 Agent 会话的谱系根是路由会话时同样被拒（H1）',async()=>{

@@ -9,3 +9,11 @@
 .facts{display:grid;gap:8px;margin:12px 0}.facts>div{display:grid;grid-template-columns:minmax(100px,1fr) minmax(0,3fr);gap:12px}.facts dt,.muted{color:var(--teloa-muted)}.facts dd{margin:0;min-width:0}
 .form{display:grid;gap:12px;margin-top:18px}.form>label{display:grid;gap:6px}.form input:not([type=checkbox]),.form textarea{box-sizing:border-box;min-width:0;width:100%;border:1px solid var(--teloa-border);border-radius:6px;padding:9px;background:var(--teloa-background);color:var(--teloa-text);font:inherit}.form textarea{resize:vertical;min-height:74px}.form fieldset{min-width:0;border:1px solid var(--teloa-border);border-radius:6px}.form .check{display:flex;align-items:flex-start;gap:8px}.form input[type=checkbox]{flex-shrink:0}.receipt{margin:12px 0;padding:12px;background:var(--teloa-subtle);border-radius:6px}.root [role=alert]{color:var(--teloa-warn)}
 @media(max-width:600px){.facts>div{grid-template-columns:minmax(0,1fr);gap:3px}.buttons>button{max-width:100%;overflow-wrap:anywhere}.action{padding:12px}.root>header{align-items:flex-start}}
+
+/* 仅规范本组件的界面标签；正文和代码中的强调保持原样。 */
+.action>summary>strong{font-weight:var(--teloa-weight-regular)}
+.receipt>strong{font-weight:var(--teloa-weight-medium)}
+
+/* 深层配置与详情标题使用界面层级，避免浏览器默认字号和粗体。 */
+.root>header>h3{font-size:var(--teloa-font-section);font-weight:var(--teloa-weight-heading);}
+.form>h4{font-size:var(--teloa-font-control);font-weight:var(--teloa-weight-heading);}

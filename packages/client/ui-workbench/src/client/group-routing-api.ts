@@ -10,19 +10,20 @@ const exact=(value:unknown,keys:readonly string[],label:string):Record<string,un
 export type GroupRoutingApi=ReturnType<typeof createGroupRoutingApi>
 /** 群消息行停止按钮：复用现有 TaskRun 停止链路，不新增 RPC 语义。端口由工作台用 taskRunApi.stop 接线。 */
 export type GroupRoutingRunStopPort={stop:(input:{taskId:string;runId:string})=>Promise<void>}
-export type GroupRunStopTarget={roleId:string;name:string;taskId:string;runId:string;phase:GroupRoutingStatusView['phase']}
+export type GroupRunStopTarget={roleId:string;name:string;phase:GroupRoutingStatusView['phase']}&({taskId:string;runId:string}|{replyExecutionId:string})
 /** 只有还在跑的接收者才给停止入口；已结束/待本人核对的结果列出来也不能「停止」。 */
 const stoppablePhases:readonly GroupRoutingStatusView['phase'][]=['routing','queued','running','delivering','awaiting-approval']
 export function groupRunStopTargets(status:GroupRoutingStatusView):GroupRunStopTarget[]{
  return status.recipients
-  .filter(item=>item.taskId!==null&&item.runId!==null&&stoppablePhases.includes(item.phase))
-  .map(item=>({roleId:item.roleId,name:item.name,taskId:item.taskId!,runId:item.runId!,phase:item.phase}))
+  .filter(item=>(item.replyExecutionId!==undefined||item.taskId!==null&&item.runId!==null)&&(stoppablePhases.includes(item.phase)||item.replyExecutionId!==undefined&&item.phase==='unknown'))
+  .map(item=>({roleId:item.roleId,name:item.name,phase:item.phase,...(item.replyExecutionId?{replyExecutionId:item.replyExecutionId}:{taskId:item.taskId!,runId:item.runId!})}))
 }
 /**
  * 路由决策与处理状态都是服务端投影，客户端只读；唯一的写口是「沿原消息重新安排」，
  * 它不发送正文、不指定决策，只请求宿主登记一次新尝试。
  */
 export function createGroupRoutingApi(call:Call,runStop?:GroupRoutingRunStopPort){
+ const pendingReplyStops=new Map<string,{requestId:string;groupId:string;replyExecutionId:string}>()
  return {
   async list(groupId:string,messageIds:string[]):Promise<GroupRoutingDecisionView[]>{
    const request=groupRoutingListInput({groupId,messageIds})
@@ -55,6 +56,16 @@ export function createGroupRoutingApi(call:Call,runStop?:GroupRoutingRunStopPort
    const uuid=/^[a-f0-9]{8}-[a-f0-9]{4}-[1-5][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i
    if(!uuid.test(input.taskId)||!uuid.test(input.runId))throw Error('停止目标身份不正确。')
    await runStop.stop({taskId:input.taskId,runId:input.runId})
+  },
+  /** 停止普通群回复沿原执行身份处理；未知回执复用原请求，不借停止重开一轮模型调用。 */
+  async stopReply(input:{groupId:string;replyExecutionId:string}):Promise<void>{
+   const uuid=/^[a-f0-9]{8}-[a-f0-9]{4}-[1-8][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i
+   if(!uuid.test(input.groupId)||!uuid.test(input.replyExecutionId))throw Error('停止目标身份不正确。')
+   const key=input.groupId+':'+input.replyExecutionId,request=pendingReplyStops.get(key)??{...input,requestId:crypto.randomUUID()}
+   pendingReplyStops.set(key,request)
+   const row=exact(await call('groups/replies/stop',request),['replyExecutionId','state'],'群回复停止回执格式不正确。')
+   if(row.replyExecutionId!==input.replyExecutionId||!['stopped','completed'].includes(String(row.state)))throw Error('群回复停止回执与原执行不一致。')
+   pendingReplyStops.delete(key)
   },
   /** 沿原 messageId 重新安排：同一 requestId 由宿主幂等回执兜住，回包必须对应原消息与下一尝试。 */
   async retry(input:{requestId:string;groupId:string;messageId:string;expectedAttempt:number;expectedGroupVersion:number}):Promise<{messageId:string;attemptVersion:number}>{

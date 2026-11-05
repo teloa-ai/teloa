@@ -1,5 +1,20 @@
 import type {AttentionKind,PreviewTask} from './task-preview.js'
 import type {TeloaTranslate} from './i18n/index.js'
+import type {Conversation} from '@teloa/contract'
+
+/** 已确认且未改目标/负责人的群交流执行不属于正式工作；旧来源与已转交的工作仍保留。 */
+export function isGroupReplyExecution(task:Pick<PreviewTask,'source'|'contentVersion'|'assigneeId'|'assigneeRoleVersion'>):boolean{
+ const source=task.source,assignee=source?.createdAssignee
+ return source?.trigger==='routed'&&source.executionMode==='reply'&&task.contentVersion===1&&!!assignee&&assignee.roleId===task.assigneeId&&assignee.roleVersion===task.assigneeRoleVersion
+}
+
+/** 群里已经呈现的交流不再作为一条独立任务会话挤入最近工作；未知身份和正式工作不隐藏。 */
+export function isGroupReplyConversation(conversation:Conversation,tasks:readonly PreviewTask[]):boolean{
+ const run=conversation.purpose==='task-run'?conversation.run:undefined
+ if(!run||run.taskVersion!==1)return false
+ const task=tasks.find(task=>task.id===run.taskId)
+ return !!task&&isGroupReplyExecution(task)&&run.roleId===task.assigneeId&&run.roleVersion===task.assigneeRoleVersion
+}
 
 /** 内部占位值在显示时翻译，业务对象标题仍保留来源原文。 */
 export function taskObjectLabel(task:Pick<PreviewTask,'object'|'storage'>,t:TeloaTranslate):string{

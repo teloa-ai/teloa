@@ -3,13 +3,13 @@
 .responsibilities>div:last-child{border-bottom:0;padding-bottom:0}
 .responsibilities dt,.group>header{display:flex;align-items:baseline;justify-content:space-between;gap:16px}
 .responsibilities dt,.group h3{font-size:var(--teloa-font-control,14px);font-weight:var(--teloa-weight-medium,500)}
-.responsibilities dd{margin:7px 0 0;font-size:var(--teloa-font-control,14px);line-height:1.8;overflow-wrap:anywhere}
-.responsibilities ul,.skillList{margin:0;padding-left:20px;display:grid;gap:4px;line-height:1.8}
+.responsibilities dd{margin:7px 0 0;font-size:var(--teloa-font-control,14px);line-height:var(--teloa-leading-body);overflow-wrap:anywhere}
+.responsibilities ul,.skillList{margin:0;padding-left:20px;display:grid;gap:4px;line-height:var(--teloa-leading-body)}
 .responsibilities button,.group>header button,.actions button{border:0;background:transparent;color:var(--teloa-muted,#666);padding:2px 0;font:inherit;font-size:var(--teloa-font-caption,13px);cursor:pointer;flex:none}
 .responsibilities button:hover,.group>header button:hover{color:var(--teloa-text)}
 .responsibilities button:focus-visible,.group>header button:focus-visible{outline:2px solid var(--teloa-border,#aaa);outline-offset:4px}
-.editor{display:grid;gap:7px}.editor textarea{box-sizing:border-box;min-width:0;width:100%;resize:vertical;font:inherit;line-height:1.7;border:1px solid var(--teloa-border,#ddd);border-radius:var(--teloa-design-r1,6px);padding:10px 12px;background:var(--teloa-surface,#fff);color:var(--teloa-text)}
-.editor small,.empty{color:var(--teloa-muted,#666);font-size:var(--teloa-font-caption,13px);line-height:1.7}
+.editor{display:grid;gap:7px}.editor textarea{box-sizing:border-box;min-width:0;width:100%;resize:vertical;font:inherit;line-height:var(--teloa-leading-body);border:1px solid var(--teloa-border,#ddd);border-radius:var(--teloa-design-r1,6px);padding:10px 12px;background:var(--teloa-surface,#fff);color:var(--teloa-text)}
+.editor small,.empty{color:var(--teloa-muted,#666);font-size:var(--teloa-font-caption,13px);line-height:var(--teloa-leading-label)}
 .empty{margin:5px 0 0}.actions{display:flex;gap:18px}.actions button:first-child{color:var(--teloa-text);font-weight:var(--teloa-weight-medium,500)}
 .capabilities{display:grid;gap:20px;padding-top:14px}.group{min-width:0}.group>header{margin-bottom:8px}.group h3{margin:0}.skillList{font-size:var(--teloa-font-control,14px);overflow-wrap:anywhere}
 /* 仅员工编辑的资料选择沿用原能力，目录呈紧凑行，不影响招聘与其他选择器。 */
@@ -17,5 +17,5 @@
 .group :global([data-compact])>div[aria-label]>div{display:flex;align-items:center;gap:12px;padding:10px 0;border:0;border-bottom:1px solid var(--teloa-border,#ddd);border-radius:0;background:transparent}
 .group :global([data-compact])>div[aria-label]>div:last-child{border-bottom:0}
 .group :global([data-compact])>div[aria-label]>div>span{flex:1;min-width:0}
-.group :global([data-compact])>div[aria-label] strong{display:block;white-space:normal;overflow-wrap:anywhere;line-height:1.6;-webkit-line-clamp:unset}
+.group :global([data-compact])>div[aria-label] strong{display:block;white-space:normal;overflow-wrap:anywhere;line-height:var(--teloa-leading-label);-webkit-line-clamp:unset}
 .group :global([data-compact])>div[aria-label] button{flex:none}

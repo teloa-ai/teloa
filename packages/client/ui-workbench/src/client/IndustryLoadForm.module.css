@@ -1,7 +1,7 @@
 .panel{min-width:0}
 .header{display:flex;align-items:flex-start;justify-content:space-between;gap:20px}
 .header h3{margin-top:6px}
-.intro,.note{color:var(--teloa-muted);font-size:var(--teloa-font-caption);line-height:1.7}
+.intro,.note{color:var(--teloa-muted);font-size:var(--teloa-font-caption);line-height:var(--teloa-leading-body)}
 .recovery{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:12px;border:1px solid var(--teloa-border);border-radius:8px;background:var(--teloa-subtle)}
 .recovery strong,.recovery span{display:block}
 .recovery span{margin-top:3px;color:var(--teloa-muted);font-size:var(--teloa-font-caption)}
@@ -9,15 +9,21 @@
 .review dl>div{display:grid;grid-template-columns:90px minmax(0,1fr);gap:16px;padding:12px;border-bottom:1px solid var(--teloa-border)}
 .review dl>div:last-child{border-bottom:0}
 .review dt{color:var(--teloa-muted);font-size:var(--teloa-font-caption)}
-.review dd{margin:0;font-size:var(--teloa-font-caption);line-height:1.6;overflow-wrap:anywhere}
+.review dd{margin:0;font-size:var(--teloa-font-caption);line-height:var(--teloa-leading-body);overflow-wrap:anywhere}
 .destinations{margin:16px 0;padding:14px;border:1px solid var(--teloa-border);border-radius:8px;background:var(--teloa-subtle)}
 .destinations h4{margin:0 0 10px;font-size:var(--teloa-font-body);font-weight:var(--teloa-weight-heading);line-height:var(--teloa-leading-label)}
 .destinations ul{display:flex;flex-wrap:wrap;gap:8px;margin:0;padding:0;list-style:none}
 .destinations li{display:flex;align-items:center;gap:7px;padding:7px 9px;border:1px solid var(--teloa-border);border-radius:7px;background:var(--teloa-surface);font-size:var(--teloa-font-caption)}
 .destinations li strong{font-weight:var(--teloa-weight-heading);color:var(--teloa-muted)}
-.destinations p{margin:10px 0 0;color:var(--teloa-muted);font-size:var(--teloa-font-caption);line-height:1.6}
-.declarationNotice{margin:16px 0;padding:12px 14px;border-inline-start:3px solid var(--teloa-accent);background:var(--teloa-subtle);color:var(--teloa-text);font-size:var(--teloa-font-caption);line-height:1.7}
+.destinations p{margin:10px 0 0;color:var(--teloa-muted);font-size:var(--teloa-font-caption);line-height:var(--teloa-leading-body)}
+.declarationNotice{margin:16px 0;padding:12px 14px;border-inline-start:3px solid var(--teloa-accent);background:var(--teloa-subtle);color:var(--teloa-text);font-size:var(--teloa-font-caption);line-height:var(--teloa-leading-body)}
 .declarationNotice p{margin:0}.declarationNotice p+p{margin-top:6px;color:var(--teloa-muted)}
 .actions{display:flex;justify-content:flex-end;gap:8px;margin-top:16px}
 .actions button:last-child{border-color:var(--teloa-primary);background:var(--teloa-primary);color:var(--teloa-on-primary)}
 @media(max-width:740px){.header{display:block}.recovery{align-items:flex-start;flex-direction:column}.review dl>div{grid-template-columns:1fr;gap:4px}.actions{display:grid;grid-template-columns:1fr 1fr}.actions button{min-height:44px}.actions button:only-child{grid-column:2}}
+
+/* 仅规范本组件的界面标签；正文和代码中的强调保持原样。 */
+.recovery>div>strong{font-weight:var(--teloa-weight-medium)}
+
+/* 深层配置与详情标题使用界面层级，避免浏览器默认字号和粗体。 */
+.header>div>h3{font-size:var(--teloa-font-section);font-weight:var(--teloa-weight-heading);}

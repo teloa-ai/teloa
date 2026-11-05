@@ -54,7 +54,7 @@ export function HardwareDevicesSettings({api}:{api:HardwareDevicesApi}){
      {current?.configured&&!endpoint.trim()?<div className={css.permissionActions}><button className={css.primary} type="button" disabled={busy||!consent} onClick={()=>void act(api.enable)}>{copy(busy?'working':'enable')}</button></div>:<p className={css.nextStep}>{copy('saveFirst')}</p>}
     </>}
    </section>
-   <details className={css.details}><summary>{copy('details')}<span className={css.disclosureIcon}><ChevronDown size={15} aria-hidden="true"/></span></summary><div><p>{copy('flow')}</p><p>{copy('pending')}</p></div></details>
+   <details className={css.details}><summary>{copy('details')}<span className={css.disclosureIcon}><ChevronDown size={14} aria-hidden="true"/></span></summary><div><p>{copy('flow')}</p><p>{copy('pending')}</p></div></details>
    {(error||statusError)&&<p className={css.notice} role="alert">{copy('error')}</p>}
   </div></ContextDrawer>}
   {(error||statusError)&&!editor&&<p role="alert">{copy('error')}</p>}

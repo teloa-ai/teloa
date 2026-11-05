@@ -65,13 +65,13 @@ export function ConversationActions({target,candidates,management,title,changeTi
  const cancelButton=<button ref={cancel} type="button" disabled={busy} onClick={done}>{t('workDirectory.action.cancel')}</button>
  return <dialog ref={ref} className={base.dialog+' '+css.dialog} aria-labelledby={heading} aria-describedby={action==='rename'?undefined:description} aria-busy={busy} {...dismissEvents}>
   <div className={css.content}>
-   <header className={css.header}><h2 id={heading}>{t(actionKeys[action])}</h2><button className={css.close} type="button" aria-label={t('workDirectory.management.close')} disabled={busy} onClick={done}><X size={18}/></button></header>
+   <header className={css.header}><h2 id={heading}>{t(actionKeys[action])}</h2><button className={css.close} type="button" aria-label={t('workDirectory.management.close')} disabled={busy} onClick={done}><X size={16}/></button></header>
    {action!=='rename'&&<p className={css.subject} title={target.title}>{target.title}</p>}
    {error&&<p className={css.error} role="alert">{error}</p>}{notice&&<p className={css.notice} role="status">{notice}</p>}
    {archived?<><p role="status">{t('workDirectory.management.archived')}</p><footer className={css.footer}>{cancelButton}</footer></>:action==='rename'?
     <form onSubmit={event=>{event.preventDefault();if(canRename)void perform(async()=>{await management.rename(id,title.trim());changeTitle(title.trim());close()})}}>
      <label className={css.field}>{t('workDirectory.rename.label')}<input ref={input} value={title} maxLength={200} disabled={busy} onChange={event=>changeTitle(event.target.value)} required/></label>
-     <footer className={css.footer}>{cancelButton}<button className={css.primary} type="submit" disabled={!canRename}>{busy&&<LoaderCircle size={15} className={css.spinner}/>}<span>{t('workDirectory.rename.save')}</span></button></footer>
+     <footer className={css.footer}>{cancelButton}<button className={css.primary} type="submit" disabled={!canRename}>{busy&&<LoaderCircle size={16} className={css.spinner}/>}<span>{t('workDirectory.rename.save')}</span></button></footer>
     </form>:<>
      <p id={description} className={css.description}>{t('workDirectory.copy.description')}</p>
      {target.blank&&<p className={css.description}>{t('workDirectory.copy.blank')}</p>}
@@ -79,7 +79,7 @@ export function ConversationActions({target,candidates,management,title,changeTi
      {historyError&&<div className={css.historyError}><p role="alert">{historyError}</p><button type="button" disabled={busy||!state.ready} onClick={()=>void refreshHistory()}><RefreshCw size={14}/>{t('workDirectory.copy.refresh')}</button></div>}
      {copy&&<p role="status" className={css.inlineStatus}><Check size={16}/>{t('workDirectory.copy.created')}</p>}
      {attempts.length>0&&<details className={css.history} open={historyOpen} onToggle={event=>setHistoryOpen(event.currentTarget.open)}>
-      <summary><History size={15}/>{t('workDirectory.copy.history')}<span>{attempts.length}</span></summary>
+      <summary><History size={16}/>{t('workDirectory.copy.history')}<span>{attempts.length}</span></summary>
       <div className={css.historyTools}><button type="button" disabled={busy||!state.ready||!historyReady&&!historyError} onClick={()=>void refreshHistory()}><RefreshCw size={14}/>{t('workDirectory.copy.refresh')}</button></div>
       {attempts.map(attempt=><div className={css.copyAttempt} key={attempt.requestId}>
        <p className={css.attemptHeading}>{t(attempt.state==='pending'?(attempt.releasedAt?'workDirectory.copy.state.released':'workDirectory.copy.state.pending'):attempt.state==='ready'?'workDirectory.copy.state.ready':'workDirectory.copy.state.rejected')}<time dateTime={attempt.createdAt}>{dateTime(attempt.createdAt)}</time></p>
@@ -92,7 +92,7 @@ export function ConversationActions({target,candidates,management,title,changeTi
        </>:null}
       </div>)}
      </details>}
-     <footer className={css.footer}>{cancelButton}{copy?<button className={css.primary} disabled={busy||!state.ready} onClick={()=>void perform(async()=>{const controller=new AbortController();opening.current=controller;await open(copy,controller.signal);if(!controller.signal.aborted)management.acknowledgeCopy(id,copy.sessionId)})}>{busy&&<LoaderCircle size={15} className={css.spinner}/>}<span>{t('workDirectory.copy.open')}</span></button>:<button className={css.primary} disabled={!canCopy} onClick={()=>{if(canCopy)void perform(async()=>{try{setCopy(await management.fork(id))}finally{await refreshHistory()}})}}>{busy&&<LoaderCircle size={15} className={css.spinner}/>}<span>{t(state.copies[id]?'workDirectory.copy.linkExisting':attempts.some(row=>row.state==='ready'||row.releasedAt)?'workDirectory.copy.createNew':'workDirectory.copy.create')}</span></button>}</footer>
+     <footer className={css.footer}>{cancelButton}{copy?<button className={css.primary} disabled={busy||!state.ready} onClick={()=>void perform(async()=>{const controller=new AbortController();opening.current=controller;await open(copy,controller.signal);if(!controller.signal.aborted)management.acknowledgeCopy(id,copy.sessionId)})}>{busy&&<LoaderCircle size={16} className={css.spinner}/>}<span>{t('workDirectory.copy.open')}</span></button>:<button className={css.primary} disabled={!canCopy} onClick={()=>{if(canCopy)void perform(async()=>{try{setCopy(await management.fork(id))}finally{await refreshHistory()}})}}>{busy&&<LoaderCircle size={16} className={css.spinner}/>}<span>{t(state.copies[id]?'workDirectory.copy.linkExisting':attempts.some(row=>row.state==='ready'||row.releasedAt)?'workDirectory.copy.createNew':'workDirectory.copy.create')}</span></button>}</footer>
     </>}
   </div>
  </dialog>

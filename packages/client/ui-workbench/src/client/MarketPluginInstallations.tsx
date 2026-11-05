@@ -52,7 +52,7 @@ export function MarketPluginInstallations({api,selected,select,onBrowse,embedded
     <main className={css.content}>
       {error&&<p role="alert" className={css.error}>{error}</p>}
       {loading&&!items.length&&<p role="status" className={css.loading}>{t('market.plugin.install.status.loading')}</p>}
-      {items.length>0&&<div className={css.list}>{items.map(item=>{const status=marketPluginInstallStatus(item);return <button type="button" key={item.id} onClick={()=>select(item.id)}><span className={css.resourceIdentity}><span className={css.rowIcon}><Puzzle size={18} aria-hidden/></span><span><strong>{item.preview.source.packageName}</strong><small>{item.preview.source.version}</small></span></span><span className={css.installationStatus}>{t(statusKey(status.key))}</span><ChevronRight size={16} aria-hidden/></button>})}</div>}
+      {items.length>0&&<div className={css.list}>{items.map(item=>{const status=marketPluginInstallStatus(item);return <button type="button" key={item.id} onClick={()=>select(item.id)}><span className={css.resourceIdentity}><span className={css.rowIcon}><Puzzle size={16} aria-hidden/></span><span><strong>{item.preview.source.packageName}</strong><small>{item.preview.source.version}</small></span></span><span className={css.installationStatus}>{t(statusKey(status.key))}</span><ChevronRight size={16} aria-hidden/></button>})}</div>}
       {!loading&&!error&&!items.length&&<div className={css.empty}><PackageOpen size={32} aria-hidden/><h2>{t('market.plugin.install.empty')}</h2><button type="button" className={css.browseAction} onClick={onBrowse}>{t('market.installation.browse')}</button></div>}
     </main>
   </section>

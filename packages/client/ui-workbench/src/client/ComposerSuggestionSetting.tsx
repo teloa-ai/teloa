@@ -14,6 +14,6 @@ export function ComposerSuggestionSetting(){
    <input type="checkbox" checked={enabled} onChange={event=>{const next=event.target.checked;writeSuggestionEnabled(globalThis.localStorage,next)}}/>
    <span>{t('composerSuggestion.title')}</span>
   </label>
-  <p style={{margin:'4px 0 0',opacity:.7,fontSize:'0.9em'}}>{t('composerSuggestion.detail')}</p>
+  <p style={{margin:'4px 0 0',color:'var(--teloa-muted)',fontSize:'var(--teloa-font-caption)'}}>{t('composerSuggestion.detail')}</p>
  </section>
 }

@@ -225,8 +225,8 @@ export function ConversationObjectCard({receipt,...ports}:{receipt:ConversationO
  return <>
   <section className={css.card} aria-label={category+'：'+title} data-object-id={receipt.id}>
    <button type="button" className={css.row} onClick={open} disabled={(!detail&&!receipt.draftReference)||!!error||!!(receipt.draftReference&&requested&&!detail)}>
-    <span className={css.icon}>{receipt.kind==='role'?(detail?.role?.kind==='twin'?<TwinAvatar initials={profile.initials} size="sm"/>:<EmployeeAvatar avatarKey={detail?.role?.avatarKey} size="sm"/>):receipt.kind==='group'?<Users size={18}/>:<Sparkles size={18}/>}</span>
-    <span className={css.text}><strong>{title}</strong><small>{sub}</small></span><span className={css.state}>{state}</span><ChevronRight size={15}/>
+    <span className={css.icon}>{receipt.kind==='role'?(detail?.role?.kind==='twin'?<TwinAvatar initials={profile.initials} size="sm"/>:<EmployeeAvatar avatarKey={detail?.role?.avatarKey} size="sm"/>):receipt.kind==='group'?<Users size={16}/>:<Sparkles size={16}/>}</span>
+    <span className={css.text}><strong>{title}</strong><small>{sub}</small></span><span className={css.state}>{state}</span><ChevronRight size={14}/>
    </button>
    {error&&<p role="alert">{error}<button type="button" onClick={()=>setRetry(value=>value+1)}>{t('common.retry')}</button></p>}
   </section>

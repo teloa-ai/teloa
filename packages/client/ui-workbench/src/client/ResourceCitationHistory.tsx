@@ -26,7 +26,7 @@ function BoundCitationHistory({sessionId,api,revision}:Props){
  // 无引用的普通轮次不占据一张卡；异常记录仍保留，不伪装成没有使用资料。
  const records=page?.items.filter(item=>item.references.length>0||item.issue)??[]
  return <details className={css.root} open={open} onToggle={event=>setOpen(event.currentTarget.open)}>
-  <summary><ChevronRight size={13}/><BookOpen size={14}/>{copy('资料来源','資料來源','Source materials')}{page&&!loading&&<span>{records.reduce((count,item)=>count+item.references.length,0)}</span>}</summary>
+  <summary><ChevronRight size={14}/><BookOpen size={14}/>{copy('资料来源','資料來源','Source materials')}{page&&!loading&&<span>{records.reduce((count,item)=>count+item.references.length,0)}</span>}</summary>
   <div className={css.body} aria-busy={loading}>
    <p className={css.hint}>{copy('查看本会话实际使用的资料与固定版本。','查看本對話實際使用的資料與固定版本。','Materials and fixed versions actually used in this conversation.')}</p>
    {loading&&<p role="status">{t('knowledge.ui.085')}</p>}

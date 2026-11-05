@@ -1,5 +1,5 @@
 /* 沿用已批准的120px透明全身小松鼠：角色之外不包白卡，不用动效虚构工作进展。 */
-.companion{position:fixed;right:28px;bottom:28px;z-index:var(--teloa-z-menu,24);width:140px;max-width:calc(100vw - 16px);display:flex;flex-direction:column;align-items:center;box-sizing:border-box;background:transparent;color:var(--teloa-text);font:inherit;font-size:var(--teloa-font-caption);line-height:1.5}
+.companion{position:fixed;right:28px;bottom:28px;z-index:var(--teloa-z-menu,24);width:140px;max-width:calc(100vw - 16px);display:flex;flex-direction:column;align-items:center;box-sizing:border-box;background:transparent;color:var(--teloa-text);font:inherit;font-size:var(--teloa-font-caption);line-height:var(--teloa-leading-label)}
 .companion button{font:inherit;color:inherit;cursor:pointer;box-sizing:border-box}
 .companion button:disabled{opacity:.55;cursor:default}
 .companion button:focus-visible{outline:2px solid var(--teloa-focus);outline-offset:2px}
@@ -19,15 +19,15 @@
 .panel{position:fixed;width:240px;max-width:calc(100vw - 16px);max-height:calc(100dvh - 16px);overflow:auto;box-sizing:border-box;overscroll-behavior:contain;border:1px solid var(--teloa-border);border-radius:12px;background:var(--teloa-surface);box-shadow:var(--teloa-shadow);padding:10px;color:var(--teloa-text)}
 .panel header{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:0 2px 6px}
 .panel strong{font-weight:500;font-size:var(--teloa-font-caption)}
-.panel p{font-size:var(--teloa-font-caption);line-height:1.7;margin:4px 4px 8px;color:var(--teloa-muted)}
+.panel p{font-size:var(--teloa-font-caption);line-height:var(--teloa-leading-body);margin:4px 4px 8px;color:var(--teloa-muted)}
 .poses{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:4px}
 .poses button{display:flex;align-items:center;flex-direction:column;gap:3px;padding:5px;border:1px solid transparent;border-radius:7px;background:transparent;font-size:var(--teloa-font-caption)}
 .poses button:hover{background:var(--teloa-hover)}
 .poses button[aria-pressed=true]{border-color:var(--teloa-accent);background:var(--teloa-accent-bg,var(--teloa-subtle))}
 .poses img{width:54px;height:54px;object-fit:contain;pointer-events:none}
-.error{background:var(--teloa-surface);border:1px solid var(--teloa-border);border-radius:8px;padding:8px;font-size:var(--teloa-font-caption);line-height:1.6;color:var(--teloa-warn,var(--teloa-text));overflow-wrap:anywhere}
+.error{background:var(--teloa-surface);border:1px solid var(--teloa-border);border-radius:8px;padding:8px;font-size:var(--teloa-font-caption);line-height:var(--teloa-leading-body);color:var(--teloa-warn,var(--teloa-text));overflow-wrap:anywhere}
 
-.status{margin:0;max-width:100%;text-align:center;color:var(--teloa-muted);font-size:var(--teloa-font-caption);line-height:1.5}
+.status{margin:0;max-width:100%;text-align:center;color:var(--teloa-muted);font-size:var(--teloa-font-caption);line-height:var(--teloa-leading-label)}
 .automatic{width:100%;margin:0 0 7px;padding:6px;border:1px solid var(--teloa-border);border-radius:7px;background:var(--teloa-subtle);font-size:var(--teloa-font-caption)!important}
 .automatic[aria-pressed=true]{border-color:var(--teloa-accent)}
 .pet img{animation:pose-enter 150ms ease-out}

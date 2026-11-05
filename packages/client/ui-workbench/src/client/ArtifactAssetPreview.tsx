@@ -50,7 +50,7 @@ function useAsset(file:ArtifactFile){
 export function ArtifactAssetDownload({file}:{file:ArtifactFile}){
  const {locale}=useI18n(),copy=artifactAssetCopy(locale),asset=useAsset(file)
  if(!asset.current?.url||asset.error)return null
- return <a className={css.download} href={asset.current.url} download={artifactAssetName(file)}><Download size={15} aria-hidden="true"/>{copy.download}</a>
+ return <a className={css.download} href={asset.current.url} download={artifactAssetName(file)}><Download size={16} aria-hidden="true"/>{copy.download}</a>
 }
 export function ArtifactAssetPreview({file}:{file:ArtifactFile}){
  const {locale}=useI18n(),copy=artifactAssetCopy(locale),asset=useAsset(file),[failed,setFailed]=useState<Source>(),media=useRef<HTMLVideoElement|HTMLAudioElement|null>(null)

@@ -1,3 +1,5 @@
+import {GroupReplyExecutionService,isGroupReplySession,readTrustedGroupReplySource} from '@teloa/backend'
+import {driveGroupReply,registerGroupReplyContext} from './group-reply-driver.ts'
 import {employeeReferenceAliases,registerEmployeeReferenceAliases,narrowEmployeeReferenceRules} from './employee-reference-aliases.ts'
 import {resolveEmployeeKnowledgeReferences} from '@teloa/backend'
 import {TaskRunInteractionService} from '@teloa/backend'
@@ -180,7 +182,7 @@ import {createTaskRunTeam,stopTaskRunChildren} from './task-run-team.ts'
 import {createTaskRunOrchestration} from './task-run-orchestration.ts'
 import {createTaskRunBrowser,attachTaskRunBrowser} from './task-run-browser.ts'
 import {assertRoutingGuardRegisteredFirst,registerGroupRoutingGuard} from './group-routing-guard.ts'
-import {assertRoutingPreset,isRoutingSession} from './group-routing.ts'
+import {assertRoutingPreset,isRoutingSession,isGroupExecutionSession} from './group-routing.ts'
 import {dispatchGroupRouting,readRoutingCandidates,readRoutingGroup,readRoutingMessage,readRoutingTopic,readRoutingWorkCandidates,type GroupRoutingDispatchPorts} from './group-routing-dispatch.ts'
 import {readTrustedGroupMessageRunSource} from '@teloa/backend'
 import {readSubagentDelegationLimits} from './subagent-delegation.ts'
@@ -1006,7 +1008,7 @@ async function applyHost(ctx:Context,projectRoot:string):Promise<void> {
   // 'no-run' 分支逐字「普通会话没有 Run 作用域，放行且不记录」），工具因此本来是放行的。
   // 先于任务闸注册：tools/pre-execute 是链式的，先注册的先判——顺序决定拿到哪一句固定理由、
   // 以及任务闸的策略读口要不要白查一次库，不决定是否被拒（判据是会话 id 的结构，不是登记表）。
-  registerGroupRoutingGuard(ctx,isRoutingSession)
+  registerGroupRoutingGuard(ctx,id=>isRoutingSession(id)||isGroupReplySession(id))
   // H3 装配期核一次默认预设：对不上就记一行 error 并停用群内路由，绝不让路由跑在没被组合安全钉
   // 覆盖的预设上。核对本身不阻塞装配，失败也不拖垮宿主（读不出结论时不下结论、下次再核）。
   void assertRoutingPreset(ctx,AbortSignal.timeout(30_000))
@@ -1887,7 +1889,7 @@ async function applyHost(ctx:Context,projectRoot:string):Promise<void> {
       if(!row)return false
       stage='source'
       const source=await readTrustedGroupMessageRunSource(database.pool,actor,{groupId:row.group_id,messageId})
-      if(!source)return false
+      if(!source)return !!await readTrustedGroupReplySource(database.pool,actor,{groupId:row.group_id,messageId})
       stage='run'
       const run=await(await runService()).get(actor,{runId:source.runId})
       if(!run.skills?.length)return true
@@ -1930,6 +1932,7 @@ async function applyHost(ctx:Context,projectRoot:string):Promise<void> {
    reconcile:async(actor,runId,signal)=>{if(actor!==owner)throw new WorkError('teloa/forbidden','群投递不属于当前本人。');return new TaskRunDriver(await runService(),runPorts).reconcile(actor,{runId},signal)},
    report:code=>ctx.logger.warn('Teloa 群投递待核对：%s',code),
   }
+  groupDelivery.reply=(actor,item,signal)=>{if(actor!==owner)throw new WorkError('teloa/forbidden','群回复不属于当前本人。');return driveGroupReply(ctx,actor,item,{service:groupReplyService(),bind:resident.bindGroupReply,displayName:()=>personalDisplayProfile.displayName(),...(runPorts.groupPrompt?{images:runPorts.groupPrompt}:{})},signal)}
   groupRoutingDispatchPorts.delivery=groupDelivery
   // 群对原工作的追加与停止：复用一键准备/启动与原工作控制；常驻泵与路由定案后都会排空，未知结果只按原身份核对。
   const groupWorkInputPorts:GroupWorkInputPorts={inputs:new GroupWorkInputService(database.pool,{now:()=>new Date().toISOString()}),prepare:groupRoutingDispatchPorts.prepare,start:groupRoutingDispatchPorts.start,readRun:async(actor,runId,signal)=>{signal.throwIfAborted();if(actor!==owner)throw new WorkError('teloa/forbidden','群工作追加不属于当前本人。');return(await runService()).get(actor,{runId})},reconcile:groupDelivery.reconcile,
@@ -1957,6 +1960,9 @@ async function applyHost(ctx:Context,projectRoot:string):Promise<void> {
   // 运行上下文里的文本类附件要现读正文；只改一个键名走同一处适配，不再写第二份按 kind 的分流。
   // 文件类按 maxBytes 只读前段（文本正文只要前 groupFileTextMaxBytes 字节）；图片仍整张读，交给同一处按 kind 分流的适配。
   const runGroupFilePorts:RunGroupFilePorts={readWorkResourceReferences:async(db,actor,scope,references)=>(await resources.database()).service.executionKnowledgeReferencesInTransaction(db,{ownerId:actor,kind:'agent',scopeIds:[scope]},[scope],references),readAttachmentBytes:(file,maxBytes)=>file.kind==='image'?toBackendBytePorts(attachmentPorts).readBytes({attachmentId:file.attachmentId,kind:file.kind,mime:file.mediaType,bytes:file.bytes,name:file.name,width:file.width,height:file.height}):attachmentPorts.readFileBytes({attachmentId:file.attachmentId,name:file.name,bytes:file.bytes},undefined,maxBytes)}
+  const groupReplyService=()=>new GroupReplyExecutionService(database.pool,workIdentity,runGroupFilePorts,resident.hostGeneration)
+  resident.registerGroupReplies({service:groupReplyService()})
+  registerGroupReplyContext(ctx,groupReplyService,owner)
   const groupAttachmentHandler=createGroupAttachmentHandler(owner,async signal=>{
     // 后端服务方法不收 signal，取消只能沿字节端口下传：因此字节端口按每次 RPC 现折一份。
     const service=new GroupAttachmentService((await resources.database()).pool,{id:randomUUID,now:()=>new Date().toISOString()},toBackendBytePorts(attachmentPorts,signal))
@@ -2053,7 +2059,7 @@ async function applyHost(ctx:Context,projectRoot:string):Promise<void> {
    owner,pool:database.pool,budgets:resident.budgets,
    ...projectAdapters,loadVerifiedEvidence:projectVerified.loadVerifiedEvidence,verifiedSources:projectVerified.verifiedSources,
    model:async(sessionId,signal)=>localModelsHandler.prepareRequest(await projectAdapters.model(sessionId,signal),signal),
-   applies:sessionId=>!isRoutingSession(sessionId),
+   applies:sessionId=>!isGroupExecutionSession(sessionId),
    checkText:text=>{if(!checkPromptSecrets([text],storedSecrets).ok)throw new WorkError('teloa/forbidden','项目背景含有密钥信息，请先移除后继续。')},
    report:code=>ctx.logger.warn('Teloa 项目上下文待核对：%s',code),
   })
@@ -2061,7 +2067,7 @@ async function applyHost(ctx:Context,projectRoot:string):Promise<void> {
   const projectRuntimeHandler=createProjectRuntimeHandler(owner,async()=>{if(!projectRuntimeHost)throw new WorkError('teloa/host-unavailable','项目运行上下文尚未就绪。');return projectRuntimeHost},async sessionId=>{const id=brandString<SessionId>(sessionId),live=ctx.agents.get(id);return live?{events:readSessionEvents(live.session),inheritedEventCount:live.session.inheritedEventCount}:ctx.sessionController.inspect(id)})
   // @员工只选择本轮父会话身份；知识、经验和能力不从正文自报，也不创建Task授权。
   const employeeMentionApplies=async(sessionId:string)=>{
-   if(isRoutingSession(sessionId)||new Set<string>(ctx.workspaceRegistry.archivedSessionIds).has(sessionId))return false
+   if(isGroupExecutionSession(sessionId)||new Set<string>(ctx.workspaceRegistry.archivedSessionIds).has(sessionId))return false
    if(!(await conversationWorkEligibility(sessionId)).eligible||await businessBindings.isPendingDaily(owner,sessionId))return false
    return await businessConversationAuthorization.readTaskPolicy(sessionId,new AbortController().signal)===null
   }
@@ -2866,6 +2872,7 @@ async function applyHost(ctx:Context,projectRoot:string):Promise<void> {
   resources.beforeDatabaseClose(()=>employeeIntegrations.close())
   const runtimeReadiness=createRuntimeReadinessHandler(owner,{database:async()=>{const {pool}=await resources.database();if((await pool.query('select 1 as ready')).rows[0]?.ready!==1)throw new WorkError('teloa/storage-unavailable','数据库尚未就绪。')},conversations:()=>repository.read()})
   const dispatchTeloaEndpoint=async(endpoint:string,payload:unknown,signal:AbortSignal,includeRunDirectory=false)=>{
+    if(endpoint==='groups/replies/stop')throw new WorkError('teloa/forbidden','停止群回复仅供本人浏览器操作。')
     if(endpoint===runtimeReadinessEndpoint)return runtimeReadiness(payload,signal)
     if((groupDeliveryRecoveryEndpoints as readonly string[]).includes(endpoint))throw new WorkError('teloa/forbidden','执行能力选择须由本人在原群工作中明确确认。')
     if(artifactEndpoints.includes(endpoint))throw new WorkError('teloa/forbidden','成果原件与审计操作仅供本人浏览器连接使用。')
@@ -3070,6 +3077,7 @@ async function applyHost(ctx:Context,projectRoot:string):Promise<void> {
        return {ok:true,value:await taskRunHandler(endpoint,payload,signal)}
       }
       // 自动工作目录只扩展本人浏览器读面；工具/SDK/IM仍保持普通会话目录。
+      if(peer===connection.browserPeer&&endpoint==='groups/replies/stop'){const row=taskInput(payload,['requestId','groupId','replyExecutionId']);const fixed=await groupReplyService().stop(owner,row as {requestId:string;groupId:string;replyExecutionId:string});if(fixed.state==='withdrawn')await ctx.sessionController.cancel({sessionId:brandString<SessionId>(fixed.sessionId)});return {ok:true,value:{replyExecutionId:fixed.id,state:fixed.resultMessageId?'completed':'stopped'}}}
       if(peer===connection.browserPeer&&[runtimeReadinessEndpoint,'conversations/list','conversations/page','conversations/search','object-conversations/list','object-conversations/session'].includes(endpoint))return {ok:true,value:await dispatchTeloaEndpoint(endpoint,payload,signal,true)}
       // 资料来源预览只供本人浏览器；不加入通用工具分发，也不恢复结束运行的工具许可。
       if(endpoint==='task-reference/source'){

@@ -27,7 +27,7 @@ export function RoleDelegationOverview({role,current,status,toolNames,knowledge,
  const row=(Icon:LucideIcon,title:RoleDelegationMessageKey,value:ReactNode)=><div className={css.row}><Icon size={18}/><div className={css.rowBody}><h4>{t(title)}</h4>{value}</div><button type="button" className={css.rowAction} aria-label={t('roleDelegation.overview.editRow',{name:t(title)})} onClick={()=>show()}><ChevronRight size={16}/></button></div>
  return <div className={css.overview}>
   <header className={css.heading}><div><h2>{t('team.twin.tab.boundary')}</h2><p>{t('roleDelegation.overview.lead')}</p></div></header>
-  <div className={css.status} role="status"><ShieldCheck size={21}/><div><strong>{t(status)}</strong><p>{t(current?'roleDelegation.overview.currentHint':'roleDelegation.overview.draftHint')}</p></div><button type="button" className={css.primary} onClick={()=>show()}>{t('roleDelegation.overview.manage')}<ChevronRight size={15}/></button></div>
+  <div className={css.status} role="status"><ShieldCheck size={21}/><div><strong>{t(status)}</strong><p>{t(current?'roleDelegation.overview.currentHint':'roleDelegation.overview.draftHint')}</p></div><button type="button" className={css.primary} onClick={()=>show()}>{t('roleDelegation.overview.manage')}<ChevronRight size={14}/></button></div>
   {error&&<p role="alert" className={css.error}>{error}</p>}
   {pending&&<p className={css.notice}>{t('roleDelegation.pending')} <button type="button" onClick={()=>show()}>{t('roleDelegation.recover')}</button></p>}
   <div className={css.columns}><div><div className={css.sectionTitle}><h3>{t('roleDelegation.overview.work')}</h3><span>{t(current?'roleDelegation.overview.saved':'roleDelegation.overview.configured')}</span></div>
@@ -36,7 +36,7 @@ export function RoleDelegationOverview({role,current,status,toolNames,knowledge,
     {row(BookOpen,'roleDelegation.overview.material',tags(materials,materialIds.length-materials.length))}
     {row(Wrench,'roleDelegation.overview.tools',tags(tools))}
     {row(Users,'roleDelegation.overview.groups',tags(collaborators,groupIds.length-collaborators.length))}
-    <footer className={css.cardFooter}><span><LockKeyhole size={13}/>{t('roleDelegation.overview.identity')}</span>{hasHistory&&<button type="button" onClick={()=>show(true)}><Clock3 size={14}/>{t('roleDelegation.history')}<ChevronRight size={13}/></button>}</footer>
+    <footer className={css.cardFooter}><span><LockKeyhole size={13}/>{t('roleDelegation.overview.identity')}</span>{hasHistory&&<button type="button" onClick={()=>show(true)}><Clock3 size={14}/>{t('roleDelegation.history')}<ChevronRight size={14}/></button>}</footer>
    </div></div><aside className={css.aside}><h3>{t('roleDelegation.overview.principles')}</h3><ul>{(['inScope','ask','identity'] as const).map(key=><li key={key}><ShieldCheck size={14}/><span>{t(`roleDelegation.overview.${key}`)}</span></li>)}</ul><p>{t('roleDelegation.privateMemory')}</p><p>{t('roleDelegation.configureHint')}</p></aside></div>
   <ContextDrawer open={open} title={t('roleDelegation.overview.manage')} close={close} className={css.drawer??''}>
    <div ref={manager} className={css.manager}>{children}</div>

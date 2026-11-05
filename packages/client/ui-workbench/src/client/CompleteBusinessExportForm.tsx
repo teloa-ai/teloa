@@ -39,7 +39,7 @@ export function CompleteBusinessExportForm({scope,api,draftKey}:Props){
   }catch(cause){if(isCurrent(current))setError(localizeWorkError(locale,cause))}finally{if(isCurrent(current)){acting.current=false;setBusy(undefined)}}
  }
  return <section className={css.panel} aria-label={t('business.complete.title')}>
-  <header><div><h2>{t('business.complete.title')}</h2><p>{t('business.complete.description')}</p></div><button type="button" disabled={!!busy} onClick={()=>setRevision(value=>value+1)}><RefreshCw size={15}/>{t('taskExecution.refresh')}</button></header>
+  <header><div><h2>{t('business.complete.title')}</h2><p>{t('business.complete.description')}</p></div><button type="button" disabled={!!busy} onClick={()=>setRevision(value=>value+1)}><RefreshCw size={16}/>{t('taskExecution.refresh')}</button></header>
   <p>{t('business.complete.boundary')}</p>
   {error&&<p className={base.error} role="alert">{error}</p>}{notice&&<p role="status">{notice}</p>}
   {busy==='read'?<p role="status">{t('business.share.loading')}</p>:!currentSource?<button type="button" onClick={()=>setRevision(value=>value+1)}>{t('common.retry')}</button>:<>
@@ -50,7 +50,7 @@ export function CompleteBusinessExportForm({scope,api,draftKey}:Props){
     <label>{t('business.share.summary')}<textarea rows={3} value={draft.description} onChange={event=>change('description',event.target.value)}/></label>
    </fieldset>
    {currentPreview&&<div role="status"><p>{t('business.complete.files',{count:currentPreview.fileCount})}</p><ul>{Object.entries(currentPreview.counts).filter(([,count])=>count>0).map(([kind,count])=><li key={kind}>{t(('market.industry.resource.'+kind) as Parameters<typeof t>[0])}: {count}</li>)}</ul></div>}
-   <footer><button type="button" disabled={!!busy||!draft.packageId.trim()||!draft.title.trim()||!draft.packageVersion.trim()||!draft.description.trim()} onClick={()=>void generate()}>{busy==='plan'?t('business.share.generating'):t('business.share.generate')}</button>{currentPreview&&<button type="button" disabled={!!busy} onClick={()=>void download()}><Download size={15}/>{busy==='download'?t('business.share.generating'):t('business.complete.download')}</button>}</footer>
+   <footer><button type="button" disabled={!!busy||!draft.packageId.trim()||!draft.title.trim()||!draft.packageVersion.trim()||!draft.description.trim()} onClick={()=>void generate()}>{busy==='plan'?t('business.share.generating'):t('business.share.generate')}</button>{currentPreview&&<button type="button" disabled={!!busy} onClick={()=>void download()}><Download size={16}/>{busy==='download'?t('business.share.generating'):t('business.complete.download')}</button>}</footer>
   </>}
  </section>
 }

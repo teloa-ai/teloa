@@ -16,6 +16,7 @@ function mount(props:any){
  const js=ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.React}}).outputText
  const states:any[]=[],effects:(()=>void)[]=[];let cursor=0
  const react={
+  useId:()=>':home-context-test:',
   createElement:(type:unknown,props:any,...children:any[])=>({type,props:props??{},children:children.flat(Infinity)}),
   useState:(initial:any)=>{const id=cursor++;if(!(id in states))states[id]=initial;return [states[id],(next:any)=>{states[id]=typeof next==='function'?next(states[id]):next}]},
   useSyncExternalStore:(_:any,get:any)=>get(),

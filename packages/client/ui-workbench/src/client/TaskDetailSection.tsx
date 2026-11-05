@@ -10,7 +10,7 @@ import markdownTypography from './MarkdownTypography.module.css'
 export function TaskDetailSection({title,anchor,defaultOpen=false,children}:{title:string;anchor?:string;defaultOpen?:boolean;children:ReactNode}){
  const [open,setOpen]=useState(defaultOpen),id=useId()
  return <section className={css.disclosure} data-teloa-fold="task-detail" data-teloa-anchor={anchor}>
-  <button type="button" className={css.disclosureTrigger} aria-expanded={open} aria-controls={id} onClick={()=>setOpen(value=>!value)}><ChevronDown size={15} aria-hidden="true"/>{title}</button>
+  <button type="button" className={css.disclosureTrigger} aria-expanded={open} aria-controls={id} onClick={()=>setOpen(value=>!value)}><ChevronDown size={14} aria-hidden="true"/>{title}</button>
   <div id={id} hidden={!open} className={css.disclosureBody}>{children}</div>
  </section>
 }

@@ -15,3 +15,6 @@
 .notice p{margin:0 0 10px}
 .notice button{margin-inline-start:8px}
 @media(max-width:740px){.card{padding:16px}.form{align-items:stretch}.form label{max-width:none;flex-basis:100%}.card button,.card select{min-height:44px}.form button{width:100%}}
+
+/* 深层配置与详情标题使用界面层级，避免浏览器默认字号和粗体。 */
+.card>header>h2{font-weight:var(--teloa-weight-heading);}

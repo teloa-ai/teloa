@@ -6,6 +6,7 @@ import type {SessionRequestId} from '@deepseek-ai/dsh-api-session-controller'
 import {createUserMessage,LlmError,ReasoningEffortId,type ContextFormed} from '@deepseek-ai/dsh-llm'
 import type {Agent} from '@deepseek-ai/dsh-agent'
 import type {RunGroupTopic} from '@teloa/backend'
+import {isGroupReplySession} from '@teloa/backend'
 import {WorkError,groupReactionEmojis,groupRoutingHopLimit,groupRoutingInputSchema,groupRoutingOutputV2,groupRoutingOutputV2Schema,groupRoutingAttemptRequestId,groupRoutingSessionId,groupRoutingTopicMax,type GroupRoutingOutputV2,type WorkBudgetExhaustion} from '@teloa/contract'
 import {teloaAgentPresetId} from './composition-safety.ts'
 import {prepareDshTaskSession,resolveDshTaskPreset} from './task-run-dsh.ts'
@@ -91,6 +92,8 @@ const responsibility=(items:readonly string[]):string[]=>items.slice(0,responsib
  */
 const routingSessionPattern=/^group-routing-[0-9a-f]{8}-[0-9a-f]{4}-5[0-9a-f]{3}-a[0-9a-f]{3}-[0-9a-f]{12}$/
 export function isRoutingSession(sessionId:string):boolean{return routingSessionPattern.test(sessionId)}
+/** 群路由及普通群回复使用独立输入身份，不能套用本人普通会话上下文。 */
+export function isGroupExecutionSession(sessionId:string):boolean{return isRoutingSession(sessionId)||isGroupReplySession(sessionId)}
 
 /**
  * 本人原文的合法分工范围（UTF-16，start 含 end 不含）：第一项恒为整句，其后按句读切分的各句。

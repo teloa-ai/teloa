@@ -57,7 +57,7 @@ function QrDialog({kind,close}:{kind:QrKind;close:()=>void}){
   }
   return <div className={css.dialogBackdrop} onMouseDown={event=>{if(event.target===event.currentTarget)close()}}>
     <div className={css.qrDialog} role="dialog" aria-modal="true" aria-labelledby="about-qr-title" tabIndex={-1} onKeyDown={onKeyDown}>
-      <header><div><h2 id="about-qr-title">{details.title}</h2><p>{details.description}</p></div><button ref={closeButton} type="button" aria-label={t('about.close')} onClick={close}><X size={18}/></button></header>
+      <header><div><h2 id="about-qr-title">{details.title}</h2><p>{details.description}</p></div><button ref={closeButton} type="button" aria-label={t('about.close')} onClick={close}><X size={16}/></button></header>
       <QrCode src={details.src} viewBox={details.viewBox} width={details.width} height={details.height} label={details.title} caption={details.caption}/>
     </div>
   </div>

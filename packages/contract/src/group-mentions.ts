@@ -1,6 +1,7 @@
 import {WorkError} from './work-error.ts'
 import {taskInput} from './tasks.ts'
 import {groupMessageSearchInput,readGroupMessageSearchResult,type GroupMessageSearchResult} from './group-messages.ts'
+import {isGroupEmployeeResponse} from './collaboration.ts'
 
 export type GroupAttention={groupId:string;unreadCount:number;mentionCount:number}
 export type GroupMentionsInput={groupId:string;rootId?:string;before?:string;limit:number;unreadOnly:boolean}
@@ -30,6 +31,6 @@ export function readGroupMentionsPage(value:unknown):GroupMentionsPage{
  const items=(row.items as unknown[]).map(value=>{const item=taskInput(value,['message','rootId','excerpt','unread']);if(typeof item.unread!=='boolean')invalid();const {unread,...entry}=item;return {unread:unread as boolean,entry}})
  const {unreadOnly,...page}=row
  const result=readGroupMessageSearchResult({...page,schema:'teloa.group-message-search/v1',query:'@self',items:items.map(item=>item.entry)})
- if(result.items.some(item=>!('runId' in item.message)||item.message.mentionSelf!==true)||unreadOnly&&items.some(item=>!item.unread))invalid()
+ if(result.items.some(item=>!isGroupEmployeeResponse(item.message)||item.message.mentionSelf!==true)||unreadOnly&&items.some(item=>!item.unread))invalid()
  return {schema:'teloa.group-mentions/v1',groupId:result.groupId,rootId:result.rootId,unreadOnly:unreadOnly as boolean,items:result.items.map((item,index)=>({...item,unread:items[index]!.unread})),next:result.next}
 }

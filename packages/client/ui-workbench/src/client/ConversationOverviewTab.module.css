@@ -12,3 +12,5 @@
 .record header button{display:flex;gap:5px;align-items:center;border:0;background:transparent;color:var(--teloa-muted);cursor:pointer;font:inherit;font-size:var(--teloa-font-caption)}
 .record h2{margin:12px 0 0;font-size:var(--teloa-font-section);font-weight:var(--teloa-weight-heading)}
 .record pre{flex:1;min-height:0;overflow:auto;margin:0;padding:18px;white-space:pre-wrap;overflow-wrap:anywhere;font-size:var(--teloa-font-caption)}
+
+.entry{width:var(--teloa-action-height,32px);height:var(--teloa-action-height,32px);padding:0;line-height:1}.entry>svg{width:var(--teloa-icon-control,16px);height:var(--teloa-icon-control,16px)}

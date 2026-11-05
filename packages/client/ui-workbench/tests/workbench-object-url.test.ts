@@ -510,3 +510,26 @@ test('已落定的市场筛选在历史适配器重挂前写回同本人条目�
  await tick();assert.equal(received?.directories.market?.category,'apps');assert.equal(received?.directories.market?.query,'原市场筛选')
  adapter.dispose()
 })
+
+test('从任务目录新建会话时，旧绑定切到新绑定只替换准备入口，单次返回恢复原目录',async()=>{
+ const web=browser('http://localhost:3241/'+hash('conversation',A)),ui=createWorkbenchStore().create()
+ ui.actions.openMessages('native')
+ let conversationId:string|undefined=A
+ const adapter=attachWorkbenchObjectHistory({window:web.window,scope:'owner',capture:()=>captureWorkbenchNavigationState(ui.getSnapshot()),describe:async()=>describeWorkbenchObject(ui.getSnapshot(),{...(conversationId?{conversationId}:{})}),restore:async(route,local,current)=>{if(current())ui.actions.restoreObjectNavigation(navigationForWorkbenchObject(route,local))},error:error=>{throw error}})
+ const observe=()=>adapter.observe(ui.getSnapshot().objectNavigationRevision,conversationId)
+ observe();await tick()
+ ui.actions.navigate('tasks');observe();await tick()
+ ui.actions.rememberDirectory('tasks',{query:'原任务筛选',scrollTop:120});observe();await tick()
+ const directory=web.location.hash
+ conversationId=undefined;ui.actions.openMessages('native');observe();await tick()
+ const pushes=web.calls.filter(row=>row.kind==='push').length
+ assert.equal(web.location.hash,workbenchObjectHash({base:{kind:'directory',view:'messages',mode:'native'}}))
+ conversationId=B;observe();await tick()
+ assert.equal(web.location.hash,hash('conversation',B))
+ assert.equal(web.calls.filter(row=>row.kind==='push').length,pushes,'会话绑定回填不应给同一次新建追加第二个历史节点')
+ web.history.back();await tick();observe();await tick()
+ assert.equal(web.location.hash,directory);assert.equal(ui.getSnapshot().view,'tasks');assert.equal(ui.getSnapshot().navigationDirectories.tasks?.query,'原任务筛选')
+ web.history.forward();await tick();observe();await tick()
+ assert.equal(web.location.hash,hash('conversation',B));assert.equal(ui.getSnapshot().view,'messages')
+ adapter.dispose()
+})
