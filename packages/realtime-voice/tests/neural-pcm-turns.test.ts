@@ -5,13 +5,13 @@ import {createNeuralPcmTurns} from '../src/neural-pcm-turns.ts'
 function fixture(onPreview?:(pcm:Uint8Array|null)=>void){
  let probability=0,resets=0
  const turns=createNeuralPcmTurns({predict:async()=>probability,reset(){resets++},async close(){}},onPreview)
- async function push(ms:number,p:number,amplitude=2000){probability=p;const results=[];for(let at=0;at<ms;at+=32){const bytes=new Uint8Array(1024),view=new DataView(bytes.buffer);for(let n=0;n<512;n++)view.setInt16(n*2,amplitude,true);await turns.push(bytes.subarray(0,640));results.push(await turns.push(bytes.subarray(640)))}return results}
+ async function push(ms:number,p:number,amplitude=p<.2?0:2000){probability=p;const results=[];for(let at=0;at<ms;at+=32){const bytes=new Uint8Array(1024),view=new DataView(bytes.buffer);for(let n=0;n<512;n++)view.setInt16(n*2,amplitude,true);await turns.push(bytes.subarray(0,640));results.push(await turns.push(bytes.subarray(640)))}return results}
  return {turns,push,get resets(){return resets}}
 }
 test('大音量非人声不打断，低音量连续人声能确认，半秒停顿不拆句',async()=>{
  const f=fixture()
  assert.ok((await f.push(1024,.01,16000)).every(r=>!r.started&&!r.turn))
- assert.ok((await f.push(160,.95,100)).every(r=>!r.started))
+ assert.ok((await f.push(224,.95,100)).every(r=>!r.started))
  assert.equal((await f.push(32,.95,100)).at(-1)?.started,true)
  assert.ok((await f.push(576,.01)).every(r=>!r.turn))
  await f.push(256,.8,100)
@@ -37,4 +37,14 @@ test('reset使等待中的概率失效，静音前的残留首音不能进入新
  await turns.push(new Uint8Array(640));const held=turns.push(new Uint8Array(384))
  turns.reset();release(.99)
  assert.deepEqual(await held,{started:false,turn:null});assert.equal(await turns.flush(),null)
+})
+
+test('稳定背景噪声的偶发高概率不能变成输入，抬高于底噪的真实人声仍能通过',async()=>{
+ const f=fixture()
+ await f.push(1600,.02,1400)
+ assert.ok((await f.push(640,.95,1400)).every(r=>!r.started&&!r.turn),'与底噪同音量的误判不能触发ASR')
+ assert.equal(await f.turns.flush(),null)
+ assert.ok((await f.push(224,.7,5600)).every(r=>!r.started),'中等置信背景声不能仅靠大音量放行')
+ const voice=await f.push(320,.96,5600);assert.ok(voice.some(r=>r.started))
+ assert.ok((await f.push(608,.02,1400)).some(r=>r.turn))
 })

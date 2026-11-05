@@ -10,14 +10,14 @@ Teloa 用于构建、协作和运行 AI 团队。**Teloa 社区版** 是面向�
 
 需要 Node.js **24.22.1+（24.x）或 22.23.4+（22.x）**、npm **11.12.1+（11.x）**，以及已启动的本机 Docker 引擎（用于独立 PostgreSQL 数据库）。
 
-以下示例适用于对应已发布的 0.2.29 工件，运行前请核对该渠道的可用版本。
+以下示例适用于对应已发布的 0.2.30 工件，运行前请核对该渠道的可用版本。
 
 ```sh
-npm install -g --ignore-scripts https://github.com/teloa-ai/teloa/releases/download/v0.2.29/teloa-cli-0.2.29.tgz
+npm install -g --ignore-scripts https://github.com/teloa-ai/teloa/releases/download/v0.2.30/teloa-cli-0.2.30.tgz
 teloa up
 ```
 
-本源码及命令版本为 **0.2.29**。各渠道的可用版本分别以 [GitHub Releases](https://github.com/teloa-ai/teloa/releases)、[npm 注册表](https://www.npmjs.com/package/@teloa/cli?activeTab=versions)和 [Docker Hub](https://hub.docker.com/r/teloa/teloa) 为准；源码版本不代表每个渠道均已有对应工件。SDK 保持兼容 `@teloa/sdk@0.2.4`。升级已有安装时，安装本命令包后先运行 `teloa stop`，再运行 `teloa upgrade --to 0.2.29`（自定义安装继续传入原 `--home`）。`--to` 等于当前命令包版本时以本包为候选，其他版本从 npm 注册表取得；升级前自动备份，并保留原安装身份与数据。
+本源码及命令版本为 **0.2.30**。各渠道的可用版本分别以 [GitHub Releases](https://github.com/teloa-ai/teloa/releases)、[npm 注册表](https://www.npmjs.com/package/@teloa/cli?activeTab=versions)和 [Docker Hub](https://hub.docker.com/r/teloa/teloa) 为准；源码版本不代表每个渠道均已有对应工件。SDK 保持兼容 `@teloa/sdk@0.2.4`。升级已有安装时，安装本命令包后先运行 `teloa stop`，再运行 `teloa upgrade --to 0.2.30`（自定义安装继续传入原 `--home`）。`--to` 等于当前命令包版本时以本包为候选，其他版本从 npm 注册表取得；升级前自动备份，并保留原安装身份与数据。
 
 默认打开本机 Web 界面，首次进入后在设置中配置模型。在浏览器未自动打开时运行 `teloa open`。默认安装目录为 `~/.teloa`，Web 端口为 3100；新安装可通过 `teloa up --home <目录> --port <端口> --workspace <工作目录>` 指定。
 
@@ -50,7 +50,7 @@ This package includes the Community application and its installation and mainten
 
 Use Node.js **24.22.1+ (24.x) or 22.23.4+ (22.x)**, npm **11.12.1+ (11.x)**, and a running local Docker engine for the dedicated PostgreSQL database. Run the installation commands above, then configure your model in the Web interface. The default home is `~/.teloa` and the default Web port is 3100. A new installation accepts `--home`, `--port` and `--workspace`; `--no-open` suppresses the browser launch.
 
-Use `status`, `doctor`, `open`, `logs`, `stop` and `restart` for daily maintenance. Stop the installation before backups or upgrades. This source and its CLI use version **0.2.29**. Installation examples apply to the corresponding published artifacts. Check available versions separately on [GitHub Releases](https://github.com/teloa-ai/teloa/releases), [npm](https://www.npmjs.com/package/@teloa/cli?activeTab=versions) and [Docker Hub](https://hub.docker.com/r/teloa/teloa); the source version does not imply that every channel has a matching artifact. The SDK remains compatible at `@teloa/sdk@0.2.4`. To upgrade an existing installation, install this command package, run `teloa stop`, then `teloa upgrade --to 0.2.29`, passing the original `--home` for a custom installation. When `--to` matches the running package, it is the candidate; other versions come from the npm registry. The upgrade backs up first and keeps the installation identity and data. Restore backups into a new home. Backups exclude model credentials and workspace files; reconfigure credentials and verify the original workspace before resuming. `uninstall` unregisters the service and preserves data. Consult `teloa --help` for version-specific arguments.
+Use `status`, `doctor`, `open`, `logs`, `stop` and `restart` for daily maintenance. Stop the installation before backups or upgrades. This source and its CLI use version **0.2.30**. Installation examples apply to the corresponding published artifacts. Check available versions separately on [GitHub Releases](https://github.com/teloa-ai/teloa/releases), [npm](https://www.npmjs.com/package/@teloa/cli?activeTab=versions) and [Docker Hub](https://hub.docker.com/r/teloa/teloa); the source version does not imply that every channel has a matching artifact. The SDK remains compatible at `@teloa/sdk@0.2.4`. To upgrade an existing installation, install this command package, run `teloa stop`, then `teloa upgrade --to 0.2.30`, passing the original `--home` for a custom installation. When `--to` matches the running package, it is the candidate; other versions come from the npm registry. The upgrade backs up first and keeps the installation identity and data. Restore backups into a new home. Backups exclude model credentials and workspace files; reconfigure credentials and verify the original workspace before resuming. `uninstall` unregisters the service and preserves data. Consult `teloa --help` for version-specific arguments.
 
 To use your own PostgreSQL, supply a protected JSON file containing `connectionString` through `--database-config`. Only a dedicated database named `teloa` on `localhost` or `127.0.0.1` is accepted. It must be empty for a new installation; existing business databases or databases owned by another installation are rejected. Keep this file at mode `0600` and keep credentials out of command lines, repositories and shared logs.
 
