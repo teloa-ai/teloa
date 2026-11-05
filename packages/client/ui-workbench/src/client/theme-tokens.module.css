@@ -34,32 +34,44 @@
 :global(:where(body[data-teloa-ui-font] button:focus-visible)){outline:2px solid var(--teloa-focus);outline-offset:2px}
 :global(:where(body[data-teloa-ui-font] button:disabled)){opacity:.5;cursor:default}
 
-/* 产品字体规范：按用途取值；portal 浮层同样继承。会话正文仍尊重用户字号设置。 */
+/* 工作界面按用途统一字号与密度；随用户字号缩放，阅读和会话正文保留独立设置。 */
 :global(:root),:global(body),.tokens{
- --teloa-font-caption:var(--teloa-design-text-xs,12px);
- --teloa-font-control:var(--teloa-design-text-sm,13px);
- --teloa-font-body:calc(var(--teloa-design-text-base,.875rem) * 15 / 14);
+ --teloa-font-caption:calc(var(--teloa-design-text-base,.875rem) * 12 / 14);
+ --teloa-font-control:calc(var(--teloa-design-text-base,.875rem) * 13 / 14);
+ --teloa-font-body:calc(var(--teloa-design-text-base,.875rem) * 13 / 14);
  --teloa-font-list:var(--teloa-font-body);
+ --teloa-font-mono:var(--teloa-design-mono,ui-monospace,SFMono-Regular,Menlo,monospace);
  --teloa-font-reading:var(--teloa-design-text-body,15px);
- --teloa-font-section:var(--teloa-design-text-lg,1.125rem);
- --teloa-font-dialog:calc(var(--teloa-design-text-base,.875rem) * 22 / 14);
- --teloa-font-detail:calc(var(--teloa-design-text-base,.875rem) * 24 / 14);
- --teloa-font-page:var(--teloa-design-text-xl,24px);
- --teloa-font-hero:var(--teloa-design-text-title,2rem);
- --teloa-font-metric:calc(var(--teloa-font-body) * 2);
+ --teloa-font-section:var(--teloa-design-text-base,.875rem);
+ --teloa-font-dialog:calc(var(--teloa-design-text-base,.875rem) * 16 / 14);
+ --teloa-font-detail:calc(var(--teloa-design-text-base,.875rem) * 18 / 14);
+ --teloa-font-page:calc(var(--teloa-design-text-base,.875rem) * 18 / 14);
+ --teloa-font-hero:calc(var(--teloa-design-text-base,.875rem) * 24 / 14);
+ --teloa-font-metric:calc(var(--teloa-design-text-base,.875rem) * 20 / 14);
  --teloa-font-touch-input:max(1rem,var(--teloa-font-body));
  --teloa-weight-regular:400;
  --teloa-weight-medium:500;
- --teloa-weight-heading:600;
+ --teloa-weight-heading:500;
  --teloa-leading-heading:1.4;
  --teloa-leading-label:1.5;
  --teloa-leading-body:1.6;
  --teloa-leading-reading:1.75;
- --teloa-page-gutter:clamp(20px,3vw,40px);
+ --teloa-page-gutter:clamp(20px,2.5vw,32px);
  --teloa-content-width:1360px;
  --teloa-reading-width:76ch;
- --teloa-control-height:38px;
- --teloa-card-padding:20px;
+ --teloa-control-height:36px;
+ --teloa-action-height:32px;
+ --teloa-action-compact:28px;
+ --teloa-action-inline:24px;
+ --teloa-icon-control:16px;
+ --teloa-icon-compact:14px;
+ --teloa-space-1:4px;
+ --teloa-space-2:8px;
+ --teloa-space-3:12px;
+ --teloa-space-4:16px;
+ --teloa-space-5:20px;
+ --teloa-space-6:24px;
+ --teloa-card-padding:16px;
 }
 
 /* 网页共同底线。低特异性使编辑器、图表和原生组件继续控制自己的排版。 */
@@ -69,7 +81,7 @@
  box-shadow:var(--teloa-design-shadow-modal);font-family:var(--teloa-design-font);
 }
 :global(body[data-teloa-ui-font]) :global(:where(dialog)::backdrop){background:var(--teloa-backdrop)}
-:global(body[data-teloa-ui-font]) :global(:where(input,textarea,select)){line-height:1.5}
+:global(body[data-teloa-ui-font]) :global(:where(input,textarea,select)){line-height:var(--teloa-leading-label)}
 :global(body[data-teloa-ui-font]) :global(:where(input,textarea)::placeholder){color:var(--teloa-muted);opacity:1}
 :global(body[data-teloa-ui-font]) :global(:where(button,a,summary)){touch-action:manipulation}
 :global(body[data-teloa-ui-font]) :global(:where(button)>svg){flex-shrink:0}
@@ -94,13 +106,13 @@
 
 /* 复合搜索把焦点交给外壳，独立输入和选择控件继续使用通用焦点。 */
 /* 复合搜索由外壳提供边框与留白，避免再次叠加页面通用输入框的内边距。 */
-:global(body[data-teloa-ui-font]) :global([data-teloa-field-shell] input){border:0;border-radius:0;padding:0;background:transparent;min-width:0}
+:global(body[data-teloa-ui-font]) :global([data-teloa-field-shell] input){border:0;border-radius:0;padding:0;background:transparent;min-width:0;line-height:var(--teloa-leading-label,1.5)}
 :global(body[data-teloa-ui-font]) :global([data-teloa-field-shell]:focus-within){outline:2px solid var(--teloa-focus);outline-offset:2px}
 :global(body[data-teloa-ui-font]) :global([data-teloa-field-shell] input:focus-visible){outline:0;box-shadow:none}
 /* 保留原生选择和键盘操作，只统一单选框箭头及其留白。列表框继续使用系统外观。 */
 :global(body[data-teloa-ui-font]) :global(select:not([multiple]):not([size]):not([data-teloa-custom-select])),:global(body[data-teloa-ui-font]) :global(select:not([multiple])[size="1"]:not([data-teloa-custom-select])){appearance:none;padding-inline-end:42px;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='m4 6 4 4 4-4' fill='none' stroke='%2385827b' stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 14px center;background-size:14px}
 :global(body[data-teloa-ui-font]) :global(select:dir(rtl):not([multiple]):not([size]):not([data-teloa-custom-select])){padding-inline-end:42px;background-position:left 14px center}
 @media(forced-colors:active){:global(body[data-teloa-ui-font]) :global(select:not([multiple]):not([size]):not([data-teloa-custom-select])),:global(body[data-teloa-ui-font]) :global(select:not([multiple])[size="1"]:not([data-teloa-custom-select])){appearance:auto;background-image:none;padding-inline-end:12px}}
-:global(:where(body[data-teloa-ui-font] select)){box-sizing:border-box;min-height:40px;max-width:100%;padding:8px 12px;border:1px solid var(--teloa-control-border);border-radius:8px;background:var(--teloa-surface);color:var(--teloa-text);font-family:inherit;font-size:var(--teloa-font-control);line-height:1.5}
+:global(:where(body[data-teloa-ui-font] select)){box-sizing:border-box;min-height:40px;max-width:100%;padding:8px 12px;border:1px solid var(--teloa-control-border);border-radius:8px;background:var(--teloa-surface);color:var(--teloa-text);font-family:inherit;font-size:var(--teloa-font-control);line-height:var(--teloa-leading-label)}
 :global(:where(body[data-teloa-ui-font] select:disabled)){opacity:.55;cursor:default}
 @media(max-width:600px){:global(:where(body[data-teloa-ui-font] select)){min-height:44px}}

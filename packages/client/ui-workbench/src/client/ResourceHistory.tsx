@@ -17,7 +17,7 @@ export function ResourceHistory({ sessionId, api, work }: PropsRuntime<'conversa
     const binding = useSyncExternalStore(work.subscribe, work.getSnapshot), ready = binding.status === 'ready' && binding.sessionId === sessionId;
     const [open, setOpen] = useState(false);
     useEffect(() => setOpen(false), [sessionId, ready]);
-    return <><button type="button" className={css.trigger} disabled={!ready} aria-label={t('knowledge.ui.079')} title={t('knowledge.ui.079')} aria-expanded={open} onClick={() => setOpen(true)}><BookOpen size={15} aria-hidden="true"/></button>{ready && <HistoryDrawer key={sessionId} open={open} sessionId={sessionId} api={api} close={() => setOpen(false)}/>}</>;
+    return <><button type="button" className={css.trigger} disabled={!ready} aria-label={t('knowledge.ui.079')} title={t('knowledge.ui.079')} aria-expanded={open} onClick={() => setOpen(true)}><BookOpen size={16} aria-hidden="true"/></button>{ready && <HistoryDrawer key={sessionId} open={open} sessionId={sessionId} api={api} close={() => setOpen(false)}/>}</>;
 }
 function HistoryDrawer({ sessionId, api, close, open }: {
     open: boolean;
@@ -66,7 +66,7 @@ function HistoryDrawer({ sessionId, api, close, open }: {
         <div className={css.recordHeader}><strong>{item.turn === null ? t("knowledge.ui.089") : t("knowledge.ui.090") + item.turn + t("knowledge.ui.091")}</strong><time dateTime={item.at}>{new Date(item.at).toLocaleString(locale)}</time></div>
         {item.issue && <p role="alert">{item.issue}</p>}
         {item.references.map(ref => <div key={ref.id + '@' + ref.version} className={css.reference}>
-          <BookOpen size={17}/><div><strong>{ref.metadata?.title || t("knowledge.ui.092")}</strong><p>{t("knowledge.ui.093")}{ref.version} · {ref.metadata ? t("knowledge.ui.094") : t("knowledge.ui.095")}</p>
+          <BookOpen size={16}/><div><strong>{ref.metadata?.title || t("knowledge.ui.092")}</strong><p>{t("knowledge.ui.093")}{ref.version} · {ref.metadata ? t("knowledge.ui.094") : t("knowledge.ui.095")}</p>
             <details><summary>{t("knowledge.ui.096")}</summary><dl><dt>{t("knowledge.ui.097")}</dt><dd>{ref.id}</dd>{ref.metadata && <><dt>{t("knowledge.ui.027")}</dt><dd>{ref.metadata.sourceId}</dd><dt>{t("knowledge.ui.098")}</dt><dd>{ref.metadata.sourceVersion}</dd><dt>{t("knowledge.ui.099")}</dt><dd>{ref.metadata.scopeIds.map(scope => scope === 'general' ? t("knowledge.ui.100") : scope).join(' / ')}</dd></>}<dt>{t("knowledge.ui.101")}</dt><dd>{item.messageId}</dd></dl></details>
           </div>
         </div>)}

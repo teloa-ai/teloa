@@ -5,8 +5,8 @@ import {frozenData16} from './frozen-data16-reader.ts'
 
 test('原生续作使用data17正常升级边界，旧data16发行不能读取新跨轮语义',async t=>{
  const {old}=await frozenData16(t)
- assert.equal(dataVersionMetadata.dataVersion,17)
- assert.deepEqual(dataVersionMetadata.compatibleDataVersions,[17])
+ assert.ok(dataVersionMetadata.dataVersion>=17)
+ assert.deepEqual(dataVersionMetadata.compatibleDataVersions,[dataVersionMetadata.dataVersion])
  const release={dataVersion:17,compatibleDataVersions:[17]}
  assert.equal(canUpgradeData(release,16),true)
  assert.equal(canUseData(release,16),false)

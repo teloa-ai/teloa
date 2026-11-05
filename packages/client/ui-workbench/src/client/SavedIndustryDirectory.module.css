@@ -28,7 +28,7 @@
 .actions{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:6px}
 
 /* 按钮层级 */
-.page :where(button){display:inline-flex;align-items:center;justify-content:center;gap:6px;min-height:32px;padding:5px 12px;border-radius:8px;font:inherit;font-size:var(--teloa-font-control);line-height:1.4}
+.page :where(button){display:inline-flex;align-items:center;justify-content:center;gap:6px;min-height:32px;padding:5px 12px;border-radius:8px;font:inherit;font-size:var(--teloa-font-control);line-height:var(--teloa-leading-heading)}
 .page .primaryButton{border:1px solid var(--teloa-primary);background:var(--teloa-primary);color:var(--teloa-on-primary)}
 .page .primaryButton:hover:not(:disabled){background:var(--teloa-primary);filter:brightness(.94)}
 .page .secondaryButton{border:1px solid var(--teloa-border);background:var(--teloa-surface);color:var(--teloa-text)}
@@ -56,7 +56,7 @@
 /* 右侧详情里的技术详情：默认收起，小字灰色 */
 .techDetails{margin-top:14px;font-size:var(--teloa-font-caption);color:var(--teloa-muted)}
 .techDetails summary{width:max-content;cursor:pointer}
-.techDetails ul{margin:6px 0 0;padding-left:16px;overflow-wrap:anywhere;line-height:1.7}
+.techDetails ul{margin:6px 0 0;padding-left:16px;overflow-wrap:anywhere;line-height:var(--teloa-leading-body)}
 
 /* 分类：分段控件，没有内容的分组不出现 */
 .page .segmented{display:flex;flex-wrap:wrap;gap:2px;width:max-content;max-width:100%;padding:3px;border:1px solid var(--teloa-border);border-radius:10px;background:var(--teloa-subtle)}

@@ -22,6 +22,7 @@ import {readFileSync,readdirSync} from 'node:fs'
 import {join} from 'node:path'
 import {fileURLToPath} from 'node:url'
 import ts from 'typescript'
+import * as taskListPresentation from '../src/client/task-list-presentation.ts'
 import * as dialogueCopyModule from '../src/client/dialogue-copy.ts'
 import {createDialogueOrganization} from '../src/client/dialogue-organization.ts'
 import * as presentationModule from '../src/client/application-presentation.ts'
@@ -81,6 +82,7 @@ function navigationMenu(){
   './ConversationPlanCard.js':{ConversationPlanClock:()=>null},
   './EmployeeAvatar.js':{EmployeeAvatar:()=>null},
   './CapabilityNotice.js':{useApplicationCapability:()=>true},
+  './task-list-presentation.js':taskListPresentation,
   './work-presentation.js':{presentConversations:()=>[]},
   './task-run-chat-presentation.js':{useTaskRunConversationTitles:()=>new Map()},
   './WorkbenchNavigationChrome.js':{WorkbenchNavigationBrand:()=>null,WorkbenchNavigationItems:()=>null},

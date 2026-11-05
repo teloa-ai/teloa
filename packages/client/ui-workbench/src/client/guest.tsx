@@ -147,12 +147,12 @@ function GuestWorkbench({options,controller}:{options:GuestWorkbenchOptions;cont
    <div className={css.navScroll}><WorkbenchNavigationItems view={view} onSelect={select}/></div>
    <div className={css.navFooter}>
     <button type="button" className={css.navItem} aria-current={view==='settings'?'page':undefined} onClick={()=>select('settings')}><Settings2 size={16}/><span>{t('navigation.v2.settings')}</span></button>
-    <div className={css.account}><button type="button" className={clsx(css.profileButton,css.avatar)} aria-label={accountLabel} disabled={pending} onClick={()=>request('account')}>{initials||<UserRound size={15} aria-hidden/>}</button></div>
+    <div className={css.account}><button type="button" className={clsx(css.profileButton,css.avatar)} aria-label={accountLabel} disabled={pending} onClick={()=>request('account')}>{initials||<UserRound size={16} aria-hidden/>}</button></div>
    </div>
   </aside>
   {navOpen&&<button type="button" className={css.navMask} aria-label={t('shell.navigation.close')} onClick={()=>setNavOpen(false)}/>}
   <div className={css.workspace}>
-   <header className={css.topbar}><button type="button" className={css.mobileNavigation} aria-label={t('shell.navigation.open')} onClick={()=>setNavOpen(true)}><Menu size={17}/></button><strong>{title}</strong><button type="button" className={clsx(css.button,guestCss.headerAccount)} aria-label={accountLabel} disabled={pending} onClick={()=>request('account')}>{account?(initials||<UserRound size={15}/>):copy.login}</button></header>
+   <header className={css.topbar}><button type="button" className={css.mobileNavigation} aria-label={t('shell.navigation.open')} onClick={()=>setNavOpen(true)}><Menu size={16}/></button><strong>{title}</strong><button type="button" className={clsx(css.button,guestCss.headerAccount)} aria-label={accountLabel} disabled={pending} onClick={()=>request('account')}>{account?(initials||<UserRound size={16}/>):copy.login}</button></header>
    <WorkbenchHubNavigation view={view} onSelect={select}/>
    <main className={clsx(css.main,view==='settings'&&options.settings&&guestCss.settingsMain)}>
     {view==='settings'&&options.settings&&settingsEntry?<SettingsLayout label={t('shell.settings')} heading={<span>{t('shell.settings')}</span>} actions={<div className={settingsCss.documentAction}><button type="button" disabled={pending} onClick={()=>request('settings-close')}>{copy.closeSettings}</button></div>} entries={options.settings.entries} selectedId={settingsEntry.id} onSelect={openSettings} notice={notice?<p className={settingsCss.connection} role="status">{notice}</p>:null}>

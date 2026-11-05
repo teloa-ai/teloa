@@ -165,6 +165,30 @@ async function assertGroupTaskReassignment(db:PoolClient,owner:string,source:Gro
  * 群消息创建的任务只在群、岗位、成员和资料授权仍与来源快照一致时注入上下文。
  * 普通任务不产生群上下文，维持原有执行路径。
  */
+/** 群回复与业务运行共用同一资料展开及精确授权规则，不创建临时 Task。 */
+export async function readGroupAuthorizedReferences(db:PoolClient,owner:string,groupId:string,scope:string,grant:GroupAgentGrant,referenced:readonly (readonly [MessageReference,string])[],ports?:RunGroupFilePorts){
+ const authorized=new Map(grant.resources.map(item=>[`${item.kind}:${item.id}`,item.version]))
+ const materials:RunGroupMaterial[]=[],files:RunGroupFile[]=[],workReferences:ResourceReference[]=[]
+ const unique=new Map(referenced.map(item=>[JSON.stringify([item[0].kind,item[0].id,item[0].version]),item]))
+ for(const [reference,label] of unique.values()){
+  if(authorized.get(`${reference.kind}:${reference.id}`)!==reference.version)throw new WorkError('teloa/forbidden',label+'的原件未获当前员工授权。')
+  if(reference.kind==='group-resource'){
+   const found=(await db.query(`select versions.resource_id,versions.group_id,versions.version,versions.title,versions.markdown,versions.created_at
+   from teloa_group_resource_versions versions join teloa_group_resources resources
+   on resources.id=versions.resource_id and resources.owner_id=versions.owner_id and resources.group_id=versions.group_id
+   where versions.resource_id=$1 and versions.owner_id=$2 and versions.group_id=$3 and versions.version=$4 and resources.withdrawn_at is null for share of versions,resources`,[reference.id,owner,groupId,reference.version])).rows[0]
+   if(!found)throw new WorkError('teloa/forbidden',label+'的资料版本不存在、已撤回或不属于当前群。')
+   materials.push(readMaterial(found))
+  }else if(reference.kind==='work-resource')workReferences.push({id:reference.id,version:reference.version})
+  else if(reference.kind==='attachment')files.push(await readAttachmentFile(db,owner,reference,ports))
+  else for(const file of await readArtifactFiles(db,owner,reference,files.length))files.push(file)
+ }
+ const workResources=workReferences.length?await (()=>{if(!ports?.readWorkResourceReferences)throw new WorkError('teloa/dependency-unavailable','群知识读取端口未接入，不能准备执行。');return ports.readWorkResourceReferences(db,owner,scope,workReferences)})():[]
+ if(workResources.length!==workReferences.length||workResources.some((value,index)=>value.id!==workReferences[index]?.id||value.version!==workReferences[index]?.version))throw new WorkError('teloa/storage-corrupt','群知识读取结果与固定引用不一致。')
+ if(materials.length+workResources.length>8||files.length>groupReferenceMaxFiles)throw new WorkError('teloa/conflict','本次工作引用展开后的资料或文件数超过上限。')
+ return {materials,files,...(workResources.length?{workResources}:{})}
+}
+
 export async function readRunGroupContext(db:PoolClient,owner:string,task:WorkTask,role:DigitalRole,ports?:RunGroupFilePorts,pool?:Pool,continuationReferences:readonly MessageReference[]=[],ownerSelection?:RunGroupOwnerSelection):Promise<RunGroupContext|undefined>{
  const sourceRow=(await db.query('select * from teloa_group_task_sources where task_id=$1 and owner_id=$2 for share',[task.id,owner])).rows[0]
  if(!sourceRow)return undefined
@@ -198,30 +222,10 @@ export async function readRunGroupContext(db:PoolClient,owner:string,task:WorkTa
  const admission=role.kind==='twin'?(await authorizeRoleTaskAssignment(db,pool!,owner,role,task.scope,source.groupId)):undefined
  if(role.kind==='twin'&&(!grant.canPost||!grant.canAutoRun))throw new WorkError('teloa/forbidden','分身尚未获得当前群的执行和发言授权。')
  admission?.assertCurrent()
- const authorized=new Map(grant.resources.map(item=>[`${item.kind}:${item.id}`,item.version]))
- const materials:RunGroupMaterial[]=[],files:RunGroupFile[]=[],workReferences:ResourceReference[]=[]
- // 原消息引用与全部交接成果共用同一授权契约：每一项都须按 kind+id+精确版本出现在当前接手者的群授权里（未共享、已撤回或新版本均拒绝）。
  const handoffs=await readGroupTaskHandoffs(db,owner,{id:task.id,groupId:source.groupId,messageId:source.messageId})
- // 续办只读取该 Run 冻结的明确引用；当前授权本身不注入资料，原来源与历史 Run 不变。
  if(continuationReferences.length>8||!continuationReferences.every(isMessageReference))throw new WorkError('teloa/invalid-input','续办引用格式不正确。')
  const referenced=[...source.references.map(reference=>[reference,'群消息引用'] as const),...handoffs.flatMap(handoff=>handoff.references.map(reference=>[reference,'交接成果引用'] as const)),...continuationReferences.map(reference=>[reference,'续办消息引用'] as const)]
- const unique=new Map(referenced.map(item=>[JSON.stringify([item[0].kind,item[0].id,item[0].version]),item]))
- for(const [reference,label] of unique.values()){
-  if(authorized.get(`${reference.kind}:${reference.id}`)!==reference.version)throw new WorkError('teloa/forbidden',label+'的原件未获当前员工授权。')
-  if(reference.kind==='group-resource'){
-   const found=(await db.query(`select versions.resource_id,versions.group_id,versions.version,versions.title,versions.markdown,versions.created_at
-   from teloa_group_resource_versions versions join teloa_group_resources resources
-   on resources.id=versions.resource_id and resources.owner_id=versions.owner_id and resources.group_id=versions.group_id
-   where versions.resource_id=$1 and versions.owner_id=$2 and versions.group_id=$3 and versions.version=$4 and resources.withdrawn_at is null for share of versions,resources`,[reference.id,owner,source.groupId,reference.version])).rows[0]
-   if(!found)throw new WorkError('teloa/forbidden',label+'的资料版本不存在、已撤回或不属于当前群。')
-   materials.push(readMaterial(found))
-  }else if(reference.kind==='work-resource')workReferences.push({id:reference.id,version:reference.version})
-  else if(reference.kind==='attachment')files.push(await readAttachmentFile(db,owner,reference,ports))
-  else for(const file of await readArtifactFiles(db,owner,reference,files.length))files.push(file)
- }
- const workResources=workReferences.length?await (()=>{if(!ports?.readWorkResourceReferences)throw new WorkError('teloa/dependency-unavailable','群知识读取端口未接入，不能准备执行。');return ports.readWorkResourceReferences(db,owner,scope,workReferences)})():[]
- if(workResources.length!==workReferences.length||workResources.some((value,index)=>value.id!==workReferences[index]?.id||value.version!==workReferences[index]?.version))throw new WorkError('teloa/storage-corrupt','群知识读取结果与固定引用不一致。')
- if(materials.length+workResources.length>8||files.length>groupReferenceMaxFiles)throw new WorkError('teloa/conflict','本次工作引用展开后的资料或文件数超过上限。')
+ const {materials,files,workResources=[]}=await readGroupAuthorizedReferences(db,owner,source.groupId,scope,grant,referenced,ports)
  admission?.assertCurrent()
  let ownerRequest=source.schema==='teloa.group-task-source/v2'?source.ownerRequest:undefined
  if(ownerSelection){

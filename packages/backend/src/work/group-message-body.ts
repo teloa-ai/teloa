@@ -2,7 +2,7 @@ import {createHash} from 'node:crypto'
 import {WorkError,isGroupMessageBody,isGroupMessageBodySummary,type GroupMessageBody,type GroupMessageBodySummary} from '@teloa/contract'
 
 /** 群流不反复读取或传输完整长正文与原始请求；只读摘要、固定全文身份和既有显示字段。 */
-export const groupMessageListColumns='id,group_id,root_id,author_id,text,reference_snapshot,mention_snapshot,reply_to_message_id,mention_all,task_id,run_id,created_at,full_text_meta,mention_self'
+export const groupMessageListColumns='id,group_id,root_id,author_id,text,reference_snapshot,mention_snapshot,reply_to_message_id,mention_all,task_id,run_id,reply_execution_id,created_at,full_text_meta,mention_self'
 const corrupt=()=>new WorkError('teloa/storage-corrupt','群消息完整正文与固定记录不一致。')
 export const groupMessageTextHash=(text:string):string=>createHash('sha256').update(text).digest('hex')
 

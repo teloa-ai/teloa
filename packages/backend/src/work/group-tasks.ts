@@ -1,3 +1,4 @@
+import {readTrustedGroupReplySource} from './group-reply-executions.ts'
 import {groupTaskTitle} from './task-title.ts'
 import {readGroupOwnerRequest} from './group-owner-request.ts'
 import {lockConversationTaskParent,assertConversationTaskOpen} from './conversation-work-task-protection.ts'
@@ -78,7 +79,7 @@ function requestSpec(request:GroupTaskCreateInput):string{
 function readMessage(row:Record<string,unknown>):GroupMessage{
  try{
   const base={id:row.id,groupId:row.group_id,rootId:row.root_id,authorId:row.author_id,text:row.text,references:normalizeReferences(row.reference_snapshot),createdAt:stamp(row.created_at)}
-  const value=base.authorId==='self'?{...base,mentions:row.mention_snapshot,...groupMessageRelationFields(row.reply_to_message_id,row.mention_all)}:{...base,taskId:row.task_id,runId:row.run_id}
+  const value=base.authorId==='self'?{...base,mentions:row.mention_snapshot,...groupMessageRelationFields(row.reply_to_message_id,row.mention_all)}:{...base,...(row.reply_execution_id?{replyExecutionId:row.reply_execution_id}:{taskId:row.task_id,runId:row.run_id})}
   if(!isGroupMessage(value))throw Error()
   return value
  }catch{throw new WorkError('teloa/storage-corrupt','群消息记录损坏，不能创建任务。')}
@@ -169,6 +170,7 @@ export class GroupTaskService{
    const createdAt=this.identity.now(),base={taskId:task.id,ownerId:owner,groupId:request.groupId,groupVersion:groupRow.version as number,messageId:message.id,rootId,messageCreatedAt:message.createdAt,messageText:message.text,references:message.references.map(reference=>({...reference})),createdAssignee:request.assignee?{roleId:request.assignee.roleId,roleVersion:request.assignee.expectedVersion}:null,trigger:request.trigger??'manual',createdAt}
    let contextMode:'main'|'thread'=message.rootId===null?'main':'thread'
    // 员工接力仍带原话题根，显示位置须继承服务端原来源，不能把非空 rootId 一律当成话题。
+   if('replyExecutionId' in message){const reply=await readTrustedGroupReplySource(client,owner,{groupId:request.groupId,messageId:message.id});if(!reply)throw new WorkError('teloa/forbidden','员工回复缺少固定执行来源。');contextMode=reply.snapshot.contextMode}
    if('taskId' in message){
     const prior=(await client.query('select * from teloa_group_task_sources where owner_id=$1 and task_id=$2 for share',[owner,message.taskId])).rows[0]
     if(prior){const source=readGroupTaskSource(prior);if(source.groupId!==request.groupId||source.rootId!==rootId)throw corrupt();if(source.schema==='teloa.group-task-source/v2')contextMode=source.contextMode}

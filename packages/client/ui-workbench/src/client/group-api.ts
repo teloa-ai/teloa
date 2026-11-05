@@ -293,9 +293,11 @@ export function createGroupApi(call:Call,journal?:GroupRequestJournal,newId:()=>
    if(hash!==summary.sha256)throw new WorkError('teloa/source-unavailable','群消息全文与原消息不一致。')
    return clone(value)
   },
-  async messageSources(groupId:string,messageId:string,runId:string){
+  async messageSources(groupId:string,messageId:string,proof:string|{replyExecutionId:string}){
+   const expected=typeof proof==='string'?{runId:proof}:{replyExecutionId:proof.replyExecutionId}
    const input=groupMessageBodyInput({groupId,messageId}),value=readGroupMessageSources(await call(groupMessageSourcesEndpoint.name,input))
-   if(value.groupId!==groupId||value.messageId!==messageId||value.runId!==null&&value.runId!==runId)throw new WorkError('teloa/source-unavailable','引用来源与原回复不一致。')
+   const matches='runId'in expected?value.replyExecutionId===undefined&&(value.runId===null||value.runId===expected.runId):value.runId===null&&value.replyExecutionId===expected.replyExecutionId
+   if(value.groupId!==groupId||value.messageId!==messageId||!matches)throw new WorkError('teloa/source-unavailable','引用来源与原回复不一致。')
    for(const item of value.items)if(!('fullText'in item.message)){
     const hash=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(item.message.text))),byte=>byte.toString(16).padStart(2,'0')).join('')
     if(hash!==item.sha256)throw new WorkError('teloa/source-unavailable','引用来源正文与原消息不一致。')

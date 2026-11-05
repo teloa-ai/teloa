@@ -104,11 +104,11 @@ export function BusinessConfigurationSurface({refreshKey=0,chrome=true,pageKind,
    {chrome&&<header className={css.header}>
     <div>{!embedded&&<button type="button" className={css.back} onClick={backHome}><ArrowLeft size={14}/>{t('business.scope.backHome')}</button>}{current&&<h1>{current.manifest.title}</h1>}</div>
     {current&&<div className={css.actions}>
-     <button type="button" disabled={services.actionReady===false} onClick={()=>services.adjust(scope)}><SlidersHorizontal size={15}/>{t('business.configuration.adjust')}</button>
-     {services.talk&&<button type="button" className={css.primary} disabled={services.actionReady===false} onClick={()=>services.talk!(scope,current.manifest.title)}><MessageSquare size={15}/>{t('business.configuration.talk')}</button>}
+     <button type="button" disabled={services.actionReady===false} onClick={()=>services.adjust(scope)}><SlidersHorizontal size={16}/>{t('business.configuration.adjust')}</button>
+     {services.talk&&<button type="button" className={css.primary} disabled={services.actionReady===false} onClick={()=>services.talk!(scope,current.manifest.title)}><MessageSquare size={16}/>{t('business.configuration.talk')}</button>}
      {services.newConversation&&<button type="button" disabled={services.actionReady===false} onClick={()=>services.newConversation!(scope,current.manifest.title)}>{t('navigation.newConversation')}</button>}
      {services.share&&<button type="button" disabled={services.actionReady===false} aria-expanded={sharing} onClick={()=>setSharing(value=>!value)}>{t('business.share.title')}</button>}
-     {(services.setup||services.responsibility||services.dashboardApi)&&<button type="button" aria-expanded={configuring} onClick={()=>setConfiguring(true)}><SlidersHorizontal size={15}/>{t('business.setup.details')}</button>}
+     {(services.setup||services.responsibility||services.dashboardApi)&&<button type="button" aria-expanded={configuring} onClick={()=>setConfiguring(true)}><SlidersHorizontal size={16}/>{t('business.setup.details')}</button>}
      <ToolbarIconButton label={t('business.dashboards.refresh')} icon={RefreshCw} disabled={state.pageStatus==='loading'} onClick={()=>void controller.load()}/>
      {embedded&&openFull&&<button type="button" className={light.link} onClick={openFull}>{t('business.scope.openFull')}<ArrowUpRight size={13} aria-hidden/></button>}
     </div>}

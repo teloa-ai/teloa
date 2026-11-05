@@ -19,7 +19,7 @@ test('员工知识真实组件：明确目标、首次保存副本、历史恢�
   const context=await browser.newContext({viewport:{width:1440,height:900}}),page=await context.newPage(),errors:string[]=[]
   page.setDefaultTimeout(8000);page.on('pageerror',(error:Error)=>errors.push(error.message))
   await page.route('**/*',(route:any)=>route.request().url()==='http://127.0.0.1:3199/employee-knowledge-test'?route.fulfill({contentType:'text/html',body:html}):route.abort())
-  const load=async()=>{await page.goto('http://127.0.0.1:3199/employee-knowledge-test');await page.getByRole('heading',{name:'调查操作手册',exact:true}).waitFor()}
+  const load=async()=>{await page.goto('http://127.0.0.1:3199/employee-knowledge-test');await page.getByRole('heading',{name:'调查操作手册',exact:true}).waitFor();assert.equal(await page.getByLabel('选择要修改知识的员工',{exact:true}).count(),0);await page.getByRole('button',{name:'文件信息',exact:true}).click()}
   await load();return {context,page,errors,load}
  }
  const open=async(page:any,name='调查员工甲')=>{await page.getByLabel('选择要修改知识的员工',{exact:true}).selectOption({label:name});await page.getByRole('button',{name:'编辑员工知识',exact:true}).click();await page.getByLabel('Markdown 正文',{exact:true}).waitFor()}

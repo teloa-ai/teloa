@@ -1,3 +1,5 @@
+import {initializeGroupRoutingDecisions} from '../src/work/group-routing-decisions.ts'
+import {initializeGroupRoutingOutbox} from '../src/work/group-routing-outbox.ts'
 import {runContextMode,runKnowledgeCatalog,runSkillCatalog} from '../src/work/task-run-context.ts'
 import {createHash} from 'node:crypto'
 import test,{before,after} from 'node:test'
@@ -27,7 +29,7 @@ import {RoleDelegationService} from '../src/work/role-delegations.ts'
 import {TaskAttentionService} from '../src/work/task-attention.ts'
 let container:StartedPostgreSqlContainer,pool:Pool
 const identity={id:randomUUID,now:()=>new Date().toISOString()}
-before(async()=>{process.env.DOCKER_HOST='unix://'+join(homedir(),'.orbstack/run/docker.sock');process.env.TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE='/var/run/docker.sock';container=await new PostgreSqlContainer('postgres:17-alpine').start();pool=new Pool({connectionString:container.getConnectionUri()});await initializeRoles(pool);await initializeCollaboration(pool);await initializeGroupAgentGrants(pool);await initializeTasks(pool);await initializeObjectConversations(pool);await initializeGroupTasks(pool);await initializeGroupWorkInputs(pool);await initializeTaskRuns(pool)})
+before(async()=>{process.env.DOCKER_HOST='unix://'+join(homedir(),'.orbstack/run/docker.sock');process.env.TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE='/var/run/docker.sock';container=await new PostgreSqlContainer('postgres:17-alpine').start();pool=new Pool({connectionString:container.getConnectionUri()});await initializeRoles(pool);await initializeCollaboration(pool);await initializeGroupAgentGrants(pool);await initializeTasks(pool);await initializeObjectConversations(pool);await initializeGroupTasks(pool);await initializeGroupWorkInputs(pool);await initializeTaskRuns(pool);await initializeGroupRoutingDecisions(pool);await initializeGroupRoutingOutbox(pool)})
 after(async()=>{await pool?.end();await container?.stop()})
 async function fixture(scope='general',agentPresetId='security-analyst'){
  const owner=randomUUID(),role=await new RoleService(pool,identity).create(owner,{requestId:randomUUID(),fields:{name:'调查岗',kind:'employee',scopes:[scope],duty:'查证据并代拟',dataScope:'只读',executionScope:'代拟',skills:[],knowledge:[],responsibility:{triggers:[],autonomousActions:[],confirmationPoints:[],escalationRules:[],deliveryChecks:[]},runtimeConfig:{agentPresetId}}})

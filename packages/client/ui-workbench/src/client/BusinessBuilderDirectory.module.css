@@ -14,12 +14,12 @@
 .item:disabled{opacity:.55;cursor:default}
 .tile{display:grid;place-items:center;flex:none;width:36px;height:36px;border-radius:9px;background:var(--teloa-subtle);color:var(--teloa-secondary)}
 .copy{display:flex;flex-direction:column;flex:1;gap:3px;min-width:0}
-.copy strong{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden;overflow-wrap:anywhere;font-size:15px;font-weight:var(--teloa-weight-heading);line-height:1.5}
-.go{display:inline-flex;align-items:center;gap:6px;color:var(--teloa-secondary);font-size:var(--teloa-font-caption);font-weight:var(--teloa-weight-medium);line-height:1.6}
+.copy strong{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden;overflow-wrap:anywhere;font-size:var(--teloa-font-list);font-weight:var(--teloa-weight-regular);line-height:var(--teloa-leading-label)}
+.go{display:inline-flex;align-items:center;gap:6px;color:var(--teloa-secondary);font-size:var(--teloa-font-caption);font-weight:var(--teloa-weight-medium);line-height:var(--teloa-leading-body)}
 .go>svg{flex:none}
 .footer{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-top:auto;padding-top:12px;border-top:1px solid var(--teloa-border)}
-.footer time{color:var(--teloa-muted);font-size:var(--teloa-font-caption);font-variant-numeric:tabular-nums;line-height:1.6}
-.recoveryNote{margin:0;color:var(--teloa-secondary);font-size:var(--teloa-font-caption);line-height:1.6}
+.footer time{color:var(--teloa-muted);font-size:var(--teloa-font-caption);font-variant-numeric:tabular-nums;line-height:var(--teloa-leading-body)}
+.recoveryNote{margin:0;color:var(--teloa-secondary);font-size:var(--teloa-font-caption);line-height:var(--teloa-leading-body)}
 .directory .footer>button{flex:none;min-height:32px;padding:4px 8px;border:0;border-radius:var(--teloa-design-r1);background:transparent;color:var(--teloa-muted);font:inherit;font-size:var(--teloa-font-caption);cursor:pointer}
 .directory .footer>button:hover:not(:disabled){background:var(--teloa-hover);color:var(--teloa-text)}
 .directory .footer>button:disabled{opacity:.5;cursor:default}

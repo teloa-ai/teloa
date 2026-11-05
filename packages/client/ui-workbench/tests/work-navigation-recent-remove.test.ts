@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import {readFileSync} from 'node:fs'
 import ts from 'typescript'
 import type {Conversation} from '@teloa/contract'
+import {isGroupReplyConversation} from '../src/client/task-list-presentation.ts'
 import {presentConversations} from '../src/client/work-presentation.ts'
 import {createRecentWorkHiddenStore,type RecentWorkHiddenStore} from '../src/client/recent-work-hidden.ts'
 
@@ -56,6 +57,8 @@ function mount(file:string,initialProps:Record<string,unknown>,recentWorkHiddenS
   if(id.endsWith('provider.js'))return {useI18n:()=>({locale:'zh-CN',t:(key:string,params?:Record<string,unknown>)=>params?key+':'+JSON.stringify(params):key})}
   if(id.endsWith('errors.js'))return {localizeWorkError:(_:string,value:unknown)=>String(value)}
   if(id.endsWith('work-presentation.js'))return {presentConversations}
+  if(id.endsWith('task-list-presentation.js'))return {isGroupReplyConversation}
+  if(id.endsWith('task-run-chat-presentation.js'))return {useTaskRunConversationTitles:()=>({})}
   if(id.endsWith('use-dismissible.js'))return {useDismissible:()=>{}}
   if(id.endsWith('recent-work-hidden.js'))return {browserRecentWorkHiddenStore:()=>recentWorkHiddenStore}
   if(id.endsWith('.css')||id.endsWith('.svg'))return {default:cssProxy}

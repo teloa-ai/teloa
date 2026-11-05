@@ -25,7 +25,7 @@ const record=(value:unknown):value is Record<string,unknown>=>typeof value==='ob
 function readMessage(row:Record<string,unknown>):GroupMessage{
  try{
   const base={id:row.id,groupId:row.group_id,rootId:row.root_id,authorId:row.author_id,text:row.text,references:normalizeReferences(row.reference_snapshot),createdAt:stamp(row.created_at)}
-  const value=base.authorId==='self'?base:{...base,taskId:row.task_id,runId:row.run_id,...groupMessageBodyFields(row),...(row.mention_self===true?{mentionSelf:true as const}:{})}
+  const value=base.authorId==='self'?base:{...base,...(row.reply_execution_id?{replyExecutionId:row.reply_execution_id}:{taskId:row.task_id,runId:row.run_id}),...groupMessageBodyFields(row),...(row.mention_self===true?{mentionSelf:true as const}:{})}
   if(!isGroupMessage(value))throw Error()
   return value
  }catch{throw new WorkError('teloa/storage-corrupt','员工群内回传记录损坏，已停止读取。')}

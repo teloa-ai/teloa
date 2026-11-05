@@ -80,7 +80,7 @@ function App(){const [mode,setMode]=useState('general'),[section,setSection]=use
    await pane.evaluate((el:HTMLElement,width:number)=>{el.style.width=width+'px';el.style.height='850px'},width)
    await page.evaluate(({size,theme}:any)=>{for(const [key,value]of Object.entries((window as any).workspaceThemes[theme]))document.body.style.setProperty(key,value as string);document.body.style.setProperty('--teloa-design-text-base',size/16+'rem')},{size,theme});await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))))
    const result:{width:boolean;lines:boolean;font:number}[]=await pane.locator('[class*=metrics] button>span').evaluateAll((nodes:HTMLElement[])=>nodes.map(el=>({width:el.scrollWidth<=el.clientWidth+1,lines:el.getBoundingClientRect().height<=parseFloat(getComputedStyle(el).lineHeight)*2+1,font:parseFloat(getComputedStyle(el).fontSize)})))
-   assert.equal(result.length,4);assert.ok(result.every(value=>value.width&&value.lines&&Math.abs(value.font-size*13/14)<.1),JSON.stringify({width,size,theme,result}));assert.equal(await pane.evaluate((el:HTMLElement)=>el.scrollWidth<=el.clientWidth+1),true)
+   assert.equal(result.length,4);assert.ok(result.every(value=>value.width&&value.lines&&Math.abs(value.font-size*12/14)<.1),JSON.stringify({width,size,theme,result}));assert.equal(await pane.evaluate((el:HTMLElement)=>el.scrollWidth<=el.clientWidth+1),true)
    if(process.env.TELOA_UI_SCREENSHOT_DIR&&theme==='dark'&&((width===640&&size===14)||(width===320&&size===28))){await mkdir(process.env.TELOA_UI_SCREENSHOT_DIR,{recursive:true});await pane.screenshot({path:join(process.env.TELOA_UI_SCREENSHOT_DIR,'business-'+width+'-'+size+'.png')})}
   }
   assert.deepEqual(errors,[]);assert.deepEqual(external,[])

@@ -20,11 +20,16 @@ export type GroupMember={groupId:string;roleId:string|null;createdAt:string}
 export type GroupHumanMessage={id:string;groupId:string;rootId:string|null;authorId:'self';text:string;references:MessageReference[];mentions:GroupMention[];createdAt:string;replyToMessageId?:string;mentionAll?:true}
 /** AI 员工的群内回传必须保留产生它的任务与已确认运行，不接受浏览器自报作者。 */
 export type GroupEmployeeMessage={id:string;groupId:string;rootId:string|null;authorId:string;taskId:string;runId:string;text:string;references:MessageReference[];createdAt:string;contextMode?:'main'|'thread';replyToMessageId?:string;author?:{name:string;kind:'employee'|'twin';version:number};fullText?:GroupMessageBodySummary;mentionSelf?:true}
+/** 普通群回复由宿主冻结的原生执行证明，不创建业务任务或员工私聊。 */
+export type GroupEmployeeReplyMessage=Omit<GroupEmployeeMessage,'taskId'|'runId'>&{replyExecutionId:string}
+export type GroupEmployeeResponse=GroupEmployeeMessage|GroupEmployeeReplyMessage
+/** 调用方先核验完整 GroupMessage；这里只判断已验证的员工消息分支。 */
+export function isGroupEmployeeResponse(message:GroupMessage):message is GroupEmployeeResponse{return 'runId' in message||'replyExecutionId' in message}
 /** 长回复的完整正文按需读；群流只带摘要和不可变全文身份，不占资料引用名额。 */
 export type GroupMessageBodySummary={chars:number;sha256:string}
 export type GroupMessageBody=GroupMessageBodySummary&{groupId:string;messageId:string;text:string}
 export type GroupMessageBodyInput={groupId:string;messageId:string}
-export type GroupMessage=GroupHumanMessage|GroupEmployeeMessage
+export type GroupMessage=GroupHumanMessage|GroupEmployeeMessage|GroupEmployeeReplyMessage
 /** 群资料身份只归属于一个本人群；正文由确切版本读取。 */
 export type GroupResource={id:string;groupId:string;ownerId:string;version:number;title:string;withdrawnAt:string|null;createdAt:string;updatedAt:string}
 export type GroupResourceVersion={resourceId:string;groupId:string;version:number;title:string;markdown:string;createdAt:string}
@@ -391,6 +396,7 @@ export function isGroupMessage(value:unknown):value is GroupMessage{
   if(Object.hasOwn(value,'contextMode')&&value.contextMode!=='main'&&value.contextMode!=='thread'||Object.hasOwn(value,'replyToMessageId')&&(!uuid(value.replyToMessageId)||value.replyToMessageId===value.id))return false
   if(Object.hasOwn(value,'author')&&(!record(value.author)||Object.keys(value.author).length!==3||typeof value.author.name!=='string'||!value.author.name.trim()||value.author.name.length>80||(value.author.kind!=='employee'&&value.author.kind!=='twin')||!version(value.author.version)))return false
   if(Object.hasOwn(value,'fullText')&&!isGroupMessageBodySummary(value.fullText))return false
+  if(Object.hasOwn(value,'replyExecutionId'))return Object.keys(value).length===8+extra&&uuid(value.authorId)&&uuid(value.replyExecutionId)&&!Object.hasOwn(value,'taskId')&&!Object.hasOwn(value,'runId')
   return Object.keys(value).length===9+extra&&uuid(value.authorId)&&uuid(value.taskId)&&uuid(value.runId)
 }
 

@@ -77,13 +77,13 @@ export function Capabilities({sessionId,work,i18n,openResources,openTeamCapabili
     <button ref={anchor} type="button" className={css.trigger} aria-haspopup="dialog" aria-expanded={open} aria-controls={open?id:undefined} onClick={()=>{setOpen(value=>!value);setTab(null);setError('');if(active)void work.readCatalog()}}><Library size={16}/>{t('capabilities.title')}</button>
     {open&&<ComposerPopover cascade anchor={anchor} id={id} label={t('capabilities.title')} width={280} close={close}>
       <div className={menuCss.contextMenu}>
-        <header className={menuCss.contextHeader}><strong>{t('capabilities.title')}</strong><button type="button" aria-label={t('capabilities.catalog.refresh')} disabled={!active||state.status!=='ready'||state.catalogStatus==='loading'} onClick={()=>void work.readCatalog()}><RefreshCw size={15}/></button><button type="button" aria-label={t('capabilities.close')} onClick={()=>{close();anchor.current?.focus()}}><X size={16}/></button></header>
+        <header className={menuCss.contextHeader}><strong>{t('capabilities.title')}</strong><button type="button" aria-label={t('capabilities.catalog.refresh')} disabled={!active||state.status!=='ready'||state.catalogStatus==='loading'} onClick={()=>void work.readCatalog()}><RefreshCw size={16}/></button><button type="button" aria-label={t('capabilities.close')} onClick={()=>{close();anchor.current?.focus()}}><X size={16}/></button></header>
         {error&&<p role="alert">{error}</p>}
         {!active||state.status==='loading'?<p role="status">{t('capabilities.binding.loading')}</p>:state.status==='failed'?<div role="alert"><p>{localizeWorkError(locale,state.error)}</p><button type="button" onClick={()=>void work.retry()}>{t('capabilities.binding.retry')}</button></div>:<>
-          {capabilityTabs.map(key=>{const Icon=icons[key];return <button ref={anchors[key]} key={key} type="button" aria-expanded={tab===key} aria-controls={tab===key?id+'-list':undefined} onPointerEnter={event=>{if(event.pointerType==='mouse'&&window.innerWidth>740)expand(key)}} onKeyDown={event=>{if(event.key==='ArrowRight'){event.preventDefault();expand(key,true)}}} onClick={()=>expand(key,true)}><Icon size={17}/><span>{t(tabLabelKeys[key])}</span><ChevronRight size={15}/></button>})}
+          {capabilityTabs.map(key=>{const Icon=icons[key];return <button ref={anchors[key]} key={key} type="button" aria-expanded={tab===key} aria-controls={tab===key?id+'-list':undefined} onPointerEnter={event=>{if(event.pointerType==='mouse'&&window.innerWidth>740)expand(key)}} onKeyDown={event=>{if(event.key==='ArrowRight'){event.preventDefault();expand(key,true)}}} onClick={()=>expand(key,true)}><Icon size={16}/><span>{t(tabLabelKeys[key])}</span><ChevronRight size={14}/></button>})}
           <hr/>
-          <button type="button" onPointerEnter={()=>setTab(null)} onClick={()=>{close();openTeamCapabilities()}}><Layers size={17}/><span>{t('home.manageCapabilities')}</span></button>
-          <button type="button" onPointerEnter={()=>setTab(null)} onClick={()=>{close();openResources()}}><FileText size={17}/><span>{t('home.openLibrary')}</span></button>
+          <button type="button" onPointerEnter={()=>setTab(null)} onClick={()=>{close();openTeamCapabilities()}}><Layers size={16}/><span>{t('home.manageCapabilities')}</span></button>
+          <button type="button" onPointerEnter={()=>setTab(null)} onClick={()=>{close();openResources()}}><FileText size={16}/><span>{t('home.openLibrary')}</span></button>
         </>}
         <p className={css.scope}>{t('conversationStatus.capabilityScope')}</p>
         {chosen>0&&<footer className={css.footer}><span aria-live="polite">{t('capabilities.picker.selected',{count:chosen})}</span><button type="button" className={css.apply} disabled={overLimit} onClick={apply}>{t('capabilities.picker.apply')}</button></footer>}
@@ -92,7 +92,7 @@ export function Capabilities({sessionId,work,i18n,openResources,openTeamCapabili
       {tab&&<ComposerSubmenu key={tab} anchor={anchors[tab]} id={id+'-list'} label={category} back={()=>setTab(null)} focusRequest={focusRequest}>
         <div className={css.picker}>
           <header className={menuCss.contextHeader}><button type="button" aria-label={t('home.contextBack')} onClick={()=>{setTab(null);anchors[tab].current?.focus()}}><ArrowLeft size={16}/></button><strong>{category}</strong></header>
-          <label data-teloa-field-shell className={css.search}><Search size={15}/><input aria-label={t('capabilities.picker.searchAria')} value={query} onChange={event=>setQuery(event.target.value)} placeholder={t('capabilities.picker.searchPlaceholder')}/></label>
+          <label data-teloa-field-shell className={css.search}><Search size={16}/><input aria-label={t('capabilities.picker.searchAria')} value={query} onChange={event=>setQuery(event.target.value)} placeholder={t('capabilities.picker.searchPlaceholder')}/></label>
           {state.catalogStatus==='loading'&&<p role="status">{t('capabilities.catalog.loading')}</p>}
           {state.catalogStatus==='failed'&&<p role="alert">{localizeWorkError(locale,state.catalogError)}</p>}
           {tab==='knowledge'&&snapshot&&snapshot.knowledge.status==='unavailable'&&<p role="alert">{localizeWorkError(locale,snapshot.knowledge.message)}</p>}

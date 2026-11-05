@@ -18,3 +18,9 @@
 .panel.dockPanel.dockDanger{background:var(--teloa-danger-bg)}
 .dockPanel summary{padding:9px 16px;color:var(--teloa-text)}
 .dockPanel .body{padding:0 16px 10px}
+
+/* 仅规范本组件的界面标签；正文和代码中的强调保持原样。 */
+.message>strong{font-weight:var(--teloa-weight-regular)}
+.failure>strong{font-weight:var(--teloa-weight-medium)}
+
+.body>strong{font-weight:var(--teloa-weight-medium)}

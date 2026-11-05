@@ -7,7 +7,7 @@
 .title button[aria-pressed="true"],.categories button[aria-pressed="true"]{background:var(--teloa-text);border-color:var(--teloa-text);color:var(--teloa-surface)}
 .search{box-sizing:border-box;flex:1 1 calc(var(--teloa-font-control) * 14 + 48px);display:flex;align-items:center;gap:8px;min-width:0;min-height:40px;padding:8px 12px;border:1px solid var(--teloa-control-border);border-radius:9px;background:var(--teloa-surface);color:var(--teloa-muted)}
 .search>svg{flex:none}
-.search input{flex:1;min-width:0;border:0;background:transparent;font:inherit;font-size:var(--teloa-font-control);line-height:1.4;color:var(--teloa-text);outline:none}
+.search input{flex:1;min-width:0;border:0;background:transparent;font:inherit;font-size:var(--teloa-font-control);line-height:var(--teloa-leading-heading);color:var(--teloa-text);outline:none}
 .search:focus-within{border-color:var(--teloa-text);box-shadow:0 0 0 1px var(--teloa-border)}
 .search input:focus,.search input:focus-visible{outline:0;box-shadow:none}
 .categories{display:flex;flex-wrap:wrap;gap:6px}
@@ -40,7 +40,7 @@
 .advancedInfo summary{cursor:pointer;color:var(--teloa-text)}
 .detailBody{display:grid;gap:20px;padding:24px;min-width:0}
 .drawer h3{margin:0;font-size:var(--teloa-font-body);font-weight:var(--teloa-weight-heading);color:var(--teloa-text)}
-.drawer p{margin:0;font-size:var(--teloa-font-body);line-height:1.65;color:var(--teloa-muted)}
+.drawer p{margin:0;font-size:var(--teloa-font-body);line-height:var(--teloa-leading-body);color:var(--teloa-muted)}
 .detailHead{display:flex;align-items:center;gap:12px}
 .detailIdentity{flex:1;min-width:0;display:grid;gap:4px}
 .detailIdentity h3{font-size:var(--teloa-font-dialog);line-height:var(--teloa-leading-heading);overflow-wrap:anywhere}
@@ -52,7 +52,7 @@
 .detailFacts span+span{padding-left:12px;border-left:1px solid var(--teloa-border)}
 .detailSection{display:grid;gap:12px;min-width:0}
 .tools{list-style:none;display:grid;margin:0;padding:0;border-radius:10px;background:var(--teloa-hover)}
-.tools li{display:flex;justify-content:space-between;align-items:baseline;gap:16px;padding:12px 14px;font-size:var(--teloa-font-body);line-height:1.6;color:var(--teloa-text)}
+.tools li{display:flex;justify-content:space-between;align-items:baseline;gap:16px;padding:12px 14px;font-size:var(--teloa-font-body);line-height:var(--teloa-leading-body);color:var(--teloa-text)}
 .tools li+li{border-top:1px solid var(--teloa-border)}
 .tools li span{min-width:0;overflow-wrap:anywhere}
 .tools small{flex:none;font-size:var(--teloa-font-caption);color:var(--teloa-muted);white-space:nowrap}
@@ -82,7 +82,7 @@
 
 /* 创建与导入收为一个轻入口，不另设配置页。 */
 .titleActions{display:flex;flex:0 1 auto;flex-wrap:wrap;justify-content:flex-end;align-items:center;gap:8px;min-width:0;max-width:100%;margin-inline-start:auto}
-.directory .titleActions>button{box-sizing:border-box;min-height:40px;max-width:100%;min-width:0;padding:8px 12px;line-height:1.4;white-space:normal;overflow-wrap:anywhere}
+.directory .titleActions>button{box-sizing:border-box;min-height:40px;max-width:100%;min-width:0;padding:8px 12px;line-height:var(--teloa-leading-heading);white-space:normal;overflow-wrap:anywhere}
 .addMenu{position:relative}
 .addMenu>summary{box-sizing:border-box;display:grid;place-items:center;width:max(40px,calc(var(--teloa-font-control) * 1.4 + 16px));min-height:max(40px,calc(var(--teloa-font-control) * 1.4 + 16px));list-style:none;border-radius:var(--teloa-design-r1);cursor:pointer;color:var(--teloa-muted)}
 .addMenu>summary::-webkit-details-marker{display:none}
@@ -95,3 +95,8 @@
 .drawer.drawer{width:min(520px,100vw)}
 
 .detailFooter{position:sticky;bottom:-24px;z-index:1;padding:16px 0;background:var(--teloa-surface);border-top:1px solid var(--teloa-border)}.detailFooter .primary{width:100%;min-height:38px}
+
+/* 深层配置与详情标题使用界面层级，避免浏览器默认字号和粗体。 */
+.title>h2{font-size:var(--teloa-font-dialog);font-weight:var(--teloa-weight-heading);}
+.empty>h3,.detailIdentity>h3{font-weight:var(--teloa-weight-heading);}
+.detailSection>h3{font-size:var(--teloa-font-section);font-weight:var(--teloa-weight-heading);}

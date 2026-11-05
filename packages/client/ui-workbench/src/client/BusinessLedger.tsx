@@ -238,7 +238,7 @@ export function ObjectTypeBlock({block,actions,open,connect,updated=false,localC
  return <article className={css.block} data-object-type-block={definition.id} aria-label={copy.title}>
   <button type="button" className={css.blockOpen} onClick={()=>open(definition.id)}>
    <span className={css.lead}>{copy.lead}</span>
-   <span className={css.blockTitle}><strong>{copy.title}</strong><ArrowUpRight size={15}/></span>
+   <span className={css.blockTitle}><strong>{copy.title}</strong><ArrowUpRight size={16}/></span>
    <span className={css.count}>{number(block.objects)}<i>{copy.unit}</i></span>
    {!block.source.connected&&!block.objects
     ? <span className={css.blockSummary} data-block-summary>{t('business.ledger.source.notConnected')}<small title={block.source.sourceId}>{sourceName}</small></span>

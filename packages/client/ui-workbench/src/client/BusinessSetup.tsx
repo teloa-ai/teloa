@@ -32,7 +32,7 @@ export function BusinessSetup({scope,title,configurationVersion,configurationHas
   {state.status==='failed'&&<p role="alert">{t('business.setup.failed')} <button type="button" aria-label={t('business.records.retry')} title={t('business.records.retry')} onClick={()=>void controller.load()}><RotateCw size={16}/></button></p>}
   {value&&<div className={css.rows}>
    {sections.includes('colleagues')&&<details className={css.row}>
-    <summary><User size={17}/><strong>{t('business.setup.colleagues')}</strong><span className={css.metric}>{colleagueSummary}</span><ChevronDown size={15}/></summary>
+    <summary><User size={16}/><strong>{t('business.setup.colleagues')}</strong><span className={css.metric}>{colleagueSummary}</span><ChevronDown size={14}/></summary>
     <div className={css.rowContent}>
      {colleagues?.selectedRole&&<p>{colleagues.selectedRole.duty}</p>}
      {!colleagues?.responsibility.roleId&&<p className={css.note}>{t('business.setup.optionalNote')}</p>}
@@ -40,7 +40,7 @@ export function BusinessSetup({scope,title,configurationVersion,configurationHas
     </div>
    </details>}
    {sections.includes('skills')&&<details className={css.row}>
-    <summary><Wrench size={17}/><strong>{t('business.setup.skills')}</strong><span className={css.metric}>{skills?t('business.setup.skillsSummary',{count:skills.declared.length}):unavailable}</span><ChevronDown size={15}/></summary>
+    <summary><Wrench size={16}/><strong>{t('business.setup.skills')}</strong><span className={css.metric}>{skills?t('business.setup.skillsSummary',{count:skills.declared.length}):unavailable}</span><ChevronDown size={14}/></summary>
     <div className={css.rowContent}>
      {skills&&<>{skills.declared.length===0?<p>{t('business.setup.noSkills')}</p>:<ul>{skills.declared.slice(0,5).map((item,index)=><li key={item.name+'/'+index}><span>{item.name}</span><span className={css.note}>{t(`business.setup.skill.${item.status}`)}</span></li>)}</ul>}{more(skills.declared.length)}</>}
      <p className={css.note}>{t('business.setup.executionCheck')}</p>
@@ -48,14 +48,14 @@ export function BusinessSetup({scope,title,configurationVersion,configurationHas
     </div>
    </details>}
    {sections.includes('knowledge')&&<details className={css.row}>
-    <summary><FileText size={17}/><strong>{t('business.setup.knowledge')}</strong><span className={css.metric}>{knowledge?t('business.setup.knowledgeSummary',{count:knowledge.assigned.length}):unavailable}</span><ChevronDown size={15}/></summary>
+    <summary><FileText size={16}/><strong>{t('business.setup.knowledge')}</strong><span className={css.metric}>{knowledge?t('business.setup.knowledgeSummary',{count:knowledge.assigned.length}):unavailable}</span><ChevronDown size={14}/></summary>
     <div className={css.rowContent}>
      {knowledge&&<>{knowledge.assigned.length===0?<p>{t('business.setup.noKnowledge')}</p>:<ul>{knowledge.assigned.slice(0,5).map((item,index)=><li key={item.id}><span>{item.title??t('business.setup.unnamedResource',{index:index+1})}</span><span className={css.note}>{t(`business.setup.knowledge.${item.state}`)}</span></li>)}</ul>}{more(knowledge.assigned.length)}<p className={css.note}>{t('business.setup.resourceCounts',{business:knowledge.businessResourceCount,general:knowledge.generalResourceCount})}</p></>}
      <div className={css.actions}>{action(t('business.setup.configureKnowledge'),roleTarget)}{action(t('business.setup.manageResources'),{kind:'resources'},ArrowUpRight)}</div>
     </div>
    </details>}
    {sections.includes('connections')&&<details className={css.row}>
-    <summary><Plug size={17}/><strong>{t('business.setup.connections')}</strong><span className={css.metric}>{connections?t('business.setup.connectionsSummary',{count:connections.items.filter(item=>item.status==='connected').length}):unavailable}</span><ChevronDown size={15}/></summary>
+    <summary><Plug size={16}/><strong>{t('business.setup.connections')}</strong><span className={css.metric}>{connections?t('business.setup.connectionsSummary',{count:connections.items.filter(item=>item.status==='connected').length}):unavailable}</span><ChevronDown size={14}/></summary>
     <div className={css.rowContent}>
      {connections&&<>{connections.items.length===0?<p>{t('business.setup.noConnections')}</p>:<ul>{connections.items.slice(0,5).map(item=><li key={item.id}><span>{item.serverName}</span><span className={css.note}>{t(`business.setup.connection.${item.status}`)}</span>{action(t('business.setup.configureConnection',{name:item.serverName}),{kind:'connection',catalogId:item.catalogId})}</li>)}</ul>}{more(connections.items.length)}</>}
      <section className={css.sourceGuide} aria-label={t('business.setup.sourceGuide.title')}>

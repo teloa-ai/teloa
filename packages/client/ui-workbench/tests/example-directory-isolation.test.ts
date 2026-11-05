@@ -1,6 +1,9 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import {readFile} from 'node:fs/promises'
+import {homeColleagueWork} from '../src/client/home-colleague-work.ts'
+import {isGroupReplyConversation} from '../src/client/task-list-presentation.ts'
+import type {PreviewTask} from '../src/client/task-preview.ts'
 import {currentAttentionKinds,visibleAttentionDirectory,visibleCurrentAttentionDirectory,visibleRoleDirectory,visibleTaskDirectory} from '../src/client/example-directory-presentation.ts'
 
 const root=new URL('../src/client/',import.meta.url)
@@ -50,4 +53,17 @@ test('全局搜索只接收已保存任务和数字员工',async()=>{
   assert.doesNotMatch(frame,/bindings=\{\{forms:bindingForms/, '正式能力页不得重新注入内存演示绑定')
   assert.match(frame,/<CollaborationPage [^\n]*roles=\{tasks\.roles\.filter\(role=>role\.storage==='persistent'\)\}/)
   assert.doesNotMatch(frame,/collaborationMode/,'协作群页只留持久一条线，不得保留模式切换')
+})
+
+
+test('普通群聊执行从正式任务目录和同事在做统计退出；未知来源、明确工作和已变更任务保留',()=>{
+ const reply={id:'reply',storage:'persistent',state:'running',contentVersion:1,assigneeId:'role',assigneeRoleVersion:7,updatedAt:'2026-11-05T00:00:00Z',source:{groupId:'g',messageId:'m',rootId:null,text:'你好',trigger:'routed',executionMode:'reply',createdAssignee:{roleId:'role',roleVersion:7}}} as unknown as PreviewTask;
+ const rows=[reply,{...reply,id:'reply-waiting',state:'waiting'}, {...reply,id:'work',source:{...reply.source!,executionMode:'work'}},{...reply,id:'unknown',source:undefined},{...reply,id:'edited',contentVersion:2},{...reply,id:'reassigned',assigneeRoleVersion:8}] as PreviewTask[];
+ assert.deepEqual(visibleTaskDirectory(rows,'saved').map(row=>row.id),['work','unknown','edited','reassigned']);
+ assert.equal(homeColleagueWork(rows).count,4,'普通交流不制造同事工作数，正式与未核清的工作不被隐藏');
+ const conversation={purpose:'task-run',run:{taskId:'reply',taskVersion:1,roleId:'role',roleVersion:7}} as never;
+ assert.equal(isGroupReplyConversation(conversation,rows),true);
+ assert.equal(isGroupReplyConversation(conversation,[{...reply,contentVersion:2}]),false);
+ assert.equal(isGroupReplyConversation(conversation,[]),false);
+ assert.equal(isGroupReplyConversation({purpose:'ordinary'} as never,rows),false);
 })

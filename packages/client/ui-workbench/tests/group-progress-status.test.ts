@@ -85,13 +85,16 @@ test('所有终态退出动态显示；live region 常驻但为空，重载后�
  assert.match(progress(mixed),/物流[\s\S]*正在回复/);assert.doesNotMatch(progress(mixed),/售后/)
 })
 
-test('原消息：进行中不再逐人堆阶段；交流回应完成后只留查看工作图标，不写已完成或已回应',()=>{
+test('原消息：普通交流不暴露内部任务，真实工作仍保留原工作入口',()=>{
  const {message}=load()
  assert.equal(message({status:status({recipients:[person(roleA,'售后','running'),person(roleB,'物流','queued')]})}),'','进行中且无工作入口时原消息下没有状态块')
  const running=message({status:status({recipients:[person(roleA,'售后','running',{taskId:taskA,executionMode:'work'})]})})
  assert.doesNotMatch(running,/正在处理|role="status"/);assert.match(running,/aria-label="查看工作"/,'进行中的原工作入口保留为紧凑图标')
  const replied=message({status:status({phase:'completed',recipients:[person(roleA,'售后','completed',{taskId:taskA,resultMessageId:otherMessage})]})})
- assert.doesNotMatch(replied,/已完成|已回应|售后：/);assert.match(replied,/aria-label="查看工作"/);assert.doesNotMatch(replied,/role="status"/,'静默行不进入播报')
+ assert.equal(replied,'','回复正文就是结果，交流结束不显示内部执行任务')
+ assert.equal(message({status:status({recipients:[person(roleA,'售后','running',{taskId:taskA})]})}),'','交流进行中同样不暴露内部任务')
+ const failedReply=message({status:status({phase:'unknown',recipients:[person(roleA,'售后','unknown',{taskId:taskA})]})})
+ assert.match(failedReply,/aria-label="查看工作"/,'未知执行仍保留原记录供核对，不能隐藏处理入口')
  const two=message({status:status({phase:'completed',recipients:[person(roleA,'售后','completed',{taskId:taskA,executionMode:'work'}),person(roleB,'物流','completed',{taskId:taskB,executionMode:'work'})]})})
  assert.match(two,/查看 售后 的工作/);assert.match(two,/查看 物流 的工作/,'多份工作各自按原归属打开')
  assert.equal(message({status:status({phase:'completed',recipients:[person(roleA,'售后','completed')]}),openTask:undefined}),'')

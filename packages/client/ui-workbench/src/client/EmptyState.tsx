@@ -20,5 +20,5 @@ export function EmptyBlock({icon:Icon,title,description,actions,status=false}:{i
 
 /** 卡片内空态：压成一行浅底提示，默认带完成勾，表示「此处没有待办」。 */
 export function EmptyInline({children,icon:Icon=CircleCheck}:{children:ReactNode;icon?:LucideIcon}){
- return <p className={css.inline}><Icon size={15} aria-hidden="true"/>{children}</p>
+ return <p className={css.inline}><Icon size={16} aria-hidden="true"/>{children}</p>
 }

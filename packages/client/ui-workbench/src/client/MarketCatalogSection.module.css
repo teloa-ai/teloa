@@ -57,7 +57,7 @@
 .alternatives button:focus-visible{outline:2px solid var(--teloa-focus);outline-offset:2px}
 
 /* 抽屉标题已给出条目名称，详情卡片不再重复同一标题。 */
-.detailView .name{display:block;min-width:0;flex:1;font-size:var(--teloa-font-section);line-height:1.4;overflow-wrap:anywhere}
+.detailView .name{display:block;min-width:0;flex:1;font-size:var(--teloa-font-section);line-height:var(--teloa-leading-heading);overflow-wrap:anywhere}
 
 /* 短说明或读取失败时，网格里的方案正文也保持与抽屉标题对齐。 */
 .detailDrawer .section>article{box-sizing:border-box;width:100%;min-width:0;max-width:none;margin:0}
@@ -65,4 +65,11 @@
 .toolRow>label{flex:1 1 280px;max-width:360px;min-width:220px}
 .toolRow>div{flex:999 1 auto;min-width:0}
 
-.detailView .top{align-items:center;gap:8px 12px}.detailView .actions{order:50;position:sticky;bottom:-22px;z-index:1;padding:16px 0;background:var(--teloa-surface);border-top:1px solid var(--teloa-border)}.detailView .actions .primary{flex:1;min-height:38px}.detailView .summary{margin-top:6px;font-size:var(--teloa-font-body);line-height:1.7}.detailView .card>.details{border-top:1px solid var(--teloa-border);padding-top:12px}
+.detailView .top{align-items:center;gap:8px 12px}.detailView .actions{order:50;position:sticky;bottom:-22px;z-index:1;padding:16px 0;background:var(--teloa-surface);border-top:1px solid var(--teloa-border)}.detailView .actions .primary{flex:1;min-height:38px}.detailView .summary{margin-top:6px;font-size:var(--teloa-font-body);line-height:var(--teloa-leading-label)}.detailView .card>.details{border-top:1px solid var(--teloa-border);padding-top:12px}
+
+/* 仅规范本组件的界面标签；正文和代码中的强调保持原样。 */
+.details>ul>li>strong,.card>div>strong,.meta>strong{font-weight:var(--teloa-weight-regular)}
+.error>strong{font-weight:var(--teloa-weight-medium)}
+
+/* 深层配置与详情标题使用界面层级，避免浏览器默认字号和粗体。 */
+.details>h4{font-size:var(--teloa-font-control);font-weight:var(--teloa-weight-heading);}

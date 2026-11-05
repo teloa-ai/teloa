@@ -1,11 +1,11 @@
 import {WorkError} from './work-error.ts'
 import {taskInput} from './tasks.ts'
-import {isGroupMessage,type GroupMessage} from './collaboration.ts'
+import {isGroupMessage,isGroupEmployeeResponse,type GroupMessage} from './collaboration.ts'
 
 /** 来源导航只读；它不是 MessageReference，也不授予资料或执行权限。 */
 export const groupMessageSourcesEndpoint={name:'groups/messages/sources',writing:false} as const
 export type GroupMessageSourceItem={message:GroupMessage;rootId:string|null;sha256:string}
-export type GroupMessageSources={schema:'teloa.group-message-sources/v1';groupId:string;messageId:string;runId:string|null;items:GroupMessageSourceItem[];unavailableCount:number}
+export type GroupMessageSources={schema:'teloa.group-message-sources/v1';groupId:string;messageId:string;runId:string|null;items:GroupMessageSourceItem[];unavailableCount:number;replyExecutionId?:string}
 const uuid=(value:unknown):value is string=>typeof value==='string'&&/^[a-f0-9]{8}-[a-f0-9]{4}-[1-8][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i.test(value)
 const invalid=():never=>{throw new WorkError('teloa/invalid-input','群消息引用来源格式不正确。')}
 
@@ -28,16 +28,17 @@ export function citedGroupMessageIds(text:string):string[]{
 }
 
 export function readGroupMessageSources(value:unknown):GroupMessageSources{
- const row=taskInput(value,['schema','groupId','messageId','runId','items','unavailableCount'])
+ const row=taskInput(value,['schema','groupId','messageId','runId','items','unavailableCount','replyExecutionId'])
+ if(row.replyExecutionId!==undefined&&(!uuid(row.replyExecutionId)||row.runId!==null))invalid()
  if(row.schema!=='teloa.group-message-sources/v1'||!uuid(row.groupId)||!uuid(row.messageId)||row.runId!==null&&!uuid(row.runId)||!Array.isArray(row.items)||!Number.isSafeInteger(row.unavailableCount)||Number(row.unavailableCount)<0)invalid()
  const groupId=row.groupId as string,items=(row.items as unknown[]).map(value=>{
   const item=taskInput(value,['message','rootId','sha256']),message=item.message
   if(!isGroupMessage(message))return invalid()
   if(message.groupId!==groupId||item.rootId!==null&&!uuid(item.rootId)||typeof item.sha256!=='string'||!/^[a-f0-9]{64}$/.test(item.sha256))invalid()
-  if(item.rootId!==null&&message.rootId!==item.rootId||item.rootId===null&&message.rootId!==null&&(!('runId'in message)||message.contextMode!=='main'))invalid()
-  if('runId'in message&&message.fullText&&message.fullText.sha256!==item.sha256)invalid()
+  if(item.rootId!==null&&message.rootId!==item.rootId||item.rootId===null&&message.rootId!==null&&(!isGroupEmployeeResponse(message)||message.contextMode!=='main'))invalid()
+  if(isGroupEmployeeResponse(message)&&message.fullText&&message.fullText.sha256!==item.sha256)invalid()
   return {message:structuredClone(message),rootId:item.rootId as string|null,sha256:item.sha256 as string}
  })
- if(new Set(items.map(item=>item.message.id)).size!==items.length||items.some(item=>item.message.id===row.messageId)||row.runId===null&&items.length)invalid()
- return {schema:'teloa.group-message-sources/v1',groupId,messageId:row.messageId as string,runId:row.runId as string|null,items,unavailableCount:Number(row.unavailableCount)}
+ if(new Set(items.map(item=>item.message.id)).size!==items.length||items.some(item=>item.message.id===row.messageId)||row.runId===null&&row.replyExecutionId===undefined&&items.length)invalid()
+ return {schema:'teloa.group-message-sources/v1',groupId,messageId:row.messageId as string,runId:row.runId as string|null,items,unavailableCount:Number(row.unavailableCount),...(row.replyExecutionId===undefined?{}:{replyExecutionId:row.replyExecutionId as string})}
 }

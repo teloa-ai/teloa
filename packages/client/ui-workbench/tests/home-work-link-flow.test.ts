@@ -49,5 +49,14 @@ test('首页原生空会话用固定身份显式加入工作目录，目录默�
  assert.equal(homeNativeAdoptionRequestId(storage,requestId,()=>{throw Error('已有业务身份不应重建')}),requestId)
  assert.equal(homeNativeAdoptionRequestId(storage,sessionId,()=>requestId),requestId)
  assert.equal(homeNativeAdoptionRequestId(storage,sessionId,()=>{throw Error('重试不应重建请求身份')}),requestId)
- assert.match(directory,/filter\(item=>\(item\.status!=='blank'\|\|!!needle\)&&managed\.archived/)
+ const file=ts.createSourceFile('WorkDirectory.tsx',directory,ts.ScriptTarget.Latest,true,ts.ScriptKind.TSX)
+ let filter:ts.ArrowFunction|undefined
+ const visit=(node:ts.Node)=>{if(ts.isCallExpression(node)&&ts.isPropertyAccessExpression(node.expression)&&node.expression.name.text==='filter'){const callback=node.arguments[0];if(callback&&ts.isArrowFunction(callback)&&callback.body.getText(file).includes("item.status!=='blank'"))filter=callback}ts.forEachChild(node,visit)}
+ visit(file);assert.ok(filter,'目录具有空白与归档筛选');const predicate=filter.getText(file)
+ const check=(status:string,needle:string,archived=false,hidden=false)=>new Function('needle','archived','managed','workTasks','isGroupReplyConversation','return ('+predicate+')')(needle,archived,{archived:hidden?['session']:[]},[],()=>false)({status,conversation:{sessionId:'session'}})
+ assert.equal(check('blank',''),false,'默认隐藏空白会话')
+ assert.equal(check('blank','成果'),true,'显式搜索保留空白会话中的已有成果')
+ assert.equal(check('ready',''),true)
+ assert.equal(check('ready','',false,true),false,'未选归档时隐藏归档会话')
+ assert.equal(check('ready','',true,true),true,'归档筛选仍可找回原会话')
 })

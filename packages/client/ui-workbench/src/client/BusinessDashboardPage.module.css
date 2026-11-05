@@ -2,7 +2,7 @@
 .surface{margin-top:20px;min-width:0}
 .header{display:flex;flex-wrap:wrap;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:16px}
 .header h2{margin:0 0 6px;font-size:var(--teloa-font-section);font-weight:var(--teloa-weight-heading);line-height:var(--teloa-leading-label)}
-.meta{display:flex;flex-wrap:wrap;gap:6px 14px;margin:0;color:var(--teloa-muted);font-size:var(--teloa-font-caption);line-height:1.7}
+.meta{display:flex;flex-wrap:wrap;gap:6px 14px;margin:0;color:var(--teloa-muted);font-size:var(--teloa-font-caption);line-height:var(--teloa-leading-label)}
 .actions{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
 .actions button{display:inline-flex;align-items:center;gap:6px}
 /* 时间范围：宽屏单选按钮组，窄屏折成下拉（两者同一份选项，只按宽度显示其一）。 */
@@ -12,7 +12,7 @@
 .rangeGroup button[aria-checked='true']{background:var(--teloa-surface);color:var(--teloa-text);font-weight:var(--teloa-weight-medium)}
 .rangeGroup button:focus-visible,.rangeSelect:focus-visible{outline:2px solid var(--teloa-focus);outline-offset:1px}
 .rangeSelect{display:none;min-width:0;max-width:100%;min-height:32px;padding:5px 8px;border:1px solid var(--teloa-border);border-radius:7px;background:var(--teloa-surface);color:var(--teloa-text);font:inherit;font-size:var(--teloa-font-caption)}
-.notice{margin:0 0 14px;padding:9px 12px;border:1px solid var(--teloa-border);border-radius:8px;background:var(--teloa-warn-bg);color:var(--teloa-text);font-size:var(--teloa-font-caption);line-height:1.7}
+.notice{margin:0 0 14px;padding:9px 12px;border:1px solid var(--teloa-border);border-radius:8px;background:var(--teloa-warn-bg);color:var(--teloa-text);font-size:var(--teloa-font-caption);line-height:var(--teloa-leading-body)}
 /* 布局的 x/y/w/h 只决定位置与跨度；行高随内容，不再按 h×64px 预留空白，同一行的卡片对齐到较高者。 */
 .grid{display:grid;grid-template-columns:repeat(12,minmax(0,1fr));grid-auto-rows:auto;gap:16px}
 .widget{display:flex;flex-direction:column;gap:10px;min-width:0;padding:16px;border:1px solid var(--teloa-border);border-radius:12px;background:var(--teloa-surface);grid-column:var(--widget-column);grid-row:var(--widget-row);align-self:start}
@@ -24,8 +24,8 @@
 .drill:hover{text-decoration:underline}
 .widgetTitle>button:focus-visible,.drill:focus-visible{outline:2px solid var(--teloa-focus);outline-offset:2px}
 .widgetBody{flex:1;min-width:0;overflow:auto}
-.note{margin:0;color:var(--teloa-muted);font-size:var(--teloa-font-caption);line-height:1.7}
-.failed{margin:0;padding:10px 12px;border-radius:8px;background:var(--teloa-subtle);color:var(--teloa-muted);font-size:var(--teloa-font-caption);line-height:1.7}
+.note{margin:0;color:var(--teloa-muted);font-size:var(--teloa-font-caption);line-height:var(--teloa-leading-body)}
+.failed{margin:0;padding:10px 12px;border-radius:8px;background:var(--teloa-subtle);color:var(--teloa-muted);font-size:var(--teloa-font-caption);line-height:var(--teloa-leading-body)}
 
 .metric{display:flex;flex-direction:column;gap:4px}
 .metric strong{font-size:var(--teloa-font-metric);font-weight:var(--teloa-weight-regular);font-variant-numeric:tabular-nums;letter-spacing:-.8px;line-height:1.25;color:var(--teloa-text)}
@@ -46,7 +46,7 @@
 .board{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(150px,1fr);gap:10px;overflow-x:auto}
 .board section{display:flex;flex-direction:column;gap:6px;min-width:0;padding:8px;border-radius:8px;background:var(--teloa-subtle)}
 .board h4{display:flex;justify-content:space-between;margin:0;font-size:var(--teloa-font-caption);font-weight:var(--teloa-weight-medium);color:var(--teloa-muted)}
-.board article{padding:7px 9px;border:1px solid var(--teloa-border);border-radius:7px;background:var(--teloa-surface);font-size:var(--teloa-font-caption);line-height:1.6;overflow-wrap:anywhere}
+.board article{padding:7px 9px;border:1px solid var(--teloa-border);border-radius:7px;background:var(--teloa-surface);font-size:var(--teloa-font-caption);line-height:var(--teloa-leading-body);overflow-wrap:anywhere}
 
 .pipeline{display:flex;flex-direction:column;gap:8px;margin:0;padding:0;list-style:none}
 .pipeline li{display:grid;grid-template-columns:minmax(80px,1fr) 2fr auto;align-items:center;gap:10px;font-size:var(--teloa-font-caption)}
@@ -82,9 +82,9 @@
 }
 
 /* 1.0 看板空态（设计 60f）：虚线卡、图标方块、说明与唯一主按钮。 */
-.emptyBoard.emptyBoard{align-items:center;text-align:center;gap:10px;padding:48px 24px;border:1px dashed var(--teloa-border-strong);border-radius:12px;background:var(--teloa-background)}.emptyBoard h2{margin:4px 0 0;font-size:var(--teloa-font-body);font-weight:var(--teloa-weight-heading)}.emptyBoard p{max-width:360px;margin:0;color:var(--teloa-muted);font-size:var(--teloa-font-caption);line-height:1.7}
+.emptyBoard.emptyBoard{align-items:center;text-align:center;gap:10px;padding:48px 24px;border:1px dashed var(--teloa-border-strong);border-radius:12px;background:var(--teloa-background)}.emptyBoard h2{margin:4px 0 0;font-size:var(--teloa-font-body);font-weight:var(--teloa-weight-heading)}.emptyBoard p{max-width:360px;margin:0;color:var(--teloa-muted);font-size:var(--teloa-font-caption);line-height:var(--teloa-leading-body)}
 .emptyIcon{display:grid;place-items:center;width:40px;height:40px;border-radius:10px;background:var(--teloa-subtle);color:var(--teloa-muted)}
 .emptyBoard .emptyPrimary{margin-top:4px;background:var(--teloa-primary);border-color:var(--teloa-primary);color:var(--teloa-on-primary)}
 
-.grid{gap:20px}.widget{padding:20px;gap:16px;max-height:640px}.widgetTitle{align-items:flex-start;flex-wrap:wrap}.widgetTitle>h3,.widget>h3{font-size:var(--teloa-font-section);font-weight:600}.widgetBody{min-height:0;overscroll-behavior:contain;max-height:480px}.table th,.table td{padding:11px 12px;line-height:1.6}.table th{position:sticky;top:0;background:var(--teloa-panel);z-index:1}.board{grid-auto-columns:minmax(220px,1fr);padding-bottom:8px}.board article{padding:12px;line-height:1.7}.board section{gap:10px;padding:12px}.board h4{font-size:var(--teloa-font-control);gap:10px}.metric strong{font-weight:500;letter-spacing:-.02em;overflow-wrap:anywhere}.cards{grid-template-columns:repeat(auto-fill,minmax(min(100%,240px),1fr))}
+.grid{gap:20px}.widget{padding:20px;gap:16px;max-height:640px}.widgetTitle{align-items:flex-start;flex-wrap:wrap}.widgetTitle>h3,.widget>h3{font-size:var(--teloa-font-section);font-weight:var(--teloa-weight-heading)}.widgetBody{min-height:0;overscroll-behavior:contain;max-height:480px}.table th,.table td{padding:11px 12px;line-height:var(--teloa-leading-body)}.table th{position:sticky;top:0;background:var(--teloa-panel);z-index:1}.board{grid-auto-columns:minmax(220px,1fr);padding-bottom:8px}.board article{padding:12px;line-height:var(--teloa-leading-body)}.board section{gap:10px;padding:12px}.board h4{font-size:var(--teloa-font-control);gap:10px}.metric strong{font-weight:500;letter-spacing:-.02em;overflow-wrap:anywhere}.cards{grid-template-columns:repeat(auto-fill,minmax(min(100%,240px),1fr))}
 @media(max-width:600px){.widget{padding:16px}.grid{gap:14px}.widgetTitle>button{min-height:44px}.rangeGroup button{min-height:44px}}

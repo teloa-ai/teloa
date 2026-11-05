@@ -1,3 +1,4 @@
+import {readTrustedGroupReplySource} from './group-reply-executions.ts'
 import type {Pool,PoolClient} from 'pg'
 import {WorkError,groupRoutingRetryInput,isGroupMention,isGroupRoutingDecision,type GroupMention,type GroupRoutingDecision} from '@teloa/contract'
 import {workAccess} from './work-access.ts'
@@ -116,7 +117,7 @@ export class GroupRoutingAttemptService{
    if(current.attemptVersion!==request.expectedAttempt)throw new WorkError('teloa/version-conflict','原消息的安排已变化，请刷新后核对。')
    const delivered=!!(await client.query('select 1 from teloa_group_routing_outbox where owner_id=$1 and message_id=$2 limit 1',[owner,request.messageId])).rowCount
    if(!groupRoutingRetryable(current.decision,delivered))throw new WorkError('teloa/conflict','这条消息已有员工接手或不需要重新安排，请查看原工作。')
-   if(employee&&!await readTrustedGroupMessageRunSource(client,owner,{groupId:request.groupId,messageId:request.messageId},this.pool))throw new WorkError('teloa/conflict','这条员工消息没有可信的工作来源，不能重新安排交接。')
+   if(employee&&!(await readTrustedGroupMessageRunSource(client,owner,{groupId:request.groupId,messageId:request.messageId},this.pool)??await readTrustedGroupReplySource(client,owner,{groupId:request.groupId,messageId:request.messageId})))throw new WorkError('teloa/conflict','这条员工消息没有可信的工作来源，不能重新安排交接。')
    for(const recipient of request.overrideRecipients??[]){
     const role=(await client.query(`select roles.version,roles.state from teloa_group_members members join teloa_roles roles on roles.id=members.role_id and roles.owner_id=members.owner_id
      where members.owner_id=$1 and members.group_id=$2 and members.role_id=$3 for share of members,roles`,[owner,request.groupId,recipient.roleId])).rows[0]

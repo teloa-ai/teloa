@@ -1,4 +1,4 @@
-.page{color:var(--teloa-text);font-size:var(--teloa-font-body);line-height:1.6;max-width:760px}
+.page{color:var(--teloa-text);font-size:var(--teloa-font-body);line-height:var(--teloa-leading-body);max-width:760px}
 .page h2{font-size:var(--teloa-font-detail);margin:0 0 10px;font-weight:var(--teloa-weight-heading);line-height:var(--teloa-leading-heading)}
 .page h3{font-size:var(--teloa-font-body);margin:20px 0 6px;font-weight:var(--teloa-weight-heading);line-height:var(--teloa-leading-label)}
 .hint{color:var(--teloa-muted);margin:4px 0 12px}

@@ -63,7 +63,7 @@ function ToastRow({item,durations,dismiss}:{item:ToastItem;durations:typeof toas
  const Icon=icons[item.tone]
  const alert=item.tone==='error'||item.tone==='warning'
  return <div className={css.toast} data-tone={item.tone} role={alert?'alert':'status'} onMouseEnter={()=>setHover(true)} onMouseLeave={()=>setHover(false)} onFocus={()=>setFocus(true)} onBlur={event=>{if(!event.currentTarget.contains(event.relatedTarget as Node|null))setFocus(false)}}>
-  <Icon size={15} className={css.icon} aria-hidden="true"/>
+  <Icon size={16} className={css.icon} aria-hidden="true"/>
   <span className={css.message}>{item.message}</span>
   {item.action&&<button type="button" className={css.action} onClick={()=>{const action=item.action!;dismiss();void action.run()}}>{item.action.label}</button>}
   <button type="button" className={css.close} aria-label={t('toast.close')} onClick={dismiss}><X size={14}/></button>

@@ -12,6 +12,8 @@ export type GroupRoutingOutboxPorts={
  reconcile:(owner:string,runId:string,signal:AbortSignal)=>Promise<{state:string}>
  report:(code:string,item:GroupDispatchItem)=>void
  configurationFailed?:(owner:string,item:GroupDispatchItem,signal:AbortSignal)=>Promise<void>
+ /** 普通群回复只使用原 outbox 与原生会话；返回 false 时才沿历史/业务 TaskRun 路径。 */
+ reply?:(owner:string,item:GroupDispatchItem,signal:AbortSignal)=>Promise<boolean>
 }
 const delivered=(state:string|null)=>state!==null&&['accepted','active','ended','withdrawn','configuration_failed','submission_unknown'].includes(state)
 const blocked=(error:unknown)=>error instanceof WorkError&&['teloa/forbidden','teloa/invalid-input','teloa/storage-corrupt','teloa/conflict','teloa/version-conflict'].includes(error.code)
@@ -27,6 +29,7 @@ export async function drainGroupRoutingOutbox(owner:string,ports:GroupRoutingOut
   if(!claimed)continue
   const fence={itemId:claimed.id,leaseGeneration:claimed.leaseGeneration}
   try{
+   if(await ports.reply?.(owner,claimed,signal))continue
    let receipt=await ports.outbox.receipt(owner,{itemId:claimed.id})
    if(receipt.runId){
     const fixed=await ports.readRun(owner,receipt.runId,signal)

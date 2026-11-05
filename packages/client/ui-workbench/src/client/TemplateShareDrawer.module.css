@@ -1,16 +1,16 @@
 /* 分享卡沿用工作台字体、主题令牌及 StaffAvatar 的员工身份色。 */
-.drawer{position:fixed;inset:0 0 0 auto;margin:0;max-height:100dvh;height:100dvh;width:min(540px,100vw);max-width:100vw;border:0;border-left:1px solid var(--teloa-border,#e3e4de);background:var(--teloa-background,#fcfcfb);color:var(--teloa-text,#242723);padding:0;overflow-y:auto;box-sizing:border-box;box-shadow:var(--teloa-shadow,-12px 0 40px #0002);font-family:var(--teloa-design-font,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif);font-size:var(--teloa-font-body,14px);line-height:1.6}
+.drawer{position:fixed;inset:0 0 0 auto;margin:0;max-height:100dvh;height:100dvh;width:min(540px,100vw);max-width:100vw;border:0;border-left:1px solid var(--teloa-border,#e3e4de);background:var(--teloa-background,#fcfcfb);color:var(--teloa-text,#242723);padding:0;overflow-y:auto;box-sizing:border-box;box-shadow:var(--teloa-shadow,-12px 0 40px #0002);font-family:var(--teloa-design-font,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif);font-size:var(--teloa-font-body,14px);line-height:var(--teloa-leading-body)}
 .drawer::backdrop{background:var(--teloa-backdrop,#10181466)}
 .header{position:sticky;top:0;z-index:2;display:flex;align-items:center;justify-content:space-between;padding:18px 24px;border-bottom:1px solid var(--teloa-border,#e3e4de);gap:16px;background:var(--teloa-background,#fcfcfb)}
-.drawer .header h2{margin:0;font-size:var(--teloa-font-dialog,18px);font-weight:600;line-height:1.4}
+.drawer .header h2{margin:0;font-size:var(--teloa-font-dialog,18px);font-weight:var(--teloa-weight-heading);line-height:var(--teloa-leading-heading)}
 .drawer .header button{display:grid;place-items:center;width:32px;height:32px;min-height:32px;padding:0;border:0;border-radius:8px;background:transparent;color:var(--teloa-muted,#646860);cursor:pointer}
 .drawer .header button:hover{background:var(--teloa-hover,#eae9e5);color:var(--teloa-text,#242723)}
 .body{padding:24px;display:grid;gap:16px;overflow-wrap:anywhere}
-.drawer .body p{margin:0;line-height:1.7}
-.drawer .body button{font:inherit;font-size:var(--teloa-font-control,13px);display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:38px;padding:9px 14px;border:1px solid var(--teloa-border,#e3e4de);border-radius:8px;background:var(--teloa-surface,#fff);color:inherit;cursor:pointer;line-height:1.5}
+.drawer .body p{margin:0;line-height:var(--teloa-leading-body)}
+.drawer .body button{font:inherit;font-size:var(--teloa-font-control,13px);display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:var(--teloa-action-height,32px);padding:4px 12px;border:1px solid var(--teloa-border,#e3e4de);border-radius:8px;background:var(--teloa-surface,#fff);color:inherit;cursor:pointer;line-height:var(--teloa-leading-label)}
 .drawer .body button:hover{background:var(--teloa-subtle,#f7f7f5)}
 .drawer .body button:disabled{opacity:.5;cursor:default}
-.drawer .body .primary{min-height:44px;background:var(--teloa-text,#242723);border-color:var(--teloa-text,#242723);color:var(--teloa-surface,#fff);font-weight:500}
+.drawer .body .primary{min-height:var(--teloa-control-height,36px);background:var(--teloa-text,#242723);border-color:var(--teloa-text,#242723);color:var(--teloa-surface,#fff);font-weight:500}
 .drawer .body .primary:hover{background:var(--teloa-text,#242723);border-color:var(--teloa-text,#242723);color:var(--teloa-surface,#fff)}
 .drawer .body .primary:hover:not(:disabled){opacity:.88}
 .drawer .intro,.drawer .note{font-size:var(--teloa-font-control,13px);color:var(--teloa-muted,#646860)}
@@ -41,16 +41,16 @@
 .composition label.option{display:flex;align-items:center;gap:8px;font-weight:400}
 .composition select,.detailContent select{font:inherit;border:1px solid var(--teloa-border,#e3e4de);border-radius:8px;background:var(--teloa-background,#fcfcfb);color:inherit;padding:8px 10px;min-height:38px}
 .drawer .body .secondary{background:transparent}
-.status{position:absolute;right:16px;top:16px;z-index:1;display:inline-flex;align-items:center;gap:6px;padding:3px 9px;border-radius:999px;background:var(--teloa-surface,#fff);color:var(--teloa-muted,#646860);font-size:var(--teloa-font-caption,12px);line-height:1.6}
+.status{position:absolute;right:16px;top:16px;z-index:1;display:inline-flex;align-items:center;gap:6px;padding:3px 9px;border-radius:999px;background:var(--teloa-surface,#fff);color:var(--teloa-muted,#646860);font-size:var(--teloa-font-caption,12px);line-height:var(--teloa-leading-label)}
 .status>span{width:5px;height:5px;border-radius:50%;background:currentColor}
 .statusGood{color:var(--teloa-good,#2f6c51);background:var(--teloa-good-bg,#eaf3ed)}
 .cardContent{padding:22px 24px 24px;display:grid;gap:10px}
-.drawer .cardContent h3{font-size:var(--teloa-font-dialog);line-height:1.4;letter-spacing:-.3px;font-weight:600;margin:0}
+.drawer .cardContent h3{font-size:var(--teloa-font-list);line-height:var(--teloa-leading-heading);letter-spacing:-.3px;font-weight:var(--teloa-weight-heading);margin:0}
 /* 无员工的能力包不套头像封面；状态、类型与标题在同一紧凑身份区。 */
 .compactCard .cardContent{padding:18px 20px;gap:8px}
 .compactIdentity{display:grid;grid-template-columns:22px minmax(0,1fr) auto;align-items:center;gap:10px;min-width:0}
 .identityText{display:grid;gap:2px;min-width:0}
-.drawer .compactIdentity h3{font-size:var(--teloa-font-body,14px);line-height:1.5;letter-spacing:normal;overflow-wrap:anywhere}
+.drawer .compactIdentity h3{font-size:var(--teloa-font-body,14px);line-height:var(--teloa-leading-heading);letter-spacing:normal;overflow-wrap:anywhere}
 .compactIdentity .status{position:static;justify-self:start;max-width:100%}
 @media(max-width:600px){.compactIdentity{grid-template-columns:22px minmax(0,1fr)}.compactIdentity .status{grid-column:2}}
 .cardContent .description{font-size:var(--teloa-font-body,14px);color:var(--teloa-muted,#646860);white-space:pre-wrap}
@@ -88,7 +88,7 @@
 .drawer .success{display:flex;align-items:center;justify-content:center;gap:7px;color:var(--teloa-good,#2f6c51);font-size:var(--teloa-font-control,13px)}
 .empty{display:grid;justify-items:center;text-align:center;gap:12px;padding:36px 24px;border:1px dashed var(--teloa-border,#e3e4de);border-radius:14px;background:var(--teloa-surface,#fff)}
 .emptyIcon{display:grid;place-items:center;width:60px;height:60px;border-radius:18px;background:var(--teloa-subtle,#f7f7f5);color:var(--teloa-muted,#646860)}
-.drawer .empty h3{font-size:var(--teloa-font-section);font-weight:600;margin:0}
+.drawer .empty h3{font-size:var(--teloa-font-section);font-weight:var(--teloa-weight-heading);margin:0}
 .savedLink{display:grid;gap:8px;padding:12px;border-radius:8px;background:var(--teloa-subtle,#f7f7f5)}
 .savedLink small{color:var(--teloa-muted,#646860)}
 .drawer :focus-visible{outline:2px solid var(--teloa-focus,#646860);outline-offset:2px}
@@ -102,5 +102,19 @@
 .fileReader nav button:hover{background:var(--teloa-hover)}
 .fileReader section{min-width:0}
 .fileReader h4{margin:0 0 8px;font:inherit;font-weight:var(--teloa-weight-medium);overflow-wrap:anywhere}
-.fileReader pre{margin:0;max-height:min(46dvh,360px);overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;font:inherit;line-height:1.7}
+.fileReader pre{margin:0;max-height:min(46dvh,360px);overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;font:inherit;line-height:var(--teloa-leading-reading)}
 .fileReader button:focus-visible{outline:2px solid var(--teloa-focus);outline-offset:-2px}
+
+/* 随包资料在异步检查后显示，标题与条目名称也沿用界面字重，避免 strong 回到浏览器默认粗体。 */
+.composition>strong{font-size:var(--teloa-font-control);font-weight:var(--teloa-weight-heading)}
+.compositionText strong{font-size:var(--teloa-font-list);font-weight:var(--teloa-weight-regular)}
+
+/* 仅规范本组件的界面标签；正文和代码中的强调保持原样。 */
+.detailContent>div>strong,.detailContent>strong,.compositionText>strong{font-weight:var(--teloa-weight-regular)}
+
+.compositionHeading{font-size:var(--teloa-font-control);font-weight:var(--teloa-weight-medium)}
+
+/* 深层配置与详情标题使用界面层级，避免浏览器默认字号和粗体。 */
+.fileReader>section>h4{font-size:var(--teloa-font-control);}
+
+@media(pointer:coarse){.drawer .body button,.drawer .body .primary{min-height:44px}}

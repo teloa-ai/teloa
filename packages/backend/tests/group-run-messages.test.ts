@@ -360,7 +360,7 @@ test('旧群消息表升级后保留本人消息约束，并为数字员工回�
   await initializeCollaboration(upgrade)
   const columns=(await upgrade.query("select column_name from information_schema.columns where table_schema=current_schema() and table_name='teloa_group_messages' and column_name in ('task_id','run_id') order by column_name")).rows.map(row=>row.column_name)
   assert.deepEqual(columns,['run_id','task_id'])
-  const definition=(await upgrade.query("select pg_get_constraintdef(oid) definition from pg_constraint where conrelid='teloa_group_messages'::regclass and conname='teloa_group_messages_author_execution_v1'")).rows[0]?.definition
+  const definition=(await upgrade.query("select pg_get_constraintdef(oid) definition from pg_constraint where conrelid='teloa_group_messages'::regclass and conname='teloa_group_messages_author_execution_v2'")).rows[0]?.definition
   assert.match(definition,/author_id = 'self'/);assert.match(definition,/task_id IS NULL/);assert.match(definition,/run_id IS NOT NULL/)
  }finally{await upgrade.end();await pool.query(`drop schema "${schema}" cascade`)}
 })

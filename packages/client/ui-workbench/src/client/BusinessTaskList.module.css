@@ -5,7 +5,7 @@
 .list{list-style:none;padding:0;margin:12px 0}
 .row{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:16px 0;border-top:1px solid var(--teloa-border)}
 .details{min-width:0;flex:1;overflow-wrap:anywhere}
-.details h3{margin:0 0 8px;font-size:inherit;font-weight:600}
+.details h3{margin:0 0 8px;font-size:inherit;font-weight:var(--teloa-weight-heading)}
 .details dl{display:flex;flex-wrap:wrap;gap:8px 20px;margin:0}
 .details dl>div{display:flex;flex-wrap:wrap;gap:6px}
 .details dd{margin:0}
@@ -14,3 +14,6 @@
 .card button:disabled{opacity:.55;cursor:default}
 .card button:focus-visible{outline:2px solid var(--teloa-focus);outline-offset:2px}
 @media(max-width:740px){.card{padding:16px}.row{align-items:stretch;flex-direction:column}.card button{min-height:44px}.actions{width:100%}}
+
+/* 深层配置与详情标题使用界面层级，避免浏览器默认字号和粗体。 */
+.header>h2{font-weight:var(--teloa-weight-heading);}

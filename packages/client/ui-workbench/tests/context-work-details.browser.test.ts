@@ -160,3 +160,22 @@ test('任务内成果在宽桌面也置于任务上层，Esc 先关成果并保�
  assert.equal(await page.getByRole('button',{name:'打开原任务',exact:true}).evaluate((node:HTMLElement)=>node===document.activeElement),true)
  assert.equal(await page.getByRole('textbox',{name:'原会话草稿'}).inputValue(),'继续原工作');assert.deepEqual(errors,[]);assert.deepEqual(requests,[])
 })
+
+test('员工档案的成果右栏提升到当前模态之上，关闭后保留员工草稿并恢复成果入口焦点',async t=>{
+ const {page,errors,requests}=await fixture(t,`import {ArtifactPanel} from ${JSON.stringify(join(client,'ArtifactPanel.tsx'))};
+ function App(){const [employee,setEmployee]=useState(false),[artifact,setArtifact]=useState(false),[portal,setPortal]=useState<HTMLElement|null>(null);return <main id="teloa-main" tabIndex={-1}><button onClick={()=>setEmployee(true)}>打开员工档案</button>{employee&&<ContextDrawer title="员工档案" className="employee-profile-fixture" close={()=>setEmployee(false)}><button onClick={()=>setArtifact(true)}>查看员工成果</button><input aria-label="员工未提交草稿" defaultValue="保留岗位补充"/></ContextDrawer>}<div ref={setPortal} style={{position:'fixed',inset:'0 0 0 auto',width:400,height:'100vh'}}/><ArtifactPanel inline portal={portal} open={artifact} target={{source:{kind:'session',id:'employee-session'}}} state={emptyTaskPreview()} conversation={{id:'employee-session',title:'员工原会话',scope:'general',bindingId:'employee-binding'}} taskSources={{list:async()=>[]}} nativeArtifacts={{}} artifactFileApi={{}} close={()=>setArtifact(false)} change={async()=>{throw Error('浏览不写入')}} openSource={()=>{}} openTask={()=>{}}/></main>}`)
+ await page.getByRole('button',{name:'打开员工档案',exact:true}).click()
+ const employee=page.locator('dialog.employee-profile-fixture')
+ await employee.getByRole('textbox',{name:'员工未提交草稿'}).fill('仍未提交的岗位补充')
+ await employee.getByRole('button',{name:'查看员工成果',exact:true}).click()
+ const artifact=page.locator('dialog[aria-label="工作成果"]');await artifact.waitFor()
+ assert.equal(await artifact.evaluate((node:HTMLElement)=>node.matches(':modal')),true,'右栏成果必须能覆盖员工模态抽屉')
+ const box=await artifact.boundingBox();assert.ok(box&&box.width<=720&&box.x>=0&&box.x+box.width<=1441)
+ assert.equal(await employee.evaluate((node:HTMLDialogElement)=>node.open),true)
+ await page.keyboard.press('Escape');await artifact.waitFor({state:'detached'})
+ assert.equal(await employee.getByRole('textbox',{name:'员工未提交草稿'}).inputValue(),'仍未提交的岗位补充')
+ assert.equal(await employee.getByRole('button',{name:'查看员工成果',exact:true}).evaluate((node:HTMLElement)=>node===document.activeElement),true)
+ await employee.getByRole('button',{name:'查看员工成果',exact:true}).click();await artifact.waitFor()
+ await page.keyboard.press('Escape');await artifact.waitFor({state:'detached'});await page.keyboard.press('Escape');await employee.waitFor({state:'detached'})
+ assert.deepEqual(errors,[]);assert.deepEqual(requests,[])
+})

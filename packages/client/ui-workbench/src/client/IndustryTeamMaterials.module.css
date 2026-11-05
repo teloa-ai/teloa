@@ -10,7 +10,7 @@
 .row button[aria-expanded=true]{color:var(--teloa-text);font-weight:var(--teloa-weight-medium)}
 .reading{min-width:0;padding-top:12px;border-top:1px solid var(--teloa-border)}
 .reading h3{margin:0 0 8px;font-size:var(--teloa-font-body);font-weight:var(--teloa-weight-medium)}
-.reading pre{margin:0;max-height:32dvh;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;font:inherit;line-height:1.7}
+.reading pre{margin:0;max-height:32dvh;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;font:inherit;line-height:var(--teloa-leading-reading)}
 .footer{position:sticky;bottom:0;z-index:1;margin-top:14px;padding:12px 0;background:var(--teloa-surface)}
 .row :focus-visible{outline:2px solid var(--teloa-focus);outline-offset:2px}
 @media(max-width:480px){.row button{min-height:44px}.list{max-height:30dvh}}

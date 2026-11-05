@@ -1,4 +1,5 @@
 import {createHash} from 'node:crypto'
+import {readTrustedGroupReplySource} from './group-reply-executions.ts'
 import {preparedMaintenanceHash} from './prepared-maintenance.ts'
 import {isDeepStrictEqual} from 'node:util'
 import type {Pool,PoolClient} from 'pg'
@@ -44,7 +45,13 @@ export async function readTrustedGroupMessageRunSource(db:Database,owner:string,
  return source
 }
 export async function readTrustedGroupMessageWorkSource(db:PoolClient,owner:string,input:{groupId:string;messageId:string},pool?:Pool):Promise<Extract<WorkSource,{kind:'group-run-message'}>|null>{
- const source=await readTrustedGroupMessageRunSource(db,owner,input,pool);return source?{kind:'group-run-message',messageId:input.messageId,runId:source.runId}:null
+ const source=await readTrustedGroupMessageRunSource(db,owner,input,pool)
+ if(source)return {kind:'group-run-message',messageId:input.messageId,runId:source.runId}
+ const reply=await readTrustedGroupReplySource(db,owner,input),parent=reply?.snapshot.lineage?.parentRunId
+ if(!parent)return null
+ const rows=(await db.query('select id,group_id from teloa_group_messages where owner_id=$1 and group_id=$2 and run_id=$3 order by created_at,id',[owner,input.groupId,parent])).rows
+ for(const row of rows){const trusted=await readTrustedGroupMessageRunSource(db,owner,{groupId:input.groupId,messageId:row.id},pool);if(trusted)return {kind:'group-run-message',messageId:row.id,runId:trusted.runId}}
+ throw corrupt()
 }
 
 /** 初始化在真实群、任务、Run、决策和工作谱系表之后；不反向初始化其他模块。 */
@@ -69,6 +76,7 @@ export async function initializeGroupRoutingOutbox(pool:Pool):Promise<void>{awai
  );
  -- 逐接收者执行策略（规格 §4.2）：work 只给 v2 决策中实际接手工作的员工，并固定其本人原文范围；其余为交流回应。
  alter table teloa_group_routing_outbox add column if not exists execution_mode text not null default 'reply' check(execution_mode in ('reply','work'));
+ alter table teloa_group_routing_outbox add column if not exists reply_execution jsonb;
  alter table teloa_group_routing_outbox add column if not exists instruction_range jsonb;
  alter table teloa_group_routing_outbox add column if not exists business_target jsonb;
  -- 派发许可绑定领取后的当前控制世代；Task谱系的创建世代是历史事实，不能充当恢复后的执行许可。
@@ -86,6 +94,27 @@ export async function initializeGroupRoutingOutbox(pool:Pool):Promise<void>{awai
   end if;
  end $$;
  create index if not exists teloa_group_routing_outbox_due on teloa_group_routing_outbox(owner_id,next_attempt_at) where state in ('pending','leased','unknown','submitted');
+ create unique index if not exists teloa_group_reply_owner_group on teloa_group_routing_outbox(id,owner_id,group_id);
+ do $$ begin
+  if not exists(select 1 from pg_constraint where conrelid='teloa_group_messages'::regclass and conname='teloa_group_message_reply_execution_v1') then
+   alter table teloa_group_messages add constraint teloa_group_message_reply_execution_v1 foreign key(reply_execution_id,owner_id,group_id) references teloa_group_routing_outbox(id,owner_id,group_id);
+  end if;
+ end $$;
+ create or replace function teloa_protect_group_reply_execution() returns trigger language plpgsql as $$ begin
+  if new.reply_execution is not null and (new.execution_mode<>'reply' or new.task_id is not null or new.run_id is not null) then raise exception 'group reply cannot become a business task'; end if;
+  if old.reply_execution is not null and (new.reply_execution is null or
+   (old.reply_execution-'state'-'reason'-'evidence'-'text'-'resultMessageId'-'stopRequestId'-'nativeInputSha256'-'noVision'-'nativeMessageId') is distinct from (new.reply_execution-'state'-'reason'-'evidence'-'text'-'resultMessageId'-'stopRequestId'-'nativeInputSha256'-'noVision'-'nativeMessageId') or
+   (old.reply_execution->>'state'<>'prepared' and new.reply_execution->>'state'='prepared') or
+   (old.reply_execution ? 'nativeInputSha256' and old.reply_execution->'nativeInputSha256' is distinct from new.reply_execution->'nativeInputSha256') or
+   (old.reply_execution ? 'nativeMessageId' and old.reply_execution->'nativeMessageId' is distinct from new.reply_execution->'nativeMessageId') or
+   (old.reply_execution ? 'noVision' and old.reply_execution->'noVision' is distinct from new.reply_execution->'noVision') or
+   (old.reply_execution ? 'evidence' and old.reply_execution->'evidence' is distinct from new.reply_execution->'evidence') or
+   (old.reply_execution ? 'text' and old.reply_execution->'text' is distinct from new.reply_execution->'text') or
+   (old.reply_execution ? 'resultMessageId' and old.reply_execution->'resultMessageId' is distinct from new.reply_execution->'resultMessageId')) then raise exception 'group reply proof is immutable'; end if;
+  return new;
+ end $$;
+ drop trigger if exists teloa_group_reply_execution_proof on teloa_group_routing_outbox;
+ create trigger teloa_group_reply_execution_proof before update on teloa_group_routing_outbox for each row execute function teloa_protect_group_reply_execution();
  create or replace function teloa_reject_group_run_source_mutation() returns trigger language plpgsql as $$ begin raise exception 'group run sources are immutable'; end $$;
  drop trigger if exists teloa_group_run_sources_immutable on teloa_group_run_sources;
  create trigger teloa_group_run_sources_immutable before update or delete on teloa_group_run_sources for each row execute function teloa_reject_group_run_source_mutation();
@@ -153,6 +182,7 @@ export class GroupRoutingOutboxService{
   if(prior.length){if(prior.length!==input.decision.respond.length||prior.some(r=>!input.decision.respond.includes(r.role_id)))throw corrupt();return prior.map(item)}
   if(!decision.created_here)throw new WorkError('teloa/forbidden','历史决策没有逐接收者快照，不能按当前岗位版本补造派工。')
   const source=await readTrustedGroupMessageRunSource(db,owner,{groupId:input.groupId,messageId:input.messageId},this.pool)
+  const replySource=source?null:await readTrustedGroupReplySource(db,owner,{groupId:input.groupId,messageId:input.messageId})
   const roles=[];for(const roleId of [...input.decision.respond].sort())roles.push(await lockRoleWorkRole(db,owner,roleId))
   const group=(await db.query('select * from teloa_groups where owner_id=$1 and id=$2 for share',[owner,input.groupId])).rows[0]
   if(!group||!positive(group.version))throw corrupt()
@@ -160,7 +190,7 @@ export class GroupRoutingOutboxService{
   const saved:GroupDispatchItem[]=[],work=new Map(assigned.map(item=>[item.roleId,item.instructionRange])),stages=new Map(assigned.map(item=>[item.roleId,item.stage??1]))
   for(const role of roles){
    const businessTarget=assigned.find(assignment=>assignment.roleId===role.id)?.businessTarget
-   const row={id:this.identity.id(),owner_id:owner,group_id:input.groupId,message_id:input.messageId,decision_version:input.decisionVersion,role_id:role.id,role_version:role.version,request_id:groupRoutedAttemptTaskRequestId(owner,input.groupId,input.messageId,role.id,input.decisionVersion),group_version:group.version,state:'pending',task_id:null,run_id:null,lineage:source?{...source.lineage,parentRunId:source.runId}:null,attempts:0,next_attempt_at:null,lease_generation:0,business_target:businessTarget??null}
+   const row={id:this.identity.id(),owner_id:owner,group_id:input.groupId,message_id:input.messageId,decision_version:input.decisionVersion,role_id:role.id,role_version:role.version,request_id:groupRoutedAttemptTaskRequestId(owner,input.groupId,input.messageId,role.id,input.decisionVersion),group_version:group.version,state:'pending',task_id:null,run_id:null,lineage:source?{...source.lineage,parentRunId:source.runId}:replySource?.snapshot.lineage??null,attempts:0,next_attempt_at:null,lease_generation:0,business_target:businessTarget??null}
    await this.authorize(db,owner,row)
    const range=work.get(role.id),stage=stages.get(role.id)??1
    // 后序阶段先不派发：没有前序可信成果前不能提前生成无依据的后序成果。
@@ -225,7 +255,7 @@ export class GroupRoutingOutboxService{
  async claim(owner:string,input:{itemId:string;expectedLeaseGeneration:number}):Promise<GroupDispatchItem|null>{
   actor(owner);exact(input,['itemId','expectedLeaseGeneration']);if(!uuid(input.itemId)||!Number.isSafeInteger(input.expectedLeaseGeneration)||input.expectedLeaseGeneration<0)throw invalid()
   // 未物化交接可随新租约重新核验；已有Task/Run的固定许可须沿原确认保留，不能借重新领取换代。
-  return this.transaction(async db=>{const row=(await db.query(`update teloa_group_routing_outbox set state='leased',attempts=attempts+1,lease_generation=lease_generation+1,dispatch_control_snapshot=case when task_id is null and run_id is null then null else dispatch_control_snapshot end,next_attempt_at=$4::timestamptz+interval '30 seconds'
+  return this.transaction(async db=>{const row=(await db.query(`update teloa_group_routing_outbox set state='leased',attempts=attempts+1,lease_generation=lease_generation+1,dispatch_control_snapshot=case when task_id is null and run_id is null and reply_execution is null then null else dispatch_control_snapshot end,next_attempt_at=$4::timestamptz+interval '30 seconds'
    where owner_id=$1 and id=$2 and lease_generation=$3 and state in ('pending','leased','unknown','submitted') and (next_attempt_at is null or next_attempt_at<=$4) returning *`,[owner,input.itemId,input.expectedLeaseGeneration,this.identity.now()])).rows[0];return row?item(row):null})
  }
  async assertDispatch(owner:string,input:{itemId:string;leaseGeneration:number}):Promise<void>{

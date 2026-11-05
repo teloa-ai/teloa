@@ -52,7 +52,7 @@ export function TaskKnowledge({task,api,resources,changed,face,onMaterials}:Prop
     finally{setSaving(false)}
   }
   const rail=face==='rail',refresh=<ToolbarIconButton className={css.refresh} label={t('taskKnowledge.refresh')} icon={RefreshCw} disabled={loading||saving} onClick={()=>void load()}/>
-  return <section className={css.panel} aria-label={t('taskKnowledge.title')} title={rail?t('taskKnowledge.title')+' · '+t('taskKnowledge.description'):undefined}><header className={css.header}>{!rail&&<><span className={css.icon}><BookOpen size={17}/></span><div><strong>{t('taskKnowledge.title')}</strong><p>{t('taskKnowledge.description')}</p></div></>}{refresh}</header>
+  return <section className={css.panel} aria-label={t('taskKnowledge.title')} title={rail?t('taskKnowledge.title')+' · '+t('taskKnowledge.description'):undefined}><header className={css.header}>{!rail&&<><span className={css.icon}><BookOpen size={16}/></span><div><strong>{t('taskKnowledge.title')}</strong><p>{t('taskKnowledge.description')}</p></div></>}{refresh}</header>
     {!rail&&<p className={css.notice}>{t('taskKnowledge.pinning')}</p>}
     {error&&<p className={css.error} role="alert">{error}</p>}{notice&&<p className={css.success} role="status">{notice}</p>}
     {pending&&<div className={css.pending}><span>{t('taskKnowledge.pending',{taskVersion:pending.expectedTaskVersion,resourceVersion:pending.expectedResourceVersion})}</span><button type="button" disabled={saving} onClick={()=>void recover()}>{t(saving?'taskKnowledge.reviewing':'taskKnowledge.recover')}</button></div>}

@@ -24,7 +24,7 @@ export function TeloaFeedbackForm({onClose,model,resourceTitle}:{onClose:()=>voi
     {...(model.resource?{'aria-describedby':field('resource')}:{})}
     onCancel={event=>{event.preventDefault();close()}} onClick={event=>{if(event.target===event.currentTarget)close()}}>
     <form onSubmit={event=>{event.preventDefault();void model.submit()}}>
-      <header><h2 id={field('title')}>{t(state.receipt?'feedback.received':'feedback.title')}</h2><button type="button" className={css.close} disabled={state.pending} onClick={close} aria-label={t('feedback.close')}><X size={18}/></button></header>
+      <header><h2 id={field('title')}>{t(state.receipt?'feedback.received':'feedback.title')}</h2><button type="button" className={css.close} disabled={state.pending} onClick={close} aria-label={t('feedback.close')}><X size={16}/></button></header>
       {model.resource&&<p id={field('resource')} className={css.resource}>{t('feedback.resource',{title:resourceTitle??model.resource.entryId,id:model.resource.entryId,version:model.resource.version})}</p>}
       {state.receipt?<div className={css.receipt} role="status">
         <p>{t('feedback.receipt',{id:state.receipt.receiptId})}</p>

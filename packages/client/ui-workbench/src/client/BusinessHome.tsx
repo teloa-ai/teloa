@@ -107,7 +107,7 @@ export function BusinessHome({ labels, directory, roles, dataSources, attention,
                     {directory.status === 'ready' && cards.length > 0 && <p className={css.pageCount}>{businessWorkspaceText(locale, 'businessCount').replace('{count}', number(cards.length))}</p>}
                 </div>
                 {createEntry===undefined
-                  ? <div className={css.entryActions}>{market&&<button type="button" onClick={market}><Store size={14} aria-hidden />{t('business.builder.market')}</button>}<button type="button" className={css.primaryAction} disabled={!creationReady} onClick={addBusiness}><Plus size={15} aria-hidden />{t(builderDirectory===undefined?'business.home.add':'business.builder.new')}</button></div>
+                  ? <div className={css.entryActions}>{market&&<button type="button" onClick={market}><Store size={14} aria-hidden />{t('business.builder.market')}</button>}<button type="button" className={css.primaryAction} disabled={!creationReady} onClick={addBusiness}><Plus size={16} aria-hidden />{t(builderDirectory===undefined?'business.home.add':'business.builder.new')}</button></div>
                   : <details ref={createControlRef} className={clsx(css.createControl, createOpen && css.createOpen)} open={createOpen} onToggle={event => setCreateOpen(event.currentTarget.open)}><summary aria-controls="business-create-entry">{t('business.home.add')}</summary><div id="business-create-entry" className={css.create}>{createEntry}</div></details>}
             </header>
             {!creationReady&&<p role="status">{t('business.daily.readyWaiting')}</p>}

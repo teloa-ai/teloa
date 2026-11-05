@@ -164,12 +164,13 @@ test('路由被工作额度拒绝：简繁英说明原因、范围与「工作�
  }
 })
 
-test('交流和工作结束都收起重复完成清单，查看原工作仍可达',()=>{
+test('交流结束不产生工作入口，正式工作结束仍可查看原工作',()=>{
  const GroupMessageStatus=loadStatusComponent(),render=(props:Record<string,unknown>)=>renderToStaticMarkup(React.createElement(GroupMessageStatus,{archived:false,retrying:false,retryFailed:false,retry:()=>{},openTask:()=>{},...props}))
  const recipient={roleId,name:'售后',taskId,runId:null,phase:'completed' as const,resultMessageId:replyId}
  for(const executionMode of ['reply','work'] as const){
   const html=render({status:status({phase:'completed',hintCode:null,canRetry:false,recipients:[{...recipient,executionMode}]})})
   assert.doesNotMatch(html,/已回应|已完成|role="status"/)
-  assert.match(html,/aria-label="查看工作"/)
+  if(executionMode==='work')assert.match(html,/aria-label="查看工作"/)
+  else assert.doesNotMatch(html,/<button|查看工作/,'普通交流不虚构正式工作入口')
  }
 })

@@ -34,7 +34,7 @@ export function DirectoryFilterPopover({label,children,icon,showLabel=false,clos
   // 子动作可能立刻打开模态；先回到稳定入口，让模态记录正确的返回焦点。
   const closeAndRestore=()=>{trigger.current?.focus();setOpen(false);restoreDirectoryFilterFocus(trigger.current)}
   return <div ref={container} className={css.filterMenu} onKeyDown={event=>handleDirectoryFilterEscape(event,closeAndRestore)}>
-    <button ref={trigger} type="button" className={css.filterTrigger} title={label} aria-label={label} aria-haspopup="dialog" aria-expanded={open} aria-controls={panelId} onClick={()=>setOpen(value=>!value)}>{icon??<ListFilter size={15}/>} {showLabel&&<span>{label}</span>}</button>
+    <button ref={trigger} type="button" className={css.filterTrigger} title={label} aria-label={label} aria-haspopup="dialog" aria-expanded={open} aria-controls={panelId} onClick={()=>setOpen(value=>!value)}>{icon??<ListFilter size={16}/>} {showLabel&&<span>{label}</span>}</button>
     {open&&<div ref={panel} id={panelId} className={css.filterPanel} role="dialog" aria-label={label} style={placement?({position:'fixed',left:placement.left,top:placement.top,right:'auto',bottom:'auto'} satisfies CSSProperties):undefined} onClick={event=>{if(closeOnSelect&&event.target instanceof Element&&event.target.closest('button'))closeAndRestore()}}>{children}</div>}
   </div>
 }

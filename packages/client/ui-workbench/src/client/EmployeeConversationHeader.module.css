@@ -9,5 +9,5 @@ button.identity:focus-visible{outline:2px solid var(--teloa-focus);outline-offse
 /* 分身头像自带固定尺寸与角标：外层不裁切、不加底色，员工形象仍按原样填满。 */
 .avatar:has(>[data-teloa-twin-avatar]){overflow:visible;background:transparent}
 .text{min-width:0;display:flex;flex-direction:column;gap:1px}
-.name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:var(--teloa-font-control);font-weight:var(--teloa-weight-heading);line-height:1.5}
-.topic{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--teloa-muted);font-size:var(--teloa-font-caption);line-height:1.5}
+.name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:var(--teloa-font-control);font-weight:var(--teloa-weight-heading);line-height:var(--teloa-leading-label)}
+.topic{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--teloa-muted);font-size:var(--teloa-font-caption);line-height:var(--teloa-leading-label)}

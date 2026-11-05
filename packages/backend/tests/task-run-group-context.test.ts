@@ -1,3 +1,5 @@
+import {initializeGroupRoutingDecisions} from '../src/work/group-routing-decisions.ts'
+import {initializeGroupRoutingOutbox} from '../src/work/group-routing-outbox.ts'
 import test,{after,before} from 'node:test'
 import assert from 'node:assert/strict'
 import {createHash,randomUUID} from 'node:crypto'
@@ -68,6 +70,7 @@ before(async()=>{
  await initializeArtifactSnapshots(pool)
  await initializeArtifacts(pool)
  await initializeRoleToolGrants(pool);await initializeTaskRuns(pool);await initializeTaskRunSubagents(pool);await initializeTaskRunRuntimeLinks(pool);await initializeTaskRunFlows(pool)
+ await initializeGroupRoutingDecisions(pool);await initializeGroupRoutingOutbox(pool)
 })
 after(async()=>{await pool?.end();await container?.stop()})
 

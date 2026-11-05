@@ -1,6 +1,7 @@
+import {isGroupEmployeeResponse} from '@teloa/contract'
 import type {GroupMessage,GroupRoutingStatusView} from '@teloa/contract'
 
-export const groupMainMessages=(messages:readonly GroupMessage[])=>messages.filter(message=>message.rootId===null||'runId' in message&&message.contextMode==='main')
+export const groupMainMessages=(messages:readonly GroupMessage[])=>messages.filter(message=>message.rootId===null||isGroupEmployeeResponse(message)&&message.contextMode==='main')
 
 /** 两个并列消息流各保留名额；当前话题先取，空余名额由另一流补足。 */
 export function groupMessageOverlayIds(main:readonly GroupMessage[],topic:readonly GroupMessage[],cap:number,visible:{main?:readonly string[];topic?:readonly string[]}={}):string[]{
@@ -27,7 +28,7 @@ export function groupMessageStatusIds(main:readonly GroupMessage[],topic:readonl
 
 /** 输入框附近的聚合进行中状态：本人消息全部参与；员工消息只有已派出接手者的交接参与，员工普通回帖不是本人在等的回应。 */
 export function groupProgressStatuses(list:readonly GroupMessage[],statuses:readonly GroupRoutingStatusView[]):GroupRoutingStatusView[]{
- return list.flatMap(message=>{const status=statuses.find(item=>item.messageId===message.id);return status&&(!('runId' in message)||status.recipients.length)?[status]:[]})
+ return list.flatMap(message=>{const status=statuses.find(item=>item.messageId===message.id);return status&&(!(isGroupEmployeeResponse(message))||status.recipients.length)?[status]:[]})
 }
 
 /** 本轮窗口与在途工作保留缓存，成功批次替换原状态，失败批次保留；窗口外终态随下一轮退役。 */

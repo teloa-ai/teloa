@@ -95,7 +95,7 @@ function ProjectContextScope({project,api,open,close,sessionId,conversationSetti
   }catch(error){setError(localizeWorkError(locale,error))}finally{setBusy(false)}
  }
  const entryRow=(entry:ProjectContextEntry)=><details key={entry.id} className={css.entry}>
-  <summary><strong>{entry.topic}</strong><small>v{entry.version} · {copy[entry.state==='active'?'active':'withdrawn']}</small><ChevronDown size={15}/></summary>
+  <summary><strong>{entry.topic}</strong><small>v{entry.version} · {copy[entry.state==='active'?'active':'withdrawn']}</small><ChevronDown size={14}/></summary>
   {entry.markdown!==null&&<p className={css.body}>{entry.markdown}</p>}
   {entry.state==='active'&&<div className={css.actions}>
    {!archived&&<button disabled={blocked||!!draft} onClick={()=>edit(entry)}>{copy.edit}</button>}
@@ -129,7 +129,7 @@ function ProjectContextScope({project,api,open,close,sessionId,conversationSetti
     </form>}
     {withdrawing&&<div className={css.notice}><strong>{withdrawing.topic}</strong><p>{copy.confirmWithdraw}</p><button disabled={busy} onClick={()=>setWithdrawing(undefined)}>{copy.back}</button><button disabled={blocked} onClick={()=>void mutate({kind:'withdraw-entry',entryId:withdrawing.id})}>{copy.confirm}</button></div>}
     {upgrading&&<section ref={comparisonPanel} className={css.comparison} role="region" aria-label={projectRuntimeCopy(locale).compare+' · '+upgrading.share.topic} tabIndex={-1}>
-     <header><button type="button" disabled={busy} aria-label={copy.back} title={copy.back} onClick={closeComparison}><ArrowLeft size={18}/></button><h3>{upgrading.share.topic}</h3></header>
+     <header><button type="button" disabled={busy} aria-label={copy.back} title={copy.back} onClick={closeComparison}><ArrowLeft size={16}/></button><h3>{upgrading.share.topic}</h3></header>
      <div className={css.comparisonReader}><div className={css.comparisonColumns}>
       <section><h3>{projectRuntimeCopy(locale).fixedVersion} · v{upgrading.share.entryVersion}</h3><p className={css.body}>{upgrading.share.markdown}</p></section>
       <section><h3>{projectRuntimeCopy(locale).latestVersion} · v{upgrading.current.version}</h3><p className={css.body}>{upgrading.current.markdown}</p></section>
@@ -140,7 +140,7 @@ function ProjectContextScope({project,api,open,close,sessionId,conversationSetti
     <section className={css.contextSection}><header><h3>{copy.brief}</h3>{!archived&&<button disabled={blocked||!!draft} onClick={()=>updateDraft({expectedVersion:data.version,change:{kind:'save-brief',brief:data.brief}})}>{copy.edit}</button>}</header><p className={css.body}>{data.brief||copy.empty}</p></section>
     {(['rule','memory'] as const).map(kind=><section className={css.contextSection} key={kind} aria-label={kind==='rule'?copy.rules:copy.memories}><header><h3>{kind==='rule'?copy.rules:copy.memories}</h3>{!archived&&<button disabled={blocked||!!draft} onClick={()=>edit(undefined,kind)}>{kind==='rule'?copy.addRule:copy.addMemory}</button>}</header>{data.entries.filter(e=>e.kind===kind).length?data.entries.filter(e=>e.kind===kind).map(entryRow):<p className={css.hint}>{copy.empty}</p>}</section>)}
     {data.shares.length>0&&<section className={css.contextSection} aria-label={copy.shares}><h3>{copy.shares}</h3>{data.shares.map(s=><details key={s.id} className={css.entry}>
-     <summary><strong>{s.topic??copy[s.status]}</strong><small>v{s.entryVersion} · {s.status==='active'&&s.currentVersion!==undefined&&s.currentVersion>s.entryVersion?projectRuntimeCopy(locale).newVersion:copy[s.status]}</small><ChevronDown size={15}/></summary>
+     <summary><strong>{s.topic??copy[s.status]}</strong><small>v{s.entryVersion} · {s.status==='active'&&s.currentVersion!==undefined&&s.currentVersion>s.entryVersion?projectRuntimeCopy(locale).newVersion:copy[s.status]}</small><ChevronDown size={14}/></summary>
      <p>{s.sourceProjectId===project.id?copy.outgoing+': '+(s.targetTitle??copy.unavailable):copy.incoming+': '+(s.sourceTitle??copy.unavailable)}</p>
      {s.markdown!==null&&<p className={css.body}>{s.markdown}</p>}
      {s.status==='active'&&s.currentVersion!==undefined&&s.currentVersion>s.entryVersion&&<p className={css.hint}>{projectRuntimeCopy(locale).newVersion} · v{s.currentVersion}{s.targetProjectId===project.id&&!archived&&<button type="button" disabled={blocked||!!draft} onClick={event=>void chooseUpgrade(s,event.currentTarget)}>{projectRuntimeCopy(locale).compare}</button>}</p>}

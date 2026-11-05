@@ -19,7 +19,7 @@
 .expanded{transform:rotate(90deg)}
 .folderMenu{display:flex;flex-direction:column;gap:4px}
 .folderMenu button{border:0;background:transparent;color:var(--teloa-text);font:inherit;text-align:left;padding:7px;border-radius:5px;cursor:pointer}
-.folderMenu small{color:var(--teloa-muted);font-size:var(--teloa-font-caption);line-height:1.6;padding:3px 7px}
+.folderMenu small{color:var(--teloa-muted);font-size:var(--teloa-font-caption);line-height:var(--teloa-leading-label);padding:3px 7px}
 .folderMenu button:hover,.folder>header>button:hover:not(:disabled){background:var(--teloa-hover);color:var(--teloa-text)}
 .types button:focus-visible,.folder button:focus-visible{outline:2px solid var(--teloa-focus);outline-offset:-2px}
 .folder,.unfiledSection{border-radius:7px;outline:1px solid transparent;outline-offset:-1px;transition:background .12s,outline-color .12s}
@@ -28,3 +28,5 @@
 .unfiledSection{min-height:34px}
 @media(hover:none),(pointer:coarse){.folder>header>div{opacity:1}.types button[aria-pressed],.folder>header>button,.folder>header>div>button{min-height:44px}.folder>header>div>button{width:44px}}
 @media(prefers-reduced-motion:reduce){.folder,.unfiledSection{transition:none}}
+
+.types button[aria-pressed]{min-width:var(--teloa-action-inline,24px)}

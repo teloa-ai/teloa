@@ -55,7 +55,7 @@ export function SettingsLayout({label,heading,actions,notice,entries,selectedId,
     <div className={css.heading}>{heading}</div>
     <div className={css.actions}>{actions}</div>
    </header>
-   <div ref={content} id="settings-content" aria-labelledby={selected?`settings-entry-${selected.id}`:undefined} className={clsx(css.content,!plainContent&&css.page)}>{notice}{children}</div>
+   <div ref={content} id="settings-content" data-teloa-settings-page={selected?.id} aria-labelledby={selected?`settings-entry-${selected.id}`:undefined} className={clsx(css.content,!plainContent&&css.page)}>{notice}{children}</div>
   </div>
  </section>
 }

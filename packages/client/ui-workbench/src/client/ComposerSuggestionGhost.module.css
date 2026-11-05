@@ -6,7 +6,7 @@
   padding:2px 4px;
   color:var(--text-tertiary,rgba(120,120,128,.9));
   font-size:inherit;
-  line-height:1.4;
+  line-height:var(--teloa-leading-heading);
   pointer-events:none;
   user-select:none;
   opacity:.9;
@@ -24,7 +24,7 @@
   padding:0 6px;
   border:1px solid currentColor;
   border-radius:6px;
-  font-size:.75em;
+  font-size:var(--teloa-font-caption);
   opacity:.75;
 }
 
@@ -40,9 +40,9 @@
   gap:8px;
   color:var(--text-tertiary,rgba(120,120,128,.9));
   font-size:inherit;
-  line-height:1.4;
+  line-height:var(--teloa-leading-heading);
   pointer-events:none;
   user-select:none;
 }
 .ghostInline .text{display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;white-space:pre-wrap;}
-.ghostInline .hint{flex:none;padding:0 6px;border:1px solid currentColor;border-radius:6px;font-size:.75em;opacity:.75;}
+.ghostInline .hint{flex:none;padding:0 6px;border:1px solid currentColor;border-radius:6px;font-size:var(--teloa-font-caption);opacity:.75;}

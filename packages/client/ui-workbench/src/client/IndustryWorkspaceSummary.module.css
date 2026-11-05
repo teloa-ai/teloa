@@ -17,3 +17,6 @@
 .projection dt{color:var(--teloa-text)}
 .projection dd{margin:0;overflow-wrap:anywhere}
 @media(max-width:600px){.projection>header{align-items:stretch;flex-direction:column}.headerActions{align-items:flex-start}.sources>article{align-items:flex-start;flex-direction:column}.sources details{text-align:left}.sources details dl{grid-template-columns:1fr;gap:3px}}
+
+/* 仅规范本组件的界面标签；正文和代码中的强调保持原样。 */
+.sources>article>div>strong{font-weight:var(--teloa-weight-regular)}

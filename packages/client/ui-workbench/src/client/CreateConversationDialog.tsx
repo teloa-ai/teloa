@@ -46,7 +46,7 @@ export function CreateConversationDialog({management,current,initialWorkspaceId,
   const dismissEvents=useDialogDismiss(()=>{if(!busy&&!pending.current)close()})
   return <dialog ref={dialog} className={css.dialog} aria-label={t(titleKey)} {...dismissEvents}>
     <form onSubmit={event=>{event.preventDefault();void submit()}}>
-      <header><div><h2>{t(titleKey)}</h2>{!hostAssigned&&<p>{t(changingLocation?'conversationDialog.changeLocationDescription':'conversationDialog.description')}</p>}</div><button type="button" className={css.icon} aria-label={t('conversationDialog.close')} disabled={busy} onClick={close}><X size={18}/></button></header>
+      <header><div><h2>{t(titleKey)}</h2>{!hostAssigned&&<p>{t(changingLocation?'conversationDialog.changeLocationDescription':'conversationDialog.description')}</p>}</div><button type="button" className={css.icon} aria-label={t('conversationDialog.close')} disabled={busy} onClick={close}><X size={16}/></button></header>
       {notice&&<p role="status">{notice}</p>}{scopeChoices&&<label>{t('roleDelegation.scope')}<select aria-label={t('roleDelegation.scope')} value={selectedScope??''} disabled={busy||locked||refreshing} onChange={event=>onScopeChange?.(event.target.value)}><option value="">{t('conversationDialog.scope')}</option>{scopeChoices.map(scope=><option key={scope.id} value={scope.id}>{scope.label}</option>)}</select></label>}
       {goal&&<div className={css.goal}><strong>{t('conversationDialog.goal')}</strong><p>{goal}</p></div>}
       {!hostAssigned&&<>

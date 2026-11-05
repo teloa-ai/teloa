@@ -19,7 +19,7 @@
 .selected .resourceIcon{background:var(--teloa-surface);color:var(--teloa-text)}
 .resourceCopy{min-width:0;display:flex;flex:1;flex-direction:column;gap:2px}
 .selected strong,.resource strong{font-size:var(--teloa-font-caption);font-weight:var(--teloa-weight-medium);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.selected em{font-style:normal;color:var(--teloa-muted);font-size:var(--teloa-font-caption);line-height:1.45}
+.selected em{font-style:normal;color:var(--teloa-muted);font-size:var(--teloa-font-caption);line-height:var(--teloa-leading-label)}
 .invalid{opacity:.7}
 .muted{margin:12px 0}
 .filterRow{display:flex;align-items:center;gap:8px;margin-top:10px}
@@ -27,7 +27,7 @@
 .picker .filter{display:flex;flex-direction:row;align-items:center;gap:7px;min-height:32px;flex:1;min-width:0;padding:0 9px;border:1px solid var(--teloa-border);border-radius:8px;color:var(--teloa-muted);background:var(--teloa-background)}
 .filter input{width:100%;min-width:0;border:0;outline:0;background:transparent;color:var(--teloa-text);font:inherit;font-size:var(--teloa-font-caption)}
 .filter:focus-within{border-color:var(--teloa-focus)}
-.resource small{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;line-height:1.45}
+.resource small{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;line-height:var(--teloa-leading-label)}
 .resource button,.selected button{flex-shrink:0;white-space:nowrap}
 .srOnly{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
 @media(max-width:740px){.picker{width:100%;box-sizing:border-box;padding:14px 18px}.embedded{padding:12px 0 0}.refresh,.resource button,.selected button{min-height:38px}.selected,.directory{grid-template-columns:1fr}.resource,.selected li{align-items:center}.resource button,.selected button{flex-shrink:0}}

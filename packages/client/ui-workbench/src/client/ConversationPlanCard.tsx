@@ -42,7 +42,7 @@ export function SavedConversationPlanCard({plan,directory,api,roleName}:{plan:Re
  const state=t(plan.state==='active'?'status.enabled':plan.state==='archived'?'status.archived':'status.paused'),next=schedule?.available?schedule.overview?.nextAt:null
  return <section className={css.card} aria-label={copy('定时任务卡片','定時任務卡片','Scheduled task')} data-plan-id={plan.id}>
   <button type="button" className={css.open} onClick={()=>directory.open(plan.id)} aria-label={copy('打开计划：','開啟計劃：','Open schedule: ')+plan.title}>
-   <span className={css.emblem}><CalendarClock size={19} aria-hidden/></span>
+   <span className={css.emblem}><CalendarClock size={16} aria-hidden/></span>
    <span className={css.heading}><strong>{plan.title}</strong><small>{triggerLabel(plan.trigger,t)}</small></span>
    <span className={css.state} data-active={plan.state==='active'}>{state}</span><ChevronRight size={16} aria-hidden/>
   </button>

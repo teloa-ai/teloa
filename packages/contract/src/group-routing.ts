@@ -161,7 +161,7 @@ export type GroupMessagePhase=typeof groupMessagePhases[number]
 export const groupMessageHintCodes=['route-unavailable','route-invalid','target-unavailable','mention-all-denied','not-authorized','resource-required','model-configuration','group-changed','source-changed','delivery-unknown','work-paused','work-stopped','group-archived','result-pending','result-retained','result-unconfirmed','over-budget','work-failed','handoff-unavailable','handoff-invalid','handoff-review-required','relay-stopped','budget-exhausted','continue-paused'] as const
 export type GroupMessageHintCode=typeof groupMessageHintCodes[number]
 /** 恰 7 键。空身份一律 null，不伪造标识；executionMode 区分交流回应（reply：回帖即已回应）与明确工作（work：原任务完成判据才算完成）。 */
-export type GroupRecipientStatus={roleId:string;name:string;taskId:string|null;runId:string|null;phase:GroupMessagePhase;resultMessageId:string|null;executionMode:'reply'|'work'|null}
+export type GroupRecipientStatus={roleId:string;name:string;taskId:string|null;runId:string|null;phase:GroupMessagePhase;resultMessageId:string|null;executionMode:'reply'|'work'|null;replyExecutionId?:string}
 /**
  * 恰 6 键；提示为 `budget-exhausted` 时恰另带 `budget`（额度原因与范围，原因不明为 `{}`），界面据此复用工作额度说明；
  * 提示为 `continue-paused`（本人续办已保存、原任务本轮工作控制暂停）时恰另带 `controlId`：正是挡住续办的那个本轮控制，界面只据此打开既有整项恢复确认。
@@ -176,7 +176,7 @@ const hint=(v:unknown):v is GroupMessageHintCode=>(groupMessageHintCodes as read
 const positive=(v:unknown):v is number=>Number.isSafeInteger(v)&&(v as number)>0
 
 export function isGroupRecipientStatus(value:unknown):value is GroupRecipientStatus{
- return record(value)&&Object.keys(value).length===7&&(value.executionMode===null||value.executionMode==='reply'||value.executionMode==='work')&&uuid(value.roleId)&&typeof value.name==='string'&&value.name.length<=200&&(value.taskId===null||uuid(value.taskId))&&(value.runId===null||uuid(value.runId))&&!(value.runId!==null&&value.taskId===null)&&phase(value.phase)&&(value.resultMessageId===null||uuid(value.resultMessageId))
+ return record(value)&&Object.keys(value).length===7+Number(Object.hasOwn(value,'replyExecutionId'))&&(!Object.hasOwn(value,'replyExecutionId')||uuid(value.replyExecutionId)&&value.executionMode==='reply'&&value.taskId===null&&value.runId===null)&&(value.executionMode===null||value.executionMode==='reply'||value.executionMode==='work')&&uuid(value.roleId)&&typeof value.name==='string'&&value.name.length<=200&&(value.taskId===null||uuid(value.taskId))&&(value.runId===null||uuid(value.runId))&&!(value.runId!==null&&value.taskId===null)&&phase(value.phase)&&(value.resultMessageId===null||uuid(value.resultMessageId))
 }
 
 export function isGroupRoutingStatusView(value:unknown):value is GroupRoutingStatusView{

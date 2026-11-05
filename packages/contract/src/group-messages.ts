@@ -1,7 +1,7 @@
 import {WorkError} from './work-error.ts'
 import {taskInput} from './tasks.ts'
 import {groupReadingInput,type GroupReadingTarget} from './group-reading.ts'
-import {isGroupMessage,type GroupMessage} from './collaboration.ts'
+import {isGroupMessage,isGroupEmployeeResponse,type GroupMessage} from './collaboration.ts'
 
 export type GroupMessagePageInput=GroupReadingTarget&{limit:number;before?:string;after?:string;around?:string;topicRoots?:string[]}
 export type GroupTopicSummary={rootId:string;count:number;participants:number;replies:GroupMessage[]}
@@ -34,7 +34,7 @@ export function readGroupMessagePage(value:unknown):GroupMessagePage{
  if(row.schema!=='teloa.group-message-page/v1'||!uuid(row.groupId)||row.rootId!==null&&!uuid(row.rootId)||!Array.isArray(row.items)||row.items.length>101||!Array.isArray(row.topics)||row.topics.length>150)invalid()
  const groupId=row.groupId as string,rootId=row.rootId as string|null,items=(row.items as unknown[]).map(value=>message(value,groupId)),rows=rootId?items.slice(1):items
  if(new Set(items.map(row=>row.id)).size!==items.length||rows.some((row,index)=>index>0&&order(rows[index-1]!,row)>=0))invalid()
- if(rootId?(items[0]?.id!==rootId||items[0]?.rootId!==null||rows.some(row=>row.rootId!==rootId)):items.some(row=>row.rootId!==null&&(!('runId'in row)||row.contextMode!=='main')))invalid()
+ if(rootId?(items[0]?.id!==rootId||items[0]?.rootId!==null||rows.some(row=>row.rootId!==rootId)):items.some(row=>row.rootId!==null&&(!isGroupEmployeeResponse(row)||row.contextMode!=='main')))invalid()
  const older=cursor(row.older),newer=cursor(row.newer)
  if(older!==null&&older!==rows[0]?.id||newer!==null&&newer!==rows.at(-1)?.id)invalid()
  const topics=(row.topics as unknown[]).map(value=>{
@@ -52,7 +52,7 @@ export function readGroupMessageSearchResult(value:unknown):GroupMessageSearchRe
  if(row.schema!=='teloa.group-message-search/v1'||row.rootId!==null&&!uuid(row.rootId)||input.query!==row.query||!Array.isArray(row.items)||row.items.length>100)invalid()
  const items=(row.items as unknown[]).map(value=>{const item=taskInput(value,['message','rootId','excerpt']),saved=message(item.message,input.groupId),rootId=cursor(item.rootId)
   if(typeof item.excerpt!=='string'||!item.excerpt.length||item.excerpt.length>800)invalid()
-  if(input.rootId&&saved.id!==input.rootId&&saved.rootId!==input.rootId||rootId!==null&&saved.rootId!==rootId||rootId===null&&saved.rootId!==null&&(!('runId'in saved)||saved.contextMode!=='main'))invalid()
+  if(input.rootId&&saved.id!==input.rootId&&saved.rootId!==input.rootId||rootId!==null&&saved.rootId!==rootId||rootId===null&&saved.rootId!==null&&(!isGroupEmployeeResponse(saved)||saved.contextMode!=='main'))invalid()
   return {message:saved,rootId,excerpt:item.excerpt as string}
  })
  if(new Set(items.map(row=>row.message.id)).size!==items.length||items.some((row,index)=>index>0&&order(items[index-1]!.message,row.message)<=0))invalid()

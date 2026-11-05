@@ -2,7 +2,7 @@
 .dialog::backdrop{background:var(--teloa-backdrop)}
 .dialog form{display:flex;flex-direction:column;gap:10px}
 .dialog header{display:flex;align-items:center;justify-content:space-between;gap:16px}
-.dialog h2{font-size:var(--teloa-font-dialog);line-height:1.4;margin:0}
+.dialog h2{font-size:var(--teloa-font-dialog);line-height:var(--teloa-leading-heading);margin:0}
 .dialog label{font-size:var(--teloa-font-caption);font-weight:var(--teloa-weight-medium)}
 .dialog textarea,.dialog input,.dialog select{box-sizing:border-box;width:100%;min-width:0;border:1px solid var(--teloa-border);border-radius:8px;padding:9px 11px;background:var(--teloa-surface);color:var(--teloa-text);font:inherit}
 .dialog textarea{min-height:132px;max-height:260px;resize:vertical}

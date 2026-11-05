@@ -1,8 +1,8 @@
 .page{display:grid;gap:16px;max-width:820px;color:var(--teloa-text)}
 .page h2,.page h3,.page p{margin:0}
-.page h2{font-size:var(--teloa-font-title)}
+.page h2{font-size:var(--teloa-font-page)}
 .page h3{font-size:var(--teloa-font-control);font-weight:var(--teloa-weight-medium)}
-.page p,.secret p{font-size:var(--teloa-font-caption);line-height:1.7;color:var(--teloa-muted)}
+.page p,.secret p{font-size:var(--teloa-font-caption);line-height:var(--teloa-leading-body);color:var(--teloa-muted)}
 .form{display:grid;gap:12px;padding:18px;border:1px solid var(--teloa-border);border-radius:var(--teloa-design-r1);margin-top:6px}
 .form label,.secret label{display:grid;gap:6px;font-size:var(--teloa-font-control)}
 .form input:not([type=checkbox]),.form select,.secret input{box-sizing:border-box;width:100%;min-width:0;padding:9px 10px;border:1px solid var(--teloa-border);border-radius:var(--teloa-design-r1);background:var(--teloa-background);color:var(--teloa-text);font:inherit}
@@ -16,3 +16,8 @@
 .list{display:grid;gap:16px}.list article{display:grid;gap:8px;padding:16px 0;border-bottom:1px solid var(--teloa-border)}
 .actions{display:flex;flex-wrap:wrap;gap:8px}
 .secret{display:grid;gap:16px;padding:24px;overflow-wrap:anywhere}.secret article{display:grid;gap:8px}
+
+/* 深层配置与详情标题使用界面层级，避免浏览器默认字号和粗体。 */
+.page>h2{font-weight:var(--teloa-weight-heading);}
+
+.page summary{min-height:var(--teloa-action-inline,24px);line-height:var(--teloa-leading-label,1.5)}

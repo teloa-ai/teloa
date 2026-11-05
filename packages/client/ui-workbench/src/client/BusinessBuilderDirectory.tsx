@@ -52,14 +52,14 @@ export function BusinessBuilderDirectory({flow,open,recover,restart,ready=true}:
   <div className={css.cards}>
    {pending&&recover&&<article className={css.draftCard}>
     <button type="button" className={css.item} disabled={!ready||restarting||pendingNeedsRestart&&!restart} onClick={openPending}>
-     <span className={css.tile} aria-hidden><FilePenLine size={18}/></span>
+     <span className={css.tile} aria-hidden><FilePenLine size={16}/></span>
      <span className={css.copy}><strong title={pending.title}>{pending.title}</strong><span className={css.go}>{t(pendingNeedsRestart?'business.builder.restart':'business.builder.restore')}<ArrowUpRight size={14} aria-hidden/></span></span>
     </button>
     {pendingNeedsRestart&&<p className={css.recoveryNote}>{t('business.builder.unconfigured')}</p>}
    </article>}
    {drafts.map(({binding,draft})=><article className={css.draftCard} key={binding.requestId}>
     <button type="button" className={css.item} disabled={!ready} onClick={()=>open(binding)}>
-     <span className={css.tile} aria-hidden><FilePenLine size={18}/></span>
+     <span className={css.tile} aria-hidden><FilePenLine size={16}/></span>
      <span className={css.copy}><strong title={draft?.title??binding.title}>{draft?.title??binding.title}</strong><span className={css.go}>{t(binding.sessionId?'business.builder.continue':'business.builder.restore')}<ArrowUpRight size={14} aria-hidden/></span></span>
     </button>
     <footer className={css.footer}>

@@ -114,7 +114,7 @@ export function ConversationWorkOverview(props:ConversationWorkOverviewProps){
  const artifactSection=snapshot.artifacts.length>0&&<section className={css.section} aria-label={t('overview.artifacts')}>
    <SectionHeading label={t('overview.artifacts')} count={currentArtifacts.length}/>
    {currentArtifacts.length>0?<div className={css.artifacts}>{currentArtifacts.map(artifactCard)}</div>:<p className={css.note}>{t('artifact.panel.text.019')}</p>}
-   {historicalArtifacts.length>0&&<details className={css.history} open={versionsOpen} onToggle={event=>setVersionsOpen(event.currentTarget.open)}><summary><ChevronRight size={13}/>{t('knowledge.ui.035')} · {historicalArtifacts.length}</summary><div className={css.artifacts}>{historicalArtifacts.map(artifactCard)}</div></details>}
+   {historicalArtifacts.length>0&&<details className={css.history} open={versionsOpen} onToggle={event=>setVersionsOpen(event.currentTarget.open)}><summary><ChevronRight size={14}/>{t('knowledge.ui.035')} · {historicalArtifacts.length}</summary><div className={css.artifacts}>{historicalArtifacts.map(artifactCard)}</div></details>}
  </section>
  const resourceRows=(groups:readonly ConversationOverviewResourceGroup[],round?:ConversationOverviewRound)=>groups.length?<div className={css.resourceList}>{groups.map(group=><button key={group.id} type="button" className={css.resourceRow} onClick={event=>{trigger.current=event.currentTarget;setResourceSelection({id:group.id,sessionId:snapshot.sessionId,...(round?{roundId:roundIdentity(round)}:{})})}}>
   <ResourceIcon kind={group.kind}/><span>{resourceLabel(group)}</span><span className={css.resourceValue}>{t('overview.resourceRecords',{count:group.evidence.length})}</span><ChevronRight size={14}/>
@@ -125,20 +125,20 @@ export function ConversationWorkOverview(props:ConversationWorkOverviewProps){
    {!hasWork?<div className={css.empty}>{snapshot.status!=='idle'&&<span className={css.status} data-status={snapshot.status}>{statusLabel(snapshot.status)}</span>}<p>{t('overview.empty')}</p></div>:<>
     {(snapshot.progress.current.length>0||snapshot.progress.earlier.length>0||snapshot.progress.goal)&&<section className={css.section} aria-label={t('overview.progress')}>
      <SectionHeading label={t('overview.progress')}><span className={css.status} data-status={snapshot.status}>{statusLabel(snapshot.status)}</span></SectionHeading>
-     {snapshot.progress.earlier.length>0&&<details className={css.history} open={earlierOpen} onToggle={event=>setEarlierOpen(event.currentTarget.open)}><summary><ChevronRight size={13}/>{t('overview.earlierSteps',{count:snapshot.progress.earlier.length})}</summary><ol className={css.timeline}>{steps(snapshot.progress.earlier)}</ol></details>}
+     {snapshot.progress.earlier.length>0&&<details className={css.history} open={earlierOpen} onToggle={event=>setEarlierOpen(event.currentTarget.open)}><summary><ChevronRight size={14}/>{t('overview.earlierSteps',{count:snapshot.progress.earlier.length})}</summary><ol className={css.timeline}>{steps(snapshot.progress.earlier)}</ol></details>}
      {snapshot.progress.goal&&<div className={css.goal}><strong>{snapshot.progress.goal.objective}</strong>{snapshot.progress.goal.blockedReason&&<p className={css.note}>{snapshot.progress.goal.blockedReason}</p>}</div>}
      {snapshot.progress.current.length>0&&<ol className={css.timeline}>{steps(snapshot.progress.current)}</ol>}
     </section>}
     <section className={css.section} aria-label={t('overview.running')}>
      <SectionHeading label={t('overview.running')} count={snapshot.running.filter(work=>work.status==='running'||work.status==='stopping').length}/>
      {snapshot.running.length?<div className={css.workList}>{snapshot.running.map(workCard)}</div>:<p className={css.note}>{t('overview.noRunning')}</p>}
-     {snapshot.ended.length>0&&<details className={css.history} open={endedOpen} onToggle={event=>setEndedOpen(event.currentTarget.open)}><summary><ChevronRight size={13}/>{t('overview.endedWork',{count:snapshot.ended.length})}</summary><div className={css.workList}>{snapshot.ended.map(workCard)}</div></details>}
+     {snapshot.ended.length>0&&<details className={css.history} open={endedOpen} onToggle={event=>setEndedOpen(event.currentTarget.open)}><summary><ChevronRight size={14}/>{t('overview.endedWork',{count:snapshot.ended.length})}</summary><div className={css.workList}>{snapshot.ended.map(workCard)}</div></details>}
     </section>
     {artifactSection}
     <section className={css.section} aria-label={t('overview.usage')}>
      <SectionHeading label={t('overview.usage')}/><p className={css.scope}>{t('overview.usageScope')}</p>
      {resourceRows(snapshot.usageGroups,snapshot.currentRound)}
-     {usageHistory.length>0&&<details className={css.history} open={usageHistoryState.sessionId===snapshot.sessionId&&usageHistoryState.open} onToggle={event=>setUsageHistoryState({sessionId:snapshot.sessionId,open:event.currentTarget.open})}><summary><ChevronRight size={13}/>{t('overview.usageHistory',{count:usageHistory.length})}</summary>
+     {usageHistory.length>0&&<details className={css.history} open={usageHistoryState.sessionId===snapshot.sessionId&&usageHistoryState.open} onToggle={event=>setUsageHistoryState({sessionId:snapshot.sessionId,open:event.currentTarget.open})}><summary><ChevronRight size={14}/>{t('overview.usageHistory',{count:usageHistory.length})}</summary>
       {usageHistory.map(entry=><section key={roundIdentity(entry.round)} className={css.usageRound} aria-label={t('overview.usageRound',{turn:entry.round.turn})}>
        <header><h3>{t('overview.usageRound',{turn:entry.round.turn})}</h3>{Number.isFinite(entry.round.startedAt)&&<time dateTime={new Date(entry.round.startedAt).toISOString()}>{time(entry.round.startedAt)}</time>}</header>
        {resourceRows(entry.usageGroups,entry.round)}
@@ -149,7 +149,7 @@ export function ConversationWorkOverview(props:ConversationWorkOverviewProps){
    </>}{!hasWork&&<>{artifactSection}{props.citationHistory&&<section className={css.section} aria-label={t('overview.usage')}><SectionHeading label={t('overview.usage')}/>{props.citationHistory}</section>}</>}
   </div>
   {resource&&<div className={css.resourceDetail} onKeyDown={event=>{if(event.key==='Escape'){event.stopPropagation();closeResource()}}}>
-   <header className={css.detailHeader}><button ref={back} type="button" className={css.backButton} onClick={closeResource}><ArrowLeft size={15}/>{t('overview.back')}</button><h2><ResourceIcon kind={resource.kind}/>{resourceLabel(resource)}</h2><p className={css.scope}>{resourceHistory?t('overview.usageRound',{turn:resourceHistory.round.turn}):t('overview.usageScope')}{resourceHistory&&Number.isFinite(resourceHistory.round.startedAt)&&<> · <time dateTime={new Date(resourceHistory.round.startedAt).toISOString()}>{time(resourceHistory.round.startedAt)}</time></>}</p></header>
+   <header className={css.detailHeader}><button ref={back} type="button" className={css.backButton} onClick={closeResource}><ArrowLeft size={16}/>{t('overview.back')}</button><h2><ResourceIcon kind={resource.kind}/>{resourceLabel(resource)}</h2><p className={css.scope}>{resourceHistory?t('overview.usageRound',{turn:resourceHistory.round.turn}):t('overview.usageScope')}{resourceHistory&&Number.isFinite(resourceHistory.round.startedAt)&&<> · <time dateTime={new Date(resourceHistory.round.startedAt).toISOString()}>{time(resourceHistory.round.startedAt)}</time></>}</p></header>
    <ResourceDetails resource={resource} sessionId={snapshot.sessionId}/>
   </div>}
  </section>

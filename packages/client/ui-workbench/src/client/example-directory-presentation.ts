@@ -1,13 +1,14 @@
 import type {AttentionItem} from './attention-item.js'
 import type {PreviewRole} from './role-preview.js'
 import type {PreviewTask} from './task-preview.js'
+import {isGroupReplyExecution} from './task-list-presentation.ts'
 
 export type ExampleDirectoryMode='saved'|'sandbox'
 
 export const exampleDirectoryMode=(hasPersistence:boolean):ExampleDirectoryMode=>hasPersistence?'saved':'sandbox'
 
 export const visibleTaskDirectory=(tasks:readonly PreviewTask[],mode:ExampleDirectoryMode):PreviewTask[]=>
-  tasks.filter(task=>mode==='saved'?task.storage==='persistent':task.storage!=='persistent')
+  tasks.filter(task=>mode==='saved'?task.storage==='persistent'&&!isGroupReplyExecution(task):task.storage!=='persistent')
 
 export const visibleRoleDirectory=(roles:readonly PreviewRole[],mode:ExampleDirectoryMode):PreviewRole[]=>
   roles.filter(role=>mode==='saved'?role.storage==='persistent':role.storage!=='persistent')

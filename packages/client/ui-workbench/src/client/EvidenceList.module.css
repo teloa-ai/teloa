@@ -5,11 +5,11 @@
 .facts>div{display:flex;gap:6px;min-width:0}
 .facts dt,.facts dd{margin:0}
 .facts dd{color:var(--teloa-text);overflow-wrap:anywhere}
-.narrative{font-size:var(--teloa-font-control);line-height:1.75;color:var(--teloa-text)}
+.narrative{font-size:var(--teloa-font-control);line-height:var(--teloa-leading-body);color:var(--teloa-text)}
 .narrative>*:first-child{margin-top:0}
 .narrative>*:last-child{margin-bottom:0}
 .raw{margin:0;max-height:320px;overflow:auto;border-radius:7px;background:var(--teloa-subtle);padding:10px 12px}
-.raw>code{font-size:var(--teloa-font-caption);line-height:1.7;white-space:pre;color:var(--teloa-text)}
+.raw>code{font-size:var(--teloa-font-caption);line-height:var(--teloa-leading-reading);white-space:pre;color:var(--teloa-text)}
 .empty{margin:0;font-size:var(--teloa-font-caption);color:var(--teloa-muted)}
 
 .compact{display:flex;flex-direction:column;gap:14px;min-width:0}.compact .entry{border:0;border-top:1px solid var(--teloa-border);border-radius:0;padding:14px 0 0;background:transparent}.compact .raw{max-height:240px}

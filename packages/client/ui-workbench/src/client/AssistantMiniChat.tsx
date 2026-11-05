@@ -106,13 +106,13 @@ export function AssistantMiniChat({chat,name,status,style,containerRef,openConve
    <img src={icon} alt="" draggable={false}/>
    <div><strong>{name}</strong><span>{opening?text('opening'):status}</span></div>
    <button type="button" className={css.icon} aria-label={text('openFull')} title={text('openFull')} disabled={opening} onClick={()=>void expand()}><Maximize2 size={14}/></button>
-   <button type="button" className={css.icon} aria-label={text('close')} title={text('close')} onClick={onClose}><X size={15}/></button>
+   <button type="button" className={css.icon} aria-label={text('close')} title={text('close')} onClick={onClose}><X size={16}/></button>
   </header>
   <div ref={log} className={css.log} role="log" aria-live="polite" aria-busy={snapshot.phase==='loading'||snapshot.phase==='checking'||streaming} aria-label={text('title')} onScroll={event=>{const element=event.currentTarget;pinned.current=element.scrollHeight-element.scrollTop-element.clientHeight<24}}>{body()}</div>
   {(notice||offerFull)&&<div className={css.notice} role={openFailed||snapshot.sendFailed?'alert':'status'}>{notice&&<p>{notice}</p>}{offerFull&&<button type="button" disabled={opening} onClick={()=>void expand()}>{text('openFull')}</button>}</div>}
   <form className={css.composer} onSubmit={event=>{event.preventDefault();if(canSend)void chat.send()}}>
    <textarea ref={input} rows={1} value={snapshot.draft} disabled={!editable} aria-label={text('input',{name})} placeholder={text('input',{name})} onChange={event=>chat.setDraft(event.currentTarget.value)} onKeyDown={keyDown}/>
-   <button type="submit" className={css.send} aria-label={snapshot.sending?text('sending'):text('send')} title={text('send')} disabled={!canSend} aria-busy={snapshot.sending}><ArrowUp size={15}/></button>
+   <button type="submit" className={css.send} aria-label={snapshot.sending?text('sending'):text('send')} title={text('send')} disabled={!canSend} aria-busy={snapshot.sending}><ArrowUp size={16}/></button>
   </form>
  </div>
 }

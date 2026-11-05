@@ -45,7 +45,7 @@ export function BusinessMoreMenu({scope,choose,unavailable={}}:{scope:string;cho
  },[open])
  const pick=(action:BusinessMoreAction)=>{ref.current?.querySelector('summary')?.focus();setOpen(false);choose(action,scope)}
  return <details ref={ref} className={css.scopeMore} data-placement={above?'above':'below'} open={open} onToggle={event=>setOpen(event.currentTarget.open)}>
-  <summary onClick={event=>{event.preventDefault();setOpen(value=>!value)}}>{t('business.section.more')}<ChevronDown size={13}/></summary>
+  <summary onClick={event=>{event.preventDefault();setOpen(value=>!value)}}>{t('business.section.more')}<ChevronDown size={14}/></summary>
   <div role="group" aria-label={t('business.section.more.aria')} className={css.scopeMorePanel}>
    <section>{businessMoreActions(scope).map(action=><button key={action} type="button" disabled={unavailable[action]!==undefined} title={unavailable[action]} onClick={()=>pick(action)}>{t(businessMoreActionTitles[action])}</button>)}</section>
   </div>

@@ -2,6 +2,7 @@ import type {Pool} from 'pg'
 import {WorkError,groupRoutingCandidatesMax,groupRoutingStatusInput,isGroupMention,isGroupRoutingDecision,isGroupRoutingStatusView,type GroupMessageHintCode,type GroupMessagePhase,type GroupRecipientStatus,type GroupRoutingDecision,type GroupRoutingStatusView} from '@teloa/contract'
 import {groupRoutingRetryable} from './group-routing-attempts.ts'
 import {readTrustedGroupMessageRunSource} from './group-routing-outbox.ts'
+import {readTrustedGroupReplySource,type GroupReplyExecution} from './group-reply-executions.ts'
 import {readGroupRunPublication} from './group-run-publication.ts'
 import {readGroupTaskSource} from './group-tasks.ts'
 import {preparedMaintenanceRecoveryControl,preparedMaintenanceManualRecoveryControl} from './prepared-maintenance.ts'
@@ -20,9 +21,20 @@ type WorkFacts={taskState?:string;control?:string;controlId?:string;definitionAc
  * 交流回应回帖即已回应；明确工作的阶段回帖不冒充整项完成——原 Task 达到完成判据才算完成，否则等本人在原工作里确认。
  */
 function recipientPhase(outbox:Record<string,unknown>,run:Record<string,unknown>|undefined,resultMessageId:string|null,facts:WorkFacts={approval:false},mode:'reply'|'work'='reply'):{phase:GroupMessagePhase;hint:GroupMessageHintCode|null}{
- if(outbox.state==='blocked')return {phase:'unavailable',hint:'not-authorized'}
+ if(outbox.state==='blocked'&&!outbox.reply_execution)return {phase:'unavailable',hint:'not-authorized'}
  // 依赖交接等本人授予前序固定成果：可恢复等待，授予后由原投递继续，不是终态。
  if(outbox.state==='waiting'&&outbox.reason==='teloa/resource-required')return {phase:'queued',hint:'resource-required'}
+ const reply=outbox.reply_execution as GroupReplyExecution|undefined
+ if(reply){
+  if(reply.resultMessageId)return {phase:'completed',hint:null}
+  if(reply.state==='withdrawn')return {phase:'stopped',hint:'work-stopped'}
+  if(reply.state==='configuration_failed')return {phase:'blocked',hint:reply.reason==='teloa/execution-failed'?'work-failed':'model-configuration'}
+  if(reply.state==='ended')return {phase:'publication-blocked',hint:'result-retained'}
+  if(outbox.state==='blocked')return {phase:'unavailable',hint:'not-authorized'}
+  if(reply.state==='accepted'||reply.state==='active')return {phase:'running',hint:null}
+  if(reply.state==='submitting'||reply.state==='unknown')return {phase:'unknown',hint:'delivery-unknown'}
+  return {phase:'queued',hint:null}
+ }
  const state=run?.state
  if(state==='submission_unknown')return {phase:'unknown',hint:'delivery-unknown'}
  const evidence=run?.evidence,completed=!!evidence&&typeof evidence==='object'&&'state' in evidence&&evidence.state==='ended'&&'reason' in evidence&&evidence.reason==='completed'
@@ -168,7 +180,7 @@ export class GroupRoutingStatusService{
    for(const row of messages){
     const messageId=String(row.id),attempt=attempts.get(messageId),stored:unknown=(attempt?attempt.decision:originals.get(messageId))??null
     if(row.author_id==='self'||!isGroupRoutingDecision(stored)||!groupRoutingRetryable(stored,outbox.some(item=>item.message_id===messageId)))continue
-    if(await readTrustedGroupMessageRunSource(client,owner,{groupId:request.groupId,messageId}).catch(error=>{if(error instanceof WorkError)return null;throw error}))trusted.add(messageId)
+    if(await (async()=>await readTrustedGroupMessageRunSource(client,owner,{groupId:request.groupId,messageId})??await readTrustedGroupReplySource(client,owner,{groupId:request.groupId,messageId}))().catch(error=>{if(error instanceof WorkError)return null;throw error}))trusted.add(messageId)
    }
    // Task 安全审批属于整项工作；原生审批只属于固定 Run，不能污染同 Task 的历史消息。
    const factsOf=(taskId:unknown,runId?:unknown):WorkFacts=>{
@@ -228,8 +240,8 @@ export class GroupRoutingStatusService{
      const item=outbox.find(entry=>entry.message_id===messageId&&entry.decision_version===version&&entry.role_id===roleId)
      if(!item)return {roleId,name:name(roleId),taskId:null,runId:null,phase:'queued',resultMessageId:null,executionMode:null,hint:null}
      const mode=item.execution_mode==='work'?'work' as const:'reply' as const
-     const runId=item.run_id?String(item.run_id):null,resultMessageId=runId?results.get(runId)??null:null,resumeControlId=maintained.get(String(item.id)),fixed=resumeControlId?{phase:'paused' as const,hint:'continue-paused' as const}:recipientPhase(item,runId?runs.get(runId):undefined,resultMessageId,factsOf(item.task_id,runId),mode)
-     return {roleId,name:name(roleId),taskId:item.task_id?String(item.task_id):null,runId,phase:fixed.phase,resultMessageId,executionMode:mode,hint:fixed.hint,...(resumeControlId?{resumeControlId}:{})}
+     const runId=item.run_id?String(item.run_id):null,resultMessageId=runId?results.get(runId)??null:(item.reply_execution as GroupReplyExecution|undefined)?.resultMessageId??null,resumeControlId=maintained.get(String(item.id)),fixed=resumeControlId?{phase:'paused' as const,hint:'continue-paused' as const}:recipientPhase(item,runId?runs.get(runId):undefined,resultMessageId,factsOf(item.task_id,runId),mode)
+     return {roleId,name:name(roleId),taskId:item.task_id?String(item.task_id):null,runId,phase:fixed.phase,resultMessageId,executionMode:mode,hint:fixed.hint,...(item.reply_execution?{replyExecutionId:String(item.id)}:{}),...(resumeControlId?{resumeControlId}:{})}
     })
     // 对原工作的追加／停止优先呈现原工作的真实状态；同一条消息里的简短说明回应作为接收者并列显示，不替代原工作状态。
     const input=inputs.find(item=>String(item.message_id)===messageId)

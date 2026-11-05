@@ -1,12 +1,12 @@
 .entry{margin:12px 0;padding:9px 14px;border:1px solid var(--teloa-border);border-radius:7px;background:var(--teloa-surface);color:var(--teloa-text);font:inherit;cursor:pointer}
 .body{display:flex;flex-direction:column;gap:16px;padding:20px}
-.body p{margin:0;line-height:1.65;color:var(--teloa-muted)}
+.body p{margin:0;line-height:var(--teloa-leading-body);color:var(--teloa-muted)}
 .body label{display:flex;flex-direction:column;gap:6px;font-size:var(--teloa-font-control)}
 .body input,.body select,.body textarea{box-sizing:border-box;width:100%;border:1px solid var(--teloa-border);border-radius:6px;padding:9px 10px;background:var(--teloa-surface);color:var(--teloa-text);font:inherit}
-.body textarea{min-height:320px;font-family:ui-monospace,SFMono-Regular,monospace;line-height:1.65;resize:vertical}
+.body textarea{min-height:320px;font-family:ui-monospace,SFMono-Regular,monospace;line-height:var(--teloa-leading-body);resize:vertical}
 .body details{padding:12px;border:1px solid var(--teloa-border);border-radius:7px}
-.body summary{cursor:pointer;font-weight:600}
-.body dl{display:grid;grid-template-columns:auto minmax(0,1fr);gap:8px 14px;margin:12px 0 0;font-size:var(--teloa-font-meta)}
+.body summary{cursor:pointer;font-weight:var(--teloa-weight-heading)}
+.body dl{display:grid;grid-template-columns:auto minmax(0,1fr);gap:8px 14px;margin:12px 0 0;font-size:var(--teloa-font-caption)}
 .body dd{margin:0;overflow-wrap:anywhere}
 .body details label{margin-top:12px}
 .actions{display:flex;justify-content:flex-end;gap:8px}
@@ -14,4 +14,7 @@
 .actions .primary{background:var(--teloa-text);color:var(--teloa-surface)}
 .body button:disabled{opacity:.5;cursor:default}
 .error{color:var(--teloa-danger)!important}
-.identity{font-weight:600;color:var(--teloa-text)!important}
+.identity{font-weight:var(--teloa-weight-regular);color:var(--teloa-text)!important}
+
+/* 仅规范本组件的界面标签；正文和代码中的强调保持原样。 */
+.body>strong{font-weight:var(--teloa-weight-regular)}

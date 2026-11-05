@@ -4,7 +4,7 @@
 .identity button:focus-visible{outline:2px solid var(--teloa-focus);outline-offset:2px}
 .identity button:disabled{opacity:.5;cursor:default}
 .identity .trigger{width:32px;padding:0;border:0;background:transparent;color:var(--teloa-muted)}
-.panel{box-sizing:border-box;padding:20px 24px;white-space:normal;overflow-wrap:anywhere;font-size:var(--teloa-font-caption);line-height:1.7}
+.panel{box-sizing:border-box;padding:20px 24px;white-space:normal;overflow-wrap:anywhere;font-size:var(--teloa-font-caption);line-height:var(--teloa-leading-body)}
 .panel p{margin:8px 0 12px}
 .panel [role=alert]{color:var(--teloa-warn)}
 .panel [role=status]{color:var(--teloa-muted)}

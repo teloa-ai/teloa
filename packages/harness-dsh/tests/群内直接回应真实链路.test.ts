@@ -6,12 +6,12 @@
  * - 端点一律经 `apply()` 注册在 `/teloa` 上的那一个 handler（`ok/value/error` 回包），不直接调服务类；
  * - 工具调用经真 `ToolRuntime` 的 `tools/pre-execute` 链，因此 `registerGroupRoutingGuard` 与
  *   `registerTaskToolGuard` 是真的按 `index.ts` 的注册顺序跑的；
- * - 路由编排、话题锁、决策表、候选 SQL、表情表、群任务与运行全部是生产代码。
+ * - 路由编排、话题锁、决策表、候选 SQL、表情表、普通回复预约、群任务与运行全部是生产代码。
  *
  * **模型侧为桩（全文唯一的桩）**：`sessionController` 是替身——
  * - 路由会话的 `prompt` 按触发正文查一张预置答案表，把「一整轮」（turn/start → user/message →
  *   assistant/message → turn/end）追加进真实会话日志，于是 `askGroupRouting` 读回的是预置 JSON；
- * - 运行会话的 `prompt` 只追加 turn/start ＋ user/message，终轮由用例在想让同事回帖时自己补。
+ * - 普通回复经真实原生输入受理与 Loop，只脚本化模型 IO；业务运行保留人工控制轮次，工具段走真实 Loop。
  * 真实模型的覆盖在 T16 的浏览器验收里补。逐步标注见本任务报告。
  */
 import test from 'node:test'
@@ -32,14 +32,14 @@ import {SessionProjectionRegistry} from '@deepseek-ai/dsh-session-projection'
 import {brandString} from '@deepseek-ai/dsh-brand'
 import type {SessionRequestId} from '@deepseek-ai/dsh-api-session-controller'
 import {PostgreSqlContainer,type StartedPostgreSqlContainer} from '@testcontainers/postgresql'
-import {openResourceDatabase,groupRelayStopText,groupConversationNotice,groupTopicNotice,runGroupContextHash,type RunGroupContext} from '@teloa/backend'
+import {openResourceDatabase,isGroupReplySession,type GroupReplyExecution,groupRelayStopText,groupConversationNotice,groupTopicNotice,runGroupContextHash,type RunGroupContext} from '@teloa/backend'
 import {groupRelayStopRequestId,groupRoutedReactionRequestId,groupRoutedTaskRequestId,groupRoutingOutputV2,groupRoutingOutputSchema,groupRoutingOutputV2Schema,groupRoutingRequestId,workErrorCodes,type GroupRoutingIntent,type GroupRoutingAssignment,type GroupRoutingWorkTarget} from '@teloa/contract'
 import {apply} from '../src/index.ts'
 import {teloaAgentPresetId} from '../src/composition-safety.ts'
 import {groupInstructionRanges,isRoutingSession} from '../src/group-routing.ts'
 import {reactGroupOnlyReason,reactPostReason,reactTopicReason,groupReactToolName} from '../src/group-react-tool.ts'
 import {compositionEntries} from './fixtures/production-host.ts'
-import {installNativeSessions,installNativeHostServices,ControlledPromptModel,controlTaskQueue} from './fixtures/native-host-services.ts'
+import {installNativeSessions,installNativeHostServices,ControlledPromptModel,controlTaskQueue,publishNativeFixtureInput} from './fixtures/native-host-services.ts'
 import {nativeToolInvocation} from './fixtures/native-tool-invocation.ts'
 import {testRoleResponsibility} from './role-test-fixture.ts'
 
@@ -178,10 +178,18 @@ test('群内直接回应从路由到接力停下与表情：真库、真端点�
   },
   modelCatalog:async()=>({default:{provider:'test',model:'test'}}),
   cancel:()=>({accepted:true}),
-  prompt:(request:{sessionId:string;requestId:string;content?:{type?:string;text?:string}[]})=>{
+  prompt:async(request:{sessionId:string;requestId:string;content?:{type?:string;text?:string}[]})=>{
    const sessionId=String(request.sessionId),requestId=String(request.requestId)
    const text=(request.content??[]).filter(part=>part.type==='text').map(part=>String(part.text)).join('\n')
    prompts.push({sessionId,requestId,text})
+   if(isGroupReplySession(sessionId)){
+    const agent=agents.get(sessionId)!.agent
+    const followup=Reflect.get(Object.getPrototypeOf(agent),'followup')
+    agent.followup=message=>{Reflect.apply(followup,agent,[message])}
+    nativeRuns.add(sessionId);toolLoop.select(agent)
+    await publishNativeFixtureInput(ctx,agent,createUserMessage({content:request.content as Parameters<typeof createUserMessage>[0]['content'],source:{kind:'user',rpcId:brandString<SessionRequestId>(requestId)}}))
+    return {accepted:true as const}
+   }
    const session=sessionOf(sessionId)
    const turn=(turnSeq.get(sessionId)??-1)+1
    turnSeq.set(sessionId,turn)
@@ -289,7 +297,30 @@ test('群内直接回应从路由到接力停下与表情：真库、真端点�
    await wait(50)
   }
  }
- const topicRows=async(rootId:string)=>(await pool.query('select id,author_id,text,task_id,run_id,mention_snapshot,request_id from teloa_group_messages where owner_id=$1 and (id=$2 or root_id=$2) order by (id=$2) desc,created_at,id',[owner,rootId])).rows
+ /** 普通交流等待原 outbox 固定预约的真实原生轮次，不以决策落库冒充执行完成。 */
+ const awaitRoutedReply=async(messageId:string,roleId:string,timeoutMs=90_000):Promise<GroupReplyExecution>=>{
+  const deadline=Date.now()+timeoutMs
+  for(;;){
+   const row=(await pool.query('select reply_execution,task_id,run_id from teloa_group_routing_outbox where owner_id=$1 and message_id=$2 and role_id=$3',[owner,messageId,roleId])).rows[0]
+   const fixed=row?.reply_execution as GroupReplyExecution|undefined
+   if(fixed&&agents.get(fixed.sessionId)?.agent.status==='running'){
+    assert.equal(row.task_id,null);assert.equal(row.run_id,null)
+    return fixed
+   }
+   if(Date.now()>=deadline)throw new Error('等不到普通回复轮次：'+JSON.stringify(fixed))
+   await wait(50)
+  }
+ }
+ const awaitPostedReply=async(execution:GroupReplyExecution,timeoutMs=90_000):Promise<void>=>{
+  const deadline=Date.now()+timeoutMs
+  for(;;){
+   const fixed=(await pool.query('select reply_execution from teloa_group_routing_outbox where owner_id=$1 and id=$2',[owner,execution.id])).rows[0]?.reply_execution as GroupReplyExecution|undefined
+   if(fixed?.resultMessageId){assert.equal(fixed.state,'ended');return}
+   if(Date.now()>=deadline)throw new Error('普通回复没有发布：'+JSON.stringify(fixed))
+   await wait(50)
+  }
+ }
+ const topicRows=async(rootId:string)=>(await pool.query('select id,author_id,text,task_id,run_id,reply_execution_id,mention_snapshot,request_id from teloa_group_messages where owner_id=$1 and (id=$2 or root_id=$2) order by (id=$2) desc,created_at,id',[owner,rootId])).rows
  const runsOfTask=async(taskId:string)=>await call('task-runs/list',{taskId}) as Run[]
  const routingPrompts=()=>prompts.filter(entry=>isRoutingSession(entry.sessionId))
 
@@ -412,46 +443,14 @@ test('群内直接回应从路由到接力停下与表情：真库、真端点�
   assert.equal(asked.length,1,'同一条触发消息只许问模型一次')
   t.diagnostic(`I4 从 groups/messages/send 返回到决策行落库的真实耗时：${String(routingDuration)}ms（模型侧为桩）`)
  })
- const firstRouted=await awaitRoutedRun(rootMessage.id,roleA.id)
- const firstTaskId=firstRouted.taskId
- const allSources=(await pool.query('select task_id,request_id from teloa_group_task_sources where owner_id=$1',[owner])).rows
- const firstStoredSource=await call('groups/tasks/source',{taskId:firstTaskId}) as {trigger:string}
- await t.test('I5 来源快照 trigger=routed，任务身份逐字等于 groupRoutedTaskRequestId',()=>{
-  assert.equal(allSources.length,1,'第一轮路由应当恰建一条群任务来源')
-  assert.equal(firstStoredSource.trigger,'routed')
-  assert.equal(String(allSources[0]!.request_id),groupRoutedTaskRequestId(owner,groupA.id,rootMessage.id,roleA.id))
-  assert.equal(String(allSources[0]!.task_id),firstTaskId)
- })
-
- // ════════════════════ I8 ＋ I10（回帖之前先看运行快照） ════════════════════
- const firstRuns=await runsOfTask(firstTaskId)
- assert.equal(firstRuns.length,1,'段 D 应当恰起一次运行')
- const firstRun=firstRuns.find(run=>run.id===firstRouted.runId)!
+ const firstExecution=await awaitRoutedReply(rootMessage.id,roleA.id)
  const runRowOf=async(runId:string)=>(await pool.query('select input_text,group_context_hash,state from teloa_task_runs where owner_id=$1 and id=$2',[owner,runId])).rows[0]
- const firstRunRow=await runRowOf(firstRun.id)
- const firstInput=JSON.parse(String(firstRunRow.input_text)) as Record<string,unknown>
- await t.test('I8 input_text 顶层带 groupTopic：≤20 条、升序、每项恰 6 键含原消息身份、notice 逐字',()=>{
-  const topic=firstInput.groupTopic as {notice:string;messages:Record<string,unknown>[]}
-  assert.ok(topic,'群任务的执行输入必须带 groupTopic')
-  // 路由派工是 v2 群来源：按连续上下文读取（规格 §3.3），notice 逐字是连续上下文那一句；手工群任务仍沿原话题那一句。
-  assert.equal(topic.notice,groupConversationNotice)
-  assert.notEqual(topic.notice,groupTopicNotice)
-  assert.ok(topic.messages.length>=1&&topic.messages.length<=20)
-  for(const message of topic.messages)assert.deepEqual(Object.keys(message).sort(),['authorId','authorKind','authorName','createdAt','messageId','text'])
-  assert.ok(topic.messages.some(message=>message.messageId===rootMessage.id),'原始本人消息身份不得用位置或作者代替')
-  const stamps=topic.messages.map(message=>Date.parse(String(message.createdAt)))
-  assert.deepEqual(stamps,[...stamps].sort((left,right)=>left-right),'话题按时间升序')
-  assert.equal('groupTopic' in (firstInput.groupContext as Record<string,unknown>),false,'groupTopic 不进 groupContext')
- })
- await t.test('I10 RunGroupContext 明确核对新增固定来源，runGroupContextHash逐字一致',()=>{
-  const context=firstRun.groupContext!
-  // 当前契约允许固定本人要求与成果资源；仍逐键核对，files 保持最后。
-  const keys=['taskId','groupId','groupVersion','roleId','roleVersion','grantVersion','source','materials']
-  if(context.ownerRequest!==undefined){keys.push('ownerRequest');assert.deepEqual(context.ownerRequest,{messageId:rootMessage.id,text:firstText,sha256:createHash('sha256').update(firstText).digest('hex')})}
-  if(context.workResources!==undefined){keys.push('workResources');assert.ok(context.workResources.length>0)}
-  assert.deepEqual(Object.keys(context),[...keys,'files'])
-  assert.deepEqual(Object.keys(context.source),['messageId','rootId','createdAt','text'])
-  assert.equal(String(firstRunRow.group_context_hash),runGroupContextHash(context))
+ await t.test('I5 普通 reply 固定回复预约，不创建群任务来源、Task 或 TaskRun',async()=>{
+  assert.equal(firstExecution.snapshot.messageId,rootMessage.id)
+  assert.equal(firstExecution.snapshot.role.id,roleA.id)
+  assert.equal(firstExecution.sessionId,'group-reply-'+firstExecution.id)
+  assert.equal(firstExecution.nativeRequestId,groupRoutedTaskRequestId(owner,groupA.id,rootMessage.id,roleA.id))
+  assert.deepEqual([await countOf('teloa_group_task_sources'),await countOf('teloa_tasks'),await countOf('teloa_task_runs')],[0,0,0])
  })
 
  // ════════════════════ I9：运行期间本人再发一条，然后让运行回帖 ════════════════════
@@ -460,8 +459,8 @@ test('群内直接回应从路由到接力停下与表情：真库、真端点�
  await awaitDecision(midMessage.id)
  const relayText='收到，这件事要请 @物流二号 接着看一下。'
  answers.set(relayText,answerOf('reply',[roleB.id]))
- await finishRun(firstRun.sessionId,relayText)
- await call('task-runs/reconcile',{runId:firstRun.id})
+ await finishRun(firstExecution.sessionId,relayText)
+ await awaitPostedReply(firstExecution)
  const topicAfterFirst=await topicRows(rootId)
  const firstReply=topicAfterFirst.find(row=>String(row.author_id)===roleA.id)
  await t.test('I9 运行期间本人插话之后，这次运行照样回帖成功（本期最关键的一条）',()=>{
@@ -471,24 +470,25 @@ test('群内直接回应从路由到接力停下与表情：真库、真端点�
   //  生产又没有任何 UPDATE 写入点，怎么比都不可能红。真正的危险窗口在 prepare 与 start 之间，
   //  见下文「M11 真危险窗口」那一段。
  })
- await t.test('I6 回帖归属：author_id 是那位同事，task_id/run_id 都非空',()=>{
+ await t.test('I6 普通回帖归属：author_id 是那位同事，task_id/run_id 都为空',()=>{
   assert.equal(String(firstReply!.author_id),roleA.id)
-  assert.equal(String(firstReply!.task_id),firstTaskId)
-  assert.equal(String(firstReply!.run_id),firstRun.id)
+  assert.equal(firstReply!.task_id,null)
+  assert.equal(firstReply!.run_id,null)
+  assert.equal(String(firstReply!.reply_execution_id),firstExecution.id)
+  assert.equal(String(firstReply!.request_id),firstExecution.nativeRequestId)
  })
 
  // ════════════════════ I12：同事回帖触发接力 ════════════════════
  const relayDecision=await awaitDecision(firstReply!.id as string)
- const relayRouted=await awaitRoutedRun(String(firstReply!.id),roleB.id)
- const relayTasks=(await pool.query('select task_id from teloa_group_task_sources where owner_id=$1 and request_id=$2',[owner,relayRouted.requestId])).rows
- const relayRuns=await runsOfTask(relayRouted.taskId)
+ const relayExecution=await awaitRoutedReply(String(firstReply!.id),roleB.id)
  const colleagueRows=async()=>(await pool.query("select mention_snapshot from teloa_group_messages where owner_id=$1 and author_id<>'self'",[owner])).rows
- await t.test('I12 同事回帖触发接力：正文里的 @ 由路由模型读到，B 的任务与运行成立；同事行从不写 mention_snapshot',async()=>{
+ await t.test('I12 同事回帖触发接力：正文里的 @ 由路由模型读到，B 的普通回复预约成立且零任务；同事行从不写 mention_snapshot',async()=>{
   assert.equal(relayDecision.kind,'routed')
   assert.equal(relayDecision.hops,1)
   assert.deepEqual(relayDecision.respond,[roleB.id])
-  assert.equal(relayTasks.length,1,'接力必须真的建出 B 的群任务')
-  assert.equal(relayRuns.length,1,'接力必须真的起一次运行')
+  assert.equal(relayExecution.snapshot.role.id,roleB.id)
+  assert.equal(relayExecution.snapshot.messageId,String(firstReply!.id))
+  assert.deepEqual([await countOf('teloa_group_task_sources'),await countOf('teloa_tasks'),await countOf('teloa_task_runs')],[0,0,0])
   for(const row of await colleagueRows())assert.deepEqual(row.mention_snapshot,[],'服务端绝不把 @ 写进同事消息行')
  })
 
@@ -511,16 +511,18 @@ test('群内直接回应从路由到接力停下与表情：真库、真端点�
  // **下一条本来就要发的同事回帖**：它的决策落库意味着同一把话题锁上的后来者已经跑完一轮，
  // 重放那一趟若真要多写一行，只能写在它之前。
  const beforeReplay=await counts()
+ const replyPromptsBeforeReplay=prompts.filter(entry=>isGroupReplySession(entry.sessionId)).length
  const warnsBeforeReplay=routingFailures()
  const replayed=await call('groups/messages/send',{requestId:firstRequestId,groupId:groupA.id,expectedVersion:groupA.version,text:firstText}) as Message
  const secondText='我看了物流侧，没有异常。'
- await finishRun(relayRuns[0]!.sessionId,secondText)
- await call('task-runs/reconcile',{runId:relayRuns[0]!.id})
+ await finishRun(relayExecution.sessionId,secondText)
+ await awaitPostedReply(relayExecution)
  const secondMessageId=String((await topicRows(rootId)).find(row=>String(row.text)===secondText)!.id)
  await awaitDecision(secondMessageId)
  const afterReplay=await counts()
  await t.test('I7 同一条触发消息重放：决策、群任务来源、任务三张表都只随屏障那一条增长',()=>{
   assert.equal(replayed.id,rootMessage.id,'同一 requestId 重发得同一条消息')
+  assert.equal(prompts.filter(entry=>isGroupReplySession(entry.sessionId)).length,replyPromptsBeforeReplay,'重放不能给原普通回复再次提交 prompt')
   // 屏障那一条同事回帖：新增一条群消息与它自己的一行决策（它的答案是「谁都不用回」，不建任务）；
   // 群任务来源与 teloa_tasks 两张表一条都不许多——重放若真的再派一次人，多出来的就在这两张表上。
   assert.deepEqual(afterReplay,{decisions:beforeReplay.decisions+1,sources:beforeReplay.sources,tasks:beforeReplay.tasks,messages:beforeReplay.messages+1})
@@ -670,6 +672,42 @@ test('群内直接回应从路由到接力停下与表情：真库、真端点�
   assert.equal(workRunA.requestId,groupRoutedTaskRequestId(owner,groupA.id,workMessage.id,roleA.id))
   assert.equal(workRunB.requestId,groupRoutedTaskRequestId(owner,groupA.id,workMessage.id,roleB.id))
  })
+
+ // 普通 reply 的任务反例对应明确 work 的真实任务正例。
+ const workSource=await call('groups/tasks/source',{taskId:workRunA.taskId}) as {trigger:string}
+ assert.equal(workSource.trigger,'routed')
+ const storedWorkSource=(await pool.query('select task_id from teloa_group_task_sources where owner_id=$1 and request_id=$2',[owner,workRunA.requestId])).rows
+ assert.equal(storedWorkSource.length,1)
+ assert.equal(String(storedWorkSource[0]!.task_id),workRunA.taskId)
+ const firstRuns=await runsOfTask(workRunA.taskId)
+ assert.equal(firstRuns.length,1,'明确 work 应当恰起一次运行')
+ const firstRun=firstRuns.find(run=>run.id===workRunA.runId)!
+ const firstRunRow=await runRowOf(firstRun.id)
+ const firstInput=JSON.parse(String(firstRunRow.input_text)) as Record<string,unknown>
+ await t.test('I8 input_text 顶层带 groupTopic：≤20 条、升序、每项恰 6 键含原消息身份、notice 逐字',()=>{
+  const topic=firstInput.groupTopic as {notice:string;messages:Record<string,unknown>[]}
+  assert.ok(topic,'群任务的执行输入必须带 groupTopic')
+  // 路由派工是 v2 群来源：按连续上下文读取（规格 §3.3），notice 逐字是连续上下文那一句；手工群任务仍沿原话题那一句。
+  assert.equal(topic.notice,groupConversationNotice)
+  assert.notEqual(topic.notice,groupTopicNotice)
+  assert.ok(topic.messages.length>=1&&topic.messages.length<=20)
+  for(const message of topic.messages)assert.deepEqual(Object.keys(message).sort(),['authorId','authorKind','authorName','createdAt','messageId','text'])
+  assert.ok(topic.messages.some(message=>message.messageId===workMessage.id),'原始本人消息身份不得用位置或作者代替')
+  const stamps=topic.messages.map(message=>Date.parse(String(message.createdAt)))
+  assert.deepEqual(stamps,[...stamps].sort((left,right)=>left-right),'话题按时间升序')
+  assert.equal('groupTopic' in (firstInput.groupContext as Record<string,unknown>),false,'groupTopic 不进 groupContext')
+ })
+ await t.test('I10 RunGroupContext 明确核对新增固定来源，runGroupContextHash逐字一致',()=>{
+  const context=firstRun.groupContext!
+  // 当前契约允许固定本人要求与成果资源；仍逐键核对，files 保持最后。
+  const keys=['taskId','groupId','groupVersion','roleId','roleVersion','grantVersion','source','materials']
+  if(context.ownerRequest!==undefined){keys.push('ownerRequest');assert.deepEqual(context.ownerRequest,{messageId:workMessage.id,text:workText,sha256:createHash('sha256').update(workText).digest('hex')})}
+  if(context.workResources!==undefined){keys.push('workResources');assert.ok(context.workResources.length>0)}
+  assert.deepEqual(Object.keys(context),[...keys,'files'])
+  assert.deepEqual(Object.keys(context.source),['messageId','rootId','createdAt','text'])
+  assert.equal(String(firstRunRow.group_context_hash),runGroupContextHash(context))
+ })
+
 
  // ════════════════════ I19 / I20 / I21：候选集的三条反例 ════════════════════
  const memberRows=(await pool.query('select member_key,role_id from teloa_group_members where owner_id=$1 and group_id=$2',[owner,groupA.id])).rows

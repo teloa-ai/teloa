@@ -20,7 +20,7 @@ export function EmployeeComputerLink({role,computer,variant='toolbar'}:{role:Pre
  const label=`${role.name}${copy('computerNameSuffix')} · ${copy(status)}`
  if(variant==='preview')return <a className={css.previewLink} data-device-state={view.state} aria-label={label} href={computerHref} target="_blank" rel="noopener"><span className={css.previewImage}><Monitor size={22}/></span><span><strong>{copy(status)}</strong><small>{copy(view.state==='not-integrated'?'computerUnavailable':view.state==='connected'?'desktopFramePending':view.state==='connecting'?'computerConnectingHint':view.state==='disconnected'?'computerDisconnectedHint':'computerUnavailableHint')}</small></span></a>
  if(variant==='menu')return <a className={css.menuItem} data-device-state={view.state} aria-label={label} title={label} href={computerHref} target="_blank" rel="noopener"><Monitor size={14} aria-hidden/><span>{role.name}{copy('computerNameSuffix')}</span><small>{copy(status)}</small></a>
- return <a className={`${toolbarCss.button} ${css.deviceIcon}`} data-teloa-toolbar-icon data-device-state={view.state} aria-label={label} title={label} href={computerHref} target="_blank" rel="noopener"><Monitor size={17} aria-hidden/></a>
+ return <a className={`${toolbarCss.button} ${css.deviceIcon}`} data-teloa-toolbar-icon data-device-state={view.state} aria-label={label} title={label} href={computerHref} target="_blank" rel="noopener"><Monitor size={16} aria-hidden/></a>
 }
 /** 工作邮箱尚未接入：只说明状态，不生成地址。工具条与「⋯」菜单两种入口共用同一抽屉。 */
 export function EmployeeMailDrawer({role,close}:{role:PreviewRole;close:()=>void}){

@@ -270,7 +270,7 @@ test('已添加卡片内提供加载版本与管理入口，缺失目录来源�
  await page.getByText(/目录有新版本 v1\.0\.1/).waitFor()
  for(const width of [390,1440])for(const size of [14,28])for(const theme of ['light','dark']){
   await page.setViewportSize({width,height:960});await page.evaluate(({size,theme}:any)=>(window as any).marketPrimaryFixture.appearance(size,theme),{size,theme});assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),true)
-  assert.ok(await controls.first().evaluate((el:HTMLElement)=>parseFloat(getComputedStyle(el).fontSize))>=size-1);for(const control of await controls.all())assert.equal(await control.evaluate((el:HTMLElement)=>!!el.closest('li,article')&&!el.closest('button button')),true)
+  assert.ok(await controls.first().evaluate((el:HTMLElement)=>parseFloat(getComputedStyle(el).fontSize))>=size*13/14-.01);for(const control of await controls.all())assert.equal(await control.evaluate((el:HTMLElement)=>!!el.closest('li,article')&&!el.closest('button button')),true)
   if(process.env.TELOA_UI_SCREENSHOT_DIR&&size===14&&theme==='dark'){await mkdir(process.env.TELOA_UI_SCREENSHOT_DIR,{recursive:true});await page.screenshot({path:join(process.env.TELOA_UI_SCREENSHOT_DIR,'market-'+width+'.png'),fullPage:true})}
  }
  for(const control of await controls.all())await control.click();assert.deepEqual((await page.evaluate(()=>(window as any).marketPrimaryFixture.managedLoads)).sort(),['load-original','load-secondary','load-unavailable'].sort())

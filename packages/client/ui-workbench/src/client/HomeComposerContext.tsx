@@ -1,4 +1,5 @@
-import {useEffect,useRef,useState,useSyncExternalStore} from 'react'
+import {useEffect,useId,useRef,useState,useSyncExternalStore} from 'react'
+import {LockKeyhole} from 'lucide-react'
 import type {PropsRuntime} from '@deepseek-ai/dsh-client-ui-slots'
 import type {BindingClient} from './binding-client.js'
 import type {HomeContextApi,HomeWorkContext} from './home-native-controller.js'
@@ -15,6 +16,7 @@ type Props=PropsRuntime<'conversation.input.left'>&{api:HomeContextApi;work:Bind
 /** 选择只写受信上下文；主助手及真正接手岗位仍由后端分别核验。 */
 export function HomeComposerContext({sessionId,useSession,useInput,api,roles,block,work,taskRunChat,isNativeChild,isAssistantContext}:Props){
  const {locale}=useI18n(),scopes=useBusinessScopes(),copy=(key:Parameters<typeof homeNativeCopy>[1])=>homeNativeCopy(locale,key)
+ const hintId=useId(),[scopeHintOpen,setScopeHintOpen]=useState(false)
  const binding=useSyncExternalStore(work.subscribe,work.getSnapshot)
  const taskSource=taskRunChat?.forSession(sessionId)??emptyTaskRunChatSource
  const taskSnapshot=useSyncExternalStore(taskSource.subscribe,taskSource.getSnapshot,taskSource.getSnapshot)
@@ -59,10 +61,9 @@ export function HomeComposerContext({sessionId,useSession,useInput,api,roles,blo
  if(excluded||objectIdentity)return lostAttachments?<div className={css.context}><p className={css.notice} role="status">{draftContinuityCopy(locale,'missing')}</p></div>:null
  const readonly=locked||status!=='ready'||!!pending
  return <div className={css.context} aria-busy={status==='loading'||status==='saving'}>
-  {locked?<span className={css.fixed} aria-label={copy('scope')} title={copy('scope')}>{scopes[scopeId]??scopeId}</span>:<label><span className={css.visuallyHidden}>{copy('scope')}</span><select aria-label={copy('scope')} value={scopeId} disabled={readonly} onChange={event=>void change(event.target.value,roleId)}>{Object.entries(scopes).filter(([id])=>!roleId||options.some(role=>role.id===roleId&&canReceiveHomeWorkAssignee(role,id))).map(([id,name])=><option key={id} value={id}>{name}</option>)}</select></label>}
+  {locked?<span className={css.lockedScope} tabIndex={0} aria-label={copy('scope')+': '+(scopes[scopeId]??scopeId)} aria-describedby={hintId} onPointerEnter={()=>setScopeHintOpen(true)} onPointerLeave={event=>{if(document.activeElement!==event.currentTarget)setScopeHintOpen(false)}} onFocus={()=>setScopeHintOpen(true)} onBlur={()=>setScopeHintOpen(false)} onKeyDown={event=>{if(event.key==='Escape'&&scopeHintOpen){event.preventDefault();event.stopPropagation();setScopeHintOpen(false)}}}><span className={css.fixed} aria-label={copy('scope')}>{scopes[scopeId]??scopeId}<LockKeyhole size={14} aria-hidden="true"/></span><span id={hintId} role="tooltip" hidden={!scopeHintOpen} className={css.scopeHint}>{copy('fixedContext')}</span></span>:<label><span className={css.visuallyHidden}>{copy('scope')}</span><select aria-label={copy('scope')} value={scopeId} disabled={readonly} onChange={event=>void change(event.target.value,roleId)}>{Object.entries(scopes).filter(([id])=>!roleId||options.some(role=>role.id===roleId&&canReceiveHomeWorkAssignee(role,id))).map(([id,name])=><option key={id} value={id}>{name}</option>)}</select></label>}
   {roleId&&<span className={css.fixed}>{copy('owner')} · {options.find(role=>role.id===roleId)?.name??copy('missing')}{!locked&&<button type="button" disabled={readonly} aria-label={locale.startsWith('zh')?'移除指定员工':'Remove assigned employee'} onClick={()=>void change(scopeId,null)}>×</button>}</span>}
   {status==='loading'||status==='saving'?<span className={css.visuallyHidden} role="status">{copy(status==='saving'?'saving':'reading')}</span>:null}
-  {locked&&<span className={css.fixedHint}>{copy('fixedContext')}</span>}
   {(error||lostAttachments)&&<div className={css.notice}>{error&&<p role="alert">{error} <button type="button" disabled={status==='loading'||status==='saving'} onClick={()=>void (pending?recover():refresh())}>{copy(pending?'inspectContext':'retry')}</button></p>}{lostAttachments&&<p role="status">{draftContinuityCopy(locale,'missing')}</p>}</div>}
  </div>
 }
