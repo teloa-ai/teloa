@@ -1,6 +1,6 @@
 {
   "name": "@teloa/cli",
-  "version": "0.2.27",
+  "version": "0.2.29",
   "private": true,
   "type": "module",
   "exports": {
