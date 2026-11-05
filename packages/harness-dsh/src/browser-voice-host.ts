@@ -78,7 +78,8 @@ export function createBrowserVoiceHost(ctx:Context,ports:{owner:string;mediaOwne
  const recordTiming=({callId,callGeneration,turnId,requestId,stage,at}:VoiceStageTiming)=>{ctx.logger.info('[voice-timing] '+JSON.stringify({callId,callGeneration,turnId,requestId,stage,at}))}
  const driver=new VoiceConversationDriver({owner,onConversationState:media.conversationState,onTiming:recordTiming,assertCurrentCommit:commit=>runtime.service.assertTranscriptCommitCurrent(owner,commit),calls:runtime.service,readSession:createDshVoiceSessionReader({sessions,sessionController:ctx.sessionController},{owner,conversation:ports.conversation}),admitPrompt:(commit,request,signal)=>{
   // 原会话正在执行时追加到下一步；模式由宿主固定，浏览器不能借插话升级许可。
-  const mode=ctx.agents.get(SessionId(commit.sessionId))?.status==='running'?'steer':'queue'
+  // 插话只清除旧播报；新输入排入原会话下一轮，保持当前轮受理根与检查点不变。
+  const mode='queue' as const
   return requireNativeInputProvider(ctx).voice.withPrompt(commit,()=>runtime.service.assertTranscriptCommitCurrent(owner,commit),()=>ctx.sessionController.prompt({...request,mode},signal),mode)
  },workSignal:()=>work.signal})
  const offEvent=ctx.on('session/event',session=>{void driver.observeSession(String(session.id)).catch(()=>{})}),offDispose=ctx.on('session/disposed',session=>authority.invalidateSession(String(session.id)))
