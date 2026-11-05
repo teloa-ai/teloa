@@ -46,11 +46,11 @@ export function PlanExecutionDirectory({api,plans,roles,scopes,fixedScope,fixedR
  return <section className={css.layout} aria-label={t('plan.directory.aria')}>
   <div className={css.toolbar}>
    <label data-teloa-field-shell className={css.search}><Search size={16} aria-hidden="true"/><input maxLength={240} aria-label={t('plan.directory.search')} value={query} onChange={event=>setQuery(event.target.value)} placeholder={t('plan.directory.searchPlaceholder')}/></label>
-   <DirectoryFilterPopover label={t('plan.directory.filters')}><div className={`${directoryCss.filterPanel} ${css.filters}`}>
+   <DirectoryFilterPopover label={t('plan.directory.filters')} panelClassName={css.filters}><>
     <label>{t('plan.directory.scope')}<select disabled={!!fixedScope} value={scope} onChange={event=>setScope(event.target.value)}><option value="">{t('common.allBusiness')}</option>{Object.entries(scopes).map(([id,label])=><option key={id} value={id}>{label}</option>)}</select></label>
     <label>{t('plan.directory.role')}<select disabled={!!fixedRoleId} value={roleId} onChange={event=>setRoleId(event.target.value)}><option value="">{t('plan.directory.allRoles')}</option>{roleOptions.map(role=><option key={role.id} value={role.id}>{role.name}</option>)}</select></label>
     <label>{t('plan.directory.state')}<select value={runState} onChange={event=>setRunState(event.target.value as PlanExecutionRunState|'')}><option value="">{t('plan.directory.allStates')}</option>{Object.entries(runStateKeys).map(([id,key])=><option key={id} value={id}>{t(key)}</option>)}</select></label>
-   </div></DirectoryFilterPopover>
+   </></DirectoryFilterPopover>
    {hasFilters&&<button type="button" className={css.clear} onClick={clearFilters}>{t('plan.directory.clear')}</button>}
    <ToolbarIconButton label={t('plan.directory.refresh')} icon={RefreshCw} disabled={loading||current?.more} onClick={()=>setReload(value=>value+1)}/>
   </div>
