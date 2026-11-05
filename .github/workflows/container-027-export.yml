@@ -1,0 +1,306 @@
+name: Community arm64 public OCI export
+on:
+  push:
+    branches: [codex/container-0.2.27-export]
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: container-export-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  container:
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 60
+    env:
+      REVISION: 10987642cc5ca51f7098d644335ef33ae1e809dd
+      REVIEWED_PR_HEAD: 10987642cc5ca51f7098d644335ef33ae1e809dd
+      REQUIRED_CI_RUN: 42016583350
+      IMAGE: teloa-container-smoke:0.2.27
+      COMPOSE_PROJECT_NAME: teloa-smoke-${{ github.run_id }}
+      TELOA_PORT: '3369'
+    steps:
+      - name: Verify reviewed source and CI identity
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          [[ "$REVISION" =~ ^[a-f0-9]{40}$ ]]
+          [[ "$REVIEWED_PR_HEAD" =~ ^[a-f0-9]{40}$ ]]
+          test "$GITHUB_REPOSITORY" = teloa-ai/teloa
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$REQUIRED_CI_RUN" | node --input-type=module -e 'let s="";for await(const c of process.stdin)s+=c;const r=JSON.parse(s);if(r.head_sha!==process.env.REVIEWED_PR_HEAD||(r.status==="completed"&&r.conclusion!=="success"))throw Error("reviewed source CI identity or result changed; HOLD")'
+      - name: Checkout exact reviewed public release source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: 10987642cc5ca51f7098d644335ef33ae1e809dd
+          persist-credentials: false
+          fetch-depth: 1
+      - name: Reclaim only unused ephemeral runner SDKs
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$RUNNER_ENVIRONMENT" = github-hosted
+          test "$RUNNER_OS" = Linux
+          test "$RUNNER_ARCH" = ARM64
+          test "$(git rev-parse HEAD)" = "$REVISION"
+          mkdir smoke-evidence
+          df -B1 . > smoke-evidence/disk-before.txt
+          # This hosted VM is disposable; retain Docker, Node, system packages and all source.
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /opt/hostedtoolcache/CodeQL
+          df -B1 . > smoke-evidence/disk-after-sdk-retirement.txt
+          docker version > smoke-evidence/docker-version.txt
+          docker compose version >> smoke-evidence/docker-version.txt
+          test "$(df -B1 --output=avail . | tail -1 | tr -d ' ')" -ge 12884901888
+      - name: Build unchanged public Dockerfile on native arm64
+        shell: bash
+        run: |
+          set -euo pipefail
+          git archive --format=tar "$REVISION" | docker buildx build --platform linux/arm64 --progress=plain --label org.opencontainers.image.version=0.2.27 --label org.opencontainers.image.revision="$REVISION" --tag "$IMAGE" --iidfile smoke-evidence/image.iid --metadata-file smoke-evidence/build-metadata.json --load - > smoke-evidence/build.log 2>&1 &
+          build_pid=$!
+          trap 'kill -TERM "$build_pid" 2>/dev/null || true; wait "$build_pid" 2>/dev/null || true' EXIT
+          while kill -0 "$build_pid" 2>/dev/null; do
+            available=$(df -B1 --output=avail . | tail -1 | tr -d ' ')
+            printf '%s %s\n' "$(date -u +%FT%TZ)" "$available" >> smoke-evidence/build-disk-bytes.log
+            if [ "$available" -lt 1073741824 ]; then
+              kill -TERM "$build_pid" 2>/dev/null || true
+              wait "$build_pid" || true
+              echo 'Ephemeral runner disk guard HOLD; no retry.' >&2
+              exit 1
+            fi
+            sleep 5
+          done
+          wait "$build_pid"
+          trap - EXIT
+          docker image inspect "$IMAGE" --format '{{json .}}' | node --input-type=module -e 'let s="";for await(const c of process.stdin)s+=c;const i=JSON.parse(s);if(i.Architecture!=="arm64"||i.Os!=="linux"||i.Config.User!=="node"||i.Config.Labels["org.opencontainers.image.version"]!=="0.2.27"||i.Config.Labels["org.opencontainers.image.revision"]!==process.env.REVISION)throw Error("image identity");console.log(JSON.stringify({id:i.Id,architecture:i.Architecture,os:i.Os,user:i.Config.User,labels:i.Config.Labels}))' > smoke-evidence/image-manifest.json
+      - name: Offline non-root CLI and fixed dependency checks
+        shell: bash
+        run: |
+          set -euo pipefail
+          version=$(docker run --rm --network none --entrypoint node "$IMAGE" --input-type=module -e 'import {main} from "./packages/cli/lib/bin.js";await main(["--version"])')
+          test "$version" = 0.2.27
+          docker run --rm --network none --entrypoint node "$IMAGE" -e 'const fs=require("fs");if(process.getuid()===0)throw Error("root");const p=JSON.parse(fs.readFileSync("packages/cli/package.json"));if(p.version!=="0.2.27")throw Error("version");console.log(JSON.stringify({uid:process.getuid(),version:p.version}))' > smoke-evidence/nonroot-cli.json
+          docker run --rm --network none --entrypoint node "$IMAGE" scripts/核对DSH依赖.mjs > smoke-evidence/fixed-dependencies.log
+      - name: Normal official compose init and isolated PG/app health
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > smoke.override.yaml <<'YAML'
+          services:
+            init:
+              image: ${IMAGE}
+              restart: "no"
+            db:
+              restart: "no"
+            app:
+              image: ${IMAGE}
+              restart: "no"
+              environment:
+                CI: 'true'
+                TELOA_MARKET_REMOTE: 'off'
+                TELOA_USAGE_STATS: 'off'
+          YAML
+          docker pull --platform linux/arm64 postgres@sha256:18cfe3ef5e6815560c98237d6216d1e5119702fb0f3894c8785dd58b8bbe5d73 > smoke-evidence/postgres-pull.log 2>&1
+          docker compose -f compose.yaml -f smoke.override.yaml up -d --no-build --pull never > smoke-evidence/compose-up.log 2>&1
+          healthy=false
+          for attempt in $(seq 1 90); do
+            app_id=$(docker compose -f compose.yaml -f smoke.override.yaml ps -q app)
+            db_id=$(docker compose -f compose.yaml -f smoke.override.yaml ps -q db)
+            if [ -n "$app_id" ] && [ -n "$db_id" ]; then
+              app_health=$(docker inspect --format '{{.State.Health.Status}}' "$app_id")
+              db_health=$(docker inspect --format '{{.State.Health.Status}}' "$db_id")
+              if [ "$app_health" = healthy ] && [ "$db_health" = healthy ]; then healthy=true; break; fi
+              test "$(docker inspect --format '{{.State.Status}}' "$app_id")" = running
+            fi
+            sleep 5
+          done
+          test "$healthy" = true
+          init_id=$(docker compose -f compose.yaml -f smoke.override.yaml ps -a -q init)
+          test "$(docker inspect --format '{{.State.ExitCode}}' "$init_id")" = 0
+          test "$(docker inspect --format '{{.Config.User}}' "$app_id")" = node
+          network_id=$(docker inspect --format '{{range .NetworkSettings.Networks}}{{.NetworkID}}{{end}}' "$app_id")
+          test "$(docker network inspect --format '{{.Internal}}' "$network_id")" = false
+          mapping=$(docker port "$app_id" 8080/tcp)
+          test "$mapping" = 127.0.0.1:3369
+          node -e 'console.log(JSON.stringify({containerPort:"8080/tcp",hostBinding:process.argv[1],networkInternal:false}))' "$mapping" > smoke-evidence/published-port.json
+          docker compose -f compose.yaml -f smoke.override.yaml exec -T app node --input-type=module -e 'const r=await fetch("http://127.0.0.1:8080/");if(!r.ok&&r.status!==401)throw Error("container health status "+r.status);console.log(JSON.stringify({httpStatus:r.status,containerLocal:true,authenticated:false,sessionOpened:false}))' > smoke-evidence/container-http-health.json
+          # The startup URL and cookie stay only in the pipe/container process memory.
+          docker compose -f compose.yaml -f smoke.override.yaml logs --no-color app | docker compose -f compose.yaml -f smoke.override.yaml exec -T app node --input-type=module -e '
+            import {findStartupUrl,assertTeloaReady} from "/app/scripts/核对宿主就绪.mjs";
+            import {redactLog} from "/app/packages/cli/lib/diagnostics.js";
+            try{let text="";for await(const chunk of process.stdin)text+=chunk;const startup=findStartupUrl(text,"127.0.0.1:3100");text="";if(!startup)throw Error("owned app startup URL unavailable");await assertTeloaReady(startup);console.log(JSON.stringify({schema:"teloa.runtime-readiness/v1",ready:true,officialHelper:"assertTeloaReady",authenticatedProbe:true,promptSubmitted:false}));}catch(error){console.error(redactLog(error.message).replace(/https?:\/\/\S+/g,"[runtime URL omitted]"));process.exitCode=1}
+          ' > smoke-evidence/official-runtime-readiness.json
+          node --input-type=module -e 'const r=await fetch("http://127.0.0.1:3369/");if(!r.ok&&r.status!==401)throw Error("health status "+r.status);console.log(JSON.stringify({httpStatus:r.status,authenticated:false,sessionOpened:false}))' > smoke-evidence/http-health.json
+          docker compose -f compose.yaml -f smoke.override.yaml exec -T app node --input-type=module > smoke-evidence/actual-native-compat.json <<'JS'
+          import {readFile,readdir,stat} from 'node:fs/promises';import {join} from 'node:path';import {createRequire} from 'node:module';import {pathToFileURL} from 'node:url';import {createHash} from 'node:crypto';import assert from 'node:assert/strict';
+          const sha=b=>createHash('sha256').update(b).digest('hex'),read=async p=>JSON.parse(await readFile(p,'utf8'));
+          assert.notEqual(process.getuid(),0);assert.equal((await read('/app/packages/cli/package.json')).version,'0.2.27');const metadata=await read('/app/packages/cli/src/data-version.json');assert.equal(metadata.dataVersion,18);assert.deepEqual(metadata.compatibleDataVersions,[18]);
+          const manifests=new Map();for(const n of await readdir('/app/packages/harness-dsh/compat'))if(n.endsWith('.json')){const bytes=await readFile(join('/app/packages/harness-dsh/compat',n)),m=JSON.parse(bytes);if(m.schema==='teloa.dsh-compat-patch/v1')manifests.set(sha(bytes),{m,sha:sha(bytes)})}
+          const base='/data/teloa/native-runtime',graphs=[];for(const n of await readdir(base))if(!n.startsWith('.')){const r=await read(join(base,n,'receipt.json'));assert.equal(r.fingerprint,n);graphs.push({root:join(base,n),r})}assert.equal(graphs.length,1);const {root,r}=graphs[0];let checked=0;
+          for(const row of r.packages){const {m,sha:manifestSHA}=manifests.get(row.manifestSha256)??{};assert(m);assert.equal(m.package,row.name);assert.equal(row.manifestSha256,manifestSHA);const copy=join(root,row.name.slice('@deepseek-ai/'.length));for(const f of row.files){assert.equal(sha(await readFile(join(copy,f.path))),f.sha256);checked++}for(const f of m.files){assert.equal(sha(await readFile(join(row.source,f.path))),f.beforeSha256);assert.equal(sha(await readFile(join(copy,f.path))),f.afterSha256)}}
+          const loop=r.packages.find(p=>p.name==='@deepseek-ai/dsh-agent-loop');assert(loop);assert(manifests.get(loop.manifestSha256).m.api.includes('AgentLoop.wakePending'));
+          const reply=await import('/app/packages/backend/lib/index.js');for(const key of ['GroupReplyExecutionService','groupReplySessionId','isGroupReplySession','groupReplyContentHash'])assert.equal(typeof reply[key],'function',key);const replyId='11111111-1111-4111-8111-111111111111';assert(reply.isGroupReplySession(reply.groupReplySessionId(replyId)));assert.equal(reply.groupReplyContentHash([{type:'text',text:'offline reply smoke'}]).length,64);
+          const runtime=await import('/app/scripts/runtime/native-runtime.mjs'),plan=await runtime.prepareNativeRuntime({programRoot:'/app',runtimeRoot:'/data/teloa'});assert.equal(plan.fingerprint,r.fingerprint);runtime.installNativeRuntime(plan);const require=createRequire('/app/package.json'),official=createRequire(require.resolve('@deepseek-ai/dsh/package.json'));const {AgentLoop}=await import(pathToFileURL(official.resolve('@deepseek-ai/dsh-agent-loop')).href);for(const key of ['requireWorkAdmission','installWorkAdmission','requireInputCheckpoint','installInputCheckpoint','requireRestoreAdmission','installRestoreAdmission','wakePending'])assert.equal(typeof AgentLoop.prototype[key],'function',key);
+          const processes=[];for(const n of await readdir('/proc'))if(/^\d+$/.test(n)){try{const cmd=await readFile('/proc/'+n+'/cmdline','utf8');if(cmd.includes('/app/scripts/runtime/native-runtime-entry.mjs'))processes.push(Number(n))}catch{}}assert(processes.length>0);
+          let sessionLogs=0;async function walk(p){let entries;try{entries=await readdir(p,{withFileTypes:true})}catch(e){if(e.code==='ENOENT')return;throw e}for(const e of entries){if(e.isDirectory())await walk(join(p,e.name));else if(/^session\.v4\.jsonl(?:\.zstd)?$/.test(e.name))sessionLogs++}}await walk('/data/dsh/sessions');assert.equal(sessionLogs,0);
+          console.log(JSON.stringify({version:'0.2.27',dataVersion:18,compatibleDataVersions:[18],uid:process.getuid(),nativeFingerprint:r.fingerprint,packages:r.packages.length,checkedLeaves:checked,agentLoopManifestSHA256:loop.manifestSha256,agentLoopFiles:loop.files.filter(f=>f.path==='lib/index.js'||f.path==='lib/types/index.d.ts'),normalBootWrapperObserved:true,officialGraphRevalidated:true,actualWorkAdmissionExportsVerified:true,groupReplyExportsVerified:true,sessionLogs,noPromptOrTaskSubmitted:true,networkInternal:false,noCredentialsImported:true}));
+          JS
+          docker compose -f compose.yaml -f smoke.override.yaml exec -T db psql -U teloa -d teloa -X -A -t -v ON_ERROR_STOP=1 -c "select json_build_object('installationMarkerPresent',to_regclass('public.teloa_installation') is not null,'tableNames',(select json_agg(tablename order by tablename) from pg_tables where schemaname='public' and tablename like 'teloa_%'),'nativeColumns',(select json_object_agg(table_name,columns) from (select table_name,json_agg(json_build_object('name',column_name,'type',data_type,'nullable',is_nullable) order by ordinal_position) as columns from information_schema.columns where table_schema='public' and table_name in ('teloa_native_session_checkpoints','teloa_native_session_continuations','teloa_group_routing_outbox','teloa_group_messages') group by table_name) c),'tasks',(select count(*) from teloa_tasks),'runs',(select count(*) from teloa_task_runs),'budgetReservations',(select count(*) from teloa_work_budget_reservations),'nativeCheckpoints',(select count(*) from teloa_native_session_checkpoints),'nativeContinuations',(select count(*) from teloa_native_session_continuations));" > smoke-evidence/schema-work-raw.json
+          node --input-type=module <<'JS'
+          import {readFileSync,writeFileSync} from 'node:fs';import {createHash} from 'node:crypto';import assert from 'node:assert/strict';
+          const r=JSON.parse(readFileSync('smoke-evidence/schema-work-raw.json','utf8')),required=['teloa_tasks','teloa_task_runs','teloa_work_budget_reservations','teloa_native_session_checkpoints','teloa_native_session_continuations'];
+          assert.equal(r.installationMarkerPresent,false,'fresh Docker backend initialization must not fabricate a CLI installation identity');for(const name of required)assert(r.tableNames.includes(name),name);
+          const columns=(fields)=>fields.map(([name,type,nullable='NO'])=>({name,type,nullable}));
+          assert.deepEqual(r.nativeColumns.teloa_native_session_checkpoints,columns([['owner_id','text'],['session_id','text'],['host_generation','integer'],['checkpoint','jsonb'],['updated_at','timestamp with time zone']]));
+          assert.deepEqual(r.nativeColumns.teloa_native_session_continuations,columns([['id','uuid'],['owner_id','text'],['session_id','text'],['run_id','uuid','YES'],['scope_run_id','uuid','YES'],['prefix_sha256','text'],['record','jsonb'],['created_at','timestamp with time zone'],['updated_at','timestamp with time zone']]));
+          assert.equal(r.nativeColumns.teloa_group_routing_outbox.find(c=>c.name==='reply_execution')?.type,'jsonb');assert.equal(r.nativeColumns.teloa_group_messages.find(c=>c.name==='reply_execution_id')?.type,'uuid');
+          for(const key of ['tasks','runs','budgetReservations','nativeCheckpoints','nativeContinuations'])assert.equal(r[key],0,key);
+          const report={...r,tableCount:r.tableNames.length,tableNamesSHA256:createHash('sha256').update(JSON.stringify(r.tableNames)).digest('hex'),requiredTablesPresent:true,groupReplySchemaVerified:true,nativeSchemaMatchesFrozenSource:true,tableTotalIsObservationOnly:true,normalDockerWithoutCLIInstallationMarker:true,workZero:true,noPromptOrTaskSubmitted:true};writeFileSync('smoke-evidence/empty-work.json',JSON.stringify(report)+'\n');
+          JS
+
+      - name: Require final reviewed CI before exporting the candidate
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh run watch "$REQUIRED_CI_RUN" --repo "$GITHUB_REPOSITORY" --exit-status --interval 30
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$REQUIRED_CI_RUN" | node --input-type=module -e 'let s="";for await(const c of process.stdin)s+=c;const r=JSON.parse(s);if(r.head_sha!==process.env.REVIEWED_PR_HEAD||r.status!=="completed"||r.conclusion!=="success")throw Error("final reviewed CI not green; HOLD")'
+      - name: Export the exact smoke-tested image without registry credentials
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update > smoke-evidence/skopeo-install.log 2>&1
+          sudo apt-get install -y --no-install-recommends skopeo >> smoke-evidence/skopeo-install.log 2>&1
+          test "$(docker image inspect --format '{{.Id}}' "$IMAGE")" = "$(cat smoke-evidence/image.iid)"
+          test "$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' "$IMAGE")" = "$REVISION"
+          export OCI_LAYOUT="$RUNNER_TEMP/teloa-oci-$GITHUB_RUN_ID"
+          export DOCKER_ARCHIVE="$RUNNER_TEMP/teloa-docker-save-$GITHUB_RUN_ID.tar"
+          test ! -e "$OCI_LAYOUT"
+          test ! -e "$DOCKER_ARCHIVE"
+          export RAW_CONFIG="$RUNNER_TEMP/teloa-raw-config-$GITHUB_RUN_ID.json"
+          test ! -e "$RAW_CONFIG"
+          mkdir -p export-evidence
+          image_size=$(docker image inspect --format '{{.Size}}' "$IMAGE")
+          available=$(df -B1 --output=avail . | tail -1 | tr -d ' ')
+          test "$available" -ge "$((image_size + 2147483648))" || { echo 'Export archive logical image size plus 2GiB unavailable; HOLD.' >&2; exit 1; }
+          run_export_guarded() {
+            setsid "$@" <&0 & export_pid=$!
+            trap 'kill -TERM -- "-$export_pid" 2>/dev/null || true; wait "$export_pid" 2>/dev/null || true' EXIT
+            while kill -0 "$export_pid" 2>/dev/null; do
+              available=$(df -B1 --output=avail . | tail -1 | tr -d ' ')
+              printf '%s %s\n' "$(date -u +%FT%TZ)" "$available" >> smoke-evidence/export-disk-bytes.log
+              if [ "$available" -lt 1073741824 ]; then kill -TERM -- "-$export_pid" 2>/dev/null || true; wait "$export_pid" || true; echo 'Export runner 1GiB disk guard HOLD; no retry.' >&2; exit 1; fi
+              sleep 5
+            done
+            wait "$export_pid"
+            trap - EXIT
+          }
+          run_export_guarded docker save --output "$DOCKER_ARCHIVE" "$IMAGE" > smoke-evidence/docker-save.log 2>&1
+          run_export_guarded python3 <<'PY'
+          import hashlib,json,os,tarfile
+          iid=open('smoke-evidence/image.iid').read().strip();digest=iid.removeprefix('sha256:');matches=[]
+          with tarfile.open(os.environ['DOCKER_ARCHIVE'],'r|') as archive:
+              for member in archive:
+                  name=member.name.removeprefix('./')
+                  if name not in (digest+'.json','blobs/sha256/'+digest): continue
+                  assert member.isfile() and not member.issym() and not member.islnk() and member.size<=1048576,'invalid original config member'
+                  raw=archive.extractfile(member).read();assert 'sha256:'+hashlib.sha256(raw).hexdigest()==iid,'docker save original config does not match tested IID';matches.append({'name':name,'bytes':len(raw),'sha256':digest})
+          assert len(matches)==1,'expected exactly one original image config'
+          with open(os.environ['RAW_CONFIG'],'xb') as out: out.write(raw)
+          with open('smoke-evidence/docker-save-config.json','w') as out: json.dump({'testedImageIID':iid,'originalConfigVerified':True,'config':matches[0]},out)
+          PY
+          # docker-archive reader retains the raw config bytes, unlike daemon inspect reserialization.
+          run_export_guarded skopeo copy --format oci "docker-archive:$DOCKER_ARCHIVE" "oci:$OCI_LAYOUT:0.2.27" > smoke-evidence/skopeo-export.log 2>&1
+          run_export_guarded python3 <<'PY'
+          import gzip,hashlib,json,os,pathlib
+          root=pathlib.Path(os.environ['OCI_LAYOUT']);blobs=root/'blobs'/'sha256';raw=pathlib.Path(os.environ['RAW_CONFIG']).read_bytes();iid='sha256:'+hashlib.sha256(raw).hexdigest();original=json.loads(raw)
+          index=json.loads((root/'index.json').read_bytes());assert len(index['manifests'])==1;d=index['manifests'][0];old_manifest=d['digest'];mp=blobs/old_manifest.removeprefix('sha256:');manifest_bytes=mp.read_bytes();assert len(manifest_bytes)==d['size'] and 'sha256:'+hashlib.sha256(manifest_bytes).hexdigest()==old_manifest
+          manifest=json.loads(manifest_bytes);old_config=manifest['config']['digest'];normalized_bytes=(blobs/old_config.removeprefix('sha256:')).read_bytes();assert len(normalized_bytes)==manifest['config']['size'] and 'sha256:'+hashlib.sha256(normalized_bytes).hexdigest()==old_config;normalized=json.loads(normalized_bytes)
+          assert normalized['rootfs']['type']==original['rootfs']['type']=='layers';assert normalized['rootfs']['diff_ids']==original['rootfs']['diff_ids'];assert len(manifest['layers'])==len(original['rootfs']['diff_ids'])
+          layers=[]
+          for layer,diff_id in zip(manifest['layers'],original['rootfs']['diff_ids']):
+              assert layer['mediaType']=='application/vnd.oci.image.layer.v1.tar+gzip';p=blobs/layer['digest'].removeprefix('sha256:');assert p.stat().st_size==layer['size'];compressed=hashlib.sha256();uncompressed=hashlib.sha256()
+              with p.open('rb') as f:
+                  for b in iter(lambda:f.read(1048576),b''):compressed.update(b)
+              assert 'sha256:'+compressed.hexdigest()==layer['digest']
+              with gzip.open(p,'rb') as f:
+                  for b in iter(lambda:f.read(1048576),b''):uncompressed.update(b)
+              assert 'sha256:'+uncompressed.hexdigest()==diff_id;layers.append({'digest':layer['digest'],'diffID':diff_id})
+          raw_path=blobs/iid.removeprefix('sha256:')
+          if raw_path.exists():assert raw_path.read_bytes()==raw
+          else:raw_path.write_bytes(raw)
+          manifest['config']['digest']=iid;manifest['config']['size']=len(raw);assert manifest['config']['mediaType']=='application/vnd.oci.image.config.v1+json'
+          new_bytes=(json.dumps(manifest,separators=(',',':'))+'\n').encode();new_digest='sha256:'+hashlib.sha256(new_bytes).hexdigest();new_path=blobs/new_digest.removeprefix('sha256:')
+          if new_path.exists():assert new_path.read_bytes()==new_bytes
+          else:new_path.write_bytes(new_bytes)
+          d['digest']=new_digest;d['size']=len(new_bytes);(root/'index.json').write_text(json.dumps(index,separators=(',',':'))+'\n')
+          referenced={iid,new_digest}|{x['digest'] for x in manifest['layers']}
+          for old in {old_config,old_manifest}-referenced:(blobs/old.removeprefix('sha256:')).unlink()
+          assert raw_path.read_bytes()==raw and manifest['config']['digest']==open('smoke-evidence/image.iid').read().strip()
+          proof={'normalizedBefore':old_config,'originalTestedConfigDigest':iid,'restoreRawConfigVerified':True,'layerDiffIDsVerified':True,'layers':layers,'newManifestDigest':new_digest}
+          pathlib.Path('smoke-evidence/raw-config-restoration.json').write_text(json.dumps(proof)+'\n')
+          PY
+          node --input-type=module <<'JS'
+          import {readFile,readdir,lstat,open,writeFile} from 'node:fs/promises';import {join} from 'node:path';import {createHash} from 'node:crypto';import assert from 'node:assert/strict';
+          const root=process.env.OCI_LAYOUT,read=async p=>JSON.parse(await readFile(p,'utf8')),index=await read(join(root,'index.json'));assert.equal((await read(join(root,'oci-layout'))).imageLayoutVersion,'1.0.0');assert.equal(index.manifests.length,1);const descriptor=index.manifests[0];assert.equal(descriptor.annotations?.['org.opencontainers.image.ref.name'],'0.2.27');
+          const blobs=[];for(const algorithm of await readdir(join(root,'blobs'))){assert.equal(algorithm,'sha256');for(const name of await readdir(join(root,'blobs',algorithm))){assert(/^[a-f0-9]{64}$/.test(name));const p=join(root,'blobs',algorithm,name),s=await lstat(p);assert(s.isFile()&&!s.isSymbolicLink());const h=createHash('sha256'),f=await open(p);try{for await(const b of f.readableWebStream())h.update(Buffer.from(b));}finally{await f.close().catch(()=>{})}assert.equal(h.digest('hex'),name);blobs.push({digest:'sha256:'+name,bytes:s.size});}}
+          const byDigest=new Map(blobs.map(b=>[b.digest,b]));async function resolve(d){assert(/^sha256:[a-f0-9]{64}$/.test(d.digest));assert.equal(byDigest.get(d.digest)?.bytes,d.size);return read(join(root,'blobs','sha256',d.digest.slice(7)));}
+          const manifest=await resolve(descriptor);assert.equal(manifest.schemaVersion,2);assert(!manifest.manifests);const config=await resolve(manifest.config),iid=(await readFile('smoke-evidence/image.iid','utf8')).trim();assert.equal(manifest.config.digest,iid);assert.equal(config.os,'linux');assert.equal(config.architecture,'arm64');assert.equal(config.config.Labels['org.opencontainers.image.revision'],process.env.REVISION);assert.equal(config.config.Labels['org.opencontainers.image.version'],'0.2.27');for(const layer of manifest.layers){assert.equal(byDigest.get(layer.digest)?.bytes,layer.size);assert.equal(layer.mediaType,'application/vnd.oci.image.layer.v1.tar+gzip');}assert.equal(byDigest.size,new Set([descriptor.digest,manifest.config.digest,...manifest.layers.map(l=>l.digest)]).size,'unexpected unreferenced blobs');
+          await writeFile('export-evidence/image-meta.json',JSON.stringify({schema:'teloa.public-oci-export/v1',source:process.env.REVISION,version:'0.2.27',platform:'linux/arm64',refName:'0.2.27',testedImageIID:iid,configDigest:manifest.config.digest,manifestDigest:descriptor.digest,blobs:blobs.sort((a,b)=>a.digest.localeCompare(b.digest)),blobTotalBytes:blobs.reduce((n,b)=>n+b.bytes,0),allBlobSHAAndBytesVerified:true,compressedLayers:true,noCredentials:true,noModelOrTaskSubmitted:true,...JSON.parse(await readFile('smoke-evidence/raw-config-restoration.json','utf8'))})+'\n');
+          JS
+          rm -- "$DOCKER_ARCHIVE" "$RAW_CONFIG"
+          run_export_guarded bash -o pipefail -c 'tar --sort=name --mtime=@0 --owner=0 --group=0 --numeric-owner -C "$OCI_LAYOUT" -cf - . | gzip -1 > export-evidence/image.oci.tar.gz'
+          node --input-type=module <<'JS'
+          import {createReadStream} from 'node:fs';import {readFile,writeFile,stat} from 'node:fs/promises';import {createHash} from 'node:crypto';import assert from 'node:assert/strict';
+          const p='export-evidence/image.oci.tar.gz',bytes=(await stat(p)).size;assert(bytes<=2147483648,'OCI archive exceeds 2GiB; HOLD without upload');const h=createHash('sha256');for await(const b of createReadStream(p))h.update(b);const m=JSON.parse(await readFile('export-evidence/image-meta.json','utf8'));Object.assign(m,{archiveName:'image.oci.tar.gz',archiveBytes:bytes,archiveSHA256:h.digest('hex'),artifactCapBytes:2147483648});let text='';for(let i=0;i<8;i++){const next=JSON.stringify(m)+'\n',size=Buffer.byteLength(next);if(m.metadataBytes===size&&m.totalArtifactBytes===bytes+size){text=next;break}m.metadataBytes=size;m.totalArtifactBytes=bytes+size}assert(text,'metadata byte accounting did not converge');assert(m.totalArtifactBytes<=2147483648,'archive plus metadata exceeds artifact cap; HOLD without upload');await writeFile('export-evidence/image-meta.json',text);
+          JS
+      - name: Upload only validated public OCI archive and small metadata
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: teloa-0.2.27-arm64-oci-${{ github.run_id }}
+          path: |
+            export-evidence/image.oci.tar.gz
+            export-evidence/image-meta.json
+          compression-level: 0
+          if-no-files-found: error
+          retention-days: 3
+          include-hidden-files: false
+      - name: Always collect sanitized logs and normally release this compose project
+        if: always()
+        shell: bash
+        run: |
+          set -uo pipefail
+          mkdir -p smoke-evidence
+          cleanup=0
+          docker_archive="$RUNNER_TEMP/teloa-docker-save-$GITHUB_RUN_ID.tar"
+          if [ -f "$docker_archive" ]; then rm -- "$docker_archive" || cleanup=1; fi
+          raw_config="$RUNNER_TEMP/teloa-raw-config-$GITHUB_RUN_ID.json"
+          if [ -f "$raw_config" ]; then rm -- "$raw_config" || cleanup=1; fi
+          if [ -f smoke.override.yaml ]; then
+            if docker image inspect "$IMAGE" >/dev/null 2>&1; then
+              docker compose -f compose.yaml -f smoke.override.yaml logs --no-color 2>&1 | docker run --rm -i --network none --entrypoint node "$IMAGE" --input-type=module -e 'import {redactLog} from "./packages/cli/lib/diagnostics.js";let text="";for await(const c of process.stdin)text+=c;console.log(redactLog(text).replace(/https?:\/\/\S+/g,"[runtime URL omitted]"))' > smoke-evidence/compose.sanitized.log || cleanup=1
+            fi
+            docker compose -f compose.yaml -f smoke.override.yaml down --volumes --remove-orphans --timeout 30 > smoke-evidence/cleanup.log 2>&1 || cleanup=1
+          fi
+          # This exact run project only; never prune unrelated images, containers, volumes or caches.
+          test -z "$(docker ps -aq --filter label=com.docker.compose.project="$COMPOSE_PROJECT_NAME")" || cleanup=1
+          test -z "$(docker volume ls -q --filter label=com.docker.compose.project="$COMPOSE_PROJECT_NAME")" || cleanup=1
+          if docker image inspect "$IMAGE" >/dev/null 2>&1 && [ -f smoke-evidence/image.iid ]; then
+            if [ "$(docker image inspect --format '{{.Id}}' "$IMAGE")" = "$(cat smoke-evidence/image.iid)" ] && [ "$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' "$IMAGE")" = "$REVISION" ]; then
+              docker image rm "$IMAGE" >> smoke-evidence/cleanup.log 2>&1 || cleanup=1
+            else cleanup=1; fi
+          fi
+          df -B1 . > smoke-evidence/disk-final.txt
+          printf '{"normalComposeCleanupExit":%s,"imagePublished":false,"modelsSubmitted":false}\n' "$cleanup" > smoke-evidence/cleanup-summary.json
+          node -e 'const fs=require("fs"),tail=p=>{try{return fs.readFileSync(p,"utf8").split("\n").slice(-80).join("\n").slice(-32768).replace(/https?:\/\/\S+/g,"[URL omitted]").replace(/postgres(?:ql)?:\/\/\S+/g,"[database URL omitted]")}catch{return "not produced"}};fs.writeFileSync("smoke-evidence/diagnostic-tails.json",JSON.stringify({build:tail("smoke-evidence/build.log"),compose:tail("smoke-evidence/compose.sanitized.log"),cleanup:tail("smoke-evidence/cleanup.log"),skopeoInstall:tail("smoke-evidence/skopeo-install.log"),skopeoExport:tail("smoke-evidence/skopeo-export.log"),dockerSave:tail("smoke-evidence/docker-save.log")}))'
+          exit "$cleanup"
+      - name: Upload only bounded smoke evidence, never image or data volumes
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: container-0.2.27-arm64-smoke-${{ github.run_id }}
+          path: smoke-evidence/*.json
+          if-no-files-found: error
+          retention-days: 7
+          include-hidden-files: false
