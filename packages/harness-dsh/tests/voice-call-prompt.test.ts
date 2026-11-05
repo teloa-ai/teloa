@@ -84,6 +84,22 @@ test('E07：宿主audio经封口和正式Controller只派发一次，turn纯读�
  assert.equal((await f.current()).state,'ended');assert.equal(f.model.requests.length,1)
 })
 
+test('生成回答时的第二句语音排入原会话下一轮，不改写当前轮受理根', {timeout:30000},async t=>{
+ const f=await mediaHost(t),gate=hotGate();t.after(gate.release)
+ f.model.prepareGate=gate;f.model.scripts.push(textAnswer,textAnswer)
+ const first=await f.host.handler('voice-calls/audio',f.audio()) as AudioReceipt;assert.ok(first.receipt)
+ await gate.entered
+ await f.host.handler('voice-calls/interrupt',{callId:f.call.id})
+ const second=await f.host.handler('voice-calls/audio',f.audio()) as AudioReceipt;assert.ok(second.receipt)
+ assert.notEqual(first.receipt.commitId,second.receipt.commitId)
+ assert.ok(f.agent.inbox.nextTurn.some(message=>message.source.kind==='user'&&'rpcId'in message.source&&message.source.rpcId===second.receipt!.commitId),'新语音必须等待下一轮，不能作为steer改写当前轮')
+ gate.release();await f.agent.whenIdle()
+ const events=f.agent.session.snapshotEvents(),ends=events.filter(event=>event.type==='turn/end')
+ assert.equal(ends.length,2);assert.ok(ends.every(event=>event.type==='turn/end'&&event.data.reason.kind==='completed'))
+ const inputs=events.filter(event=>event.type==='user/message'&&event.data.source.kind==='user')
+ assert.equal(inputs.length,2);assert.equal(f.model.requests.length,2)
+})
+
 for(const action of ['hangup','revoke'] as const)test(`E07：ASR忽略取消迟答，${action}后不能封口或提交原会话`,{timeout:30000},async t=>{
  const f=await mediaHost(t),gate=hotGate();f.controls.asr=gate;t.after(gate.release)
  const before=f.agent.session.snapshotEvents(),pending=f.host.handler('voice-calls/audio',f.audio());void pending.catch(()=>{})

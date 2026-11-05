@@ -8,6 +8,7 @@ function fixture(options:{delayedMedia?:boolean;blockedPlayback?:boolean;pending
  let releaseMedia!:(stream:MediaStream)=>void
  const track={enabled:true,readyState:'live',stops:0,stop(){this.stops++;this.readyState='ended'},addEventListener(){},removeEventListener(){}}
  const stream={getTracks:()=>[track],getAudioTracks:()=>[track]} as unknown as MediaStream
+ const constraints:MediaStreamConstraints[]= []
  const contexts:Context[]=[],processors:Worklet[]=[],sockets:Socket[]=[]
  class Node{disconnected=false;connect<T>(target:T){return target}disconnect(){this.disconnected=true}}
  class Source extends Node{buffer:AudioBuffer|null=null;onended:(()=>void)|null=null;stopped=false;started=false;startAt=0;start(at=0){this.started=true;this.startAt=at}stop(){this.stopped=true}finish(){this.onended?.()}}
@@ -34,14 +35,20 @@ function fixture(options:{delayedMedia?:boolean;blockedPlayback?:boolean;pending
   close(){this.closed=true;this.readyState=3}
   disconnect(){this.readyState=3;this.onclose?.()}
  }
- const root={navigator:{mediaDevices:{getUserMedia:()=>options.delayedMedia?new Promise<MediaStream>(resolve=>{releaseMedia=resolve}):Promise.resolve(stream)}},AudioContext:Context,AudioWorkletNode:Worklet,WebSocket:Socket,URL:{createObjectURL:()=> 'blob:voice-test',revokeObjectURL(){}},Blob,location:{href:'https://teloa.test/work',origin:'https://teloa.test'}} as unknown as BrowserVoiceRoot
+ const root={navigator:{mediaDevices:{getUserMedia:(input:MediaStreamConstraints)=>{constraints.push(input);return options.delayedMedia?new Promise<MediaStream>(resolve=>{releaseMedia=resolve}):Promise.resolve(stream)}}},AudioContext:Context,AudioWorkletNode:Worklet,WebSocket:Socket,URL:{createObjectURL:()=> 'blob:voice-test',revokeObjectURL(){}},Blob,location:{href:'https://teloa.test/work',origin:'https://teloa.test'}} as unknown as BrowserVoiceRoot
  const events:DuplexVoiceEvent[]=[]
  const begin=(signal?:AbortSignal)=>openDuplexVoice({url:'/voice',callId:'call',callGeneration:'epoch',token:'lease',onEvent:event=>events.push(event),root,...signal?{signal}:{}})
  const connected=async()=>{const pending=begin();await tick();assert.equal(sockets.length,1);const socket=sockets[0]!;socket.open();socket.message(JSON.stringify({type:'ready'}));return {client:await pending,socket}}
  const packet=(generation:number,samples=2400)=>{const bytes=new ArrayBuffer(4+samples*2),view=new DataView(bytes);view.setUint32(0,generation,true);for(let at=4;at<bytes.byteLength;at+=2)view.setInt16(at,12000,true);return bytes}
  const json=(socket:Socket)=>socket.sent.filter((value):value is string=>typeof value==='string').map(value=>JSON.parse(value) as Record<string,unknown>)
- return {root,begin,connected,contexts,processors,sockets,track,events,release:()=>releaseMedia(stream),packet,json}
+ return {root,begin,connected,constraints,contexts,processors,sockets,track,events,release:()=>releaseMedia(stream),packet,json}
 }
+
+test('麦克风保留回声消除和降噪，关闭会放大环境底噪的自动增益',async()=>{
+ const f=fixture(),{client}=await f.connected()
+ assert.deepEqual(f.constraints,[{audio:{channelCount:1,echoCancellation:true,noiseSuppression:true,autoGainControl:false},video:false}])
+ await client.close()
+})
 
 test('取消等待中的麦克风会拒绝建连，迟到的采集轨立即回收且不创建连接',async()=>{
  const f=fixture({delayedMedia:true}),abort=new AbortController(),pending=f.begin(abort.signal)

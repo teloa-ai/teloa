@@ -15,7 +15,7 @@ test('任务与统一会话目录复用紧凑目录样式，分别保留符合�
     assert.match(source,/import directoryCss from ['"]\.\/DirectoryPane\.module\.css['"]/)
     assert.match(source,/import \{DirectoryFilterPopover\} from ['"]\.\/DirectoryFilterPopover\.js['"]/)
     assert.match(source,/<DirectoryFilterPopover label=\{t\(/)
-    assert.match(source,/<div className=\{directoryCss\.filterPanel\}>/)
+    assert.doesNotMatch(source,/<div className=\{directoryCss\.filterPanel\}>/,'调用处不能重复嵌套定位面板，防止筛选再次塌缩裁切')
   }
   assert.match(task,/<input type="radio"[^>]*aria-label=\{t\(/)
   assert.match(directory,/<fieldset><legend>\{t\('conversationDirectory\.state'\)\}<\/legend>/)

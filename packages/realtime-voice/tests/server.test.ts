@@ -425,7 +425,7 @@ test('真实PCM经VAD封口及宿主ASR生成可信转写，同一包多段不�
  client.socket.send(Buffer.concat([pcm(200,1000),pcm(600),pcm(200,2000),pcm(600)]))
  await until(()=>f.accepted.length===2)
  assert.equal(f.transcribed.length,2);assert.equal(f.interrupts,2)
- assert.deepEqual(f.admissions,[{expected:1,current:2},{expected:2,current:2}])
+ assert.deepEqual(f.admissions,[{expected:1,current:1},{expected:2,current:2}])
  for(let index=0;index<2;index++){
   const audio=Buffer.from(f.transcribed[index]!),seal=f.accepted[index]!
   assert.equal(audio.toString('ascii',0,4),'RIFF');assert.equal(audio.readUInt32LE(24),16000)
@@ -436,7 +436,7 @@ test('真实PCM经VAD封口及宿主ASR生成可信转写，同一包多段不�
  }
 })
 
-test('短噪声不废弃持续回答，确认的插话才取消旧播报且继续识别',async t=>{
+test('短噪声不废弃持续回答，ASR确认的插话才取消旧播报且继续识别',async t=>{
  const f=await fixture(t),{client,connection,input}=await f.connect()
  let speechSignal:AbortSignal|undefined
  f.synthesize(async(_text,signal,onAudio)=>{
@@ -458,14 +458,54 @@ test('短噪声不废弃持续回答，确认的插话才取消旧播报且继�
  client.socket.send(pcm(180,1000))
  const pong=once(client.socket,'pong');client.socket.ping();await pong
  assert.equal(f.interrupts,0)
- client.socket.send(pcm(20,1000));await until(()=>f.interrupts===1)
- await assert.rejects(speaking);assert.equal(speechSignal?.aborted,true)
+ client.socket.send(pcm(20,1000));await tick();assert.equal(f.interrupts,0)
  client.socket.send(pcm(600));await until(()=>f.accepted.length===1)
+ await assert.rejects(speaking);assert.equal(speechSignal?.aborted,true)
  assert.equal(f.transcribed.length,1);assert.deepEqual(f.admissions,[{expected:2,current:2}])
  assert.equal(client.socket.readyState,WebSocket.OPEN)
 })
 
-test('等待ASR时新一句先推进世代，旧转写及手动commit保持采集时世代，连续包不重复打断',async t=>{
+for(const empty of [null,'   '] as const)test(`超过VAD门限的空识别不截断播报，排空前仍显示正在说话：${empty===null?'无转写':'空白转写'}`,async t=>{
+ const f=await fixture(t),{client,input,connection}=await f.connect()
+ let release!:()=>void,speechSignal:AbortSignal|undefined
+ const ready=new Promise<void>(resolve=>{release=resolve})
+ f.recognize(async audio=>empty===null?null:{text:empty,audioSha256:createHash('sha256').update(audio).digest('hex'),receiptId:'empty-asr'})
+ f.synthesize(async(_text,signal,onAudio)=>{
+  speechSignal=signal;await onAudio(Uint8Array.of(1,0));await ready;signal.throwIfAborted();await onAudio(Uint8Array.of(2,0))
+ })
+ const speaking=connection.enqueueSpeech!({utteranceId:'complete-answer',text:'这是一段需要完整播报的回答。',callGeneration:input.callGeneration,playbackGeneration:1})
+ await until(()=>client.audio.length===1)
+ client.socket.send(Buffer.concat([pcm(400,1000),pcm(600)]))
+ await until(()=>f.timings.some(row=>row.stage==='asr-completed'));await tick();await tick()
+ assert.equal(f.interrupts,0);assert.equal(speechSignal?.aborted,false);assert.equal(f.accepted.length,0)
+ assert.equal(client.json.filter(row=>row.type==='phase').at(-1)?.phase,'speaking')
+ release();await speaking;await until(()=>client.json.some(row=>row.type==='speech-end'))
+ assert.deepEqual(client.audio.map(bytes=>bytes.readInt16LE(4)),[1,2])
+ // 服务端发完与浏览器排空分开：尾音期间的空识别也不能清除已排程音频。
+ client.socket.send(Buffer.concat([pcm(400,1000),pcm(600)]))
+ await until(()=>f.transcribed.length===2);await tick();await tick()
+ assert.equal(f.interrupts,0);assert.equal(client.json.filter(row=>row.type==='phase').at(-1)?.phase,'speaking')
+ client.socket.send(JSON.stringify({type:'playback',generation:1,state:'idle'}))
+ await until(()=>client.json.filter(row=>row.type==='phase').at(-1)?.phase==='listening')
+})
+
+test('神经VAD误触发后的空ASR也不清播，随后有效插话只提交一次',async t=>{
+ let interrupted=false,recognitions=0
+ const f=await fixture(t,{openVad:async()=>({async predict(frame){return frame[0]?1:0},reset(){},async close(){}})})
+ const {client,input,connection}=await f.connect()
+ f.recognize(async audio=>++recognitions===1?null:{text:'请停止，换一个问题。',audioSha256:createHash('sha256').update(audio).digest('hex'),receiptId:'real-interruption'})
+ f.synthesize(async(_text,signal,onAudio)=>{
+  await onAudio(Uint8Array.of(1,0));await new Promise<void>(resolve=>signal.addEventListener('abort',()=>{interrupted=true;resolve()},{once:true}));signal.throwIfAborted()
+ })
+ const speaking=connection.enqueueSpeech!({utteranceId:'neural-answer',text:'完整回答。',callGeneration:input.callGeneration,playbackGeneration:1});void speaking.catch(()=>{})
+ await until(()=>client.audio.length===1)
+ client.socket.send(Buffer.concat([pcm(384,1000),pcm(640)]));await until(()=>recognitions===1);await tick();assert.equal(interrupted,false)
+ client.socket.send(Buffer.concat([pcm(384,2000),pcm(640)]));await until(()=>f.accepted.length===1)
+ await assert.rejects(speaking);assert.equal(interrupted,true);assert.equal(f.interrupts,1)
+ assert.equal(f.accepted[0]!.text,'请停止，换一个问题。');assert.equal(client.socket.readyState,WebSocket.OPEN)
+})
+
+test('等待ASR时保持原播报，确认的连续转写按序打断并提交，手动commit不重复打断',async t=>{
  const f=await fixture(t),{client}=await f.connect()
  let releaseFirst!:()=>void
  const firstReady=new Promise<void>(resolve=>{releaseFirst=resolve})
@@ -477,10 +517,10 @@ test('等待ASR时新一句先推进世代，旧转写及手动commit保持采�
  })
  for(let index=0;index<3;index++)client.socket.send(pcm(100,1000))
  client.socket.send(JSON.stringify({type:'commit'}))
- await until(()=>f.transcribed.length===1);assert.equal(f.interrupts,1)
- client.socket.send(pcm(200,2000));await until(()=>f.interrupts===2)
+ await until(()=>f.transcribed.length===1);assert.equal(f.interrupts,0)
+ client.socket.send(pcm(200,2000));await tick();assert.equal(f.interrupts,0)
  releaseFirst();await until(()=>f.admissions.length===1)
- assert.deepEqual(f.admissions[0],{expected:1,current:2})
+ assert.deepEqual(f.admissions[0],{expected:1,current:1})
  client.socket.send(pcm(600));await until(()=>f.admissions.length===2)
  assert.deepEqual(f.admissions[1],{expected:2,current:2})
 })
@@ -550,7 +590,8 @@ test('当前播放结束及清播恢复监听阶段，旧世代播放回执不�
  assert.equal(client.json.length,0)
  client.socket.send(JSON.stringify({type:'playback',generation:1,state:'idle'}))
  await until(()=>client.json.some(row=>row.type==='phase'&&row.phase==='listening'))
- client.socket.send(pcm(200,1000));await until(()=>client.json.some(row=>row.type==='clear'&&row.generation===2))
+ client.socket.send(Buffer.concat([pcm(200,1000),pcm(600)]));await until(()=>client.json.some(row=>row.type==='clear'&&row.generation===2))
+ client.socket.send(pcm(200,1000));await until(()=>client.json.filter(row=>row.type==='phase').at(-1)?.phase==='recording')
  client.json.length=0
  client.socket.send(JSON.stringify({type:'playback',generation:2,state:'idle'}))
  await until(()=>client.json.some(row=>row.type==='phase'&&row.phase==='recording'))

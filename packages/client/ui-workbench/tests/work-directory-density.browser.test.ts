@@ -29,6 +29,14 @@ test('工作总览、需要你、任务与自动化采用同一可缩放字号�
   if(mode==='attention'){await page.getByText('需要核对资料来源',{exact:true}).waitFor();assert.equal((await size(page.getByText('需要核对资料来源',{exact:true}))).size,'13px')}
   if(mode==='tasks'){const row=page.getByText('核对本次交付资料',{exact:true});await row.waitFor().catch(async(error:unknown)=>{t.diagnostic(JSON.stringify({errors,text:await page.locator('body').innerText()}));throw error});assert.equal((await size(row)).size,'13px');assert.equal((await size(page.locator('th').first())).size,'12px')}
   if(mode==='automation'){await page.getByText('每周资料核对',{exact:true}).waitFor();assert.equal((await size(page.getByText('每周资料核对',{exact:true}))).size,'13px');await page.getByRole('button',{name:'新建自动化',exact:true}).click();const drawer=page.getByRole('dialog',{name:'新建自动化',exact:true});await drawer.waitFor();assert.equal((await size(drawer.getByText('你想让员工持续做什么？',{exact:true}))).size,'14px');await page.keyboard.press('Escape');await drawer.waitFor({state:'hidden'})}
+  if(mode==='tasks'||mode==='automation'){
+   const trigger=page.locator('button[class*=filterTrigger]').first();assert.ok(await trigger.count(),'真实任务/自动化页面必须提供筛选入口')
+   {
+    await trigger.click();const panel=page.getByRole('dialog',{name:(await trigger.getAttribute('aria-label'))!,exact:true});await panel.waitFor()
+    const clipped=await panel.evaluate((root:HTMLElement)=>{const b=root.getBoundingClientRect();return [...root.querySelectorAll('input,select,button')].filter(e=>{const r=e.getBoundingClientRect(),hit=document.elementFromPoint(r.x+r.width/2,r.y+r.height/2);return r.height>0&&(r.top<b.top||r.bottom>b.bottom||!hit||!(hit===e||e.contains(hit)))}).map(e=>e.getAttribute('aria-label')||e.textContent)})
+    assert.deepEqual(clipped,[],'真实任务/自动化筛选控件必须完整显示并能命中');if(process.env.TELOA_UI_POLISH_CAPTURE)await page.screenshot({path:process.env.TELOA_UI_POLISH_CAPTURE+'/'+mode+'-'+theme+'-filter.png'});await page.keyboard.press('Escape');await panel.waitFor({state:'hidden'})
+   }
+  }
   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true)
   if(process.env.TELOA_UI_POLISH_CAPTURE)await page.screenshot({path:process.env.TELOA_UI_POLISH_CAPTURE+'/'+mode+'-'+theme+'.png'})
  }

@@ -40,7 +40,8 @@ const worklet=`class VoiceCapture extends AudioWorkletProcessor{constructor(){su
 export async function openVoiceMicrophone(onSamples:(samples:Float32Array,rate:number)=>void,options:{signal?:AbortSignal;root?:MicrophoneRoot;onEnded?:()=>void}={}):Promise<VoiceMicrophone>{
  const root=options.root??globalThis as unknown as MicrophoneRoot,signal=options.signal
  if(signal?.aborted)throw voiceAbortError()
- const stream=await abortable(root.navigator.mediaDevices.getUserMedia({audio:{channelCount:1,echoCancellation:true,noiseSuppression:true,autoGainControl:true},video:false}),signal,late=>late.getTracks().forEach(track=>track.stop()))
+ // 自动增益会把持续底噪抬高为疑似人声；保留回声消除与降噪，使用原始音量。
+ const stream=await abortable(root.navigator.mediaDevices.getUserMedia({audio:{channelCount:1,echoCancellation:true,noiseSuppression:true,autoGainControl:false},video:false}),signal,late=>late.getTracks().forEach(track=>track.stop()))
  let context:AudioContext|undefined,node:AudioWorkletNode|undefined,source:MediaStreamAudioSourceNode|undefined,silence:GainNode|undefined,closed=false,closePromise:Promise<void>|undefined
  const ended=()=>{if(!closed)options.onEnded?.()}
  const close=():Promise<void>=>{
